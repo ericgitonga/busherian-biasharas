@@ -4,11 +4,15 @@ declare(strict_types=1);
 require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
+use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\Mailer;
+use BusherianBiasharas\Services\VettingPurger;
 
 bbiz_send_security_headers(false);
+AdminAuth::requireAdmin();
 
 $pdo = Database::getConnection();
+VettingPurger::enforceRetentionCeilings($pdo, 30);
 
 // Fetch pending businesses alongside their ephemeral one-time vetting records
 $pendingStmt = $pdo->query("
@@ -57,6 +61,7 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
       </a>
       <nav class="header-actions">
         <a href="/submit.php" class="btn btn-gold">+ Register / Auto-Fill Business via URL</a>
+        <a href="/admin/login.php?logout=1" class="btn btn-outline-light">Sign Out</a>
         <a href="/" class="btn btn-outline-light">&larr; Public Directory</a>
       </nav>
     </div>

@@ -290,7 +290,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($pdo->inTransaction()) {
                         $pdo->rollBack();
                     }
-                    $errors[] = 'Could not save submission: ' . $e->getMessage();
+                    $errors[] = 'Could not save submission due to a temporary server error. Please verify your entries and try again.';
                 }
             }
         }

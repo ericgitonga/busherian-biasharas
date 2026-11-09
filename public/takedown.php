@@ -23,20 +23,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
         $error = 'Invalid security token. Please reload the page.';
-    } elseif ($bizId <= 0 || !filter_var($requesterEmail, FILTER_VALIDATE_EMAIL) || $reason === '') {
-        $error = 'Please provide the Business ID, your email address, and the reason for your Section 40 request.';
     } else {
-        VettingPurger::quarantineBusinessDpa($pdo, $bizId);
-        Mailer::enqueueAndSend(
-            $pdo,
-            Database::env('ADMIN_EMAIL', 'admin@busherianbiasharas.com'),
-            "[DPA Section 40 Quarantine] Business #{$bizId} Quarantined",
-            "<p>Business #{$bizId} has been placed in instant <code>quarantined_dpa</code> state by "
-            . htmlspecialchars($requesterEmail, ENT_QUOTES, 'UTF-8') . ".</p><p>Reason: "
-            . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . "</p>",
-            $requesterEmail
-        );
-        $message = "Business #{$bizId} has been immediately placed into Section 40 DPA Quarantine and hidden from the public directory while admin@busherianbiasharas.com completes erasure/rectification.";
+        $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+        $spamPayload = [
+            'website' => $_POST['website'] ?? '',
+            'form_ts' => $_POST['form_ts'] ?? 0,
+            'form_nonce' => $_POST['form_nonce'] ?? '',
+            'form_sig' => $_POST['form_sig'] ?? '',
+            'js_interaction_token' => $_POST['js_interaction_token'] ?? '',
+            'submitter_name' => $_POST['requester_name'] ?? 'Data Subject',
+            'name' => 'DPA Section 40 Request',
+            'tagline' => 'Section 40 Takedown',
+            'description' => $reason,
+        ];
+        $spamCheck = AntiSpamGate::verifySubmission($pdo, $spamPayload, $clientIp, 'dpa_takedown');
+
+        if (!$spamCheck['passed']) {
+            if ($spamCheck['silent_drop']) {
+                // Silent 200 drop for bots/rate-limits without quarantining the business!
+                $message = 'Your Section 40 request has been logged for review.';
+            } else {
+                $error = 'Security verification failed (' . $spamCheck['reason'] . '). Please reload and try again.';
+            }
+        } elseif ($bizId <= 0 || !filter_var($requesterEmail, FILTER_VALIDATE_EMAIL) || $reason === '') {
+            $error = 'Please provide the Business ID, your email address, and the reason for your Section 40 request.';
+        } else {
+            VettingPurger::quarantineBusinessDpa($pdo, $bizId);
+            Mailer::enqueueAndSend(
+                $pdo,
+                Database::env('ADMIN_EMAIL', 'admin@busherianbiasharas.com'),
+                "[DPA Section 40 Quarantine] Business #{$bizId} Quarantined",
+                "<p>Business #{$bizId} has been placed in instant <code>quarantined_dpa</code> state by "
+                . htmlspecialchars(AntiSpamGate::sanitizeHeaderValue($requesterEmail), ENT_QUOTES, 'UTF-8') . ".</p><p>Reason: "
+                . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . "</p>",
+                $requesterEmail
+            );
+            $message = "Business #{$bizId} has been immediately placed into Section 40 DPA Quarantine and hidden from the public directory while admin@busherianbiasharas.com completes erasure/rectification.";
+        }
     }
 }
 
@@ -81,6 +104,17 @@ $businesses = $pdo->query("SELECT id, name, city_county FROM businesses WHERE st
 
     <form method="POST" action="/takedown.php" style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:1.5rem;">
       <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+      <input type="hidden" name="form_ts" value="<?= (int)$tokens['form_ts'] ?>">
+      <input type="hidden" name="form_nonce" value="<?= htmlspecialchars($tokens['form_nonce'], ENT_QUOTES, 'UTF-8') ?>">
+      <input type="hidden" name="form_sig" value="<?= htmlspecialchars($tokens['form_sig'], ENT_QUOTES, 'UTF-8') ?>">
+      <input type="hidden" name="js_interaction_token" id="js_interaction_token" value="">
+
+      <!-- Layer 1 Anti-Spam: Disguised Text Honeypot -->
+      <div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
+        <label for="td_website_ref">Website Reference</label>
+        <input type="text" id="td_website_ref" name="website" value="" tabindex="-1" autocomplete="nope">
+      </div>
+
       <h2 style="margin-top:0;color:#7B1113;">Request Immediate Listing Quarantine or Erasure (DPA s.40)</h2>
       <p style="font-size:0.88rem;color:#4B5563;">
         Submitting this form immediately transitions the selected listing to <code>quarantined_dpa</code> (removing it from public display and search APIs) and notifies <code>admin@busherianbiasharas.com</code>.
@@ -99,6 +133,11 @@ $businesses = $pdo->query("SELECT id, name, city_county FROM businesses WHERE st
       </div>
 
       <div style="margin-bottom:0.9rem;">
+        <label for="requester_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your Full Name *</label>
+        <input type="text" id="requester_name" name="requester_name" class="input-control" required placeholder="Jane Wanjiku">
+      </div>
+
+      <div style="margin-bottom:0.9rem;">
         <label for="requester_email" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your Email Address *</label>
         <input type="email" id="requester_email" name="requester_email" class="input-control" required placeholder="you@domain.co.ke">
       </div>
@@ -111,5 +150,17 @@ $businesses = $pdo->query("SELECT id, name, city_county FROM businesses WHERE st
       <button type="submit" class="btn btn-crimson">Immediately Quarantine Listing</button>
     </form>
   </main>
+
+  <script>
+    (function () {
+      const tokenEl = document.getElementById('js_interaction_token');
+      const mark = () => {
+        if (tokenEl && !tokenEl.value) tokenEl.value = 'human_verified_' + Date.now();
+      };
+      ['focusin', 'keydown', 'pointerdown', 'touchstart'].forEach(ev => {
+        document.addEventListener(ev, mark, { once: true, passive: true });
+      });
+    })();
+  </script>
 </body>
 </html>

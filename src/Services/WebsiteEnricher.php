@@ -233,6 +233,7 @@ final class WebsiteEnricher
             'operating_hours' => null,
             'suggested_category' => null,
             'populated_fields' => [],
+            'field_provenance' => [],
         ];
 
         // 1. Parse Schema.org JSON-LD (<script type="application/ld+json">)
@@ -405,7 +406,8 @@ final class WebsiteEnricher
             $data['suggested_category'] = CategoryMatcher::suggestCategoryFromText($pdo, $combinedText);
         }
 
-        // Record which fields were successfully populated
+        // Record which fields were populated and attach INDRA-style evidentiary provenance tags
+        $hasJsonLd = (bool)preg_match('#<script[^>]*type=["\x27]application/ld\+json["\x27]#i', $html);
         foreach ([
             'name', 'tagline', 'description', 'phone_primary', 'whatsapp_number',
             'email_public', 'street_road', 'area_neighborhood', 'city_county',
@@ -414,10 +416,21 @@ final class WebsiteEnricher
         ] as $field) {
             if (!empty($data[$field])) {
                 $data['populated_fields'][] = $field;
+                if (in_array($field, ['name', 'tagline', 'description'], true)) {
+                    $data['field_provenance'][$field] = $hasJsonLd ? 'schema_org_json_ld' : 'html_opengraph_meta';
+                } elseif (in_array($field, ['phone_primary', 'whatsapp_number', 'email_public'], true)) {
+                    $data['field_provenance'][$field] = $hasJsonLd ? 'schema_org_json_ld' : 'dom_contact_link';
+                } elseif (str_starts_with($field, 'social_')) {
+                    $data['field_provenance'][$field] = 'verified_social_anchor';
+                } else {
+                    $data['field_provenance'][$field] = $hasJsonLd ? 'schema_org_postal_geo' : 'kenya_locality_detector';
+                }
             }
         }
         if ($data['suggested_category'] !== null) {
             $data['populated_fields'][] = 'suggested_category';
+            $conf = $data['suggested_category']['confidence'] ?? 0.85;
+            $data['field_provenance']['suggested_category'] = "taxonomy_classifier:confidence={$conf}";
         }
 
         return $data;

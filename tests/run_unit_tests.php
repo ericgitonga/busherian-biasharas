@@ -8,6 +8,7 @@ putenv('APP_HMAC_SECRET=9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c
 putenv('IP_HASH_SECRET=1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b');
 putenv('CSRF_SECRET=5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e');
 putenv('SIMULATE_EMAILS=yes');
+putenv('ADMIN_ACCESS_TOKEN=test_admin_token_secret_12345');
 
 require_once dirname(__DIR__) . '/src/bootstrap.php';
 
@@ -18,6 +19,7 @@ use BusherianBiasharas\Services\CategoryMatcher;
 use BusherianBiasharas\Services\HoursEngine;
 use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\Mailer;
+use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\VettingPurger;
 use BusherianBiasharas\Services\WebsiteEnricher;
 
@@ -190,7 +192,31 @@ VettingPurger::approveBusiness($pdo, $testBizId);
 $afterCount = (int)$pdo->query("SELECT COUNT(*) FROM business_vetting_queue WHERE business_id = {$testBizId}")->fetchColumn();
 assertTrue($afterCount === 0, 'VettingPurger IMMEDIATELY hard-deletes House, Year Left & School Number upon approval');
 
+
+// 8. Verify Ticket #10: AdminAuth constant-time credential verification
+assertTrue(!AdminAuth::verifyCredentials('wrong_token'), 'AdminAuth rejects invalid admin token');
+assertTrue(AdminAuth::verifyCredentials('test_admin_token_secret_12345'), 'AdminAuth accepts valid admin token in testing');
+
+// 9. Verify Ticket #13: VettingPurger::enforceRetentionCeilings (>30-day storage limitation purge)
+$pdo->exec("
+    INSERT INTO businesses (name, slug, tagline, description, school_badge, sector_id, specialty_id, service_mode, city_county, operating_hours_json, phone_primary, status)
+    VALUES ('Stale Pending Biz', 'stale-pending-biz', 'Tagline', 'Desc', 'AGHS', 1, 2, 'physical', 'Nairobi', '{}', '+254700999888', 'pending')
+");
+$staleBizId = (int)$pdo->lastInsertId();
+$pdo->prepare("
+    INSERT INTO business_vetting_queue (business_id, school_code, house_name, year_left, school_number, submitter_name, submitter_email, submitter_phone, created_at)
+    VALUES (:id, 'AGHS', 'Watson', 2008, '8821', 'Stale Submitter', 'stale@test.co.ke', '+254700999888', '2020-01-01 00:00:00')
+")->execute([':id' => $staleBizId]);
+
+$purgeSummary = VettingPurger::enforceRetentionCeilings($pdo, 30);
+$staleRemaining = (int)$pdo->query("SELECT COUNT(*) FROM business_vetting_queue WHERE business_id = {$staleBizId}")->fetchColumn();
+assertTrue($staleRemaining === 0 && $purgeSummary['vetting_rows_purged'] >= 1, 'VettingPurger::enforceRetentionCeilings purges >30-day abandoned vetting rows');
+
+// 10. Verify Ticket #14: WebsiteEnricher field_provenance tagging
+assertTrue(!empty($enriched['field_provenance']['name']) && !empty($enriched['field_provenance']['suggested_category']), 'WebsiteEnricher attaches INDRA field_provenance tags to auto-filled fields');
+
 @unlink(getenv('DB_SQLITE_PATH'));
+
 
 if ($failed > 0) {
     exit(1);

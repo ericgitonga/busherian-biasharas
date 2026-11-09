@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
+use BusherianBiasharas\Services\AntiSpamGate;
 
 bbiz_send_security_headers(true);
 
@@ -28,6 +29,12 @@ if ($businessId <= 0 || !in_array($eventType, $allowedEvents, true)) {
 
 try {
     $pdo = Database::getConnection();
+    $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+    $rate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'track_click', 30, 120, 500);
+    if (!$rate['allowed']) {
+        echo json_encode(['status' => 'ok', 'rate_limited' => true]);
+        exit;
+    }
     $stmt = $pdo->prepare("INSERT INTO click_events (business_id, event_type) VALUES (:bid, :ev)");
     $stmt->execute([':bid' => $businessId, ':ev' => $eventType]);
     echo json_encode(['status' => 'ok']);
