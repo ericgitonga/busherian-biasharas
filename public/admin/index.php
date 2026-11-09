@@ -17,6 +17,10 @@ VettingPurger::enforceRetentionCeilings($pdo, 30);
 
 $flashMsg = '';
 $flashErr = '';
+if (isset($_GET['added']) && (int)$_GET['added'] > 0) {
+    $addedId = (int)$_GET['added'];
+    $flashMsg = "Business #{$addedId} was added directly and published live to the directory (no verification queue required).";
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrf = trim((string)($_POST['csrf_token'] ?? ''));
@@ -120,7 +124,7 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
         </div>
       </a>
       <nav class="header-actions">
-        <a href="/submit.php" class="btn btn-gold">+ Add Business (URL Auto-Fill)</a>
+        <a href="/admin/add-business.php" class="btn btn-gold">+ Direct Add Business</a>
         <a href="/admin/login.php?logout=1" class="btn btn-outline-light">Sign Out</a>
         <a href="/" class="btn btn-outline-light">&larr; Public Directory</a>
       </nav>
@@ -149,6 +153,28 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
       </div>
       <span class="badge-verified">DPA Storage Limitation Enforced</span>
     </div>
+
+    <!-- QUICK DIRECT-ADD KNOWN BUSHERIAN BUSINESS FROM URL (BYPASSES VETTING QUEUE) -->
+    <section class="autofill-box" style="margin-bottom:2rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-bottom:0.5rem;">
+        <div>
+          <h2 style="margin:0;font-size:1.08rem;color:#7B1113;">⚡ Direct-Add Known Busherian Business (Skip Verification Process)</h2>
+          <p style="margin:0.2rem 0 0 0;font-size:0.83rem;color:#4B5563;">
+            Already know the business is Busherian? Paste its website URL below to auto-extract its details and publish straight to the directory, or add manually if it has no website.
+          </p>
+        </div>
+        <a href="/admin/add-business.php" class="btn btn-outline" style="font-size:0.82rem;">+ Add Manually (No Website)</a>
+      </div>
+      <form method="GET" action="/admin/add-business.php" style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
+        <input type="url" name="url" class="input-control" style="flex:1;min-width:240px;" placeholder="https://www.knownbusherianbusiness.co.ke" required>
+        <select name="school" class="select-control" style="width:auto;">
+          <option value="AHS">AHS</option>
+          <option value="AGHS">AGHS</option>
+          <option value="BOTH">AHS &amp; AGHS</option>
+        </select>
+        <button type="submit" class="btn btn-crimson">✨ Fetch from URL &amp; Review</button>
+      </form>
+    </section>
 
     <!-- SECTION 1: PENDING VETTING QUEUE -->
     <section style="margin-bottom:2.25rem;">

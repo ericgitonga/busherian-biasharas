@@ -212,6 +212,7 @@ final class VettingPurger
      */
     public static function updateBusiness(PDO $pdo, int $businessId, array $data): void
     {
+        [$resolvedLat, $resolvedLng] = self::resolveCoordsFromAdminData($data);
         $stmt = $pdo->prepare("
             UPDATE businesses SET
                 name = :name,
@@ -273,8 +274,8 @@ final class VettingPurger
             ':city_county' => trim((string)($data['city_county'] ?? 'Nairobi')) ?: 'Nairobi',
             ':landmark_directions' => trim((string)($data['landmark_directions'] ?? '')) ?: null,
             ':plus_code' => trim((string)($data['plus_code'] ?? '')) ?: null,
-            ':latitude' => isset($data['latitude']) && $data['latitude'] !== '' ? (float)$data['latitude'] : null,
-            ':longitude' => isset($data['longitude']) && $data['longitude'] !== '' ? (float)$data['longitude'] : null,
+            ':latitude' => $resolvedLat,
+            ':longitude' => $resolvedLng,
             ':google_maps_url' => trim((string)($data['google_maps_url'] ?? '')) ?: null,
             ':phone_primary' => trim((string)$data['phone_primary']),
             ':whatsapp_number' => trim((string)($data['whatsapp_number'] ?? '')) ?: null,
@@ -294,5 +295,162 @@ final class VettingPurger
         if (in_array($data['status'] ?? 'approved', ['approved', 'rejected', 'quarantined_dpa'], true)) {
             $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")->execute([':id' => $businessId]);
         }
+    }
+
+    /**
+     * Resolve coordinates automatically from explicit lat/lng, Google Maps URL, or Plus Code.
+     */
+    private static function resolveCoordsFromAdminData(array $data): array
+    {
+        $lat = (isset($data['latitude']) && trim((string)$data['latitude']) !== '') ? (float)$data['latitude'] : null;
+        $lng = (isset($data['longitude']) && trim((string)$data['longitude']) !== '') ? (float)$data['longitude'] : null;
+
+        if ($lat === null || $lng === null) {
+            foreach (['google_maps_url', 'plus_code'] as $field) {
+                $raw = trim((string)($data[$field] ?? ''));
+                if ($raw !== '') {
+                    $parsed = LocationEngine::parseCoordinatesFromInput($raw);
+                    if ($parsed !== null) {
+                        $lat = $parsed['latitude'];
+                        $lng = $parsed['longitude'];
+                        break;
+                    }
+                }
+            }
+        }
+        return [$lat, $lng];
+    }
+
+    /**
+     * Generate a unique URL-safe slug for a business name.
+     */
+    public static function generateUniqueSlug(PDO $pdo, string $name): string
+    {
+        $base = strtolower(trim(preg_replace('/[^a-z0-9]+/i', '-', $name) ?? '', '-'));
+        if ($base === '') {
+            $base = 'biashara-' . time();
+        }
+        $slug = $base;
+        $suffix = 2;
+        $chk = $pdo->prepare("SELECT COUNT(*) FROM businesses WHERE slug = :slug");
+        while (true) {
+            $chk->execute([':slug' => $slug]);
+            if ((int)$chk->fetchColumn() === 0) {
+                return $slug;
+            }
+            $slug = $base . '-' . $suffix;
+            $suffix++;
+        }
+    }
+
+    /**
+     * Directly create and publish a known Busherian business from the Admin Console
+     * WITHOUT going through the public alumni verification queue.
+     */
+    public static function createBusinessDirectly(PDO $pdo, array $data): int
+    {
+        $name = trim((string)($data['name'] ?? ''));
+        if ($name === '') {
+            throw new \InvalidArgumentException('Business Name is required.');
+        }
+
+        $tagline = trim((string)($data['tagline'] ?? ''));
+        $description = trim((string)($data['description'] ?? ''));
+        if ($tagline === '' && $description !== '') {
+            $tagline = mb_substr($description, 0, 160);
+        } elseif ($description === '' && $tagline !== '') {
+            $description = $tagline;
+        } elseif ($tagline === '' && $description === '') {
+            $tagline = $name;
+            $description = $name;
+        }
+
+        $slug = self::generateUniqueSlug($pdo, $name);
+        [$lat, $lng] = self::resolveCoordsFromAdminData($data);
+        $plusCode = trim((string)($data['plus_code'] ?? '')) ?: null;
+        if ($plusCode === null && $lat !== null && $lng !== null) {
+            $plusCode = LocationEngine::encodePlusCode($lat, $lng);
+        }
+
+        $defaultHours = json_encode([
+            'mon' => [['08:00', '17:30']],
+            'tue' => [['08:00', '17:30']],
+            'wed' => [['08:00', '17:30']],
+            'thu' => [['08:00', '17:30']],
+            'fri' => [['08:00', '17:30']],
+            'sat' => [['09:00', '14:00']],
+            'sun' => [],
+        ]);
+
+        $status = in_array($data['status'] ?? 'approved', ['approved', 'quarantined_dpa', 'pending', 'rejected'], true)
+            ? (string)$data['status']
+            : 'approved';
+
+        $stmt = $pdo->prepare("
+            INSERT INTO businesses (
+                name, slug, tagline, description, school_badge,
+                sector_id, specialty_id, service_mode, alumni_perk,
+                b2b_ready, accepts_lpo, regulator_name, regulator_license,
+                branch_name, building_name, floor_suite, street_road,
+                area_neighborhood, city_county, landmark_directions,
+                plus_code, latitude, longitude, google_maps_url,
+                operating_hours_json, phone_primary, whatsapp_number,
+                email_public, website_url, social_instagram, social_linkedin,
+                social_x, social_facebook, social_tiktok, social_youtube,
+                status, verified_at, last_confirmed_at
+            ) VALUES (
+                :name, :slug, :tagline, :description, :school_badge,
+                :sector_id, :specialty_id, :service_mode, :alumni_perk,
+                :b2b_ready, :accepts_lpo, :regulator_name, :regulator_license,
+                :branch_name, :building_name, :floor_suite, :street_road,
+                :area_neighborhood, :city_county, :landmark_directions,
+                :plus_code, :latitude, :longitude, :google_maps_url,
+                :operating_hours_json, :phone_primary, :whatsapp_number,
+                :email_public, :website_url, :social_instagram, :social_linkedin,
+                :social_x, :social_facebook, :social_tiktok, :social_youtube,
+                :status, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+        ");
+
+        $stmt->execute([
+            ':name' => $name,
+            ':slug' => $slug,
+            ':tagline' => mb_substr($tagline, 0, 180),
+            ':description' => $description,
+            ':school_badge' => in_array($data['school_badge'] ?? '', ['AHS', 'AGHS', 'BOTH'], true) ? $data['school_badge'] : 'AHS',
+            ':sector_id' => max(1, (int)($data['sector_id'] ?? 1)),
+            ':specialty_id' => max(1, (int)($data['specialty_id'] ?? 1)),
+            ':service_mode' => in_array($data['service_mode'] ?? '', ['physical', 'hybrid', 'online'], true) ? $data['service_mode'] : 'physical',
+            ':alumni_perk' => trim((string)($data['alumni_perk'] ?? '')) ?: null,
+            ':b2b_ready' => !empty($data['b2b_ready']) ? 1 : 0,
+            ':accepts_lpo' => !empty($data['accepts_lpo']) ? 1 : 0,
+            ':regulator_name' => trim((string)($data['regulator_name'] ?? '')) ?: null,
+            ':regulator_license' => trim((string)($data['regulator_license'] ?? '')) ?: null,
+            ':branch_name' => trim((string)($data['branch_name'] ?? '')) ?: null,
+            ':building_name' => trim((string)($data['building_name'] ?? '')) ?: null,
+            ':floor_suite' => trim((string)($data['floor_suite'] ?? '')) ?: null,
+            ':street_road' => trim((string)($data['street_road'] ?? '')) ?: null,
+            ':area_neighborhood' => trim((string)($data['area_neighborhood'] ?? '')) ?: null,
+            ':city_county' => trim((string)($data['city_county'] ?? 'Nairobi')) ?: 'Nairobi',
+            ':landmark_directions' => trim((string)($data['landmark_directions'] ?? '')) ?: null,
+            ':plus_code' => $plusCode,
+            ':latitude' => $lat,
+            ':longitude' => $lng,
+            ':google_maps_url' => trim((string)($data['google_maps_url'] ?? '')) ?: null,
+            ':operating_hours_json' => trim((string)($data['operating_hours_json'] ?? '')) ?: $defaultHours,
+            ':phone_primary' => trim((string)($data['phone_primary'] ?? '')),
+            ':whatsapp_number' => trim((string)($data['whatsapp_number'] ?? '')) ?: null,
+            ':email_public' => trim((string)($data['email_public'] ?? '')) ?: null,
+            ':website_url' => trim((string)($data['website_url'] ?? '')) ?: null,
+            ':social_instagram' => trim((string)($data['social_instagram'] ?? '')) ?: null,
+            ':social_linkedin' => trim((string)($data['social_linkedin'] ?? '')) ?: null,
+            ':social_x' => trim((string)($data['social_x'] ?? '')) ?: null,
+            ':social_facebook' => trim((string)($data['social_facebook'] ?? '')) ?: null,
+            ':social_tiktok' => trim((string)($data['social_tiktok'] ?? '')) ?: null,
+            ':social_youtube' => trim((string)($data['social_youtube'] ?? '')) ?: null,
+            ':status' => $status,
+        ]);
+
+        return (int)$pdo->lastInsertId();
     }
 }

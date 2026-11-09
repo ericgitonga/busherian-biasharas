@@ -165,8 +165,8 @@ $tokens = AntiSpamGate::generateFormTokens();
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.9rem;margin-top:0.9rem;">
         <div>
-          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Phone Primary *</label>
-          <input type="text" id="phone_primary" name="phone_primary" class="input-control" value="<?= htmlspecialchars((string)$biz['phone_primary'], ENT_QUOTES, 'UTF-8') ?>" required>
+          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Primary Phone</label>
+          <input type="text" id="phone_primary" name="phone_primary" class="input-control" value="<?= htmlspecialchars((string)$biz['phone_primary'], ENT_QUOTES, 'UTF-8') ?>">
         </div>
         <div>
           <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">WhatsApp Number</label>
@@ -234,6 +234,30 @@ $tokens = AntiSpamGate::generateFormTokens();
           <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">TikTok URL</label>
           <input type="url" id="social_tiktok" name="social_tiktok" class="input-control" value="<?= htmlspecialchars((string)($biz['social_tiktok'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
         </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.9rem;margin-top:0.9rem;">
+        <div>
+          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Google Maps URL (Auto-extracts Pin)</label>
+          <input type="url" name="google_maps_url" class="input-control" value="<?= htmlspecialchars((string)($biz['google_maps_url'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+        </div>
+        <div>
+          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Plus Code</label>
+          <input type="text" name="plus_code" class="input-control" value="<?= htmlspecialchars((string)($biz['plus_code'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+        </div>
+        <div>
+          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Landmark / Directions</label>
+          <input type="text" name="landmark_directions" class="input-control" value="<?= htmlspecialchars((string)($biz['landmark_directions'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+        </div>
+      </div>
+
+      <div style="display:flex;gap:1.25rem;flex-wrap:wrap;margin-top:0.9rem;">
+        <label style="font-size:0.85rem;font-weight:600;display:flex;align-items:center;gap:0.4rem;">
+          <input type="checkbox" name="b2b_ready" value="1" <?= !empty($biz['b2b_ready']) ? 'checked' : '' ?>> B2B Corporate Ready
+        </label>
+        <label style="font-size:0.85rem;font-weight:600;display:flex;align-items:center;gap:0.4rem;">
+          <input type="checkbox" name="accepts_lpo" value="1" <?= !empty($biz['accepts_lpo']) ? 'checked' : '' ?>> Accepts Corporate / Institutional LPOs
+        </label>
       </div>
 
       <div style="margin-top:1.35rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">

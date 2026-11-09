@@ -126,6 +126,8 @@ def test_privacy_and_dpa_takedown_pages():
     # Verify Ticket #10: /admin/index.php returns 401 when unauthenticated and does not leak pending vetting queue
     st_adm, html_adm, _ = _request("/admin/index.php")
     assert st_adm == 401, f"Expected 401 on unauthenticated /admin/index.php, got {st_adm}"
+    st_add, _, _ = _request("/admin/add-business.php")
+    assert st_add == 401, f"Expected 401 on unauthenticated /admin/add-business.php, got {st_add}"
     assert "Admin Sign In" in html_adm
     assert "Temporary Vetting Credentials" not in html_adm
 
