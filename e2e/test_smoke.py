@@ -98,6 +98,7 @@ def test_website_autofill_api_and_ssrf_protection():
     assert extracted["area_neighborhood"] == "Upper Hill"
     assert extracted["suggested_category"] is not None
     assert "Advocates" in extracted["suggested_category"]["specialty_name"]
+    assert "field_provenance" in extracted and "name" in extracted["field_provenance"]
 
     # 2. Test SSRF protection blocks internal/metadata URLs
     for bad_url in ["http://127.0.0.1/admin", "http://169.254.169.254/latest/meta-data/"]:
@@ -119,6 +120,14 @@ def test_privacy_and_dpa_takedown_pages():
     st_td, html_td, _ = _request("/takedown.php")
     assert st_td == 200
     assert "Section 40" in html_td
+    assert 'name="form_sig"' in html_td
+
+    # Verify Ticket #10: /admin/index.php returns 401 when unauthenticated and does not leak pending vetting queue
+    st_adm, html_adm, _ = _request("/admin/index.php")
+    assert st_adm == 401, f"Expected 401 on unauthenticated /admin/index.php, got {st_adm}"
+    assert "Admin Sign In" in html_adm
+    assert "Temporary Vetting Credentials" not in html_adm
+
 
 
 TESTS = [

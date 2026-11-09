@@ -208,7 +208,7 @@ final class AntiSpamGate
         return hash_hmac('sha256', trim($rawIp), $salt);
     }
 
-    public static function checkAndRecordRateLimit(PDO $pdo, string $rawIp, string $actionType): array
+    public static function checkAndRecordRateLimit(PDO $pdo, string $rawIp, string $actionType, int $limit15m = 2, int $limit24h = 5, int $limitGlobal1h = 15): array
     {
         $now = time();
         $ipHmac = self::pseudonymizeIp($rawIp);
@@ -217,24 +217,24 @@ final class AntiSpamGate
         $pdo->prepare("DELETE FROM rate_limits WHERE created_at < :cutoff")
             ->execute([':cutoff' => $now - 86400]);
 
-        // Per-IP 15-minute window (<= 2 submissions / 15m)
+        // Per-IP 15-minute window
         $stmt15m = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ip AND action_type = :act AND created_at >= :since");
         $stmt15m->execute([':ip' => $ipHmac, ':act' => $actionType, ':since' => $now - 900]);
-        if ((int)$stmt15m->fetchColumn() >= 2) {
+        if ((int)$stmt15m->fetchColumn() >= $limit15m) {
             return ['allowed' => false, 'reason' => 'layer5_ip_rate_limit_15m'];
         }
 
-        // Per-IP 24-hour window (<= 5 submissions / 24h)
+        // Per-IP 24-hour window
         $stmt24h = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ip AND action_type = :act AND created_at >= :since");
         $stmt24h->execute([':ip' => $ipHmac, ':act' => $actionType, ':since' => $now - 86400]);
-        if ((int)$stmt24h->fetchColumn() >= 5) {
+        if ((int)$stmt24h->fetchColumn() >= $limit24h) {
             return ['allowed' => false, 'reason' => 'layer5_ip_rate_limit_24h'];
         }
 
-        // Global circuit-breaker (<= 15 submissions / 1h across all IPs)
+        // Global circuit-breaker (1h across all IPs)
         $stmtGlobal = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE action_type = :act AND created_at >= :since");
         $stmtGlobal->execute([':act' => $actionType, ':since' => $now - 3600]);
-        if ((int)$stmtGlobal->fetchColumn() >= 15) {
+        if ((int)$stmtGlobal->fetchColumn() >= $limitGlobal1h) {
             return ['allowed' => false, 'reason' => 'layer5_global_circuit_breaker_1h'];
         }
 

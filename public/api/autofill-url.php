@@ -37,6 +37,13 @@ if ($targetUrl === '') {
 
 try {
     $pdo = Database::getConnection();
+    $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+    $rate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'autofill_url', 10, 30, 60);
+    if (!$rate['allowed']) {
+        http_response_code(429);
+        echo json_encode(['status' => 'error', 'message' => 'Rate limit exceeded for URL auto-fill. Please wait a few minutes.']);
+        exit;
+    }
 
     // First run the SSRF validation on the URL (always enforced, even in testing!)
     // Support deterministic offline HTML fixture parsing for *.busherian-demo.co.ke so users/tests can test instant extraction even offline
@@ -102,6 +109,6 @@ try {
     http_response_code(422);
     echo json_encode([
         'status' => 'error',
-        'message' => 'Could not extract details from that website: ' . $e->getMessage(),
+        'message' => 'Could not reach or extract details from that website URL. Please fill the fields manually.',
     ]);
 }
