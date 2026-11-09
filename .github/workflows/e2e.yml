@@ -1,0 +1,38 @@
+name: E2E
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Start PHP built-in web server and run E2E suite
+        env:
+          APP_ENV: testing
+          DB_DRIVER: sqlite
+          DB_SQLITE_PATH: storage/e2e_test.sqlite
+          APP_HMAC_SECRET: 9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b2a9f8e
+          IP_HASH_SECRET: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b
+          CSRF_SECRET: 5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e
+          SIMULATE_EMAILS: "yes"
+          BASE_URL: "http://127.0.0.1:8080"
+        run: |
+          rm -f storage/e2e_test.sqlite
+          php -S 127.0.0.1:8080 -t public > /tmp/php-server.log 2>&1 &
+          SERVER_PID=$!
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:8080/api/health.php > /dev/null 2>&1; then
+              break
+            fi
+            sleep 0.5
+          done
+          python e2e/run.py
+          kill $SERVER_PID || true
