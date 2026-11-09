@@ -25,7 +25,7 @@ def test_health_endpoint():
     payload = json.loads(body)
     assert payload["status"] == "ok"
     assert payload["categories_count"] >= 114
-    assert payload["approved_businesses_count"] >= 12
+    assert payload["approved_businesses_count"] == 11
 
 
 def test_directory_homepage_and_zero_vetting_exposure():
@@ -48,7 +48,8 @@ def test_businesses_api_synonym_and_spatial_search():
     assert data["status"] == "ok"
     assert data["count"] >= 1
     first = data["businesses"][0]
-    assert any(b["name"] in ("Mjenzi", "Prescott Engineering Solutions") for b in data["businesses"])
+    assert any(b["name"] == "Prescott Engineering Solutions" for b in data["businesses"])
+    assert all(b["name"] != "Mjenzi" for b in data["businesses"])
     # Verify zero vetting keys in API payload
     for forbidden_key in ["house_name", "year_left", "school_number", "submitter_email"]:
         assert forbidden_key not in first

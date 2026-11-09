@@ -75,7 +75,7 @@ final class Mailer
                 <p style='color:#4B5563;margin-top:0;'>Submitted by <strong>{$submitterName}</strong> ({$submitterEmail})</p>
                 <div style='background:#F0FDF4;border:1px solid #114B3E;border-radius:8px;padding:14px;margin:16px 0;'>
                     <h3 style='margin:0 0 8px 0;color:#114B3E;'>One-Time Alumni Vetting Credentials (Auto-Purged on Review)</h3>
-                    <p style='margin:4px 0;'><strong>School:</strong> {$school} — Bush</p>
+                    <p style='margin:4px 0;'><strong>School:</strong> {$school}</p>
                     <p style='margin:4px 0;'><strong>House:</strong> {$house}</p>
                     <p style='margin:4px 0;'><strong>Year Left:</strong> {$yearLeft}</p>
                     <p style='margin:4px 0;'><strong>School Number:</strong> {$schoolNum}</p>

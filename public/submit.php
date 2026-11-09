@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $submitterPhone = WebsiteEnricher::normalizeKenyanPhone((string)($_POST['submitter_phone'] ?? ''));
 
             if (!in_array($schoolCode, ['AHS', 'AGHS'], true)) {
-                $errors[] = 'Please select your School (AHS — Bush or AGHS — Bush).';
+                $errors[] = 'Please select your School (AHS or AGHS).';
             } elseif (!Houses::isValidHouse($schoolCode, $houseName)) {
                 $errors[] = 'Please select a valid confirmed House for your school.';
             }
@@ -405,8 +405,8 @@ $aghsHouses = Houses::AGHS_HOUSES;
           <div>
             <label for="school_code" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">School *</label>
             <select id="school_code" name="school_code" class="select-control" required>
-              <option value="AHS">AHS — Bush (Alliance High School)</option>
-              <option value="AGHS">AGHS — Bush (Alliance Girls High School)</option>
+              <option value="AHS">AHS (Alliance High School)</option>
+              <option value="AGHS">AGHS (Alliance Girls High School)</option>
             </select>
           </div>
 

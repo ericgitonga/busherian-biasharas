@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.3.0] - 2026-11-10
+
+### Added
+
+- `public/admin/index.php`, `public/admin/edit-business.php`, `src/Services/VettingPurger.php`: full Admin Business Management interface allowing administrators to search, edit (including 1-click website URL re-extraction), unpublish/take down, or permanently delete any existing business record (closes #20)
+
+### Changed
+
+- `public/index.php`, `public/assets/js/directory.js`, `public/assets/vendor/leaflet/`, `public/submit.php`, `public/admin/edit-business.php`: replaced synthetic SVG grid map with a real interactive Leaflet + OpenStreetMap street/feature/place-name map with custom Busherian pins, added an explicit `✕` clear-search button inside the search input, and simplified school filter pills and badges to `AHS` and `AGHS` (closes #20)
+
+### Removed
+
+- `src/Services/CategoryMatcher.php`: removed Mjenzi from the directory after post-verification review confirmed the submitted URL belonged to a different company (closes #20)
+
+tag: `v0.3.0`
+
 ## [0.2.1] - 2026-11-10
 
 ### Changed

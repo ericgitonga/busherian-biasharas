@@ -20,6 +20,7 @@
 
   const els = {
     searchInput: document.getElementById('search-q'),
+    searchClearBtn: document.getElementById('btn-clear-search'),
     sectorSelect: document.getElementById('filter-sector'),
     specialtySelect: document.getElementById('filter-specialty'),
     radiusSelect: document.getElementById('filter-radius'),
@@ -98,7 +99,7 @@
 
     els.cardsGrid.innerHTML = state.businesses.map(biz => {
       const schoolClass = biz.school_badge === 'AGHS' ? 'badge-school-aghs' : 'badge-school-ahs';
-      const schoolLabel = biz.school_badge === 'BOTH' ? 'AHS & AGHS — Bush' : `${biz.school_badge} — Bush`;
+      const schoolLabel = biz.school_badge === 'BOTH' ? 'AHS & AGHS' : `${biz.school_badge}`;
       const distBadge = (biz.distance_km !== null && biz.distance_km !== undefined)
         ? `<span class="badge-distance">📍 ${Number(biz.distance_km).toFixed(1)} km away</span>`
         : `<span style="font-size:0.75rem;color:#6B7280;">📍 ${escapeHtml(biz.area_neighborhood || biz.city_county)}</span>`;
@@ -135,74 +136,99 @@
     }).join('');
   }
 
+  let leafletMap = null;
+  let markersLayer = null;
+  let mapOverlayBadge = null;
+
   /**
-   * Self-hosted Interactive Spatial Map (Zero External CDN Requests on Load — DPA s.25(h)/48 Compliant)
+   * Real Interactive Spatial Map powered by self-hosted Leaflet + OpenStreetMap Road & Feature Tiles
    */
   function renderInteractiveMap() {
     if (!els.mapCanvas) return;
     const pinned = state.businesses.filter(b => b.latitude !== null && b.longitude !== null);
-    if (pinned.length === 0) {
-      els.mapCanvas.innerHTML = '<div style="display:flex;height:100%;align-items:center;justify-content:center;color:#6B7280;padding:1rem;text-align:center;">No map pins for current filter selection.</div>';
+
+    if (typeof window.L === 'undefined') {
+      els.mapCanvas.innerHTML = '<div style="display:flex;height:100%;align-items:center;justify-content:center;color:#6B7280;padding:1rem;text-align:center;">Interactive map loading...</div>';
       return;
     }
 
-    const lats = pinned.map(b => b.latitude);
-    const lngs = pinned.map(b => b.longitude);
-    if (state.userLat !== null && state.userLng !== null) {
-      lats.push(state.userLat);
-      lngs.push(state.userLng);
+    if (!leafletMap) {
+      els.mapCanvas.innerHTML = '';
+      leafletMap = window.L.map(els.mapCanvas, {
+        center: [-1.286389, 36.817223],
+        zoom: 12,
+        scrollWheelZoom: true,
+        zoomControl: true,
+      });
+
+      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
+      }).addTo(leafletMap);
+
+      markersLayer = window.L.layerGroup().addTo(leafletMap);
+
+      mapOverlayBadge = document.createElement('div');
+      mapOverlayBadge.style.cssText = 'position:absolute;top:10px;right:12px;background:rgba(255,255,255,0.95);padding:5px 11px;border-radius:8px;font-size:0.74rem;font-weight:700;color:#114B3E;border:1px solid #D1D5DB;z-index:1000;box-shadow:0 2px 6px rgba(0,0,0,0.12);pointer-events:none;';
+      els.mapCanvas.appendChild(mapOverlayBadge);
     }
 
-    const minLat = Math.min(...lats) - 0.015;
-    const maxLat = Math.max(...lats) + 0.015;
-    const minLng = Math.min(...lngs) - 0.015;
-    const maxLng = Math.max(...lngs) + 0.015;
+    markersLayer.clearLayers();
 
-    const project = (lat, lng) => {
-      const x = ((lng - minLng) / Math.max(0.0001, maxLng - minLng)) * 84 + 8;
-      const y = (1 - (lat - minLat) / Math.max(0.0001, maxLat - minLat)) * 80 + 10;
-      return { x: Math.max(6, Math.min(94, x)), y: Math.max(8, Math.min(92, y)) };
-    };
-
-    let userMarkerHtml = '';
-    if (state.userLat !== null && state.userLng !== null) {
-      const up = project(state.userLat, state.userLng);
-      userMarkerHtml = `
-        <div style="position:absolute;left:${up.x}%;top:${up.y}%;transform:translate(-50%,-50%);width:140px;height:140px;border:2px dashed rgba(17,75,62,0.45);border-radius:50%;background:rgba(17,75,62,0.06);pointer-events:none;"></div>
-        <div title="Your Current Location" style="position:absolute;left:${up.x}%;top:${up.y}%;transform:translate(-50%,-50%);width:16px;height:16px;background:#2563EB;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);z-index:5;"></div>
-      `;
+    if (mapOverlayBadge) {
+      mapOverlayBadge.textContent = `📍 ${pinned.length} ${pinned.length === 1 ? 'Location' : 'Locations'} • Click any pin for details & directions`;
     }
 
-    const pinsHtml = pinned.map((b, idx) => {
-      const pt = project(b.latitude, b.longitude);
+    const boundsPoints = [];
+
+    if (state.userLat !== null && state.userLng !== null) {
+      const radiusMeters = (Number(state.radiusKm) || 2) * 1000;
+      window.L.circle([state.userLat, state.userLng], {
+        radius: radiusMeters,
+        color: '#114B3E',
+        weight: 2,
+        dashArray: '6, 6',
+        fillColor: '#114B3E',
+        fillOpacity: 0.08,
+      }).addTo(markersLayer);
+
+      const userDot = window.L.circleMarker([state.userLat, state.userLng], {
+        radius: 8,
+        color: '#ffffff',
+        weight: 3,
+        fillColor: '#2563EB',
+        fillOpacity: 1,
+      }).addTo(markersLayer);
+      userDot.bindTooltip('Your Current Location', { direction: 'top', offset: [0, -8] });
+      boundsPoints.push([state.userLat, state.userLng]);
+    }
+
+    pinned.forEach((b) => {
       const isOpen = b.hours_status && b.hours_status.is_open;
       const bg = isOpen ? '#114B3E' : '#7B1113';
-      return `
-        <button type="button" class="map-pin-btn" data-biz-id="${b.id}"
-          style="position:absolute;left:${pt.x}%;top:${pt.y}%;transform:translate(-50%,-100%);background:${bg};color:#fff;border:2px solid #D4AF37;border-radius:999px;padding:0.28rem 0.65rem;font-size:0.74rem;font-weight:700;cursor:pointer;box-shadow:0 4px 10px rgba(0,0,0,0.22);white-space:nowrap;z-index:${10 + idx};">
-          📍 ${escapeHtml(b.name.length > 22 ? b.name.slice(0, 20) + '…' : b.name)}
-        </button>
-      `;
-    }).join('');
+      const label = b.name.length > 24 ? b.name.slice(0, 22) + '…' : b.name;
+      const area = b.area_neighborhood || b.city_county || '';
 
-    els.mapCanvas.innerHTML = `
-      <svg width="100%" height="100%" viewBox="0 0 600 540" preserveAspectRatio="none" style="position:absolute;inset:0;background:#EDF2F7;">
-        <defs>
-          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#CBD5E1" stroke-width="0.7"/>
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#grid)" />
-        <path d="M 0 160 Q 240 210 600 110" stroke="#CBD5E1" stroke-width="6" fill="none"/>
-        <path d="M 110 0 Q 290 270 460 540" stroke="#CBD5E1" stroke-width="5" fill="none"/>
-        <path d="M 0 390 Q 310 310 600 420" stroke="#E2E8F0" stroke-width="8" fill="none"/>
-      </svg>
-      <div style="position:absolute;top:10px;left:12px;background:rgba(255,255,255,0.92);padding:4px 10px;border-radius:6px;font-size:0.73rem;font-weight:600;color:#114B3E;border:1px solid #D1D5DB;z-index:20;">
-        📍 ${pinned.length} Locations • Click any pin for details & directions
-      </div>
-      ${userMarkerHtml}
-      ${pinsHtml}
-    `;
+      const icon = window.L.divIcon({
+        className: 'bbiz-leaflet-pin',
+        html: `<div class="bbiz-pin-pill" style="background:${bg};" title="${escapeHtml(b.name)} — ${escapeHtml(area)}">📍 ${escapeHtml(label)}</div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      });
+
+      const marker = window.L.marker([b.latitude, b.longitude], { icon }).addTo(markersLayer);
+      marker.on('click', () => {
+        openBusinessModal(b.id);
+      });
+      boundsPoints.push([b.latitude, b.longitude]);
+    });
+
+    if (boundsPoints.length === 1) {
+      leafletMap.setView(boundsPoints[0], 15, { animate: true });
+    } else if (boundsPoints.length > 1) {
+      const bounds = window.L.latLngBounds(boundsPoints);
+      leafletMap.fitBounds(bounds, { padding: [45, 45], maxZoom: 15, animate: true });
+    }
   }
 
   function trackClick(businessId, eventType) {
@@ -256,7 +282,7 @@
       </a>
     `).join('');
 
-    const schoolLabel = biz.school_badge === 'BOTH' ? 'AHS & AGHS — Bush' : `${biz.school_badge} — Bush`;
+    const schoolLabel = biz.school_badge === 'BOTH' ? 'AHS & AGHS' : `${biz.school_badge}`;
 
     els.modalContent.innerHTML = `
       <div class="modal-header">
@@ -372,11 +398,28 @@
   // Wire Event Listeners
   if (els.searchInput) {
     let timer = null;
+    const syncClearBtn = () => {
+      if (els.searchClearBtn) {
+        els.searchClearBtn.style.display = els.searchInput.value.length > 0 ? 'inline-flex' : 'none';
+      }
+    };
     els.searchInput.addEventListener('input', (e) => {
+      syncClearBtn();
       state.searchQuery = e.target.value.trim();
       clearTimeout(timer);
       timer = setTimeout(fetchBusinesses, 220);
     });
+    if (els.searchClearBtn) {
+      els.searchClearBtn.addEventListener('click', () => {
+        els.searchInput.value = '';
+        syncClearBtn();
+        state.searchQuery = '';
+        clearTimeout(timer);
+        fetchBusinesses();
+        els.searchInput.focus();
+      });
+    }
+    syncClearBtn();
   }
 
   if (els.sectorSelect) {
@@ -518,6 +561,7 @@
     });
     btnMap.addEventListener('click', () => {
       paneMap.classList.remove('mobile-hidden');
+      if (leafletMap) setTimeout(() => leafletMap.invalidateSize(), 80);
       paneResults.classList.add('mobile-hidden');
       btnMap.classList.add('btn-crimson');
       btnList.classList.remove('btn-crimson');

@@ -33,7 +33,7 @@ bbiz_send_security_headers(false);
       <h2 style="margin-top:0;color:#7B1113;">1. Data Controller &amp; Purpose of Collection (DPA s.29)</h2>
       <p>
         <strong>Busherian Biasharas</strong> (<code>busherianbiasharas.com</code>) operates as a verified business directory for alumni of
-        <strong>Alliance High School (AHS — Bush)</strong> and <strong>Alliance Girls High School (AGHS — Bush)</strong>.
+        <strong>Alliance High School (AHS)</strong> and <strong>Alliance Girls High School (AGHS)</strong>.
         Contact for all Data Protection inquiries: <a href="mailto:admin@busherianbiasharas.com" style="color:#7B1113;font-weight:600;">admin@busherianbiasharas.com</a>.
       </p>
 

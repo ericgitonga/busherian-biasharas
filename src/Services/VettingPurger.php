@@ -179,5 +179,120 @@ final class VettingPurger
             'cutoff_utc' => $cutoffDate,
         ];
     }
-}
 
+    /**
+     * Permanently delete an existing business record (and any associated vetting/click rows).
+     */
+    public static function deleteBusiness(PDO $pdo, int $businessId): bool
+    {
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")->execute([':id' => $businessId]);
+            $pdo->prepare("DELETE FROM click_events WHERE business_id = :id")->execute([':id' => $businessId]);
+            $del = $pdo->prepare("DELETE FROM businesses WHERE id = :id");
+            $del->execute([':id' => $businessId]);
+            $deleted = $del->rowCount() > 0;
+            if ($ownTx) {
+                $pdo->commit();
+            }
+            return $deleted;
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Update an existing business record from the Admin Edit interface.
+     */
+    public static function updateBusiness(PDO $pdo, int $businessId, array $data): void
+    {
+        $stmt = $pdo->prepare("
+            UPDATE businesses SET
+                name = :name,
+                tagline = :tagline,
+                description = :description,
+                school_badge = :school_badge,
+                sector_id = :sector_id,
+                specialty_id = :specialty_id,
+                service_mode = :service_mode,
+                alumni_perk = :alumni_perk,
+                b2b_ready = :b2b_ready,
+                accepts_lpo = :accepts_lpo,
+                regulator_name = :regulator_name,
+                regulator_license = :regulator_license,
+                branch_name = :branch_name,
+                building_name = :building_name,
+                floor_suite = :floor_suite,
+                street_road = :street_road,
+                area_neighborhood = :area_neighborhood,
+                city_county = :city_county,
+                landmark_directions = :landmark_directions,
+                plus_code = :plus_code,
+                latitude = :latitude,
+                longitude = :longitude,
+                google_maps_url = :google_maps_url,
+                phone_primary = :phone_primary,
+                whatsapp_number = :whatsapp_number,
+                email_public = :email_public,
+                website_url = :website_url,
+                social_instagram = :social_instagram,
+                social_linkedin = :social_linkedin,
+                social_x = :social_x,
+                social_facebook = :social_facebook,
+                social_tiktok = :social_tiktok,
+                social_youtube = :social_youtube,
+                status = :status,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id
+        ");
+
+        $stmt->execute([
+            ':name' => trim((string)$data['name']),
+            ':tagline' => trim((string)$data['tagline']),
+            ':description' => trim((string)$data['description']),
+            ':school_badge' => in_array($data['school_badge'] ?? '', ['AHS', 'AGHS', 'BOTH'], true) ? $data['school_badge'] : 'BOTH',
+            ':sector_id' => (int)$data['sector_id'],
+            ':specialty_id' => (int)$data['specialty_id'],
+            ':service_mode' => in_array($data['service_mode'] ?? '', ['physical', 'hybrid', 'online'], true) ? $data['service_mode'] : 'physical',
+            ':alumni_perk' => trim((string)($data['alumni_perk'] ?? '')) ?: null,
+            ':b2b_ready' => !empty($data['b2b_ready']) ? 1 : 0,
+            ':accepts_lpo' => !empty($data['accepts_lpo']) ? 1 : 0,
+            ':regulator_name' => trim((string)($data['regulator_name'] ?? '')) ?: null,
+            ':regulator_license' => trim((string)($data['regulator_license'] ?? '')) ?: null,
+            ':branch_name' => trim((string)($data['branch_name'] ?? '')) ?: null,
+            ':building_name' => trim((string)($data['building_name'] ?? '')) ?: null,
+            ':floor_suite' => trim((string)($data['floor_suite'] ?? '')) ?: null,
+            ':street_road' => trim((string)($data['street_road'] ?? '')) ?: null,
+            ':area_neighborhood' => trim((string)($data['area_neighborhood'] ?? '')) ?: null,
+            ':city_county' => trim((string)($data['city_county'] ?? 'Nairobi')) ?: 'Nairobi',
+            ':landmark_directions' => trim((string)($data['landmark_directions'] ?? '')) ?: null,
+            ':plus_code' => trim((string)($data['plus_code'] ?? '')) ?: null,
+            ':latitude' => isset($data['latitude']) && $data['latitude'] !== '' ? (float)$data['latitude'] : null,
+            ':longitude' => isset($data['longitude']) && $data['longitude'] !== '' ? (float)$data['longitude'] : null,
+            ':google_maps_url' => trim((string)($data['google_maps_url'] ?? '')) ?: null,
+            ':phone_primary' => trim((string)$data['phone_primary']),
+            ':whatsapp_number' => trim((string)($data['whatsapp_number'] ?? '')) ?: null,
+            ':email_public' => trim((string)($data['email_public'] ?? '')) ?: null,
+            ':website_url' => trim((string)($data['website_url'] ?? '')) ?: null,
+            ':social_instagram' => trim((string)($data['social_instagram'] ?? '')) ?: null,
+            ':social_linkedin' => trim((string)($data['social_linkedin'] ?? '')) ?: null,
+            ':social_x' => trim((string)($data['social_x'] ?? '')) ?: null,
+            ':social_facebook' => trim((string)($data['social_facebook'] ?? '')) ?: null,
+            ':social_tiktok' => trim((string)($data['social_tiktok'] ?? '')) ?: null,
+            ':social_youtube' => trim((string)($data['social_youtube'] ?? '')) ?: null,
+            ':status' => in_array($data['status'] ?? '', ['approved', 'pending', 'rejected', 'quarantined_dpa'], true) ? $data['status'] : 'approved',
+            ':id' => $businessId,
+        ]);
+
+        // If status is approved/rejected/quarantined_dpa, ensure no vetting queue row remains
+        if (in_array($data['status'] ?? 'approved', ['approved', 'rejected', 'quarantined_dpa'], true)) {
+            $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")->execute([':id' => $businessId]);
+        }
+    }
+}

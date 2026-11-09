@@ -215,7 +215,24 @@ assertTrue($staleRemaining === 0 && $purgeSummary['vetting_rows_purged'] >= 1, '
 // 10. Verify Ticket #14: WebsiteEnricher field_provenance tagging
 assertTrue(!empty($enriched['field_provenance']['name']) && !empty($enriched['field_provenance']['suggested_category']), 'WebsiteEnricher attaches INDRA field_provenance tags to auto-filled fields');
 
+
+// 11. Verify Ticket #20: VettingPurger::updateBusiness & VettingPurger::deleteBusiness + Mjenzi removal
+$mjenziCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE slug = 'mjenzi'")->fetchColumn();
+assertTrue($mjenziCount === 0, 'Mjenzi is removed from the seeded directory listings');
+
+$bizToEdit = $pdo->query("SELECT * FROM businesses WHERE id = {$testBizId}")->fetch();
+$bizToEdit['name'] = 'Updated Test Vetting Biz';
+$bizToEdit['tagline'] = 'Updated Tagline';
+VettingPurger::updateBusiness($pdo, $testBizId, $bizToEdit);
+$updatedName = (string)$pdo->query("SELECT name FROM businesses WHERE id = {$testBizId}")->fetchColumn();
+assertTrue($updatedName === 'Updated Test Vetting Biz', 'VettingPurger::updateBusiness updates existing business record');
+
+$deletedOk = VettingPurger::deleteBusiness($pdo, $testBizId);
+$afterDelCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE id = {$testBizId}")->fetchColumn();
+assertTrue($deletedOk && $afterDelCount === 0, 'VettingPurger::deleteBusiness permanently deletes business record');
+
 @unlink(getenv('DB_SQLITE_PATH'));
+
 
 
 if ($failed > 0) {
