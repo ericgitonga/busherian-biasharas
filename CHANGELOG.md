@@ -11,6 +11,7 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 ### Added
 
 - `public/admin/index.php`, `public/admin/edit-business.php`, `src/Services/VettingPurger.php`: full Admin Business Management interface allowing administrators to search, edit (including 1-click website URL re-extraction), unpublish/take down, or permanently delete any existing business record (closes #20)
+- `src/Services/CategoryMatcher.php`: added SasaSignal (`https://sasasignal.com/`) under `Technology, Software & Digital -> Bulk SMS, Voice, USSD & Communications APIs`
 
 ### Changed
 

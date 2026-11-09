@@ -25,7 +25,7 @@ def test_health_endpoint():
     payload = json.loads(body)
     assert payload["status"] == "ok"
     assert payload["categories_count"] >= 114
-    assert payload["approved_businesses_count"] == 11
+    assert payload["approved_businesses_count"] == 12
 
 
 def test_directory_homepage_and_zero_vetting_exposure():
