@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.2.1] - 2026-11-10
+
+### Changed
+
+- `public/assets/js/directory.js`, `public/index.php`: removed internal vetting/purge notices and admin links from the public-facing directory modal and footer so visitors browsing the directory only see public business information (closes #18)
+
+tag: `v0.2.1`
+
 ## [0.2.0] - 2026-11-10
 
 ### Changed

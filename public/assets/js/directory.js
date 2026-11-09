@@ -198,7 +198,7 @@
         <path d="M 0 390 Q 310 310 600 420" stroke="#E2E8F0" stroke-width="8" fill="none"/>
       </svg>
       <div style="position:absolute;top:10px;left:12px;background:rgba(255,255,255,0.92);padding:4px 10px;border-radius:6px;font-size:0.73rem;font-weight:600;color:#114B3E;border:1px solid #D1D5DB;z-index:20;">
-        🔒 Privacy-First Self-Hosted Map (${pinned.length} Pins • Click any pin for full details & navigation)
+        📍 ${pinned.length} Locations • Click any pin for details & directions
       </div>
       ${userMarkerHtml}
       ${pinsHtml}
@@ -324,7 +324,7 @@
         </div>
 
         <div style="margin-top:1.15rem;padding-top:0.85rem;border-top:1px solid #F3F4F6;display:flex;justify-content:space-between;align-items:center;font-size:0.76rem;color:#6B7280;">
-          <span>🔒 Alumni House, Year & School Number are never displayed and were permanently purged after initial verification.</span>
+          <span>Verified Busherian Biashara</span>
           <a href="/takedown.php?business_id=${biz.id}" style="color:#7B1113;font-weight:600;">Report / DPA Takedown</a>
         </div>
       </div>

@@ -200,13 +200,11 @@ foreach ($rows as $r) {
   <footer style="max-width:1440px;margin:2rem auto 0 auto;padding:1.5rem 1.25rem;border-top:1px solid #E5E7EB;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;font-size:0.82rem;color:#6B7280;">
     <div>
       <strong>Busherian Biasharas</strong> — Strong to Serve &amp; Walk in the Light.
-      <span>Strictly zero public display or retention of Alumni House, Year Left, or School Number.</span>
     </div>
     <div style="display:flex;gap:1rem;">
       <a href="/submit.php" style="color:#7B1113;font-weight:600;">Register a Business</a>
       <a href="/privacy.php">Kenya DPA 2019 Privacy Notice</a>
       <a href="/takedown.php">Section 40 Takedown / Rectification</a>
-      <a href="/admin/index.php">Admin Triage</a>
     </div>
   </footer>
 
