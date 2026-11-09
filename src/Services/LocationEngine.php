@@ -1,0 +1,158 @@
+<?php
+declare(strict_types=1);
+
+namespace BusherianBiasharas\Services;
+
+final class LocationEngine
+{
+    private const EARTH_RADIUS_KM = 6371.0;
+    private const OLC_ALPHABET = '23456789CFGHJMPQRVWX';
+
+    private const KENYA_CITY_CENTROIDS = [
+        'nairobi'  => [-1.286389, 36.817223],
+        'kikuyu'   => [-1.246300, 36.662900],
+        'mombasa'  => [-4.043477, 39.668206],
+        'kisumu'   => [-0.091702, 34.767956],
+        'nakuru'   => [-0.303099, 36.080025],
+        'eldoret'  => [0.514277, 35.269779],
+        'thika'    => [-1.033260, 37.069330],
+        'nyeri'    => [-0.420130, 36.947590],
+        'kiambu'   => [-1.171390, 36.835560],
+        'machakos' => [-1.517680, 37.263410],
+    ];
+
+    /**
+     * Exact Spherical Haversine distance in kilometers.
+     */
+    public static function haversineKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+        $a = sin($dLat / 2) ** 2
+           + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * (sin($dLng / 2) ** 2);
+        $c = 2 * atan2(sqrt($a), sqrt(max(0.0, 1.0 - $a)));
+        return round(self::EARTH_RADIUS_KM * $c, 2);
+    }
+
+    /**
+     * Bounding-box pre-filter coordinates for indexed SQL queries before exact Haversine sorting.
+     */
+    public static function boundingBox(float $lat, float $lng, float $radiusKm): array
+    {
+        $latDelta = $radiusKm / 111.045;
+        $cosLat = max(0.01, abs(cos(deg2rad($lat))));
+        $lngDelta = $radiusKm / (111.045 * $cosLat);
+
+        return [
+            'minLat' => round($lat - $latDelta, 7),
+            'maxLat' => round($lat + $latDelta, 7),
+            'minLng' => round($lng - $lngDelta, 7),
+            'maxLng' => round($lng + $lngDelta, 7),
+        ];
+    }
+
+    /**
+     * Parse coordinates from a Google Maps URL or raw "lat, lng" string.
+     */
+    public static function parseCoordinatesFromInput(string $input): ?array
+    {
+        $raw = trim($input);
+        if ($raw === '') {
+            return null;
+        }
+
+        // Pattern 1: !3d-1.2647!4d36.8021 (exact pin in Google Maps URLs)
+        if (preg_match('/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/', $raw, $m)) {
+            return self::validateCoords((float)$m[1], (float)$m[2]);
+        }
+
+        // Pattern 2: @-1.2647,36.8021 or ?q=-1.2647,36.8021 or ll=-1.2647,36.8021
+        if (preg_match('/(?:@|[?&](?:q|ll|center| destination)=)(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/i', urldecode($raw), $m)) {
+            return self::validateCoords((float)$m[1], (float)$m[2]);
+        }
+
+        // Pattern 3: Raw "lat, lng"
+        if (preg_match('/^\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*$/', $raw, $m)) {
+            return self::validateCoords((float)$m[1], (float)$m[2]);
+        }
+
+        // Pattern 4: Open Location Code / Plus Code (e.g. "6GCRPPP3+9M" or "PPP3+9M Nairobi")
+        return self::decodePlusCode($raw);
+    }
+
+    /**
+     * Decode full (8+2) or short (4+2 with city name) Open Location Code (Plus Code).
+     */
+    public static function decodePlusCode(string $input): ?array
+    {
+        $clean = strtoupper(trim($input));
+        if (!str_contains($clean, '+')) {
+            return null;
+        }
+
+        if (!preg_match('/([23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3})(?:\s+([A-Z]+))?/', $clean, $m)) {
+            return null;
+        }
+
+        $code = $m[1];
+        $locality = strtolower($m[2] ?? 'nairobi');
+        [$prefix, $suffix] = explode('+', $code, 2);
+
+        // If short code (4 or 6 chars before '+'), recover full 8-char prefix using reference city centroid
+        if (strlen($prefix) < 8) {
+            $ref = self::KENYA_CITY_CENTROIDS[$locality] ?? self::KENYA_CITY_CENTROIDS['nairobi'];
+            $fullRef = self::encodePlusCode($ref[0], $ref[1]);
+            $fullPrefix = substr($fullRef, 0, 8 - strlen($prefix)) . $prefix;
+            $prefix = $fullPrefix;
+        }
+
+        $full = $prefix . $suffix;
+        $weights = [20.0, 1.0, 0.05, 0.0025, 0.000125];
+        $lat = -90.0;
+        $lng = -180.0;
+
+        $pairs = min(5, intdiv(strlen($full), 2));
+        for ($i = 0; $i < $pairs; $i++) {
+            $latChar = $full[$i * 2];
+            $lngChar = $full[$i * 2 + 1];
+            $latIdx = strpos(self::OLC_ALPHABET, $latChar);
+            $lngIdx = strpos(self::OLC_ALPHABET, $lngChar);
+            if ($latIdx === false || $lngIdx === false) {
+                return null;
+            }
+            $lat += $latIdx * $weights[$i];
+            $lng += $lngIdx * $weights[$i];
+        }
+
+        $res = $weights[$pairs - 1];
+        return self::validateCoords(round($lat + ($res / 2.0), 6), round($lng + ($res / 2.0), 6));
+    }
+
+    public static function encodePlusCode(float $lat, float $lng): string
+    {
+        $adjLat = max(0.0, min(179.999999, $lat + 90.0));
+        $adjLng = max(0.0, min(359.999999, $lng + 180.0));
+        $weights = [20.0, 1.0, 0.05, 0.0025, 0.000125];
+        $out = '';
+        for ($i = 0; $i < 5; $i++) {
+            $w = $weights[$i];
+            $latDigit = (int)floor($adjLat / $w) % 20;
+            $lngDigit = (int)floor($adjLng / $w) % 20;
+            $out .= self::OLC_ALPHABET[$latDigit] . self::OLC_ALPHABET[$lngDigit];
+            $adjLat -= $latDigit * $w;
+            $adjLng -= $lngDigit * $w;
+            if ($i === 3) {
+                $out .= '+';
+            }
+        }
+        return $out;
+    }
+
+    private static function validateCoords(float $lat, float $lng): ?array
+    {
+        if ($lat < -90.0 || $lat > 90.0 || $lng < -180.0 || $lng > 180.0) {
+            return null;
+        }
+        return ['latitude' => round($lat, 6), 'longitude' => round($lng, 6)];
+    }
+}

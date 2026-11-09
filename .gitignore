@@ -1,0 +1,41 @@
+# AI-assistant instruction files — living local docs updated as needed, but
+# not tracked in the repo itself
+CLAUDE.md
+AGENTS.md
+SKILL.md
+ONBOARDING.md
+.claude/
+.agents/
+
+# Local-only working docs (design writeups, security reports, spikes, etc.)
+extras/
+
+# Runtime & test artefacts
+__pycache__/
+*.pyc
+.venv/
+e2e/__pycache__/
+.pytest_cache/
+*.sqlite
+*.sqlite3
+*.db
+storage/*.sqlite
+storage/*.db
+storage/*.log
+
+# Uploaded user files (keep directory structure)
+public/assets/uploads/logos/*
+!public/assets/uploads/logos/.gitkeep
+
+# OS
+.DS_Store
+
+# Environment & credentials (NEVER commit real credentials)
+.vercel
+.env
+.env.*
+!.env.example
+
+# Node / Vendor
+node_modules/
+vendor/
