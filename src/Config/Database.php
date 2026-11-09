@@ -106,12 +106,27 @@ final class Database
                 if (!extension_loaded('pdo_mysql')) {
                     throw new PDOException('pdo_mysql extension not loaded');
                 }
-                $dsn = "mysql:host={$host};port={$port};dbname={$db};charset=utf8mb4";
-                self::$pdo = new PDO($dsn, $user, $pass, [
-                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    PDO::ATTR_EMULATE_PREPARES => false,
-                ]);
+                $hostsToTry = array_values(array_unique([$host, 'localhost', '127.0.0.1']));
+                $lastErr = null;
+                foreach ($hostsToTry as $candidateHost) {
+                    try {
+                        $dsn = ($candidateHost === 'localhost')
+                            ? "mysql:host=localhost;dbname={$db};charset=utf8mb4"
+                            : "mysql:host={$candidateHost};port={$port};dbname={$db};charset=utf8mb4";
+                        self::$pdo = new PDO($dsn, $user, $pass, [
+                            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                            PDO::ATTR_EMULATE_PREPARES => false,
+                        ]);
+                        $lastErr = null;
+                        break;
+                    } catch (PDOException $connEx) {
+                        $lastErr = $connEx;
+                    }
+                }
+                if ($lastErr !== null || self::$pdo === null) {
+                    throw $lastErr ?? new PDOException('MySQL connection failed');
+                }
                 self::$activeDriver = 'mysql';
                 self::ensureInitialized(self::$pdo, 'mysql');
                 return self::$pdo;
@@ -170,7 +185,26 @@ final class Database
 
     private static function ensureInitialized(PDO $pdo, string $driver): void
     {
-        if ($driver === 'sqlite') {
+        if ($driver === 'mysql') {
+            $hasCat = $pdo->query("SHOW TABLES LIKE 'categories'")->fetchColumn();
+            if (!$hasCat) {
+                $schemaFile = dirname(__DIR__) . '/schema.sql';
+                if (is_file($schemaFile)) {
+                    $rawSql = (string)file_get_contents($schemaFile);
+                    // Strip full-line SQL comments before splitting by ';'
+                    $cleanLines = array_filter(
+                        explode("\n", $rawSql),
+                        static fn(string $line): bool => !str_starts_with(ltrim($line), '--')
+                    );
+                    foreach (explode(';', implode("\n", $cleanLines)) as $stmtSql) {
+                        $trimmed = trim($stmtSql);
+                        if ($trimmed !== '') {
+                            $pdo->exec($trimmed);
+                        }
+                    }
+                }
+            }
+        } elseif ($driver === 'sqlite') {
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS categories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

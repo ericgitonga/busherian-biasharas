@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.3.1] - 2026-11-10
+
+### Added
+
+- `.github/workflows/deploy-ftp.yml`: automated Explicit FTPS continuous deployment to Angryhosting mapping `src/`, `bin/`, `storage/`, and `.env` outside the webroot (`/busherianbiasharas.com/www/`) and `public/*` into `/busherianbiasharas.com/www/html/` (closes #29)
+
+### Fixed
+
+- `src/Config/Database.php`, `src/Services/AdminAuth.php`: auto-execute `src/schema.sql` on first MySQL connection when `categories` does not yet exist, try `localhost` Unix socket alongside `127.0.0.1`, and support both `public/` and `html/` webroot layouts for `admin/login.php` (closes #29)
+
+tag: `v0.3.1`
+
 ## [0.3.0] - 2026-11-10
 
 ### Added

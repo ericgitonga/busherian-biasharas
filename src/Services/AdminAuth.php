@@ -104,7 +104,11 @@ final class AdminAuth
         if (!headers_sent()) {
             http_response_code(401);
         }
-        require dirname(__DIR__, 2) . '/public/admin/login.php';
+        $base = dirname(__DIR__, 2);
+        $loginFile = is_file($base . '/public/admin/login.php')
+            ? $base . '/public/admin/login.php'
+            : $base . '/html/admin/login.php';
+        require $loginFile;
         exit;
     }
 }
