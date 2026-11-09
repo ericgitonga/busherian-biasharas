@@ -131,10 +131,37 @@ def test_privacy_and_dpa_takedown_pages():
 
 
 
+
+def test_school_filters_and_route_directions_api():
+    # Verify AGHS returns exactly Bustani Bistro, Harriet's Botanicals, and Mambo Pambo (3)
+    st_aghs, body_aghs, _ = _request("/api/businesses.php?school=AGHS")
+    assert st_aghs == 200
+    aghs_data = json.loads(body_aghs)
+    aghs_names = sorted([b["name"] for b in aghs_data["businesses"]])
+    assert aghs_names == ["Bustani Bistro", "Harriet's Botanicals", "Mambo Pambo"], f"Unexpected AGHS list: {aghs_names}"
+
+    # Verify AHS returns the remaining 9 businesses
+    st_ahs, body_ahs, _ = _request("/api/businesses.php?school=AHS")
+    assert st_ahs == 200
+    ahs_data = json.loads(body_ahs)
+    assert ahs_data["count"] == 9, f"Expected 9 AHS businesses, got {ahs_data['count']}"
+
+    # Verify /api/route-directions.php returns distance, duration, polyline & steps
+    st_rt, body_rt, _ = _request("/api/route-directions.php?from_lat=-1.286389&from_lng=36.817223&to_lat=-1.278800&to_lng=36.771200")
+    assert st_rt == 200, f"Expected 200 from route-directions.php, got {st_rt}: {body_rt}"
+    rt = json.loads(body_rt)["route"]
+    assert rt["straight_km"] > 4.0
+    assert rt["road_km"] > 4.0
+    assert rt["duration_min"] >= 1
+    assert len(rt["polyline"]) >= 2
+    assert len(rt["steps"]) >= 1
+
+
 TESTS = [
     test_health_endpoint,
     test_directory_homepage_and_zero_vetting_exposure,
     test_businesses_api_synonym_and_spatial_search,
     test_website_autofill_api_and_ssrf_protection,
     test_privacy_and_dpa_takedown_pages,
+    test_school_filters_and_route_directions_api,
 ]

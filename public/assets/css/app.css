@@ -571,3 +571,45 @@ a {
   background: var(--bush-crimson);
   color: #ffffff;
 }
+
+/* Distance & Turn-by-Turn Route Drawer */
+.map-route-drawer {
+  background: #FFFBEB;
+  border-bottom: 2px solid var(--bush-gold);
+  padding: 0.75rem 1rem;
+  font-size: 0.82rem;
+  color: var(--ink-900);
+}
+.route-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.route-metrics-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--bush-green);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+}
+.route-steps-list {
+  margin: 0.55rem 0 0 0;
+  padding-left: 1.2rem;
+  max-height: 150px;
+  overflow-y: auto;
+  font-size: 0.78rem;
+  color: #374151;
+}
+.route-steps-list li {
+  margin-bottom: 0.28rem;
+}
+.bbiz-pin-focused {
+  outline: 3px solid #F59E0B;
+  outline-offset: 2px;
+}

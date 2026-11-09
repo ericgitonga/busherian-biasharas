@@ -186,9 +186,13 @@ foreach ($rows as $r) {
     <!-- Right Pane: Sticky Interactive Map -->
     <aside id="pane-map" class="map-dock mobile-hidden" aria-label="Interactive Business Map">
       <div class="map-toolbar">
-        <strong style="font-size:0.85rem;color:#114B3E;">🗺️ Live Busherian Proximity &amp; Pin Map</strong>
-        <span style="font-size:0.74rem;color:#6B7280;">Green = Open Now • Crimson = Closed</span>
+        <div>
+          <strong style="font-size:0.85rem;color:#114B3E;">🗺️ Live Busherian Proximity &amp; Pin Map</strong>
+          <div style="font-size:0.72rem;color:#6B7280;">Green = Open Now • Crimson = Closed</div>
+        </div>
+        <div id="map-focus-actions" style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;"></div>
       </div>
+      <div id="map-route-drawer" class="map-route-drawer" style="display:none;"></div>
       <div id="map-canvas" class="map-canvas"></div>
     </aside>
   </main>
