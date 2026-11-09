@@ -1,6 +1,17 @@
 (function () {
   'use strict';
 
+  const ORIGIN_PRESETS = {
+    gps: { label: '📍 My Current GPS Location', lat: null, lng: null },
+    nairobi_cbd: { label: 'Nairobi CBD (Kenyatta Ave)', lat: -1.286389, lng: 36.817223 },
+    westlands: { label: 'Westlands (Sarit / Karuna Rd)', lat: -1.263500, lng: 36.803200 },
+    kilimani: { label: 'Kilimani (Yaya Centre)', lat: -1.292100, lng: 36.787900 },
+    karen: { label: 'Karen Shopping Centre', lat: -1.321000, lng: 36.704200 },
+    kikuyu_bush: { label: 'Kikuyu — Alliance (Bush)', lat: -1.246300, lng: 36.662900 },
+    jkia: { label: 'JKIA International Airport', lat: -1.319167, lng: 36.927500 },
+    thika_rd: { label: 'Thika Road (Garden City)', lat: -1.232200, lng: 36.878800 },
+  };
+
   const state = {
     businesses: window.INITIAL_BUSINESSES || [],
     sectors: window.INITIAL_SECTORS || [],
@@ -12,14 +23,19 @@
     b2bReady: false,
     userLat: null,
     userLng: null,
+    originKey: 'gps',
+    originLabel: 'My Current Location',
     radiusKm: '',
     searchQuery: '',
     shortlistIds: new Set(),
     activeBusiness: null,
+    focusedBusinessId: null,
+    activeRoute: null, // { biz, fromLat, fromLng, originLabel, data }
   };
 
   const els = {
     searchInput: document.getElementById('search-q'),
+    searchClearBtn: document.getElementById('btn-clear-search'),
     sectorSelect: document.getElementById('filter-sector'),
     specialtySelect: document.getElementById('filter-specialty'),
     radiusSelect: document.getElementById('filter-radius'),
@@ -27,6 +43,8 @@
     cardsGrid: document.getElementById('cards-grid'),
     resultsCount: document.getElementById('results-count'),
     mapCanvas: document.getElementById('map-canvas'),
+    mapFocusActions: document.getElementById('map-focus-actions'),
+    mapRouteDrawer: document.getElementById('map-route-drawer'),
     modalBackdrop: document.getElementById('biz-modal-backdrop'),
     modalContent: document.getElementById('biz-modal-content'),
     shortlistCount: document.getElementById('shortlist-count'),
@@ -56,6 +74,18 @@
     });
   }
 
+  function getFocusedBusiness() {
+    const pinned = state.businesses.filter(b => b.latitude !== null && b.longitude !== null);
+    if (pinned.length === 1) {
+      return pinned[0];
+    }
+    if (state.focusedBusinessId !== null) {
+      const found = pinned.find(b => Number(b.id) === Number(state.focusedBusinessId));
+      if (found) return found;
+    }
+    return null;
+  }
+
   async function fetchBusinesses() {
     const params = new URLSearchParams();
     if (state.searchQuery) params.set('q', state.searchQuery);
@@ -75,6 +105,9 @@
     const data = await res.json();
     if (data && data.status === 'ok') {
       state.businesses = data.businesses || [];
+      if (state.activeRoute && !state.businesses.some(b => Number(b.id) === Number(state.activeRoute.biz.id))) {
+        state.activeRoute = null;
+      }
       renderCards();
       renderInteractiveMap();
     }
@@ -97,8 +130,6 @@
     }
 
     els.cardsGrid.innerHTML = state.businesses.map(biz => {
-      const schoolClass = biz.school_badge === 'AGHS' ? 'badge-school-aghs' : 'badge-school-ahs';
-      const schoolLabel = biz.school_badge === 'BOTH' ? 'AHS & AGHS — Bush' : `${biz.school_badge} — Bush`;
       const distBadge = (biz.distance_km !== null && biz.distance_km !== undefined)
         ? `<span class="badge-distance">📍 ${Number(biz.distance_km).toFixed(1)} km away</span>`
         : `<span style="font-size:0.75rem;color:#6B7280;">📍 ${escapeHtml(biz.area_neighborhood || biz.city_county)}</span>`;
@@ -107,13 +138,13 @@
         ? `<div class="card-Perk">🎁 <strong>Busherian Perk:</strong> ${escapeHtml(biz.alumni_perk)}</div>`
         : '';
       const inShortlist = state.shortlistIds.has(biz.id);
+      const hasCoords = biz.latitude !== null && biz.longitude !== null;
 
       // STRICT PRIVACY GUARANTEE: Zero House, Year Left, or School Number ever rendered
       return `
         <article class="biz-card" data-biz-id="${biz.id}">
           <div>
-            <div class="card-top-badges">
-              <span class="badge-verified ${schoolClass}">✓ Verified Busherian (${escapeHtml(schoolLabel)})</span>
+            <div class="card-top-badges" style="justify-content:flex-end;">
               ${distBadge}
             </div>
             <h3 class="card-title">${escapeHtml(biz.name)}</h3>
@@ -123,7 +154,12 @@
           </div>
           <div class="card-footer">
             <span class="status-dot status-${escapeHtml(hours.state)}">● ${escapeHtml(hours.badge_text)}</span>
-            <div style="display:flex;gap:0.4rem;align-items:center;">
+            <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
+              ${hasCoords ? `
+                <button type="button" data-route-biz-id="${biz.id}" title="Get distance and directions to ${escapeHtml(biz.name)}" style="background:#FFFBEB;color:#78350F;border:1px solid #D4AF37;border-radius:6px;padding:0.25rem 0.55rem;font-size:0.74rem;font-weight:700;cursor:pointer;">
+                  🧭 Directions
+                </button>
+              ` : ''}
               <button type="button" class="btn-shortlist-toggle" data-shortlist-id="${biz.id}" title="Add to B2B Procurement Shortlist" style="background:${inShortlist ? '#114B3E' : '#F3F4F6'};color:${inShortlist ? '#fff' : '#374151'};border:none;border-radius:6px;padding:0.25rem 0.55rem;font-size:0.74rem;font-weight:600;cursor:pointer;">
                 ${inShortlist ? '✓ Shortlisted' : '+ B2B Shortlist'}
               </button>
@@ -135,74 +171,300 @@
     }).join('');
   }
 
+  let leafletMap = null;
+  let markersLayer = null;
+  let routeLayer = null;
+  let mapOverlayBadge = null;
+
+  function renderMapFocusBar() {
+    if (!els.mapFocusActions) return;
+    const focused = getFocusedBusiness();
+    if (!focused) {
+      els.mapFocusActions.innerHTML = `<span style="font-size:0.74rem;color:#6B7280;">Click any pin or card to focus</span>`;
+      return;
+    }
+    const shortName = focused.name.length > 22 ? focused.name.slice(0, 20) + '…' : focused.name;
+    els.mapFocusActions.innerHTML = `
+      <button type="button" data-route-biz-id="${focused.id}" class="btn btn-gold" style="padding:0.32rem 0.7rem;font-size:0.76rem;">
+        🧭 Distance &amp; Directions: ${escapeHtml(shortName)}
+      </button>
+    `;
+  }
+
+  function buildOriginOptionsHtml() {
+    return Object.entries(ORIGIN_PRESETS).map(([k, info]) => (
+      `<option value="${escapeHtml(k)}" ${state.originKey === k ? 'selected' : ''}>${escapeHtml(info.label)}</option>`
+    )).join('');
+  }
+
+  function buildRouteCardHtml(activeRoute, contextPrefix) {
+    const { biz, fromLat, fromLng, data } = activeRoute;
+    const gmapsDirUrl = `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${biz.latitude},${biz.longitude}&travelmode=driving`;
+    const wazeDirUrl = `https://waze.com/ul?ll=${biz.latitude},${biz.longitude}&navigate=yes`;
+    const stepsHtml = (data.steps || []).map(st => (
+      `<li>${escapeHtml(st.instruction)}${st.distance ? ` <strong style="color:#114B3E;">(${escapeHtml(st.distance)})</strong>` : ''}</li>`
+    )).join('');
+
+    return `
+      <div class="route-summary-row">
+        <div>
+          <span class="route-metrics-pill">🚗 ${Number(data.road_km).toFixed(1)} km drive • ~${Number(data.duration_min)} min</span>
+          <span style="font-size:0.75rem;color:#4B5563;margin-left:0.35rem;">(${Number(data.straight_km).toFixed(1)} km direct to <strong>${escapeHtml(biz.name)}</strong>)</span>
+        </div>
+        <button type="button" data-clear-route="1" style="background:none;border:none;color:#7B1113;font-weight:800;font-size:0.76rem;cursor:pointer;">✕ Clear Route</button>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;margin-top:0.5rem;">
+        <label for="${contextPrefix}-origin-select" style="font-size:0.74rem;font-weight:700;color:#374151;">From:</label>
+        <select id="${contextPrefix}-origin-select" data-origin-switcher="${biz.id}" class="select-control" style="width:auto;padding:0.25rem 0.55rem;font-size:0.76rem;">
+          ${buildOriginOptionsHtml()}
+        </select>
+        <a href="${escapeHtml(gmapsDirUrl)}" target="_blank" rel="noopener noreferrer" data-track="map_pin" class="btn btn-green" style="padding:0.28rem 0.65rem;font-size:0.75rem;">
+          🗺️ Google Maps Turn-by-Turn
+        </a>
+        <a href="${escapeHtml(wazeDirUrl)}" target="_blank" rel="noopener noreferrer" data-track="map_pin" class="btn btn-outline" style="padding:0.28rem 0.65rem;font-size:0.75rem;background:#fff;">
+          🚗 Waze
+        </a>
+      </div>
+
+      ${stepsHtml ? `
+        <details style="margin-top:0.5rem;" open>
+          <summary style="cursor:pointer;font-size:0.76rem;font-weight:700;color:#7B1113;">Turn-by-Turn Road Directions (${(data.steps || []).length} steps)</summary>
+          <ol class="route-steps-list">${stepsHtml}</ol>
+        </details>
+      ` : ''}
+    `;
+  }
+
+  function renderRouteDrawerAndModalBox() {
+    if (els.mapRouteDrawer) {
+      if (state.activeRoute) {
+        els.mapRouteDrawer.style.display = 'block';
+        els.mapRouteDrawer.innerHTML = buildRouteCardHtml(state.activeRoute, 'map');
+      } else {
+        els.mapRouteDrawer.style.display = 'none';
+        els.mapRouteDrawer.innerHTML = '';
+      }
+    }
+
+    const modalRouteBox = document.getElementById('modal-route-box');
+    if (modalRouteBox && state.activeBusiness) {
+      if (state.activeRoute && Number(state.activeRoute.biz.id) === Number(state.activeBusiness.id)) {
+        modalRouteBox.style.display = 'block';
+        modalRouteBox.innerHTML = buildRouteCardHtml(state.activeRoute, 'modal');
+      } else {
+        modalRouteBox.style.display = 'none';
+        modalRouteBox.innerHTML = '';
+      }
+    }
+  }
+
   /**
-   * Self-hosted Interactive Spatial Map (Zero External CDN Requests on Load — DPA s.25(h)/48 Compliant)
+   * Resolve user origin coordinates (Live Browser GPS or selected preset fallback)
+   */
+  function resolveOriginCoordinates(originKey) {
+    return new Promise((resolve) => {
+      if (originKey && originKey !== 'gps' && ORIGIN_PRESETS[originKey]) {
+        const p = ORIGIN_PRESETS[originKey];
+        resolve({ lat: p.lat, lng: p.lng, key: originKey, label: p.label });
+        return;
+      }
+
+      if (state.originKey === 'gps' && state.userLat !== null && state.userLng !== null) {
+        resolve({ lat: state.userLat, lng: state.userLng, key: 'gps', label: 'My Current GPS Location' });
+        return;
+      }
+
+      if (!navigator.geolocation) {
+        const fb = ORIGIN_PRESETS.nairobi_cbd;
+        state.originKey = 'nairobi_cbd';
+        resolve({ lat: fb.lat, lng: fb.lng, key: 'nairobi_cbd', label: fb.label });
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          state.userLat = pos.coords.latitude;
+          state.userLng = pos.coords.longitude;
+          state.originKey = 'gps';
+          resolve({ lat: state.userLat, lng: state.userLng, key: 'gps', label: 'My Current GPS Location' });
+        },
+        () => {
+          const fb = ORIGIN_PRESETS.nairobi_cbd;
+          state.originKey = 'nairobi_cbd';
+          resolve({ lat: fb.lat, lng: fb.lng, key: 'nairobi_cbd', label: fb.label });
+        },
+        { timeout: 5000 }
+      );
+    });
+  }
+
+  async function requestDistanceAndDirections(bizId, forcedOriginKey) {
+    const biz = state.businesses.find(b => Number(b.id) === Number(bizId));
+    if (!biz || biz.latitude === null || biz.longitude === null) return;
+
+    state.focusedBusinessId = biz.id;
+    renderMapFocusBar();
+
+    if (els.mapRouteDrawer) {
+      els.mapRouteDrawer.style.display = 'block';
+      els.mapRouteDrawer.innerHTML = `<div style="font-weight:700;color:#114B3E;">🧭 Calculating distance &amp; route to ${escapeHtml(biz.name)}...</div>`;
+    }
+    const modalRouteBox = document.getElementById('modal-route-box');
+    if (modalRouteBox) {
+      modalRouteBox.style.display = 'block';
+      modalRouteBox.innerHTML = `<div style="font-weight:700;color:#114B3E;">🧭 Calculating distance &amp; route to ${escapeHtml(biz.name)}...</div>`;
+    }
+
+    const chosenKey = forcedOriginKey || state.originKey || 'gps';
+    state.originKey = chosenKey;
+    const origin = await resolveOriginCoordinates(chosenKey);
+
+    try {
+      const qs = new URLSearchParams({
+        from_lat: String(origin.lat),
+        from_lng: String(origin.lng),
+        to_lat: String(biz.latitude),
+        to_lng: String(biz.longitude),
+      });
+      const res = await fetch('/api/route-directions.php?' + qs.toString());
+      const json = await res.json();
+      if (json && json.status === 'ok' && json.route) {
+        state.activeRoute = {
+          biz,
+          fromLat: origin.lat,
+          fromLng: origin.lng,
+          originLabel: origin.label,
+          data: json.route,
+        };
+        trackClick(biz.id, 'map_pin');
+        renderRouteDrawerAndModalBox();
+        renderInteractiveMap();
+      }
+    } catch (_) {
+      if (els.mapRouteDrawer) {
+        els.mapRouteDrawer.innerHTML = `<div style="color:#991B1B;font-weight:600;">Could not calculate route right now. Try opening Google Maps directly.</div>`;
+      }
+    }
+  }
+
+  /**
+   * Real Interactive Spatial Map powered by self-hosted Leaflet + OpenStreetMap Road & Feature Tiles
    */
   function renderInteractiveMap() {
+    renderMapFocusBar();
     if (!els.mapCanvas) return;
     const pinned = state.businesses.filter(b => b.latitude !== null && b.longitude !== null);
-    if (pinned.length === 0) {
-      els.mapCanvas.innerHTML = '<div style="display:flex;height:100%;align-items:center;justify-content:center;color:#6B7280;padding:1rem;text-align:center;">No map pins for current filter selection.</div>';
+
+    if (typeof window.L === 'undefined') {
+      els.mapCanvas.innerHTML = '<div style="display:flex;height:100%;align-items:center;justify-content:center;color:#6B7280;padding:1rem;text-align:center;">Interactive map loading...</div>';
       return;
     }
 
-    const lats = pinned.map(b => b.latitude);
-    const lngs = pinned.map(b => b.longitude);
-    if (state.userLat !== null && state.userLng !== null) {
-      lats.push(state.userLat);
-      lngs.push(state.userLng);
+    if (!leafletMap) {
+      els.mapCanvas.innerHTML = '';
+      leafletMap = window.L.map(els.mapCanvas, {
+        center: [-1.286389, 36.817223],
+        zoom: 12,
+        scrollWheelZoom: true,
+        zoomControl: true,
+      });
+
+      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
+      }).addTo(leafletMap);
+
+      routeLayer = window.L.layerGroup().addTo(leafletMap);
+      markersLayer = window.L.layerGroup().addTo(leafletMap);
+
+      mapOverlayBadge = document.createElement('div');
+      mapOverlayBadge.style.cssText = 'position:absolute;top:10px;right:12px;background:rgba(255,255,255,0.95);padding:5px 11px;border-radius:8px;font-size:0.74rem;font-weight:700;color:#114B3E;border:1px solid #D1D5DB;z-index:1000;box-shadow:0 2px 6px rgba(0,0,0,0.12);pointer-events:none;';
+      els.mapCanvas.appendChild(mapOverlayBadge);
     }
 
-    const minLat = Math.min(...lats) - 0.015;
-    const maxLat = Math.max(...lats) + 0.015;
-    const minLng = Math.min(...lngs) - 0.015;
-    const maxLng = Math.max(...lngs) + 0.015;
+    markersLayer.clearLayers();
+    routeLayer.clearLayers();
 
-    const project = (lat, lng) => {
-      const x = ((lng - minLng) / Math.max(0.0001, maxLng - minLng)) * 84 + 8;
-      const y = (1 - (lat - minLat) / Math.max(0.0001, maxLat - minLat)) * 80 + 10;
-      return { x: Math.max(6, Math.min(94, x)), y: Math.max(8, Math.min(92, y)) };
-    };
-
-    let userMarkerHtml = '';
-    if (state.userLat !== null && state.userLng !== null) {
-      const up = project(state.userLat, state.userLng);
-      userMarkerHtml = `
-        <div style="position:absolute;left:${up.x}%;top:${up.y}%;transform:translate(-50%,-50%);width:140px;height:140px;border:2px dashed rgba(17,75,62,0.45);border-radius:50%;background:rgba(17,75,62,0.06);pointer-events:none;"></div>
-        <div title="Your Current Location" style="position:absolute;left:${up.x}%;top:${up.y}%;transform:translate(-50%,-50%);width:16px;height:16px;background:#2563EB;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);z-index:5;"></div>
-      `;
+    if (mapOverlayBadge) {
+      mapOverlayBadge.textContent = `📍 ${pinned.length} ${pinned.length === 1 ? 'Location' : 'Locations'} • Click any pin for details & directions`;
     }
 
-    const pinsHtml = pinned.map((b, idx) => {
-      const pt = project(b.latitude, b.longitude);
+    const boundsPoints = [];
+    const focused = getFocusedBusiness();
+
+    if (state.userLat !== null && state.userLng !== null && !state.activeRoute) {
+      const radiusMeters = (Number(state.radiusKm) || 2) * 1000;
+      window.L.circle([state.userLat, state.userLng], {
+        radius: radiusMeters,
+        color: '#114B3E',
+        weight: 2,
+        dashArray: '6, 6',
+        fillColor: '#114B3E',
+        fillOpacity: 0.08,
+      }).addTo(markersLayer);
+
+      const userDot = window.L.circleMarker([state.userLat, state.userLng], {
+        radius: 8,
+        color: '#ffffff',
+        weight: 3,
+        fillColor: '#2563EB',
+        fillOpacity: 1,
+      }).addTo(markersLayer);
+      userDot.bindTooltip('Your Current Location', { direction: 'top', offset: [0, -8] });
+      boundsPoints.push([state.userLat, state.userLng]);
+    }
+
+    pinned.forEach((b) => {
       const isOpen = b.hours_status && b.hours_status.is_open;
       const bg = isOpen ? '#114B3E' : '#7B1113';
-      return `
-        <button type="button" class="map-pin-btn" data-biz-id="${b.id}"
-          style="position:absolute;left:${pt.x}%;top:${pt.y}%;transform:translate(-50%,-100%);background:${bg};color:#fff;border:2px solid #D4AF37;border-radius:999px;padding:0.28rem 0.65rem;font-size:0.74rem;font-weight:700;cursor:pointer;box-shadow:0 4px 10px rgba(0,0,0,0.22);white-space:nowrap;z-index:${10 + idx};">
-          📍 ${escapeHtml(b.name.length > 22 ? b.name.slice(0, 20) + '…' : b.name)}
-        </button>
-      `;
-    }).join('');
+      const label = b.name.length > 24 ? b.name.slice(0, 22) + '…' : b.name;
+      const area = b.area_neighborhood || b.city_county || '';
+      const isFocused = focused && Number(focused.id) === Number(b.id);
 
-    els.mapCanvas.innerHTML = `
-      <svg width="100%" height="100%" viewBox="0 0 600 540" preserveAspectRatio="none" style="position:absolute;inset:0;background:#EDF2F7;">
-        <defs>
-          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#CBD5E1" stroke-width="0.7"/>
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#grid)" />
-        <path d="M 0 160 Q 240 210 600 110" stroke="#CBD5E1" stroke-width="6" fill="none"/>
-        <path d="M 110 0 Q 290 270 460 540" stroke="#CBD5E1" stroke-width="5" fill="none"/>
-        <path d="M 0 390 Q 310 310 600 420" stroke="#E2E8F0" stroke-width="8" fill="none"/>
-      </svg>
-      <div style="position:absolute;top:10px;left:12px;background:rgba(255,255,255,0.92);padding:4px 10px;border-radius:6px;font-size:0.73rem;font-weight:600;color:#114B3E;border:1px solid #D1D5DB;z-index:20;">
-        📍 ${pinned.length} Locations • Click any pin for details & directions
-      </div>
-      ${userMarkerHtml}
-      ${pinsHtml}
-    `;
+      const icon = window.L.divIcon({
+        className: 'bbiz-leaflet-pin',
+        html: `<div class="bbiz-pin-pill ${isFocused ? 'bbiz-pin-focused' : ''}" style="background:${bg};" title="${escapeHtml(b.name)} — ${escapeHtml(area)}">📍 ${escapeHtml(label)}</div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      });
+
+      const marker = window.L.marker([b.latitude, b.longitude], { icon }).addTo(markersLayer);
+      marker.on('click', () => {
+        state.focusedBusinessId = b.id;
+        renderMapFocusBar();
+        openBusinessModal(b.id);
+      });
+      if (!state.activeRoute) {
+        boundsPoints.push([b.latitude, b.longitude]);
+      }
+    });
+
+    if (state.activeRoute && Array.isArray(state.activeRoute.data.polyline) && state.activeRoute.data.polyline.length >= 2) {
+      const polyPts = state.activeRoute.data.polyline;
+      // Gold outer casing + Crimson inner route line
+      window.L.polyline(polyPts, { color: '#D4AF37', weight: 8, opacity: 0.85 }).addTo(routeLayer);
+      const mainLine = window.L.polyline(polyPts, { color: '#7B1113', weight: 4.5, opacity: 0.95 }).addTo(routeLayer);
+
+      const startMarker = window.L.circleMarker([state.activeRoute.fromLat, state.activeRoute.fromLng], {
+        radius: 9,
+        color: '#ffffff',
+        weight: 3,
+        fillColor: '#2563EB',
+        fillOpacity: 1,
+      }).addTo(routeLayer);
+      startMarker.bindTooltip(`Start: ${state.activeRoute.originLabel}`, { permanent: false, direction: 'top' });
+
+      leafletMap.fitBounds(mainLine.getBounds(), { padding: [50, 50], maxZoom: 16, animate: true });
+      return;
+    }
+
+    if (boundsPoints.length === 1) {
+      leafletMap.setView(boundsPoints[0], 15, { animate: true });
+    } else if (boundsPoints.length > 1) {
+      const bounds = window.L.latLngBounds(boundsPoints);
+      leafletMap.fitBounds(bounds, { padding: [45, 45], maxZoom: 15, animate: true });
+    }
   }
 
   function trackClick(businessId, eventType) {
@@ -219,6 +481,8 @@
     const biz = state.businesses.find(b => Number(b.id) === Number(bizId));
     if (!biz || !els.modalBackdrop || !els.modalContent) return;
     state.activeBusiness = biz;
+    state.focusedBusinessId = biz.id;
+    renderMapFocusBar();
 
     const hours = biz.hours_status || { state: 'CLOSED', badge_text: 'Closed', today_key: 'mon', schedule_table: {} };
     const scheduleRows = Object.entries(hours.schedule_table || {}).map(([key, row]) => {
@@ -256,13 +520,13 @@
       </a>
     `).join('');
 
-    const schoolLabel = biz.school_badge === 'BOTH' ? 'AHS & AGHS — Bush' : `${biz.school_badge} — Bush`;
+    const schoolLabel = biz.school_badge === 'BOTH' ? 'AHS & AGHS' : `${biz.school_badge}`;
+    const hasCoords = biz.latitude !== null && biz.longitude !== null;
 
     els.modalContent.innerHTML = `
       <div class="modal-header">
         <div>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem;">
-            <span class="badge-verified">✓ Verified Busherian (${escapeHtml(schoolLabel)})</span>
             <span class="status-dot status-${escapeHtml(hours.state)}">● ${escapeHtml(hours.badge_text)}</span>
             ${biz.b2b_ready ? '<span class="badge-distance">🏢 B2B & LPO Ready</span>' : ''}
             ${biz.regulator_name ? `<span class="badge-distance">🛡️ ${escapeHtml(biz.regulator_name)}: ${escapeHtml(biz.regulator_license || 'Verified')}</span>` : ''}
@@ -279,13 +543,12 @@
 
         ${biz.alumni_perk ? `
           <div class="card-Perk" style="font-size:0.88rem;padding:0.65rem 0.9rem;">
-            🎁 <strong>Exclusive Busherian Alumni Offer:</strong> ${escapeHtml(biz.alumni_perk)}
+            🎁 <strong>Verified Busherian Alumni Offer:</strong> ${escapeHtml(biz.alumni_perk)}
           </div>
         ` : ''}
 
-        <h4 style="margin:1.1rem 0 0.5rem 0;color:#114B3E;font-size:0.9rem;text-transform:uppercase;letter-spacing:0.04em;">Direct Contact & Online Channels</h4>
-        <div class="action-grid">
-          ${biz.website_url ? `<a href="${escapeHtml(biz.website_url)}" target="_blank" rel="noopener noreferrer" data-track="website" class="btn btn-crimson">🌐 Visit Website</a>` : ''}
+        <div class="cta-grid">
+          ${biz.website_url ? `<a href="${escapeHtml(biz.website_url)}" target="_blank" rel="noopener noreferrer" data-track="website" class="btn btn-crimson">🌐 Visit Website &nearr;</a>` : ''}
           ${biz.phone_primary ? `<a href="tel:${escapeHtml(biz.phone_primary)}" data-track="call" class="btn btn-green">📞 Call ${escapeHtml(biz.phone_primary)}</a>` : ''}
           ${waUrl ? `<a href="${escapeHtml(waUrl)}" target="_blank" rel="noopener noreferrer" data-track="whatsapp" class="btn btn-gold">💬 WhatsApp Now</a>` : ''}
           ${biz.email_public ? `<a href="mailto:${escapeHtml(biz.email_public)}" data-track="email" class="btn btn-outline">✉️ Email Business</a>` : ''}
@@ -296,6 +559,8 @@
             ${socialBadges}
           </div>
         ` : ''}
+
+        <div id="modal-route-box" class="map-route-drawer" style="display:none;border-radius:10px;border:1px solid #D4AF37;margin-top:1rem;"></div>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.15rem;margin-top:1.25rem;padding-top:1.1rem;border-top:1px solid #E5E7EB;">
           <div>
@@ -310,6 +575,11 @@
             ${biz.landmark_directions ? `<p style="margin:0 0 0.5rem 0;font-size:0.8rem;color:#6B7280;"><em>Landmark: ${escapeHtml(biz.landmark_directions)}</em></p>` : ''}
             ${biz.plus_code ? `<p style="margin:0 0 0.65rem 0;font-size:0.78rem;color:#114B3E;font-family:monospace;">Plus Code: ${escapeHtml(biz.plus_code)}</p>` : ''}
             <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+              ${hasCoords ? `
+                <button type="button" data-route-biz-id="${biz.id}" class="btn btn-gold" style="font-size:0.8rem;">
+                  🧭 Get Distance &amp; Directions
+                </button>
+              ` : ''}
               <a href="${escapeHtml(gmapsUrl)}" target="_blank" rel="noopener noreferrer" data-track="map_pin" class="btn btn-outline" style="font-size:0.8rem;">🗺️ Open in Google Maps</a>
               ${wazeUrl ? `<a href="${escapeHtml(wazeUrl)}" target="_blank" rel="noopener noreferrer" data-track="map_pin" class="btn btn-outline" style="font-size:0.8rem;">🚗 Navigate in Waze</a>` : ''}
             </div>
@@ -331,6 +601,7 @@
     `;
 
     els.modalBackdrop.classList.add('open');
+    renderRouteDrawerAndModalBox();
   }
 
   function exportB2BShortlist() {
@@ -372,11 +643,28 @@
   // Wire Event Listeners
   if (els.searchInput) {
     let timer = null;
+    const syncClearBtn = () => {
+      if (els.searchClearBtn) {
+        els.searchClearBtn.style.display = els.searchInput.value.length > 0 ? 'inline-flex' : 'none';
+      }
+    };
     els.searchInput.addEventListener('input', (e) => {
+      syncClearBtn();
       state.searchQuery = e.target.value.trim();
       clearTimeout(timer);
       timer = setTimeout(fetchBusinesses, 220);
     });
+    if (els.searchClearBtn) {
+      els.searchClearBtn.addEventListener('click', () => {
+        els.searchInput.value = '';
+        syncClearBtn();
+        state.searchQuery = '';
+        clearTimeout(timer);
+        fetchBusinesses();
+        els.searchInput.focus();
+      });
+    }
+    syncClearBtn();
   }
 
   if (els.sectorSelect) {
@@ -405,7 +693,6 @@
   if (els.nearMeBtn) {
     els.nearMeBtn.addEventListener('click', () => {
       if (!navigator.geolocation) {
-        // Fallback to Nairobi CBD centroid for desktop testing
         state.userLat = -1.286389;
         state.userLng = 36.817223;
         fetchBusinesses();
@@ -460,7 +747,33 @@
     });
   });
 
+  document.addEventListener('change', (e) => {
+    const switcher = e.target.closest('[data-origin-switcher]');
+    if (switcher) {
+      const bizId = Number(switcher.getAttribute('data-origin-switcher'));
+      const newKey = switcher.value;
+      requestDistanceAndDirections(bizId, newKey);
+    }
+  });
+
   document.addEventListener('click', (e) => {
+    const clearRouteBtn = e.target.closest('[data-clear-route]');
+    if (clearRouteBtn) {
+      e.stopPropagation();
+      state.activeRoute = null;
+      renderRouteDrawerAndModalBox();
+      renderInteractiveMap();
+      return;
+    }
+
+    const routeBtn = e.target.closest('[data-route-biz-id]');
+    if (routeBtn) {
+      e.stopPropagation();
+      const id = Number(routeBtn.getAttribute('data-route-biz-id'));
+      requestDistanceAndDirections(id);
+      return;
+    }
+
     const shortlistBtn = e.target.closest('[data-shortlist-id]');
     if (shortlistBtn) {
       e.stopPropagation();
@@ -518,6 +831,7 @@
     });
     btnMap.addEventListener('click', () => {
       paneMap.classList.remove('mobile-hidden');
+      if (leafletMap) setTimeout(() => leafletMap.invalidateSize(), 80);
       paneResults.classList.add('mobile-hidden');
       btnMap.classList.add('btn-crimson');
       btnList.classList.remove('btn-crimson');

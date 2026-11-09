@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
+use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\WebsiteEnricher;
 
@@ -38,7 +39,8 @@ if ($targetUrl === '') {
 try {
     $pdo = Database::getConnection();
     $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
-    $rate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'autofill_url', 10, 30, 60);
+    $isAdmin = AdminAuth::isAuthenticated();
+    $rate = $isAdmin ? ['allowed' => true] : AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'autofill_url', 10, 30, 60);
     if (!$rate['allowed']) {
         http_response_code(429);
         echo json_encode(['status' => 'error', 'message' => 'Rate limit exceeded for URL auto-fill. Please wait a few minutes.']);

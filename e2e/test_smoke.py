@@ -25,7 +25,7 @@ def test_health_endpoint():
     payload = json.loads(body)
     assert payload["status"] == "ok"
     assert payload["categories_count"] >= 114
-    assert payload["approved_businesses_count"] >= 12
+    assert payload["approved_businesses_count"] == 12
 
 
 def test_directory_homepage_and_zero_vetting_exposure():
@@ -48,7 +48,8 @@ def test_businesses_api_synonym_and_spatial_search():
     assert data["status"] == "ok"
     assert data["count"] >= 1
     first = data["businesses"][0]
-    assert any(b["name"] in ("Mjenzi", "Prescott Engineering Solutions") for b in data["businesses"])
+    assert any(b["name"] == "Prescott Engineering Solutions" for b in data["businesses"])
+    assert all(b["name"] != "Mjenzi" for b in data["businesses"])
     # Verify zero vetting keys in API payload
     for forbidden_key in ["house_name", "year_left", "school_number", "submitter_email"]:
         assert forbidden_key not in first
@@ -125,9 +126,37 @@ def test_privacy_and_dpa_takedown_pages():
     # Verify Ticket #10: /admin/index.php returns 401 when unauthenticated and does not leak pending vetting queue
     st_adm, html_adm, _ = _request("/admin/index.php")
     assert st_adm == 401, f"Expected 401 on unauthenticated /admin/index.php, got {st_adm}"
+    st_add, _, _ = _request("/admin/add-business.php")
+    assert st_add == 401, f"Expected 401 on unauthenticated /admin/add-business.php, got {st_add}"
     assert "Admin Sign In" in html_adm
     assert "Temporary Vetting Credentials" not in html_adm
 
+
+
+
+def test_school_filters_and_route_directions_api():
+    # Verify AGHS returns exactly Bustani Bistro, Harriet's Botanicals, and Mambo Pambo (3)
+    st_aghs, body_aghs, _ = _request("/api/businesses.php?school=AGHS")
+    assert st_aghs == 200
+    aghs_data = json.loads(body_aghs)
+    aghs_names = sorted([b["name"] for b in aghs_data["businesses"]])
+    assert aghs_names == ["Bustani Bistro", "Harriet's Botanicals", "Mambo Pambo"], f"Unexpected AGHS list: {aghs_names}"
+
+    # Verify AHS returns the remaining 9 businesses
+    st_ahs, body_ahs, _ = _request("/api/businesses.php?school=AHS")
+    assert st_ahs == 200
+    ahs_data = json.loads(body_ahs)
+    assert ahs_data["count"] == 9, f"Expected 9 AHS businesses, got {ahs_data['count']}"
+
+    # Verify /api/route-directions.php returns distance, duration, polyline & steps
+    st_rt, body_rt, _ = _request("/api/route-directions.php?from_lat=-1.286389&from_lng=36.817223&to_lat=-1.278800&to_lng=36.771200")
+    assert st_rt == 200, f"Expected 200 from route-directions.php, got {st_rt}: {body_rt}"
+    rt = json.loads(body_rt)["route"]
+    assert rt["straight_km"] > 4.0
+    assert rt["road_km"] > 4.0
+    assert rt["duration_min"] >= 1
+    assert len(rt["polyline"]) >= 2
+    assert len(rt["steps"]) >= 1
 
 
 TESTS = [
@@ -136,4 +165,5 @@ TESTS = [
     test_businesses_api_synonym_and_spatial_search,
     test_website_autofill_api_and_ssrf_protection,
     test_privacy_and_dpa_takedown_pages,
+    test_school_filters_and_route_directions_api,
 ]

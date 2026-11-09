@@ -415,7 +415,7 @@ a {
   position: fixed;
   inset: 0;
   background: rgba(17, 24, 39, 0.65);
-  z-index: 100;
+  z-index: 2000;
   display: none;
   align-items: center;
   justify-content: center;
@@ -510,4 +510,106 @@ a {
   .results-pane.mobile-hidden {
     display: none;
   }
+}
+
+/* Leaflet Custom Busherian Pin Styling */
+.bbiz-leaflet-pin {
+  background: transparent !important;
+  border: none !important;
+}
+.bbiz-pin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 2px solid #D4AF37;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+  transform: translate(-50%, -100%);
+  transition: transform 0.12s ease;
+}
+.bbiz-pin-pill:hover {
+  transform: translate(-50%, -108%) scale(1.04);
+}
+
+/* Search Box Clear (✕) Button */
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.search-input-with-clear {
+  padding-right: 2.35rem !important;
+}
+.search-clear-btn {
+  position: absolute;
+  right: 0.55rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  border: none;
+  background: #E5E7EB;
+  color: #374151;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.search-clear-btn:hover {
+  background: var(--bush-crimson);
+  color: #ffffff;
+}
+
+/* Distance & Turn-by-Turn Route Drawer */
+.map-route-drawer {
+  background: #FFFBEB;
+  border-bottom: 2px solid var(--bush-gold);
+  padding: 0.75rem 1rem;
+  font-size: 0.82rem;
+  color: var(--ink-900);
+}
+.route-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.route-metrics-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--bush-green);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+}
+.route-steps-list {
+  margin: 0.55rem 0 0 0;
+  padding-left: 1.2rem;
+  max-height: 150px;
+  overflow-y: auto;
+  font-size: 0.78rem;
+  color: #374151;
+}
+.route-steps-list li {
+  margin-bottom: 0.28rem;
+}
+.bbiz-pin-focused {
+  outline: 3px solid #F59E0B;
+  outline-offset: 2px;
 }

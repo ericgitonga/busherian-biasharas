@@ -89,6 +89,7 @@ foreach ($rows as $r) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS &amp; AGHS)</title>
   <meta name="description" content="Discover and support verified businesses owned by alumni of Alliance High School (AHS) and Alliance Girls High School (AGHS) — Strong to Serve &amp; Walk in the Light.">
+  <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>
@@ -100,7 +101,7 @@ foreach ($rows as $r) {
         <div class="brand-crest" aria-hidden="true">BB</div>
         <div>
           <h1 class="brand-title">Busherian Biasharas</h1>
-          <p class="brand-subtitle">Verified Alumni Business Directory of the Alliances (AHS &amp; AGHS — Bush)</p>
+          <p class="brand-subtitle">Verified Alumni Business Directory of the Alliances (AHS &amp; AGHS)</p>
         </div>
       </a>
       <nav class="header-actions" aria-label="Primary Navigation">
@@ -117,10 +118,11 @@ foreach ($rows as $r) {
   <section class="filter-dock" aria-label="Directory Search and Category Filters">
     <div class="filter-inner">
       <div class="search-grid">
-        <div>
+        <div class="search-input-wrap">
           <label for="search-q" style="display:none;">Search by keyword, service, or neighborhood</label>
-          <input type="search" id="search-q" class="input-control"
+          <input type="text" id="search-q" class="input-control search-input-with-clear"
             placeholder="Search businesses, services, or Swahili terms (e.g., wakili, daktari, solar, coffee, Westlands)...">
+          <button type="button" id="btn-clear-search" class="search-clear-btn" aria-label="Clear search" title="Clear search" style="display:none;">✕</button>
         </div>
         <div>
           <label for="filter-sector" style="display:none;">Level 1 Industry Sector</label>
@@ -154,8 +156,8 @@ foreach ($rows as $r) {
         <button type="button" class="pill" data-quick-filter="open_now">🟢 Open Now (EAT)</button>
         <button type="button" class="pill" data-quick-filter="has_perk">🎁 Busherian Alumni Perks</button>
         <button type="button" class="pill" data-quick-filter="b2b_ready">🏢 B2B &amp; LPO Ready</button>
-        <button type="button" class="pill" data-quick-filter="AHS">🦅 AHS — Bush</button>
-        <button type="button" class="pill" data-quick-filter="AGHS">🔦 AGHS — Bush</button>
+        <button type="button" class="pill" data-quick-filter="AHS">🦅 AHS</button>
+        <button type="button" class="pill" data-quick-filter="AGHS">🔦 AGHS</button>
       </div>
     </div>
   </section>
@@ -184,9 +186,13 @@ foreach ($rows as $r) {
     <!-- Right Pane: Sticky Interactive Map -->
     <aside id="pane-map" class="map-dock mobile-hidden" aria-label="Interactive Business Map">
       <div class="map-toolbar">
-        <strong style="font-size:0.85rem;color:#114B3E;">🗺️ Live Busherian Proximity &amp; Pin Map</strong>
-        <span style="font-size:0.74rem;color:#6B7280;">Green = Open Now • Crimson = Closed</span>
+        <div>
+          <strong style="font-size:0.85rem;color:#114B3E;">🗺️ Live Busherian Proximity &amp; Pin Map</strong>
+          <div style="font-size:0.72rem;color:#6B7280;">Green = Open Now • Crimson = Closed</div>
+        </div>
+        <div id="map-focus-actions" style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;"></div>
       </div>
+      <div id="map-route-drawer" class="map-route-drawer" style="display:none;"></div>
       <div id="map-canvas" class="map-canvas"></div>
     </aside>
   </main>
@@ -212,6 +218,7 @@ foreach ($rows as $r) {
     window.INITIAL_SECTORS = <?= json_encode($taxonomyTree, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
     window.INITIAL_BUSINESSES = <?= json_encode($initialBusinesses, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
   </script>
+  <script src="/assets/vendor/leaflet/leaflet.js"></script>
   <script src="/assets/js/directory.js"></script>
 </body>
 </html>
