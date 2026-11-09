@@ -11,11 +11,13 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 ### Added
 
 - `public/admin/index.php`, `public/admin/edit-business.php`, `src/Services/VettingPurger.php`: full Admin Business Management interface allowing administrators to search, edit (including 1-click website URL re-extraction), unpublish/take down, or permanently delete any existing business record (closes #20)
-- `src/Services/CategoryMatcher.php`: added SasaSignal (`https://sasasignal.com/`) under `Technology, Software & Digital -> Bulk SMS, Voice, USSD & Communications APIs`
+- `public/assets/vendor/leaflet/`, `public/assets/js/directory.js`, `public/index.php`: replaced the synthetic SVG grid with a real interactive Leaflet + OpenStreetMap map displaying streets, features, neighborhoods, and place names alongside custom Busherian pins (closes #23)
+- `public/index.php`, `public/assets/css/app.css`, `public/assets/js/directory.js`: added an explicit `✕` clear-search button inside the right edge of the directory search input (closes #24)
+- `src/Services/CategoryMatcher.php`: added SasaSignal (`https://sasasignal.com/`) under `Technology, Software & Digital -> Bulk SMS, Voice, USSD & Communications APIs` (closes #25)
 
 ### Changed
 
-- `public/index.php`, `public/assets/js/directory.js`, `public/assets/vendor/leaflet/`, `public/submit.php`, `public/admin/edit-business.php`: replaced synthetic SVG grid map with a real interactive Leaflet + OpenStreetMap street/feature/place-name map with custom Busherian pins, added an explicit `✕` clear-search button inside the search input, and simplified school filter pills and badges to `AHS` and `AGHS` (closes #20)
+- `public/index.php`, `public/assets/js/directory.js`, `public/submit.php`, `public/privacy.php`, `public/admin/index.php`, `public/admin/edit-business.php`, `src/Services/Mailer.php`: simplified school filter pills and badges to `AHS` and `AGHS`, removing ` — Bush` (closes #22)
 
 ### Removed
 
