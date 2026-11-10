@@ -99,3 +99,131 @@ if (!function_exists('bbiz_head_meta_tags')) {
 HTML;
     }
 }
+
+if (!function_exists('bbiz_render_hours_and_photos_fields')) {
+    function bbiz_render_hours_and_photos_fields(?string $hoursJson = null, ?string $photosJson = null): string
+    {
+        $h = \BusherianBiasharas\Services\HoursEngine::extractFormValues($hoursJson);
+        $existingPhotos = \BusherianBiasharas\Services\PhotoUploader::decodePhotosJson($photosJson);
+
+        $wkOpen = htmlspecialchars($h['weekday_open'], ENT_QUOTES, 'UTF-8');
+        $wkClose = htmlspecialchars($h['weekday_close'], ENT_QUOTES, 'UTF-8');
+        $satOpen = htmlspecialchars($h['sat_open'], ENT_QUOTES, 'UTF-8');
+        $satClose = htmlspecialchars($h['sat_close'], ENT_QUOTES, 'UTF-8');
+        $satClosedAttr = !empty($h['sat_closed']) ? 'checked' : '';
+        $satDisabledAttr = !empty($h['sat_closed']) ? 'disabled' : '';
+        $sunOpen = htmlspecialchars($h['sun_open'], ENT_QUOTES, 'UTF-8');
+        $sunClose = htmlspecialchars($h['sun_close'], ENT_QUOTES, 'UTF-8');
+        $sunClosedAttr = !empty($h['sun_closed']) ? 'checked' : '';
+        $sunDisabledAttr = !empty($h['sun_closed']) ? 'disabled' : '';
+
+        $existingPhotosHtml = '';
+        if (!empty($existingPhotos)) {
+            $cards = '';
+            foreach ($existingPhotos as $idx => $photoUrl) {
+                $safeUrl = htmlspecialchars($photoUrl, ENT_QUOTES, 'UTF-8');
+                $num = $idx + 1;
+                $cards .= <<<CARD
+                <div class="existing-photo-item" style="border:1px solid #D1D5DB;border-radius:10px;padding:0.45rem;background:#fff;width:130px;text-align:center;">
+                  <img src="{$safeUrl}" alt="Business Photo {$num}" style="width:100%;height:82px;object-fit:cover;border-radius:6px;display:block;margin-bottom:0.35rem;">
+                  <label style="font-size:0.74rem;color:#991B1B;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:0.25rem;">
+                    <input type="checkbox" name="remove_photos[]" value="{$safeUrl}" class="remove-photo-checkbox"> Remove
+                  </label>
+                </div>
+CARD;
+            }
+            $existingPhotosHtml = <<<WRAP
+            <div style="margin-bottom:0.75rem;">
+              <div style="font-size:0.78rem;font-weight:700;color:#374151;margin-bottom:0.35rem;">Current Uploaded Photos (Check "Remove" to delete upon saving):</div>
+              <div style="display:flex;gap:0.65rem;flex-wrap:wrap;" id="existing-photos-list">{$cards}</div>
+            </div>
+WRAP;
+        }
+
+        return <<<HTML
+        <!-- OPERATING HOURS: MON-FRI, SATURDAY & SUNDAY (EAT) -->
+        <div style="margin-top:1rem;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:12px;padding:1rem;">
+          <div style="font-weight:800;font-size:0.88rem;color:#114B3E;margin-bottom:0.65rem;">
+            🕒 Operating Hours (EAT — Monday to Sunday)
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:0.9rem;">
+            <!-- Monday to Friday -->
+            <div style="background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:0.75rem;">
+              <div style="font-weight:700;font-size:0.82rem;color:#1F2937;margin-bottom:0.45rem;">Monday – Friday</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                <div>
+                  <label for="hours_weekday_open" style="font-size:0.74rem;font-weight:600;color:#4B5563;display:block;margin-bottom:0.15rem;">Open</label>
+                  <input type="time" id="hours_weekday_open" name="hours_weekday_open" class="input-control" value="{$wkOpen}">
+                </div>
+                <div>
+                  <label for="hours_weekday_close" style="font-size:0.74rem;font-weight:600;color:#4B5563;display:block;margin-bottom:0.15rem;">Close</label>
+                  <input type="time" id="hours_weekday_close" name="hours_weekday_close" class="input-control" value="{$wkClose}">
+                </div>
+              </div>
+            </div>
+
+            <!-- Saturday -->
+            <div style="background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:0.75rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.45rem;">
+                <span style="font-weight:700;font-size:0.82rem;color:#1F2937;">Saturday</span>
+                <label style="font-size:0.75rem;color:#4B5563;display:flex;align-items:center;gap:0.25rem;cursor:pointer;">
+                  <input type="checkbox" id="hours_sat_closed" name="hours_sat_closed" value="1" {$satClosedAttr}> Closed
+                </label>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                <div>
+                  <label for="hours_sat_open" style="font-size:0.74rem;font-weight:600;color:#4B5563;display:block;margin-bottom:0.15rem;">Open</label>
+                  <input type="time" id="hours_sat_open" name="hours_sat_open" class="input-control" value="{$satOpen}" {$satDisabledAttr}>
+                </div>
+                <div>
+                  <label for="hours_sat_close" style="font-size:0.74rem;font-weight:600;color:#4B5563;display:block;margin-bottom:0.15rem;">Close</label>
+                  <input type="time" id="hours_sat_close" name="hours_sat_close" class="input-control" value="{$satClose}" {$satDisabledAttr}>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sunday -->
+            <div style="background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:0.75rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.45rem;">
+                <span style="font-weight:700;font-size:0.82rem;color:#1F2937;">Sunday</span>
+                <label style="font-size:0.75rem;color:#4B5563;display:flex;align-items:center;gap:0.25rem;cursor:pointer;">
+                  <input type="checkbox" id="hours_sun_closed" name="hours_sun_closed" value="1" {$sunClosedAttr}> Closed
+                </label>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                <div>
+                  <label for="hours_sun_open" style="font-size:0.74rem;font-weight:600;color:#4B5563;display:block;margin-bottom:0.15rem;">Open</label>
+                  <input type="time" id="hours_sun_open" name="hours_sun_open" class="input-control" value="{$sunOpen}" {$sunDisabledAttr}>
+                </div>
+                <div>
+                  <label for="hours_sun_close" style="font-size:0.74rem;font-weight:600;color:#4B5563;display:block;margin-bottom:0.15rem;">Close</label>
+                  <input type="time" id="hours_sun_close" name="hours_sun_close" class="input-control" value="{$sunClose}" {$sunDisabledAttr}>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BUSINESS PHOTOS UPLOAD (OPTIONAL: 3 TO 5 RECOMMENDED, MAX 5) -->
+        <div style="margin-top:1rem;background:#F0FDF4;border:1px solid #A7F3D0;border-radius:12px;padding:1rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.35rem;">
+            <label for="business_photos" style="font-weight:800;font-size:0.88rem;color:#065F46;">
+              📸 Business Photos (Optional — 3 to 5 Photos Recommended, Max 5)
+            </label>
+            <span id="photo-count-badge" style="font-size:0.76rem;font-weight:700;background:#D1FAE5;color:#065F46;padding:0.2rem 0.6rem;border-radius:999px;">
+              Up to 5 photos • Auto-optimized &amp; EXIF GPS stripped
+            </span>
+          </div>
+          <p style="margin:0 0 0.65rem 0;font-size:0.8rem;color:#047857;">
+            Showcase your storefront, products, team, or work in action. Large phone photos are automatically resized in your browser for fast upload and stripped of private camera/GPS metadata.
+          </p>
+          {$existingPhotosHtml}
+          <input type="file" id="business_photos" name="business_photos[]" accept="image/jpeg,image/png,image/webp" multiple class="input-control" style="background:#fff;padding:0.45rem;">
+          <input type="hidden" id="business_photos_data_json" name="business_photos_data_json" value="">
+          <div id="business-photos-preview" style="display:flex;gap:0.65rem;flex-wrap:wrap;margin-top:0.65rem;"></div>
+          <div id="business-photos-status" style="font-size:0.78rem;color:#065F46;margin-top:0.35rem;display:none;"></div>
+        </div>
+HTML;
+    }
+}
+

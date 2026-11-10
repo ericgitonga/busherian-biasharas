@@ -141,4 +141,65 @@ final class HoursEngine
         }
         return sprintf('%d:%02d %s', $h12, $m, $ampm);
     }
+
+    /**
+     * Build 7-day operating_hours_json from form POST fields (Mon-Fri, Saturday, and Sunday).
+     */
+    public static function buildScheduleJsonFromPost(array $post, ?string $fallbackJson = null): string
+    {
+        if (!isset($post['hours_weekday_open']) && !isset($post['hours_sat_open']) && !isset($post['hours_sun_open'])) {
+            if ($fallbackJson !== null && trim($fallbackJson) !== '') {
+                return $fallbackJson;
+            }
+        }
+
+        $weekdayOpen  = trim((string)($post['hours_weekday_open'] ?? '08:00')) ?: '08:00';
+        $weekdayClose = trim((string)($post['hours_weekday_close'] ?? '17:30')) ?: '17:30';
+        $weekdayClosed = !empty($post['hours_weekday_closed']);
+
+        $satOpen  = trim((string)($post['hours_sat_open'] ?? '09:00'));
+        $satClose = trim((string)($post['hours_sat_close'] ?? '14:00'));
+        $satClosed = !empty($post['hours_sat_closed']) || $satOpen === '' || $satClose === '';
+
+        $sunOpen  = trim((string)($post['hours_sun_open'] ?? ''));
+        $sunClose = trim((string)($post['hours_sun_close'] ?? ''));
+        $sunClosed = !empty($post['hours_sun_closed']) || $sunOpen === '' || $sunClose === '';
+
+        $weekdayShift = $weekdayClosed ? [] : [[$weekdayOpen, $weekdayClose]];
+        $satShift     = $satClosed ? [] : [[$satOpen, $satClose]];
+        $sunShift     = $sunClosed ? [] : [[$sunOpen, $sunClose]];
+
+        return (string)json_encode([
+            'mon' => $weekdayShift,
+            'tue' => $weekdayShift,
+            'wed' => $weekdayShift,
+            'thu' => $weekdayShift,
+            'fri' => $weekdayShift,
+            'sat' => $satShift,
+            'sun' => $sunShift,
+        ]);
+    }
+
+    /**
+     * Extract form values for Mon-Fri, Saturday, and Sunday inputs from operating_hours_json.
+     */
+    public static function extractFormValues(?string $hoursJson): array
+    {
+        $decoded = is_string($hoursJson) && $hoursJson !== '' ? (json_decode($hoursJson, true) ?: []) : [];
+        $mon = $decoded['mon'][0] ?? ['08:00', '17:30'];
+        $sat = $decoded['sat'][0] ?? null;
+        $sun = $decoded['sun'][0] ?? null;
+
+        return [
+            'weekday_open'   => (string)($mon[0] ?? '08:00'),
+            'weekday_close'  => (string)($mon[1] ?? '17:30'),
+            'weekday_closed' => empty($decoded['mon']) && !empty($decoded),
+            'sat_open'       => (string)($sat[0] ?? '09:00'),
+            'sat_close'      => (string)($sat[1] ?? '14:00'),
+            'sat_closed'     => empty($sat),
+            'sun_open'       => (string)($sun[0] ?? '10:00'),
+            'sun_close'      => (string)($sun[1] ?? '16:00'),
+            'sun_closed'     => empty($sun),
+        ];
+    }
 }

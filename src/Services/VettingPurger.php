@@ -235,7 +235,21 @@ final class VettingPurger
      */
     public static function updateBusiness(PDO $pdo, int $businessId, array $data): void
     {
+        $existingRowStmt = $pdo->prepare("SELECT operating_hours_json, photos_json FROM businesses WHERE id = :id LIMIT 1");
+        $existingRowStmt->execute([':id' => $businessId]);
+        $existingRow = (array)($existingRowStmt->fetch() ?: []);
+
         [$resolvedLat, $resolvedLng] = self::resolveCoordsFromAdminData($data);
+        $hoursJson = isset($data['operating_hours_json']) && trim((string)$data['operating_hours_json']) !== ''
+            ? trim((string)$data['operating_hours_json'])
+            : HoursEngine::buildScheduleJsonFromPost($data, (string)($existingRow['operating_hours_json'] ?? ''));
+        $photosJson = PhotoUploader::processBusinessPhotos(
+            isset($existingRow['photos_json']) ? (string)$existingRow['photos_json'] : null,
+            isset($data['remove_photos']) && is_array($data['remove_photos']) ? $data['remove_photos'] : [],
+            $_FILES['business_photos'] ?? null,
+            isset($data['business_photos_data_json']) ? (string)$data['business_photos_data_json'] : null
+        );
+
         $stmt = $pdo->prepare("
             UPDATE businesses SET
                 name = :name,
@@ -261,6 +275,8 @@ final class VettingPurger
                 latitude = :latitude,
                 longitude = :longitude,
                 google_maps_url = :google_maps_url,
+                operating_hours_json = :operating_hours_json,
+                photos_json = :photos_json,
                 phone_primary = :phone_primary,
                 whatsapp_number = :whatsapp_number,
                 email_public = :email_public,
@@ -301,6 +317,8 @@ final class VettingPurger
             ':latitude' => $resolvedLat,
             ':longitude' => $resolvedLng,
             ':google_maps_url' => trim((string)($data['google_maps_url'] ?? '')) ?: null,
+            ':operating_hours_json' => $hoursJson,
+            ':photos_json' => $photosJson,
             ':phone_primary' => trim((string)$data['phone_primary']),
             ':whatsapp_number' => trim((string)($data['whatsapp_number'] ?? '')) ?: null,
             ':email_public' => trim((string)($data['email_public'] ?? '')) ?: null,
@@ -415,6 +433,15 @@ final class VettingPurger
             'sat' => [['09:00', '14:00']],
             'sun' => [],
         ]);
+        $hoursJson = isset($data['operating_hours_json']) && trim((string)$data['operating_hours_json']) !== ''
+            ? trim((string)$data['operating_hours_json'])
+            : HoursEngine::buildScheduleJsonFromPost($data, (string)$defaultHours);
+        $photosJson = PhotoUploader::processBusinessPhotos(
+            isset($data['photos_json']) ? (string)$data['photos_json'] : null,
+            [],
+            $_FILES['business_photos'] ?? null,
+            isset($data['business_photos_data_json']) ? (string)$data['business_photos_data_json'] : null
+        );
 
         $status = in_array($data['status'] ?? 'approved', ['approved', 'quarantined_dpa', 'pending', 'rejected'], true)
             ? (string)$data['status']
@@ -428,7 +455,7 @@ final class VettingPurger
                 branch_name, building_name, floor_suite, street_road,
                 area_neighborhood, city_county, landmark_directions,
                 plus_code, latitude, longitude, google_maps_url,
-                operating_hours_json, phone_primary, whatsapp_number,
+                operating_hours_json, photos_json, phone_primary, whatsapp_number,
                 email_public, website_url, social_instagram, social_linkedin,
                 social_x, social_facebook, social_tiktok, social_youtube,
                 status, verified_at, last_confirmed_at
@@ -439,7 +466,7 @@ final class VettingPurger
                 :branch_name, :building_name, :floor_suite, :street_road,
                 :area_neighborhood, :city_county, :landmark_directions,
                 :plus_code, :latitude, :longitude, :google_maps_url,
-                :operating_hours_json, :phone_primary, :whatsapp_number,
+                :operating_hours_json, :photos_json, :phone_primary, :whatsapp_number,
                 :email_public, :website_url, :social_instagram, :social_linkedin,
                 :social_x, :social_facebook, :social_tiktok, :social_youtube,
                 :status, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -473,7 +500,8 @@ final class VettingPurger
             ':latitude' => $lat,
             ':longitude' => $lng,
             ':google_maps_url' => trim((string)($data['google_maps_url'] ?? '')) ?: null,
-            ':operating_hours_json' => trim((string)($data['operating_hours_json'] ?? '')) ?: $defaultHours,
+            ':operating_hours_json' => $hoursJson,
+            ':photos_json' => $photosJson,
             ':phone_primary' => trim((string)($data['phone_primary'] ?? '')),
             ':whatsapp_number' => trim((string)($data['whatsapp_number'] ?? '')) ?: null,
             ':email_public' => trim((string)($data['email_public'] ?? '')) ?: null,
@@ -558,7 +586,13 @@ final class VettingPurger
         [$resolvedLat, $resolvedLng] = self::resolveCoordsFromAdminData($data);
         $hoursJson = isset($data['operating_hours_json']) && trim((string)$data['operating_hours_json']) !== ''
             ? trim((string)$data['operating_hours_json'])
-            : (string)$oldBiz['operating_hours_json'];
+            : HoursEngine::buildScheduleJsonFromPost($data, (string)$oldBiz['operating_hours_json']);
+        $photosJson = PhotoUploader::processBusinessPhotos(
+            isset($oldBiz['photos_json']) ? (string)$oldBiz['photos_json'] : null,
+            isset($data['remove_photos']) && is_array($data['remove_photos']) ? $data['remove_photos'] : [],
+            $_FILES['business_photos'] ?? null,
+            isset($data['business_photos_data_json']) ? (string)$data['business_photos_data_json'] : null
+        );
 
         $stmt = $pdo->prepare("
             UPDATE businesses SET
@@ -584,6 +618,7 @@ final class VettingPurger
                 longitude = :longitude,
                 google_maps_url = :google_maps_url,
                 operating_hours_json = :operating_hours_json,
+                photos_json = :photos_json,
                 phone_primary = :phone_primary,
                 whatsapp_number = :whatsapp_number,
                 email_public = :email_public,
@@ -626,6 +661,7 @@ final class VettingPurger
             ':longitude' => $resolvedLng,
             ':google_maps_url' => trim((string)($data['google_maps_url'] ?? '')) ?: null,
             ':operating_hours_json' => $hoursJson,
+            ':photos_json' => $photosJson,
             ':phone_primary' => trim((string)($data['phone_primary'] ?? $oldBiz['phone_primary'])),
             ':whatsapp_number' => trim((string)($data['whatsapp_number'] ?? '')) ?: null,
             ':email_public' => trim((string)($data['email_public'] ?? '')) ?: null,

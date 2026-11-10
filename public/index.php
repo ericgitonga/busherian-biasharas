@@ -6,6 +6,7 @@ require_once dirname(__DIR__) . '/src/bootstrap.php';
 use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\CategoryMatcher;
 use BusherianBiasharas\Services\HoursEngine;
+use BusherianBiasharas\Services\PhotoUploader;
 
 bbiz_send_security_headers(false);
 
@@ -23,7 +24,7 @@ $stmt = $pdo->query("
         b.branch_name, b.building_name, b.floor_suite, b.street_road,
         b.area_neighborhood, b.city_county, b.landmark_directions,
         b.plus_code, b.latitude, b.longitude, b.google_maps_url,
-        b.operating_hours_json,
+        b.operating_hours_json, b.photos_json,
         b.phone_primary, b.whatsapp_number, b.email_public, b.website_url,
         b.social_instagram, b.social_linkedin, b.social_x,
         b.social_facebook, b.social_tiktok, b.social_youtube
@@ -69,6 +70,7 @@ foreach ($rows as $r) {
         'google_maps_url' => $r['google_maps_url'],
         'distance_km' => null,
         'hours_status' => HoursEngine::evaluateStatus((string)$r['operating_hours_json']),
+        'photos' => PhotoUploader::decodePhotosJson(isset($r['photos_json']) ? (string)$r['photos_json'] : null),
         'phone_primary' => $r['phone_primary'],
         'whatsapp_number' => $r['whatsapp_number'],
         'email_public' => $r['email_public'],
