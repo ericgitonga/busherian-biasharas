@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.9.0] - 2026-11-11
+
+### Added
+- **Submitter Name, Email & Direct Phone on Pending Listings (`#136`)**:
+  - Updated the Admin Vetting Queue (`public/admin/index.php`) and Admin Business Editor (`public/admin/edit-business.php`) so every pending listing prominently displays the **Name**, **Email Address** (clickable `mailto:` link), and **Direct Phone Number** (clickable `tel:` call link + 1-click `💬 WhatsApp` link) of the person requesting the review alongside their temporary alumni vetting details.
+
 ## [0.8.9] - 2026-11-10
 
 ### Changed

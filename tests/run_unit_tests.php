@@ -615,6 +615,27 @@ assertTrue(
     'public/index.php map legend displays Green = AHS and Green & Maroon = AGHS (#130)'
 );
 
+// 31. Verify Ticket #136: Pending Listings in Admin Queue & Editor display submitter Name, Email, and Phone Number
+$adminIndexLatest = (string)file_get_contents(dirname(__DIR__) . '/public/admin/index.php');
+$adminEditLatest = (string)file_get_contents(dirname(__DIR__) . '/public/admin/edit-business.php');
+assertTrue(
+    str_contains($adminIndexLatest, 'Person Requesting Review (Submitter Contact Details)') &&
+    str_contains($adminIndexLatest, "row['submitter_name']") &&
+    str_contains($adminIndexLatest, "row['submitter_email']") &&
+    str_contains($adminIndexLatest, "row['submitter_phone']") &&
+    str_contains($adminIndexLatest, 'mailto:') &&
+    str_contains($adminIndexLatest, 'tel:') &&
+    str_contains($adminIndexLatest, 'https://wa.me/'),
+    'public/admin/index.php displays submitter Name, Email (mailto:), and Phone (tel: & WhatsApp) for pending listings (#136)'
+);
+assertTrue(
+    str_contains($adminEditLatest, 'Person Requesting Review (Pending Verification Contact &amp; Alumni Details)') &&
+    str_contains($adminEditLatest, "vettingRow['submitter_name']") &&
+    str_contains($adminEditLatest, "vettingRow['submitter_email']") &&
+    str_contains($adminEditLatest, "vettingRow['submitter_phone']"),
+    'public/admin/edit-business.php displays submitter Name, Email, and Phone when reviewing a pending listing (#136)'
+);
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 

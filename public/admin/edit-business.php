@@ -75,6 +75,9 @@ if (!$biz) {
 $tokens = AntiSpamGate::generateFormTokens();
 $claimInviteUrl = OwnerAuth::generateClaimInviteUrl((int)$biz['id']);
 $linkedOwners = OwnerAuth::getOwnersForBusiness($pdo, (int)$biz['id']);
+$vetStmt = $pdo->prepare("SELECT * FROM business_vetting_queue WHERE business_id = :id LIMIT 1");
+$vetStmt->execute([':id' => (int)$biz['id']]);
+$vettingRow = $vetStmt->fetch() ?: null;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -112,6 +115,46 @@ $linkedOwners = OwnerAuth::getOwnersForBusiness($pdo, (int)$biz['id']);
       <div style="background:#FEF2F2;border:2px solid #DC2626;border-radius:12px;padding:1rem;margin-bottom:1.25rem;color:#991B1B;font-weight:600;">
         ⚠️ <?= htmlspecialchars($errorMsg, ENT_QUOTES, 'UTF-8') ?>
       </div>
+    <?php endif; ?>
+
+    <?php if ($vettingRow):
+      $vSubName = trim((string)($vettingRow['submitter_name'] ?? ''));
+      $vSubEmail = trim((string)($vettingRow['submitter_email'] ?? '')) ?: trim((string)($biz['owner_email'] ?? '')) ?: trim((string)($biz['email_public'] ?? ''));
+      $vSubPhone = trim((string)($vettingRow['submitter_phone'] ?? '')) ?: trim((string)($biz['phone_primary'] ?? ''));
+      $vWaDigits = preg_replace('/\D+/', '', $vSubPhone);
+      if (str_starts_with($vWaDigits, '0') && strlen($vWaDigits) === 10) {
+          $vWaDigits = '254' . substr($vWaDigits, 1);
+      }
+    ?>
+    <section style="background:#FFFBEB;border:2px solid #F59E0B;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;">
+      <h2 style="margin:0 0 0.4rem 0;font-size:0.98rem;color:#92400E;">👤 Person Requesting Review (Pending Verification Contact &amp; Alumni Details)</h2>
+      <div style="display:flex;flex-wrap:wrap;gap:1.1rem;font-size:0.86rem;color:#1F2937;margin-bottom:0.45rem;">
+        <span>Name: <strong><?= htmlspecialchars($vSubName !== '' ? $vSubName : 'Not provided', ENT_QUOTES, 'UTF-8') ?></strong></span>
+        <span>Email:
+          <?php if ($vSubEmail !== ''): ?>
+            <a href="mailto:<?= htmlspecialchars($vSubEmail, ENT_QUOTES, 'UTF-8') ?>" style="color:#7B1113;font-weight:700;text-decoration:underline;">✉️ <?= htmlspecialchars($vSubEmail, ENT_QUOTES, 'UTF-8') ?></a>
+          <?php else: ?>
+            <strong>Not provided</strong>
+          <?php endif; ?>
+        </span>
+        <span>Phone:
+          <?php if ($vSubPhone !== ''): ?>
+            <a href="tel:<?= htmlspecialchars($vSubPhone, ENT_QUOTES, 'UTF-8') ?>" style="color:#114B3E;font-weight:700;text-decoration:underline;">📞 <?= htmlspecialchars($vSubPhone, ENT_QUOTES, 'UTF-8') ?></a>
+            <?php if ($vWaDigits !== ''): ?>
+              &nbsp;<a href="https://wa.me/<?= htmlspecialchars($vWaDigits, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#DCFCE7;color:#065F46;border:1px solid #86EFAC;border-radius:6px;padding:0.1rem 0.45rem;font-size:0.76rem;font-weight:700;text-decoration:none;">💬 WhatsApp</a>
+            <?php endif; ?>
+          <?php else: ?>
+            <strong>Not provided</strong>
+          <?php endif; ?>
+        </span>
+      </div>
+      <div style="font-size:0.83rem;color:#065F46;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:0.55rem 0.8rem;">
+        School: <strong><?= htmlspecialchars((string)($vettingRow['school_code'] ?? $biz['school_badge']), ENT_QUOTES, 'UTF-8') ?></strong> |
+        House: <strong><?= htmlspecialchars((string)($vettingRow['house_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong> |
+        Year Left: <strong><?= htmlspecialchars((string)($vettingRow['year_left'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong> |
+        School Number: <strong><?= htmlspecialchars((string)($vettingRow['school_number'] ?: 'Optional / Not provided'), ENT_QUOTES, 'UTF-8') ?></strong>
+      </div>
+    </section>
     <?php endif; ?>
 
     <!-- Owner Account Linking & 1-Click DM Claim Link -->
