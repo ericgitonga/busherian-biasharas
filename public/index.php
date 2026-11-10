@@ -258,6 +258,7 @@ foreach ($rows as $r) {
   <script>
     window.INITIAL_SECTORS = <?= json_encode($taxonomyTree, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
     window.PLACE_HIERARCHY = <?= json_encode($placeHierarchy, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
+    window.PLACE_UNIT_LABELS = <?= json_encode(LocationEngine::getPlaceUnitLabels(), JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
     window.INITIAL_BUSINESSES = <?= json_encode($initialBusinesses, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
   </script>
   <script src="/assets/vendor/leaflet/leaflet.js"></script>

@@ -235,6 +235,7 @@ if (!function_exists('bbiz_render_place_fields')) {
     function bbiz_render_place_fields(string $currentCountry = 'Kenya', string $currentCity = 'Nairobi'): string
     {
         $hierarchy = \BusherianBiasharas\Services\LocationEngine::getPlaceHierarchy();
+        $unitLabels = \BusherianBiasharas\Services\LocationEngine::getPlaceUnitLabels();
         $curCountry = trim($currentCountry) !== '' ? trim($currentCountry) : 'Kenya';
         $curCity = trim($currentCity) !== '' ? trim($currentCity) : 'Nairobi';
 
@@ -242,6 +243,11 @@ if (!function_exists('bbiz_render_place_fields')) {
         $countrySelectVal = $isKnownCountry ? $curCountry : '__custom__';
         $countryCustomVal = $isKnownCountry ? '' : htmlspecialchars($curCountry, ENT_QUOTES, 'UTF-8');
         $countryCustomDisplay = $isKnownCountry ? 'none' : 'block';
+
+        $unitLabel = $isKnownCountry
+            ? \BusherianBiasharas\Services\LocationEngine::getUnitLabelForCountry($curCountry)
+            : 'County / State / District';
+        $escUnitLabel = htmlspecialchars($unitLabel, ENT_QUOTES, 'UTF-8');
 
         $countryOptionsHtml = '';
         foreach (array_keys($hierarchy) as $cName) {
@@ -265,13 +271,14 @@ if (!function_exists('bbiz_render_place_fields')) {
             $cityOptionsHtml .= "<option value=\"{$esc}\" {$sel}>{$esc}</option>";
         }
         $customCitySel = ($citySelectVal === '__custom__') ? 'selected' : '';
-        $cityOptionsHtml .= "<option value=\"__custom__\" {$customCitySel}>+ Other City / County / State (Type Below)</option>";
+        $cityOptionsHtml .= "<option value=\"__custom__\" {$customCitySel}>+ Other {$escUnitLabel} (Type Below)</option>";
 
         $hierarchyJson = htmlspecialchars((string)json_encode($hierarchy, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8');
+        $unitLabelsJson = htmlspecialchars((string)json_encode($unitLabels, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8');
         $escInitCity = htmlspecialchars($curCity, ENT_QUOTES, 'UTF-8');
 
         return <<<HTML
-          <div data-place-hierarchy="{$hierarchyJson}" data-initial-city="{$escInitCity}">
+          <div data-place-hierarchy="{$hierarchyJson}" data-place-unit-labels="{$unitLabelsJson}" data-initial-city="{$escInitCity}">
             <label for="country" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Country *</label>
             <select id="country" name="country" class="select-control" required>
               {$countryOptionsHtml}
@@ -281,12 +288,12 @@ if (!function_exists('bbiz_render_place_fields')) {
               style="margin-top:0.4rem;display:{$countryCustomDisplay};">
           </div>
           <div>
-            <label for="city_county" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">City / County / State *</label>
+            <label id="city_county_label" for="city_county" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">{$escUnitLabel} *</label>
             <select id="city_county" name="city_county" class="select-control" required>
               {$cityOptionsHtml}
             </select>
             <input type="text" id="city_county_custom" name="city_county_custom" class="input-control"
-              value="{$cityCustomVal}" placeholder="Enter City, County, or State..."
+              value="{$cityCustomVal}" placeholder="Enter {$escUnitLabel}..."
               style="margin-top:0.4rem;display:{$cityCustomDisplay};">
           </div>
 HTML;

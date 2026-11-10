@@ -548,6 +548,64 @@ assertTrue(
     'Owner and Admin delete handlers enforce server-side exact confirm_business_name verification (#127, #128)'
 );
 
+// 30. Verify Tickets #132, #133, #134: Alphabetical World Countries & Standard Administrative Location Units
+$countryKeys = array_keys($placeHierarchy);
+$sortedCountryKeys = $countryKeys;
+sort($sortedCountryKeys, SORT_STRING);
+assertTrue(
+    $countryKeys === $sortedCountryKeys && $countryKeys[0] === 'Afghanistan' && $countryKeys[count($countryKeys) - 1] === 'Zimbabwe',
+    'LocationEngine::PLACE_HIERARCHY lists all world countries in strict alphabetical order (#132, #133)'
+);
+
+$kenyaCounties = $placeHierarchy['Kenya'];
+$sortedKenya = $kenyaCounties;
+sort($sortedKenya, SORT_STRING);
+assertTrue(
+    count($kenyaCounties) === 47 &&
+    $kenyaCounties === $sortedKenya &&
+    $kenyaCounties[0] === 'Baringo' &&
+    $kenyaCounties[46] === 'West Pokot' &&
+    in_array('Nairobi', $kenyaCounties, true) &&
+    !in_array('Kikuyu', $kenyaCounties, true) &&
+    LocationEngine::getUnitLabelForCountry('Kenya') === 'County',
+    'Kenya lists strictly the 47 Counties in alphabetical order with unit label County (#132, #133)'
+);
+
+$usStates = $placeHierarchy['United States'];
+$sortedUs = $usStates;
+sort($sortedUs, SORT_STRING);
+assertTrue(
+    count($usStates) === 51 &&
+    $usStates === $sortedUs &&
+    $usStates[0] === 'Alabama' &&
+    $usStates[50] === 'Wyoming' &&
+    LocationEngine::getUnitLabelForCountry('United States') === 'State',
+    'United States lists all 50 States + D.C. in strict alphabetical order with unit label State (#132, #133)'
+);
+
+$tzDistricts = $placeHierarchy['Tanzania'];
+$sortedTz = $tzDistricts;
+sort($sortedTz, SORT_STRING);
+assertTrue(
+    $tzDistricts === $sortedTz &&
+    in_array('Arusha', $tzDistricts, true) &&
+    in_array('Ilala', $tzDistricts, true) &&
+    in_array('Kinondoni', $tzDistricts, true) &&
+    in_array('Moshi', $tzDistricts, true) &&
+    LocationEngine::getUnitLabelForCountry('Tanzania') === 'District',
+    'Tanzania lists Districts in strict alphabetical order with unit label District (#132, #133)'
+);
+
+$placeFieldsKenya = bbiz_render_place_fields('Kenya', 'Nairobi');
+$placeFieldsUs = bbiz_render_place_fields('United States', 'California');
+assertTrue(
+    str_contains($placeFieldsKenya, 'County *') &&
+    str_contains($placeFieldsKenya, '<option value="Kenya" selected>') &&
+    str_contains($placeFieldsKenya, '<option value="Nairobi" selected>') &&
+    str_contains($placeFieldsUs, 'State *'),
+    'bbiz_render_place_fields dynamically renders standard administrative unit label and defaults to Kenya -> Nairobi (#134)'
+);
+
 // 29. Verify Ticket #130: Map legend in public/index.php reflects AHS (Green) & AGHS (Green & Maroon)
 $indexHtml = (string)file_get_contents(dirname(__DIR__) . '/public/index.php');
 assertTrue(

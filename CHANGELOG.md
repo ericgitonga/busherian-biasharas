@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.8.9] - 2026-11-10
+
+### Changed
+- **Alphabetical World Countries & Official Standard Administrative Units (`#132`, `#133`, `#134`)**:
+  - Updated `LocationEngine::PLACE_HIERARCHY` so all 197 world countries are ordered strictly alphabetically (`Afghanistan` to `Zimbabwe`) while keeping `Kenya` -> `Nairobi` pre-selected by default on new forms.
+  - Populated every country's Level-2 subdivision dropdown with its official standard administrative units in strict alphabetical order: all **47 Counties of Kenya** (`Baringo` to `West Pokot`), **50 US States + District of Columbia** (`Alabama` to `Wyoming`), **Tanzanian & Ugandan Districts**, and official Provinces, States, Counties, Districts, Regions, Governorates, Prefectures, Parishes, Emirates, and Cantons worldwide.
+  - Added `LocationEngine::PLACE_UNIT_LABELS` and dynamic unit labels across `src/bootstrap.php`, `public/assets/js/form-enhancements.js`, `public/index.php`, and `public/assets/js/directory.js` so the Level-2 field label and filter dropdown dynamically reflect the selected country's administrative unit (`County`, `State`, `District`, `Province`, etc.).
+
 ## [0.8.8] - 2026-11-10
 
 ### Changed
