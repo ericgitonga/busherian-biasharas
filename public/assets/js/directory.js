@@ -131,11 +131,19 @@
         : '';
       const inShortlist = state.shortlistIds.has(biz.id);
       const hasCoords = biz.latitude !== null && biz.longitude !== null;
+      const photos = Array.isArray(biz.photos) ? biz.photos : [];
+      const cardPhotosHtml = photos.length > 0 ? `
+        <div class="card-photo-strip">
+          ${photos.slice(0, 4).map((url, idx) => `<img src="${escapeHtml(url)}" alt="${escapeHtml(biz.name)} photo ${idx + 1}" loading="lazy">`).join('')}
+          ${photos.length > 4 ? `<span class="card-photo-more">+${photos.length - 4}</span>` : ''}
+        </div>
+      ` : '';
 
       // STRICT PRIVACY GUARANTEE: Zero House, Year Left, or School Number ever rendered
       return `
         <article class="biz-card" data-biz-id="${biz.id}">
           <div>
+            ${cardPhotosHtml}
             <div class="card-top-badges" style="justify-content:flex-end;">
               ${distBadge}
             </div>
@@ -732,6 +740,28 @@
 
     const schoolLabel = biz.school_badge === 'BOTH' ? 'AHS & AGHS' : `${biz.school_badge}`;
     const hasCoords = biz.latitude !== null && biz.longitude !== null;
+    const modalPhotos = Array.isArray(biz.photos) ? biz.photos : [];
+    const galleryHtml = modalPhotos.length > 0 ? `
+      <div class="biz-photo-carousel" data-carousel-index="0">
+        <div class="carousel-stage">
+          <img id="modal-carousel-main-img" src="${escapeHtml(modalPhotos[0])}" alt="${escapeHtml(biz.name)} photo 1">
+          ${modalPhotos.length > 1 ? `
+            <button type="button" class="carousel-nav prev" data-carousel-step="-1" aria-label="Previous photo">&lsaquo;</button>
+            <button type="button" class="carousel-nav next" data-carousel-step="1" aria-label="Next photo">&rsaquo;</button>
+            <span id="modal-carousel-counter" class="carousel-counter">1 / ${modalPhotos.length}</span>
+          ` : ''}
+        </div>
+        ${modalPhotos.length > 1 ? `
+          <div class="carousel-thumbs">
+            ${modalPhotos.map((u, idx) => `
+              <button type="button" class="carousel-thumb ${idx === 0 ? 'active' : ''}" data-carousel-goto="${idx}">
+                <img src="${escapeHtml(u)}" alt="Thumbnail ${idx + 1}">
+              </button>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    ` : '';
 
     els.modalContent.innerHTML = `
       <div class="modal-header">
@@ -749,6 +779,7 @@
         <button type="button" id="btn-close-modal" class="btn btn-outline" aria-label="Close modal">✕ Close</button>
       </div>
       <div class="modal-body">
+        ${galleryHtml}
         <p style="margin-top:0;color:#374151;font-size:0.95rem;">${escapeHtml(biz.description)}</p>
 
         ${biz.alumni_perk ? `
@@ -958,6 +989,42 @@
   });
 
   document.addEventListener('click', (e) => {
+    const carouselStepBtn = e.target.closest('[data-carousel-step]');
+    if (carouselStepBtn && state.activeBusiness && Array.isArray(state.activeBusiness.photos)) {
+      e.stopPropagation();
+      const photos = state.activeBusiness.photos;
+      const wrap = document.querySelector('.biz-photo-carousel');
+      if (wrap && photos.length > 1) {
+        const cur = Number(wrap.getAttribute('data-carousel-index') || 0);
+        const step = Number(carouselStepBtn.getAttribute('data-carousel-step') || 1);
+        const nextIdx = (cur + step + photos.length) % photos.length;
+        wrap.setAttribute('data-carousel-index', String(nextIdx));
+        const mainImg = document.getElementById('modal-carousel-main-img');
+        if (mainImg) mainImg.src = photos[nextIdx];
+        const counter = document.getElementById('modal-carousel-counter');
+        if (counter) counter.textContent = `${nextIdx + 1} / ${photos.length}`;
+        wrap.querySelectorAll('.carousel-thumb').forEach((th, i) => th.classList.toggle('active', i === nextIdx));
+      }
+      return;
+    }
+
+    const carouselGotoBtn = e.target.closest('[data-carousel-goto]');
+    if (carouselGotoBtn && state.activeBusiness && Array.isArray(state.activeBusiness.photos)) {
+      e.stopPropagation();
+      const photos = state.activeBusiness.photos;
+      const nextIdx = Number(carouselGotoBtn.getAttribute('data-carousel-goto') || 0);
+      const wrap = document.querySelector('.biz-photo-carousel');
+      if (wrap && photos[nextIdx]) {
+        wrap.setAttribute('data-carousel-index', String(nextIdx));
+        const mainImg = document.getElementById('modal-carousel-main-img');
+        if (mainImg) mainImg.src = photos[nextIdx];
+        const counter = document.getElementById('modal-carousel-counter');
+        if (counter) counter.textContent = `${nextIdx + 1} / ${photos.length}`;
+        wrap.querySelectorAll('.carousel-thumb').forEach((th, i) => th.classList.toggle('active', i === nextIdx));
+      }
+      return;
+    }
+
     const refreshGpsBtn = e.target.closest('[data-refresh-gps]');
     if (refreshGpsBtn) {
       e.stopPropagation();

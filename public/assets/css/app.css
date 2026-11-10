@@ -681,3 +681,114 @@ a {
   color: #111827;
   border: 2px solid var(--bush-gold);
 }
+
+/* Business Card Photo Strip & Modal Photo Gallery Carousel */
+.card-photo-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+  position: relative;
+}
+.card-photo-strip img {
+  width: 100%;
+  height: 68px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+  display: block;
+}
+.card-photo-more {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  background: rgba(17, 24, 39, 0.78);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+}
+.biz-photo-carousel {
+  margin-bottom: 1.1rem;
+  background: #F9FAFB;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 0.65rem;
+}
+.carousel-stage {
+  position: relative;
+  width: 100%;
+  height: 290px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #111827;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.carousel-stage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.carousel-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111827;
+  font-size: 1.35rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.carousel-nav.prev { left: 10px; }
+.carousel-nav.next { right: 10px; }
+.carousel-counter {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  background: rgba(17, 24, 39, 0.78);
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+}
+.carousel-thumbs {
+  display: flex;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  overflow-x: auto;
+}
+.carousel-thumb {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  width: 68px;
+  height: 48px;
+  overflow: hidden;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.carousel-thumb.active {
+  border-color: var(--bush-crimson);
+  opacity: 1;
+}
+.carousel-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}

@@ -114,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errorMsg = 'Professional Regulator is required for regulated industries.';
     } else {
         try {
-            $newId = VettingPurger::createBusinessDirectly($pdo, $form);
+            $newId = VettingPurger::createBusinessDirectly($pdo, array_merge($_POST, $form));
             header('Location: /admin/index.php?added=' . $newId);
             exit;
         } catch (\Throwable $e) {
@@ -179,7 +179,7 @@ $tokens = AntiSpamGate::generateFormTokens();
       <div id="admin-autofill-status" style="margin-top:0.5rem;font-size:0.82rem;display:none;"></div>
     </section>
 
-    <form method="POST" action="/admin/add-business.php" style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:1.5rem;">
+    <form method="POST" action="/admin/add-business.php" enctype="multipart/form-data" style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:1.5rem;">
       <input type="hidden" name="csrf_token" id="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.9rem;">
@@ -341,6 +341,8 @@ $tokens = AntiSpamGate::generateFormTokens();
         </label>
       </div>
 
+      <?= bbiz_render_hours_and_photos_fields() ?>
+
       <div style="margin-top:1.35rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
         <button type="submit" class="btn btn-green" style="padding:0.75rem 1.6rem;font-size:0.95rem;">✓ Add &amp; Publish Immediately</button>
         <a href="/admin/index.php" class="btn btn-outline">Cancel</a>
@@ -467,5 +469,6 @@ $tokens = AntiSpamGate::generateFormTokens();
       }
     })();
   </script>
+  <script src="/assets/js/form-enhancements.js"></script>
 </body>
 </html>

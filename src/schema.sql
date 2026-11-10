@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS businesses (
 
     -- Media & Moderation State
     logo_path VARCHAR(255) NULL,
+    photos_json TEXT NULL,
     status ENUM('pending', 'approved', 'rejected', 'quarantined_dpa') NOT NULL DEFAULT 'pending',
     verified_at TIMESTAMP NULL,
     last_confirmed_at TIMESTAMP NULL,

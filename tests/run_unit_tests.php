@@ -21,6 +21,7 @@ use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\OwnerAuth;
+use BusherianBiasharas\Services\PhotoUploader;
 use BusherianBiasharas\Services\VettingPurger;
 use BusherianBiasharas\Services\WebsiteEnricher;
 
@@ -334,6 +335,60 @@ assertTrue(OwnerAuth::isGoogleSsoConfigured($pdo), 'Google SSO becomes active im
 assertTrue(str_contains(OwnerAuth::getGoogleAuthorizationUrl('state123', $pdo), '123456789-test.apps.googleusercontent.com'), 'getGoogleAuthorizationUrl uses DB-stored GOOGLE_CLIENT_ID');
 Database::setSetting($pdo, 'GOOGLE_CLIENT_ID', '');
 Database::setSetting($pdo, 'GOOGLE_CLIENT_SECRET', '');
+
+// 17. Verify Tickets #46, #88, #89: Sunday operating hours in HoursEngine::buildScheduleJsonFromPost & extractFormValues
+$sunSchedJson = HoursEngine::buildScheduleJsonFromPost([
+    'hours_weekday_open' => '08:00',
+    'hours_weekday_close' => '17:30',
+    'hours_sat_open' => '09:00',
+    'hours_sat_close' => '15:00',
+    'hours_sun_open' => '10:00',
+    'hours_sun_close' => '16:00',
+]);
+$extractedHours = HoursEngine::extractFormValues($sunSchedJson);
+assertTrue(
+    $extractedHours['sun_closed'] === false
+    && $extractedHours['sun_open'] === '10:00'
+    && $extractedHours['sun_close'] === '16:00',
+    'HoursEngine::buildScheduleJsonFromPost & extractFormValues persist and restore Sunday hours'
+);
+$sundayNoon = new DateTimeImmutable('2026-11-08 12:30:00', new DateTimeZone('Africa/Nairobi')); // Sunday
+$sunEval = HoursEngine::evaluateStatus($sunSchedJson, $sundayNoon);
+assertTrue(
+    $sunEval['is_open'] === true && $sunEval['state'] === 'OPEN_NOW',
+    'HoursEngine::evaluateStatus reports OPEN_NOW on Sunday when Sunday hours are configured'
+);
+
+// 18. Verify Tickets #90, #91, #92, #93: PhotoUploader GD re-encoding, EXIF stripping, 5-photo cap & removal
+$testDataUrls = [];
+for ($i = 0; $i < 6; $i++) {
+    $im = imagecreatetruecolor(40, 30);
+    $col = imagecolorallocate($im, 20 * $i, 100, 150);
+    imagefilledrectangle($im, 0, 0, 40, 30, $col);
+    ob_start();
+    imagejpeg($im, null, 85);
+    $jpegBytes = (string)ob_get_clean();
+    imagedestroy($im);
+    $testDataUrls[] = 'data:image/jpeg;base64,' . base64_encode($jpegBytes);
+}
+$savedPhotosJson = PhotoUploader::processBusinessPhotos(null, [], null, json_encode($testDataUrls));
+$decodedPhotos = PhotoUploader::decodePhotosJson($savedPhotosJson);
+assertTrue(
+    count($decodedPhotos) === 5 && str_starts_with($decodedPhotos[0], '/uploads/businesses/bbiz_'),
+    'PhotoUploader::processBusinessPhotos sanitizes images via GD and enforces a strict cap of 5 photos'
+);
+$afterRemoveJson = PhotoUploader::processBusinessPhotos($savedPhotosJson, [$decodedPhotos[0]], null, null);
+$afterRemoveList = PhotoUploader::decodePhotosJson($afterRemoveJson);
+assertTrue(
+    count($afterRemoveList) === 4 && !in_array($decodedPhotos[0], $afterRemoveList, true),
+    'PhotoUploader::processBusinessPhotos removes checked photos accurately'
+);
+foreach ($decodedPhotos as $relUrl) {
+    $fPath = dirname(__DIR__) . '/public' . $relUrl;
+    if (is_file($fPath)) {
+        @unlink($fPath);
+    }
+}
 
 @unlink(getenv('DB_SQLITE_PATH'));
 

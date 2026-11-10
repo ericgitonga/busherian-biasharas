@@ -7,6 +7,7 @@ use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\CategoryMatcher;
 use BusherianBiasharas\Services\HoursEngine;
 use BusherianBiasharas\Services\LocationEngine;
+use BusherianBiasharas\Services\PhotoUploader;
 
 bbiz_send_security_headers(true);
 
@@ -38,7 +39,7 @@ try {
             b.branch_name, b.building_name, b.floor_suite, b.street_road,
             b.area_neighborhood, b.city_county, b.landmark_directions,
             b.plus_code, b.latitude, b.longitude, b.google_maps_url,
-            b.operating_hours_json,
+            b.operating_hours_json, b.photos_json,
             b.phone_primary, b.whatsapp_number, b.email_public, b.website_url,
             b.social_instagram, b.social_linkedin, b.social_x,
             b.social_facebook, b.social_tiktok, b.social_youtube,
@@ -157,6 +158,7 @@ try {
             'google_maps_url' => $row['google_maps_url'],
             'distance_km' => $distanceKm,
             'hours_status' => $hoursStatus,
+            'photos' => PhotoUploader::decodePhotosJson(isset($row['photos_json']) ? (string)$row['photos_json'] : null),
             'phone_primary' => $row['phone_primary'],
             'whatsapp_number' => $row['whatsapp_number'],
             'email_public' => $row['email_public'],

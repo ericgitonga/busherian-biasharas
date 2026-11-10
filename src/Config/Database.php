@@ -257,6 +257,7 @@ final class Database
                     social_tiktok TEXT NULL,
                     social_youtube TEXT NULL,
                     logo_path TEXT NULL,
+                    photos_json TEXT NULL,
                     status TEXT NOT NULL DEFAULT 'pending',
                     verified_at TEXT NULL,
                     last_confirmed_at TEXT NULL,
@@ -430,8 +431,17 @@ final class Database
                     $hasOwnerEmail = true;
                 }
             }
+            $hasPhotosJson = false;
+            foreach ($cols as $col) {
+                if (($col['name'] ?? '') === 'photos_json') {
+                    $hasPhotosJson = true;
+                }
+            }
             if (!$hasOwnerEmail) {
                 $pdo->exec("ALTER TABLE businesses ADD COLUMN owner_email TEXT NULL");
+            }
+            if (!$hasPhotosJson) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN photos_json TEXT NULL");
             }
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS business_owners (
@@ -473,8 +483,17 @@ final class Database
                     $hasOwnerEmail = true;
                 }
             }
+            $hasPhotosJson = false;
+            foreach ($cols as $col) {
+                if (($col['Field'] ?? '') === 'photos_json') {
+                    $hasPhotosJson = true;
+                }
+            }
             if (!$hasOwnerEmail) {
                 $pdo->exec("ALTER TABLE businesses ADD COLUMN owner_email VARCHAR(190) NULL AFTER email_public");
+            }
+            if (!$hasPhotosJson) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN photos_json TEXT NULL AFTER logo_path");
             }
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS business_owners (

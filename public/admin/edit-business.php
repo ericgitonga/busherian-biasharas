@@ -139,7 +139,7 @@ $linkedOwners = OwnerAuth::getOwnersForBusiness($pdo, (int)$biz['id']);
       <div id="admin-autofill-status" style="margin-top:0.5rem;font-size:0.82rem;display:none;"></div>
     </section>
 
-    <form method="POST" action="/admin/edit-business.php?id=<?= (int)$biz['id'] ?>" style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:1.5rem;">
+    <form method="POST" action="/admin/edit-business.php?id=<?= (int)$biz['id'] ?>" enctype="multipart/form-data" style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:1.5rem;">
       <input type="hidden" name="csrf_token" id="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
       <input type="hidden" name="post_action" value="update">
 
@@ -311,6 +311,8 @@ $linkedOwners = OwnerAuth::getOwnersForBusiness($pdo, (int)$biz['id']);
         </label>
       </div>
 
+      <?= bbiz_render_hours_and_photos_fields((string)($biz['operating_hours_json'] ?? ''), isset($biz['photos_json']) ? (string)$biz['photos_json'] : null) ?>
+
       <div style="margin-top:1.35rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
         <button type="submit" class="btn btn-green" style="padding:0.7rem 1.5rem;">💾 Save Changes</button>
         <a href="/admin/index.php" class="btn btn-outline">Cancel</a>
@@ -456,5 +458,6 @@ $linkedOwners = OwnerAuth::getOwnersForBusiness($pdo, (int)$biz['id']);
       }
     })();
   </script>
+  <script src="/assets/js/form-enhancements.js"></script>
 </body>
 </html>

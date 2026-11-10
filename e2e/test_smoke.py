@@ -260,6 +260,23 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert st_home == 200
     assert "/owner/login.php" in body_home
 
+    # 6. Verify Tickets #46 (#88, #89) & #90 (#91, #92, #93): Sunday hours inputs + Photo upload & gallery carousel
+    st_sub, body_sub, _ = _request("/submit.php")
+    assert st_sub == 200
+    assert 'name="hours_sun_open"' in body_sub
+    assert 'name="hours_sun_close"' in body_sub
+    assert 'name="hours_sun_closed"' in body_sub
+    assert 'name="business_photos[]"' in body_sub
+    assert 'name="business_photos_data_json"' in body_sub
+
+    st_api, body_api, _ = _request("/api/businesses.php")
+    assert st_api == 200
+    api_data = json.loads(body_api)
+    assert len(api_data["businesses"]) >= 1
+    first_biz = api_data["businesses"][0]
+    assert "photos" in first_biz and isinstance(first_biz["photos"], list)
+    assert "sun" in first_biz["hours_status"]["schedule_table"]
+
 
 TESTS = [
     test_health_endpoint,

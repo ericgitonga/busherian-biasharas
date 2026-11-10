@@ -7,9 +7,11 @@ use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Config\Houses;
 use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\CategoryMatcher;
+use BusherianBiasharas\Services\HoursEngine;
 use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\OwnerAuth;
+use BusherianBiasharas\Services\PhotoUploader;
 use BusherianBiasharas\Services\VettingPurger;
 use BusherianBiasharas\Services\WebsiteEnricher;
 
@@ -177,20 +179,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $createdCustomCategory = ['id' => $finalSpecialtyId, 'name' => $customSpec];
                     }
 
-                    $weekdayOpen  = trim((string)($_POST['hours_weekday_open'] ?? '08:00')) ?: '08:00';
-                    $weekdayClose = trim((string)($_POST['hours_weekday_close'] ?? '17:30')) ?: '17:30';
-                    $satOpen      = trim((string)($_POST['hours_sat_open'] ?? '09:00'));
-                    $satClose     = trim((string)($_POST['hours_sat_close'] ?? '14:00'));
-
-                    $hoursJson = json_encode([
-                        'mon' => [[$weekdayOpen, $weekdayClose]],
-                        'tue' => [[$weekdayOpen, $weekdayClose]],
-                        'wed' => [[$weekdayOpen, $weekdayClose]],
-                        'thu' => [[$weekdayOpen, $weekdayClose]],
-                        'fri' => [[$weekdayOpen, $weekdayClose]],
-                        'sat' => ($satOpen !== '' && $satClose !== '') ? [[$satOpen, $satClose]] : [],
-                        'sun' => [],
-                    ]);
+                    $hoursJson = HoursEngine::buildScheduleJsonFromPost($_POST);
+                    $photosJson = PhotoUploader::processBusinessPhotos(
+                        null,
+                        [],
+                        $_FILES['business_photos'] ?? null,
+                        isset($_POST['business_photos_data_json']) ? (string)$_POST['business_photos_data_json'] : null
+                    );
 
                     $slugBase = CategoryMatcher::slugify($bizName);
                     $slug = $slugBase . '-' . substr(bin2hex(random_bytes(3)), 0, 6);
@@ -206,7 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             branch_name, building_name, floor_suite, street_road,
                             area_neighborhood, city_county, landmark_directions,
                             plus_code, latitude, longitude, google_maps_url,
-                            operating_hours_json, phone_primary, whatsapp_number,
+                            operating_hours_json, photos_json, phone_primary, whatsapp_number,
                             email_public, website_url,
                             social_instagram, social_linkedin, social_x,
                             social_facebook, social_tiktok, social_youtube,
@@ -218,7 +213,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             :branch_name, :building_name, :floor_suite, :street_road,
                             :area_neighborhood, :city_county, :landmark_directions,
                             :plus_code, :latitude, :longitude, :google_maps_url,
-                            :operating_hours_json, :phone_primary, :whatsapp_number,
+                            :operating_hours_json, :photos_json, :phone_primary, :whatsapp_number,
                             :email_public, :website_url,
                             :social_instagram, :social_linkedin, :social_x,
                             :social_facebook, :social_tiktok, :social_youtube,
@@ -254,6 +249,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':longitude' => $lng,
                         ':google_maps_url' => $gmapsUrl !== '' ? $gmapsUrl : null,
                         ':operating_hours_json' => $hoursJson,
+                        ':photos_json' => $photosJson,
                         ':phone_primary' => $phonePrimary,
                         ':whatsapp_number' => $whatsappNum !== '' ? $whatsappNum : null,
                         ':email_public' => $emailPublic !== '' ? $emailPublic : null,
@@ -396,7 +392,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
       <div id="autofill-status" style="margin-top:0.65rem;font-size:0.84rem;display:none;"></div>
     </section>
 
-    <form method="POST" action="/submit.php" id="business-submit-form" style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:1.5rem;box-shadow:0 4px 16px rgba(0,0,0,0.05);">
+    <form method="POST" action="/submit.php" id="business-submit-form" enctype="multipart/form-data" style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:1.5rem;box-shadow:0 4px 16px rgba(0,0,0,0.05);">
       <input type="hidden" name="csrf_token" id="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
       <input type="hidden" name="form_ts" value="<?= (int)$tokens['form_ts'] ?>">
       <input type="hidden" name="form_nonce" value="<?= htmlspecialchars($tokens['form_nonce'], ENT_QUOTES, 'UTF-8') ?>">
@@ -607,24 +603,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
           </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.9rem;margin-top:0.9rem;">
-          <div>
-            <label for="hours_weekday_open" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Mon–Fri Open (EAT)</label>
-            <input type="time" id="hours_weekday_open" name="hours_weekday_open" class="input-control" value="08:00">
-          </div>
-          <div>
-            <label for="hours_weekday_close" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Mon–Fri Close (EAT)</label>
-            <input type="time" id="hours_weekday_close" name="hours_weekday_close" class="input-control" value="17:30">
-          </div>
-          <div>
-            <label for="hours_sat_open" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Saturday Open</label>
-            <input type="time" id="hours_sat_open" name="hours_sat_open" class="input-control" value="09:00">
-          </div>
-          <div>
-            <label for="hours_sat_close" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Saturday Close</label>
-            <input type="time" id="hours_sat_close" name="hours_sat_close" class="input-control" value="14:00">
-          </div>
-        </div>
+        <?= bbiz_render_hours_and_photos_fields() ?>
       </fieldset>
 
       <!-- STEP 4: DIRECT CONTACTS, SOCIAL MEDIA & KENYA DPA 2019 CONSENT -->
@@ -957,6 +936,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
       }
     })();
   </script>
+  <script src="/assets/js/form-enhancements.js"></script>
   <script src="/assets/js/consent-metrics.js"></script>
 </body>
 </html>
