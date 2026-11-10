@@ -1,16 +1,6 @@
 (function () {
   'use strict';
 
-  const ORIGIN_PRESETS = {
-    gps: { label: '📍 My Current GPS Location', lat: null, lng: null },
-    nairobi_cbd: { label: 'Nairobi CBD (Kenyatta Ave)', lat: -1.286389, lng: 36.817223 },
-    westlands: { label: 'Westlands (Sarit / Karuna Rd)', lat: -1.263500, lng: 36.803200 },
-    kilimani: { label: 'Kilimani (Yaya Centre)', lat: -1.292100, lng: 36.787900 },
-    karen: { label: 'Karen Shopping Centre', lat: -1.321000, lng: 36.704200 },
-    kikuyu_bush: { label: 'Kikuyu — Alliance (Bush)', lat: -1.246300, lng: 36.662900 },
-    jkia: { label: 'JKIA International Airport', lat: -1.319167, lng: 36.927500 },
-    thika_rd: { label: 'Thika Road (Garden City)', lat: -1.232200, lng: 36.878800 },
-  };
 
   const state = {
     businesses: window.INITIAL_BUSINESSES || [],
@@ -184,20 +174,20 @@
       return;
     }
     const shortName = focused.name.length > 22 ? focused.name.slice(0, 20) + '…' : focused.name;
+    const showAllBtn = (state.focusedBusinessId !== null || state.activeRoute !== null)
+      ? `<button type="button" data-clear-route="1" class="btn btn-outline" style="padding:0.32rem 0.65rem;font-size:0.74rem;background:#fff;">🗺️ Show All Businesses</button>`
+      : '';
     els.mapFocusActions.innerHTML = `
-      <button type="button" data-route-biz-id="${focused.id}" class="btn btn-gold" style="padding:0.32rem 0.7rem;font-size:0.76rem;">
-        🧭 Distance &amp; Directions: ${escapeHtml(shortName)}
-      </button>
+      <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
+        <button type="button" data-route-biz-id="${focused.id}" class="btn btn-gold" style="padding:0.32rem 0.7rem;font-size:0.76rem;">
+          🧭 Distance &amp; Directions: ${escapeHtml(shortName)}
+        </button>
+        ${showAllBtn}
+      </div>
     `;
   }
 
-  function buildOriginOptionsHtml() {
-    return Object.entries(ORIGIN_PRESETS).map(([k, info]) => (
-      `<option value="${escapeHtml(k)}" ${state.originKey === k ? 'selected' : ''}>${escapeHtml(info.label)}</option>`
-    )).join('');
-  }
-
-  function buildRouteCardHtml(activeRoute, contextPrefix) {
+  function buildRouteCardHtml(activeRoute) {
     const { biz, fromLat, fromLng, data } = activeRoute;
     const gmapsDirUrl = `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${biz.latitude},${biz.longitude}&travelmode=driving`;
     const wazeDirUrl = `https://waze.com/ul?ll=${biz.latitude},${biz.longitude}&navigate=yes`;
@@ -217,14 +207,14 @@
           <span class="route-metrics-pill">🚗 ~${Number(data.road_km).toFixed(1)} km drive • ~${Number(data.duration_min)} min</span>
           <span style="font-size:0.75rem;color:#4B5563;margin-left:0.35rem;">(${Number(data.straight_km).toFixed(1)} km direct to <strong>${escapeHtml(biz.name)}</strong>)</span>
         </div>
-        <button type="button" data-clear-route="1" style="background:none;border:none;color:#7B1113;font-weight:800;font-size:0.76rem;cursor:pointer;">✕ Clear Route</button>
+        <button type="button" data-clear-route="1" style="background:none;border:none;color:#7B1113;font-weight:800;font-size:0.76rem;cursor:pointer;">✕ Show All Businesses</button>
       </div>
 
       <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;margin-top:0.5rem;">
-        <label for="${contextPrefix}-origin-select" style="font-size:0.74rem;font-weight:700;color:#374151;">From:</label>
-        <select id="${contextPrefix}-origin-select" data-origin-switcher="${biz.id}" class="select-control" style="width:auto;padding:0.25rem 0.55rem;font-size:0.76rem;">
-          ${buildOriginOptionsHtml()}
-        </select>
+        <span style="font-size:0.75rem;font-weight:700;color:#114B3E;">📍 From: My Current Browser Location</span>
+        <button type="button" data-refresh-gps="${biz.id}" class="btn btn-outline" style="padding:0.22rem 0.55rem;font-size:0.72rem;background:#fff;" title="Re-capture current browser GPS coordinates">
+          🔄 Refresh My Location
+        </button>
         <a href="${escapeHtml(gmapsDirUrl)}" target="_blank" rel="noopener noreferrer" data-track="map_pin" class="btn btn-green" style="padding:0.28rem 0.65rem;font-size:0.75rem;">
           🗺️ Open in Google Maps
         </a>
@@ -246,7 +236,7 @@
     if (els.mapRouteDrawer) {
       if (state.activeRoute) {
         els.mapRouteDrawer.style.display = 'block';
-        els.mapRouteDrawer.innerHTML = buildRouteCardHtml(state.activeRoute, 'map');
+        els.mapRouteDrawer.innerHTML = buildRouteCardHtml(state.activeRoute);
       } else {
         els.mapRouteDrawer.style.display = 'none';
         els.mapRouteDrawer.innerHTML = '';
@@ -257,7 +247,7 @@
     if (modalRouteBox && state.activeBusiness) {
       if (state.activeRoute && Number(state.activeRoute.biz.id) === Number(state.activeBusiness.id)) {
         modalRouteBox.style.display = 'block';
-        modalRouteBox.innerHTML = buildRouteCardHtml(state.activeRoute, 'modal');
+        modalRouteBox.innerHTML = buildRouteCardHtml(state.activeRoute);
       } else {
         modalRouteBox.style.display = 'none';
         modalRouteBox.innerHTML = '';
@@ -266,65 +256,87 @@
   }
 
   /**
-   * Resolve user origin coordinates (Live Browser GPS or selected preset fallback)
+   * Capture the user's real browser location via Geolocation API.
+   * Never falls back to Museum Hill / Nairobi CBD fake coordinates.
    */
-  function resolveOriginCoordinates(originKey) {
-    return new Promise((resolve) => {
-      if (originKey && originKey !== 'gps' && ORIGIN_PRESETS[originKey]) {
-        const p = ORIGIN_PRESETS[originKey];
-        resolve({ lat: p.lat, lng: p.lng, key: originKey, label: p.label });
-        return;
-      }
-
-      if (state.originKey === 'gps' && state.userLat !== null && state.userLng !== null) {
-        resolve({ lat: state.userLat, lng: state.userLng, key: 'gps', label: 'My Current GPS Location' });
+  function captureBrowserLocation(forceRefresh) {
+    return new Promise((resolve, reject) => {
+      if (!forceRefresh && state.userLat !== null && state.userLng !== null) {
+        resolve({ lat: state.userLat, lng: state.userLng, label: 'My Current Location' });
         return;
       }
 
       if (!navigator.geolocation) {
-        const fb = ORIGIN_PRESETS.nairobi_cbd;
-        state.originKey = 'nairobi_cbd';
-        resolve({ lat: fb.lat, lng: fb.lng, key: 'nairobi_cbd', label: fb.label });
+        reject(new Error('Browser Geolocation is not supported on this device/browser.'));
         return;
       }
 
+      const onSuccess = (pos) => {
+        state.userLat = pos.coords.latitude;
+        state.userLng = pos.coords.longitude;
+        state.originKey = 'gps';
+        resolve({ lat: state.userLat, lng: state.userLng, label: 'My Current Location' });
+      };
+
+      // Try high accuracy first; if it times out or position is unavailable, retry with network/standard accuracy
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          state.userLat = pos.coords.latitude;
-          state.userLng = pos.coords.longitude;
-          state.originKey = 'gps';
-          resolve({ lat: state.userLat, lng: state.userLng, key: 'gps', label: 'My Current GPS Location' });
+        onSuccess,
+        (err) => {
+          if (err && err.code === 1) {
+            reject(new Error('Browser location access was blocked. Please allow location access in your browser address bar to calculate directions from your location.'));
+            return;
+          }
+          navigator.geolocation.getCurrentPosition(
+            onSuccess,
+            () => {
+              reject(new Error('Could not determine your current location from the browser. Please check that location services are enabled.'));
+            },
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
+          );
         },
-        () => {
-          const fb = ORIGIN_PRESETS.nairobi_cbd;
-          state.originKey = 'nairobi_cbd';
-          resolve({ lat: fb.lat, lng: fb.lng, key: 'nairobi_cbd', label: fb.label });
-        },
-        { timeout: 5000 }
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 120000 }
       );
     });
   }
 
-  async function requestDistanceAndDirections(bizId, forcedOriginKey) {
+  async function requestDistanceAndDirections(bizId, forceRefreshGps) {
     const biz = state.businesses.find(b => Number(b.id) === Number(bizId));
     if (!biz || biz.latitude === null || biz.longitude === null) return;
 
+    // Isolate this specific business on the map immediately
     state.focusedBusinessId = biz.id;
-    renderMapFocusBar();
+    renderInteractiveMap();
 
+    const loadingHtml = `<div style="font-weight:700;color:#114B3E;">📍 Getting your location from browser &amp; calculating route to ${escapeHtml(biz.name)}...</div>`;
     if (els.mapRouteDrawer) {
       els.mapRouteDrawer.style.display = 'block';
-      els.mapRouteDrawer.innerHTML = `<div style="font-weight:700;color:#114B3E;">🧭 Calculating distance &amp; route to ${escapeHtml(biz.name)}...</div>`;
+      els.mapRouteDrawer.innerHTML = loadingHtml;
     }
     const modalRouteBox = document.getElementById('modal-route-box');
     if (modalRouteBox) {
       modalRouteBox.style.display = 'block';
-      modalRouteBox.innerHTML = `<div style="font-weight:700;color:#114B3E;">🧭 Calculating distance &amp; route to ${escapeHtml(biz.name)}...</div>`;
+      modalRouteBox.innerHTML = loadingHtml;
     }
 
-    const chosenKey = forcedOriginKey || state.originKey || 'gps';
-    state.originKey = chosenKey;
-    const origin = await resolveOriginCoordinates(chosenKey);
+    let origin;
+    try {
+      origin = await captureBrowserLocation(Boolean(forceRefreshGps));
+    } catch (geoErr) {
+      const gmapsDirect = `https://www.google.com/maps/dir/?api=1&destination=${biz.latitude},${biz.longitude}&travelmode=driving`;
+      const errHtml = `
+        <div style="color:#991B1B;font-weight:600;font-size:0.82rem;margin-bottom:0.45rem;">
+          ⚠️ ${escapeHtml(geoErr.message || 'Please allow browser location access to calculate directions from your location.')}
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+          <button type="button" data-refresh-gps="${biz.id}" class="btn btn-gold" style="padding:0.28rem 0.65rem;font-size:0.75rem;">🔄 Try Browser Location Again</button>
+          <a href="${escapeHtml(gmapsDirect)}" target="_blank" rel="noopener noreferrer" class="btn btn-green" style="padding:0.28rem 0.65rem;font-size:0.75rem;">🗺️ Open in Google Maps</a>
+          <button type="button" data-clear-route="1" class="btn btn-outline" style="padding:0.28rem 0.65rem;font-size:0.75rem;background:#fff;">✕ Show All Businesses</button>
+        </div>
+      `;
+      if (els.mapRouteDrawer) els.mapRouteDrawer.innerHTML = errHtml;
+      if (modalRouteBox) modalRouteBox.innerHTML = errHtml;
+      return;
+    }
 
     try {
       const qs = new URLSearchParams({
@@ -356,12 +368,23 @@
   }
 
   /**
-   * Real Interactive Spatial Map powered by self-hosted Leaflet + OpenStreetMap Road & Feature Tiles
+   * Real Interactive Spatial Map powered by self-hosted Leaflet + OpenStreetMap Road & Feature Tiles.
+   * When a specific business is selected (Directions or Focus), ONLY that business is shown on the map;
+   * all other businesses are blanked out until returned to the generic directory view.
    */
   function renderInteractiveMap() {
     renderMapFocusBar();
     if (!els.mapCanvas) return;
-    const pinned = state.businesses.filter(b => b.latitude !== null && b.longitude !== null);
+    const allPinned = state.businesses.filter(b => b.latitude !== null && b.longitude !== null);
+
+    // Isolate the single selected business on the map whenever a specific business is selected or routed
+    const isolatedBizId = state.activeRoute
+      ? Number(state.activeRoute.biz.id)
+      : (state.focusedBusinessId !== null ? Number(state.focusedBusinessId) : null);
+
+    const visiblePinned = isolatedBizId !== null
+      ? allPinned.filter(b => Number(b.id) === isolatedBizId)
+      : allPinned;
 
     if (typeof window.L === 'undefined') {
       els.mapCanvas.innerHTML = '<div style="display:flex;height:100%;align-items:center;justify-content:center;color:#6B7280;padding:1rem;text-align:center;">Interactive map loading...</div>';
@@ -394,7 +417,11 @@
     routeLayer.clearLayers();
 
     if (mapOverlayBadge) {
-      mapOverlayBadge.textContent = `📍 ${pinned.length} ${pinned.length === 1 ? 'Location' : 'Locations'} • Click any pin for details & directions`;
+      if (isolatedBizId !== null && visiblePinned.length === 1) {
+        mapOverlayBadge.textContent = `📍 Showing only: ${visiblePinned[0].name}`;
+      } else {
+        mapOverlayBadge.textContent = `📍 ${visiblePinned.length} ${visiblePinned.length === 1 ? 'Location' : 'Locations'} • Click any pin for details & directions`;
+      }
     }
 
     const boundsPoints = [];
@@ -422,7 +449,7 @@
       boundsPoints.push([state.userLat, state.userLng]);
     }
 
-    pinned.forEach((b) => {
+    visiblePinned.forEach((b) => {
       const isOpen = b.hours_status && b.hours_status.is_open;
       const bg = isOpen ? '#114B3E' : '#7B1113';
       const label = b.name.length > 24 ? b.name.slice(0, 22) + '…' : b.name;
@@ -439,7 +466,7 @@
       const marker = window.L.marker([b.latitude, b.longitude], { icon }).addTo(markersLayer);
       marker.on('click', () => {
         state.focusedBusinessId = b.id;
-        renderMapFocusBar();
+        renderInteractiveMap();
         openBusinessModal(b.id);
       });
       if (!state.activeRoute) {
@@ -491,7 +518,7 @@
     state.activeBusiness = biz;
     state.focusedBusinessId = biz.id;
     if (window.BBizMetrics) window.BBizMetrics.track('modal_open', { business_id: biz.id, meta_label: biz.name });
-    renderMapFocusBar();
+    renderInteractiveMap();
 
     const hours = biz.hours_status || { state: 'CLOSED', badge_text: 'Closed', today_key: 'mon', schedule_table: {} };
     const scheduleRows = Object.entries(hours.schedule_table || {}).map(([key, row]) => {
@@ -700,30 +727,17 @@
   }
 
   if (els.nearMeBtn) {
-    els.nearMeBtn.addEventListener('click', () => {
-      if (!navigator.geolocation) {
-        state.userLat = -1.286389;
-        state.userLng = 36.817223;
-        fetchBusinesses();
-        return;
-      }
+    els.nearMeBtn.addEventListener('click', async () => {
       els.nearMeBtn.textContent = '📍 Locating...';
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          state.userLat = pos.coords.latitude;
-          state.userLng = pos.coords.longitude;
-          els.nearMeBtn.textContent = '📍 Near Me (Active)';
-          els.nearMeBtn.classList.add('active');
-          fetchBusinesses();
-        },
-        () => {
-          state.userLat = -1.286389;
-          state.userLng = 36.817223;
-          els.nearMeBtn.textContent = '📍 Nairobi Central';
-          fetchBusinesses();
-        },
-        { timeout: 6000 }
-      );
+      try {
+        await captureBrowserLocation(true);
+        els.nearMeBtn.textContent = '📍 Near Me (Active)';
+        els.nearMeBtn.classList.add('active');
+        fetchBusinesses();
+      } catch (err) {
+        els.nearMeBtn.textContent = '📍 Near Me';
+        alert(err.message || 'Please allow browser location access to filter businesses near you.');
+      }
     });
   }
 
@@ -757,20 +771,20 @@
     });
   });
 
-  document.addEventListener('change', (e) => {
-    const switcher = e.target.closest('[data-origin-switcher]');
-    if (switcher) {
-      const bizId = Number(switcher.getAttribute('data-origin-switcher'));
-      const newKey = switcher.value;
-      requestDistanceAndDirections(bizId, newKey);
-    }
-  });
-
   document.addEventListener('click', (e) => {
+    const refreshGpsBtn = e.target.closest('[data-refresh-gps]');
+    if (refreshGpsBtn) {
+      e.stopPropagation();
+      const id = Number(refreshGpsBtn.getAttribute('data-refresh-gps'));
+      requestDistanceAndDirections(id, true);
+      return;
+    }
+
     const clearRouteBtn = e.target.closest('[data-clear-route]');
     if (clearRouteBtn) {
       e.stopPropagation();
       state.activeRoute = null;
+      state.focusedBusinessId = null;
       renderRouteDrawerAndModalBox();
       renderInteractiveMap();
       return;
@@ -814,6 +828,11 @@
 
     if (e.target.id === 'btn-close-modal' || e.target === els.modalBackdrop) {
       if (els.modalBackdrop) els.modalBackdrop.classList.remove('open');
+      state.activeBusiness = null;
+      if (!state.activeRoute) {
+        state.focusedBusinessId = null;
+        renderInteractiveMap();
+      }
       return;
     }
 

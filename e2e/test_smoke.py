@@ -188,6 +188,14 @@ def test_school_filters_and_route_directions_api():
     assert len(rt["steps"]) <= 4, f"Expected loose route overview (<=4 steps), got {len(rt['steps'])}"
     assert "corridors" in rt
 
+    # Verify Ticket #37: directory.js strictly uses browser GPS (captureBrowserLocation) without nairobi_cbd fallback and isolates selected business on map
+    st_djs, djs_body, _ = _request("/assets/js/directory.js")
+    assert st_djs == 200
+    assert "captureBrowserLocation" in djs_body
+    assert "ORIGIN_PRESETS" not in djs_body
+    assert "Showing only:" in djs_body
+    assert "visiblePinned" in djs_body
+
 
 def test_dpa_cookie_consent_and_usage_metrics():
     # 1. Verify consent-metrics.js is served and strictly defines 'Reject All' and 'Accept' buttons
