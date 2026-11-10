@@ -284,6 +284,15 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert "busherianbiasharas.com" in body_js
     assert 'rel="noopener" data-track="website"' in body_js
 
+    # 8. Verify Ticket #95: Automatic localStorage & sticky POST draft persistence on /submit.php
+    assert 'id="draft-restored-banner"' in body_sub
+    assert 'id="btn-clear-draft"' in body_sub
+    assert 'window.BBIZ_SUBMIT_POST_DRAFT' in body_sub
+    st_fe, body_fe, _ = _request("/assets/js/form-enhancements.js")
+    assert st_fe == 200
+    assert "bbiz_submit_draft_v1" in body_fe
+    assert "applyDraftToSubmitForm" in body_fe
+
 
 TESTS = [
     test_health_endpoint,

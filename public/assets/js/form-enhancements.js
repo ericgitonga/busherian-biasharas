@@ -165,4 +165,199 @@
   });
 
   updateSummaryAndHiddenField();
+  // Keep photo hidden JSON synced with draft storage
+  if (hiddenJsonInput) {
+    const origUpdate = updateSummaryAndHiddenField;
+    updateSummaryAndHiddenField = function () {
+      origUpdate();
+      if (typeof scheduleSaveDraft === 'function') scheduleSaveDraft();
+    };
+  }
+
+  // =========================================================================
+  // Registration Form Draft Auto-Save & Restoration (#95)
+  // =========================================================================
+  const DRAFT_KEY = 'bbiz_submit_draft_v1';
+  const submitForm = document.getElementById('business-submit-form');
+  const restoredBanner = document.getElementById('draft-restored-banner');
+  const clearDraftBtn = document.getElementById('btn-clear-draft');
+  const autosaveIndicator = document.getElementById('draft-autosave-indicator');
+
+  const EXCLUDED_DRAFT_NAMES = new Set([
+    'csrf_token',
+    'form_ts',
+    'form_nonce',
+    'form_sig',
+    'js_interaction_token',
+    'website',
+    'business_photos[]'
+  ]);
+
+  if (window.BBIZ_SUBMIT_SUCCESS === true) {
+    try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
+  }
+
+  function collectSubmitDraft() {
+    if (!submitForm) return null;
+    const data = {};
+    const elements = Array.from(submitForm.elements || []);
+    elements.forEach(el => {
+      const name = el.name;
+      if (!name || EXCLUDED_DRAFT_NAMES.has(name)) return;
+      if (el.type === 'file' || el.type === 'submit' || el.type === 'button') return;
+      if (el.type === 'checkbox') {
+        data[name] = el.checked ? (el.value || '1') : '__unchecked__';
+      } else if (el.type === 'radio') {
+        if (el.checked) data[name] = el.value;
+      } else {
+        data[name] = el.value;
+      }
+    });
+    return data;
+  }
+
+  function hasMeaningfulDraft(draft) {
+    if (!draft || typeof draft !== 'object') return false;
+    const checkKeys = [
+      'name', 'tagline', 'description', 'submitter_name', 'submitter_email',
+      'submitter_phone', 'year_left', 'school_number', 'phone_primary',
+      'whatsapp_number', 'email_public', 'website_url', 'building_name',
+      'street_road', 'area_neighborhood', 'alumni_perk', 'regulator_license',
+      'business_photos_data_json'
+    ];
+    return checkKeys.some(k => typeof draft[k] === 'string' && draft[k].trim() !== '');
+  }
+
+  let saveTimer = null;
+  function saveSubmitDraft() {
+    if (!submitForm || window.BBIZ_SUBMIT_SUCCESS === true) return;
+    const draft = collectSubmitDraft();
+    if (!draft) return;
+    try {
+      if (hasMeaningfulDraft(draft)) {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({
+          saved_at: Date.now(),
+          fields: draft
+        }));
+        if (autosaveIndicator) {
+          const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          autosaveIndicator.textContent = `💾 Draft saved automatically at ${nowStr} on this device.`;
+        }
+      }
+    } catch (_) {}
+  }
+
+  function scheduleSaveDraft() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveSubmitDraft, 220);
+  }
+
+  function applyDraftToSubmitForm(fields) {
+    if (!submitForm || !fields || typeof fields !== 'object') return;
+
+    // 1. Cascading school -> house
+    const schoolSel = submitForm.querySelector('[name="school_code"]');
+    const houseSel = submitForm.querySelector('[name="house_name"]');
+    if (schoolSel && fields.school_code) {
+      schoolSel.value = String(fields.school_code);
+      schoolSel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    if (houseSel && fields.house_name) {
+      houseSel.value = String(fields.house_name);
+    }
+
+    // 2. Cascading sector -> specialty -> custom specialty & regulator
+    const sectorSel = submitForm.querySelector('[name="sector_id"]');
+    const specSel = submitForm.querySelector('[name="specialty_id"]');
+    if (sectorSel && fields.sector_id) {
+      sectorSel.value = String(fields.sector_id);
+      sectorSel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    if (specSel && fields.specialty_id) {
+      specSel.value = String(fields.specialty_id);
+      specSel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    // 3. Populate remaining inputs, selects, textareas, checkboxes
+    const elements = Array.from(submitForm.elements || []);
+    elements.forEach(el => {
+      const name = el.name;
+      if (!name || EXCLUDED_DRAFT_NAMES.has(name)) return;
+      if (name === 'school_code' || name === 'house_name' || name === 'sector_id' || name === 'specialty_id') return;
+      if (!(name in fields)) return;
+      const val = fields[name];
+
+      if (el.type === 'checkbox') {
+        const shouldCheck = val !== '__unchecked__' && val !== '' && val !== null && val !== false && val !== '0';
+        if (el.checked !== shouldCheck) {
+          el.checked = shouldCheck;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      } else if (el.type === 'radio') {
+        el.checked = (String(el.value) === String(val));
+      } else if (el.type !== 'file' && el.type !== 'submit' && el.type !== 'button') {
+        if (val !== null && val !== undefined) {
+          el.value = String(val);
+        }
+      }
+    });
+
+    // 4. Restore queued client-resized photos if present
+    if (typeof fields.business_photos_data_json === 'string' && fields.business_photos_data_json.trim() !== '') {
+      try {
+        const parsedPhotos = JSON.parse(fields.business_photos_data_json);
+        if (Array.isArray(parsedPhotos) && parsedPhotos.length > 0) {
+          queuedDataUrls = parsedPhotos.slice(0, MAX_PHOTOS);
+          updateSummaryAndHiddenField();
+        }
+      } catch (_) {}
+    }
+  }
+
+  if (submitForm && window.BBIZ_SUBMIT_SUCCESS !== true) {
+    let restoredFields = null;
+    if (window.BBIZ_SUBMIT_POST_DRAFT && typeof window.BBIZ_SUBMIT_POST_DRAFT === 'object') {
+      restoredFields = window.BBIZ_SUBMIT_POST_DRAFT;
+    } else {
+      try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.fields && hasMeaningfulDraft(parsed.fields)) {
+            restoredFields = parsed.fields;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (restoredFields) {
+      applyDraftToSubmitForm(restoredFields);
+      if (restoredBanner) {
+        restoredBanner.style.display = 'flex';
+      }
+      saveSubmitDraft();
+    }
+
+    submitForm.addEventListener('input', scheduleSaveDraft);
+    submitForm.addEventListener('change', scheduleSaveDraft);
+
+    if (clearDraftBtn) {
+      clearDraftBtn.addEventListener('click', () => {
+        try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
+        submitForm.reset();
+        queuedDataUrls = [];
+        updateSummaryAndHiddenField();
+        const schoolSel = submitForm.querySelector('[name="school_code"]');
+        if (schoolSel) schoolSel.dispatchEvent(new Event('change', { bubbles: true }));
+        const sectorSel = submitForm.querySelector('[name="sector_id"]');
+        if (sectorSel) sectorSel.dispatchEvent(new Event('change', { bubbles: true }));
+        bindDayClosedToggle('hours_sat_closed', 'hours_sat_open', 'hours_sat_close', '09:00', '14:00');
+        bindDayClosedToggle('hours_sun_closed', 'hours_sun_open', 'hours_sun_close', '10:00', '16:00');
+        if (restoredBanner) restoredBanner.style.display = 'none';
+        if (autosaveIndicator) {
+          autosaveIndicator.textContent = '💾 Draft cleared — starting with a fresh form.';
+        }
+      });
+    }
+  }
 })();

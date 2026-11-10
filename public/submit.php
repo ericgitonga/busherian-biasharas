@@ -392,6 +392,19 @@ $aghsHouses = Houses::AGHS_HOUSES;
       <div id="autofill-status" style="margin-top:0.65rem;font-size:0.84rem;display:none;"></div>
     </section>
 
+    <!-- AUTOMATIC DRAFT PERSISTENCE BANNER (#95) -->
+    <div id="draft-restored-banner" style="display:none;background:#ECFDF5;border:1px solid #059669;border-radius:12px;padding:0.85rem 1.15rem;margin-bottom:1.15rem;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+      <div style="font-size:0.86rem;color:#065F46;">
+        💾 <strong>Your in-progress listing was automatically restored!</strong> Pick up right where you left off.
+      </div>
+      <button type="button" id="btn-clear-draft" class="btn btn-outline" style="font-size:0.76rem;padding:0.25rem 0.65rem;border-color:#059669;color:#065F46;">
+        ✕ Clear Draft &amp; Start Fresh
+      </button>
+    </div>
+    <div id="draft-autosave-indicator" style="font-size:0.76rem;color:#065F46;text-align:right;margin-bottom:0.45rem;">
+      💾 Auto-save active — your progress is automatically saved on this device as you type.
+    </div>
+
     <form method="POST" action="/submit.php" id="business-submit-form" enctype="multipart/form-data" style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:1.5rem;box-shadow:0 4px 16px rgba(0,0,0,0.05);">
       <input type="hidden" name="csrf_token" id="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
       <input type="hidden" name="form_ts" value="<?= (int)$tokens['form_ts'] ?>">
@@ -925,6 +938,8 @@ $aghsHouses = Houses::AGHS_HOUSES;
 
             statusBox.style.color = '#065F46';
             statusBox.innerHTML = `✅ <strong>${payload.message}</strong> Review the highlighted fields below and complete Step 1 Vetting to submit.`;
+            const submitFormEl = document.getElementById('business-submit-form');
+            if (submitFormEl) submitFormEl.dispatchEvent(new Event('change', { bubbles: true }));
           } catch (err) {
             statusBox.style.color = '#DC2626';
             statusBox.textContent = '⚠️ ' + err.message;
@@ -935,6 +950,12 @@ $aghsHouses = Houses::AGHS_HOUSES;
         });
       }
     })();
+  </script>
+  <script>
+    window.BBIZ_SUBMIT_SUCCESS = <?= $successMessage !== '' ? 'true' : 'false' ?>;
+    window.BBIZ_SUBMIT_POST_DRAFT = <?= ($_SERVER['REQUEST_METHOD'] === 'POST' && $successMessage === '')
+      ? json_encode(array_diff_key($_POST, array_flip(['csrf_token', 'form_ts', 'form_nonce', 'form_sig', 'js_interaction_token', 'website'])), JSON_UNESCAPED_UNICODE)
+      : 'null' ?>;
   </script>
   <script src="/assets/js/form-enhancements.js"></script>
   <script src="/assets/js/consent-metrics.js"></script>

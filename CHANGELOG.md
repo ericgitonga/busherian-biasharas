@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.7.2] - 2026-04-19
+
+### Added
+- **Registration Form Automatic Draft Persistence (`#95`)**: Added real-time `localStorage` draft persistence (`bbiz_submit_draft_v1`) and server-side sticky POST fallback on `/submit.php` (`public/submit.php`, `public/assets/js/form-enhancements.js`) so alumni listing a new business never lose their progress if interrupted by a refresh, tab closure, phone call, or validation error. Includes a `"💾 Your in-progress listing was automatically restored!"` banner, a `"✕ Clear Draft & Start Fresh"` reset action, full restoration of cascading dropdowns and queued photos, and automatic draft purge on successful submission (closes #95, tag: `v0.7.2`).
+
 ## [0.7.1] - 2026-04-19
 
 ### Added
