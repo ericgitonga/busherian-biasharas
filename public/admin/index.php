@@ -77,10 +77,11 @@ $tokens = AntiSpamGate::generateFormTokens();
 $pendingStmt = $pdo->query("
     SELECT
         b.id, b.name, b.tagline, b.school_badge, b.status, b.website_url, b.phone_primary,
+        b.whatsapp_number, b.email_public, b.owner_email,
         sec.name AS sector_name,
         spec.id AS specialty_id, spec.name AS specialty_name, spec.status AS specialty_status,
         v.school_code, v.house_name, v.year_left, v.school_number,
-        v.submitter_name, v.submitter_email, v.submitter_phone
+        v.submitter_name, v.submitter_email, v.submitter_phone, v.created_at AS submitted_at
     FROM businesses b
     INNER JOIN categories sec ON sec.id = b.sector_id
     INNER JOIN categories spec ON spec.id = b.specialty_id
@@ -279,8 +280,51 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
                 </div>
               </div>
 
-              <div style="margin-top:0.85rem;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:0.75rem;font-size:0.83rem;">
-                <strong style="color:#114B3E;">Temporary Vetting Credentials (Permanently deleted on Approve/Reject):</strong><br>
+              <?php
+                $subName = trim((string)($row['submitter_name'] ?? ''));
+                $subEmail = trim((string)($row['submitter_email'] ?? '')) ?: trim((string)($row['owner_email'] ?? '')) ?: trim((string)($row['email_public'] ?? ''));
+                $subPhone = trim((string)($row['submitter_phone'] ?? '')) ?: trim((string)($row['phone_primary'] ?? '')) ?: trim((string)($row['whatsapp_number'] ?? ''));
+                $waDigits = preg_replace('/\D+/', '', $subPhone);
+                if (str_starts_with($waDigits, '0') && strlen($waDigits) === 10) {
+                    $waDigits = '254' . substr($waDigits, 1);
+                }
+              ?>
+              <div style="margin-top:0.85rem;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:0.8rem 0.95rem;font-size:0.85rem;">
+                <div style="font-weight:800;color:#92400E;margin-bottom:0.35rem;">
+                  👤 Person Requesting Review (Submitter Contact Details):
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:1.1rem;align-items:center;color:#1F2937;">
+                  <span>
+                    Name: <strong><?= htmlspecialchars($subName !== '' ? $subName : 'Not provided', ENT_QUOTES, 'UTF-8') ?></strong>
+                  </span>
+                  <span>
+                    Email:
+                    <?php if ($subEmail !== ''): ?>
+                      <a href="mailto:<?= htmlspecialchars($subEmail, ENT_QUOTES, 'UTF-8') ?>" style="color:#7B1113;font-weight:700;text-decoration:underline;">
+                        ✉️ <?= htmlspecialchars($subEmail, ENT_QUOTES, 'UTF-8') ?>
+                      </a>
+                    <?php else: ?>
+                      <strong>Not provided</strong>
+                    <?php endif; ?>
+                  </span>
+                  <span>
+                    Phone:
+                    <?php if ($subPhone !== ''): ?>
+                      <a href="tel:<?= htmlspecialchars($subPhone, ENT_QUOTES, 'UTF-8') ?>" style="color:#114B3E;font-weight:700;text-decoration:underline;">
+                        📞 <?= htmlspecialchars($subPhone, ENT_QUOTES, 'UTF-8') ?>
+                      </a>
+                      <?php if ($waDigits !== ''): ?>
+                        &nbsp;<a href="https://wa.me/<?= htmlspecialchars($waDigits, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#DCFCE7;color:#065F46;border:1px solid #86EFAC;border-radius:6px;padding:0.1rem 0.45rem;font-size:0.76rem;font-weight:700;text-decoration:none;">💬 WhatsApp</a>
+                      <?php endif; ?>
+                    <?php else: ?>
+                      <strong>Not provided</strong>
+                    <?php endif; ?>
+                  </span>
+                </div>
+              </div>
+
+              <div style="margin-top:0.6rem;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:0.75rem 0.95rem;font-size:0.83rem;">
+                <strong style="color:#114B3E;">🎓 Temporary Vetting Credentials (Permanently deleted on Approve/Reject):</strong><br>
                 School: <strong><?= htmlspecialchars((string)($row['school_code'] ?? $row['school_badge']), ENT_QUOTES, 'UTF-8') ?></strong> |
                 House: <strong><?= htmlspecialchars((string)($row['house_name'] ?? 'Purged'), ENT_QUOTES, 'UTF-8') ?></strong> |
                 Year Left: <strong><?= htmlspecialchars((string)($row['year_left'] ?? 'Purged'), ENT_QUOTES, 'UTF-8') ?></strong> |
