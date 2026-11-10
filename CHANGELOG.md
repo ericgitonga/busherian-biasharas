@@ -15,7 +15,7 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
 ### Fixed
 
-- `src/Config/Database.php`, `src/Services/AdminAuth.php`: auto-execute `src/schema.sql` on first MySQL connection when `categories` does not yet exist, try `localhost` Unix socket alongside `127.0.0.1`, and support both `public/` and `html/` webroot layouts for `admin/login.php` (closes #29)
+- `src/Config/Database.php`, `src/Services/AdminAuth.php`, `public/api/businesses.php`, `public/admin/index.php`: auto-execute `src/schema.sql` on first MySQL connection, use distinct named PDO placeholders for native MySQL (`ATTR_EMULATE_PREPARES => false`), and support both `public/` and `html/` webroot layouts (closes #29)
 
 tag: `v0.4.0`
 

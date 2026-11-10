@@ -8,6 +8,7 @@ on:
       - 'public/**'
       - 'src/**'
       - 'bin/**'
+      - 'VERSION'
       - '.github/workflows/deploy-ftp.yml'
   workflow_dispatch:
     inputs:
@@ -43,11 +44,11 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$SYNC_ALL" = "true" ]; then
-            git ls-files public src bin > /tmp/changed_files.txt
+            git ls-files public src bin VERSION > /tmp/changed_files.txt
           elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
-            git diff --name-only --diff-filter=ACMRT "$BEFORE_SHA" "$AFTER_SHA" -- public src bin > /tmp/changed_files.txt
+            git diff --name-only --diff-filter=ACMRT "$BEFORE_SHA" "$AFTER_SHA" -- public src bin VERSION > /tmp/changed_files.txt
           else
-            git ls-files public src bin > /tmp/changed_files.txt
+            git ls-files public src bin VERSION > /tmp/changed_files.txt
           fi
 
           while IFS= read -r file; do

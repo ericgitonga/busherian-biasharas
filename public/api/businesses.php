@@ -88,18 +88,24 @@ try {
     if ($q !== '') {
         $expandedTerms = CategoryMatcher::expandSearchTerms($q);
         $orClauses = [];
+        $colsToSearch = ['b.name', 'b.tagline', 'b.description', 'sec.name', 'spec.name', 'b.area_neighborhood', 'b.city_county', 'b.street_road'];
         foreach ($expandedTerms as $idx => $term) {
             $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $term);
-            $paramKey = ":q_{$idx}";
-            $orClauses[] = "(b.name LIKE {$paramKey} OR b.tagline LIKE {$paramKey} OR b.description LIKE {$paramKey} OR sec.name LIKE {$paramKey} OR spec.name LIKE {$paramKey} OR b.area_neighborhood LIKE {$paramKey} OR b.city_county LIKE {$paramKey} OR b.street_road LIKE {$paramKey})";
-            $params[$paramKey] = '%' . $escaped . '%';
+            $val = '%' . $escaped . '%';
+            $colParts = [];
+            foreach ($colsToSearch as $cIdx => $colName) {
+                $pk = ":q_{$idx}_{$cIdx}";
+                $colParts[] = "{$colName} LIKE {$pk}";
+                $params[$pk] = $val;
+            }
+            $orClauses[] = '(' . implode(' OR ', $colParts) . ')';
         }
         if ($orClauses) {
             $sql .= " AND (" . implode(' OR ', $orClauses) . ")";
         }
     }
 
-    $sql .= " ORDER BY b.id ASC";
+    $sql .= " ORDER BY b.business_number ASC, b.id ASC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $rows = $stmt->fetchAll();

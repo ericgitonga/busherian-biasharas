@@ -92,8 +92,13 @@ $allSql = "
 ";
 $allParams = [];
 if ($searchQ !== '') {
-    $allSql .= " AND (b.name LIKE :q OR b.website_url LIKE :q OR b.city_county LIKE :q OR spec.name LIKE :q)";
-    $allParams[':q'] = '%' . $searchQ . '%';
+    $allSql .= " AND (b.name LIKE :q1 OR b.website_url LIKE :q2 OR b.city_county LIKE :q3 OR spec.name LIKE :q4 OR b.business_id LIKE :q5)";
+    $qVal = '%' . $searchQ . '%';
+    $allParams[':q1'] = $qVal;
+    $allParams[':q2'] = $qVal;
+    $allParams[':q3'] = $qVal;
+    $allParams[':q4'] = $qVal;
+    $allParams[':q5'] = $qVal;
 }
 if ($statusFilter !== '' && in_array($statusFilter, ['approved', 'pending', 'quarantined_dpa', 'rejected'], true)) {
     $allSql .= " AND b.status = :st";
