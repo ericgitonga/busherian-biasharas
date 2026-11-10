@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.8.1] - 2026-04-19
+
+### Added
+- **AGHS Houses Update (`#99`)**: Confirmed and added `Joan Mjomba` and `Rebecca Karanja` in `Houses::AGHS_HOUSES` (`src/Config/Houses.php`) for one-time AGHS alumni vetting on `/submit.php` (closes #99, tag: `v0.8.1`).
+- **Granular Parent/Child Ticketing Audit (`#47`–`#99`)**: Audited all historical and current GitHub tickets across `v0.1.0`–`v0.8.1`, splitting multi-part tickets into dedicated Parent & Child issues and separating unrelated items into distinct standalone tickets.
+
+## [0.8.0] - 2026-04-19
+
+### Added
+- **2-Level Place Taxonomy & Cascading Form Selectors (`#96`, `#97`)**: Added `country` column (`DEFAULT 'Kenya'`) to `businesses` (`src/schema.sql`, `src/Config/Database.php` auto-migration), `LocationEngine::PLACE_HIERARCHY` / `getPlaceHierarchy()` / `resolvePlaceFromPost()` covering all 47 Kenyan Counties + key towns, East Africa, and global Busherian diaspora hubs, and cascading `Country` → `City / County / State` selectors (`bbiz_render_place_fields()`) across `/submit.php`, `/owner/edit-business.php`, `/admin/add-business.php`, and `/admin/edit-business.php` (closes #97).
+- **Public Directory 2-Level Place Filter (`#96`, `#98`)**: Added cascading `#filter-country` (`🌍 All Countries`) and `#filter-city` (`📍 All Cities / Counties / States`) filters to the directory filter dock (`public/index.php`, `public/assets/js/directory.js`) and `country` + `city_county` query filtering in `/api/businesses.php` (closes #96, closes #98, tag: `v0.8.0`).
+
 ## [0.7.2] - 2026-04-19
 
 ### Added

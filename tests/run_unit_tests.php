@@ -390,6 +390,42 @@ foreach ($decodedPhotos as $relUrl) {
     }
 }
 
+// 19. Verify Tickets #96, #97, #98: 2-Level Place Taxonomy & Resolution (Country -> City/County/State)
+$placeHierarchy = LocationEngine::getPlaceHierarchy();
+assertTrue(
+    isset($placeHierarchy['Kenya']) && count($placeHierarchy['Kenya']) >= 47,
+    'LocationEngine::getPlaceHierarchy includes Kenya with all 47 counties + key towns'
+);
+assertTrue(
+    isset($placeHierarchy['United Kingdom']) && in_array('London', $placeHierarchy['United Kingdom'], true),
+    'LocationEngine::getPlaceHierarchy includes diaspora countries and cities'
+);
+$resolvedPreset = LocationEngine::resolvePlaceFromPost(['country' => 'Kenya', 'city_county' => 'Mombasa']);
+assertTrue(
+    $resolvedPreset['country'] === 'Kenya' && $resolvedPreset['city_county'] === 'Mombasa',
+    'LocationEngine::resolvePlaceFromPost resolves preset country and city/county'
+);
+$resolvedCustom = LocationEngine::resolvePlaceFromPost([
+    'country' => '__custom__',
+    'country_custom' => 'Switzerland',
+    'city_county' => '__custom__',
+    'city_county_custom' => 'Geneva',
+]);
+assertTrue(
+    $resolvedCustom['country'] === 'Switzerland' && $resolvedCustom['city_county'] === 'Geneva',
+    'LocationEngine::resolvePlaceFromPost resolves custom country and city/state'
+);
+
+// 20. Verify Ticket #99: AGHS Houses include Joan Mjomba & Rebecca Karanja
+assertTrue(
+    in_array('Joan Mjomba', Houses::AGHS_HOUSES, true) && in_array('Rebecca Karanja', Houses::AGHS_HOUSES, true),
+    'AGHS houses include both Joan Mjomba and Rebecca Karanja (#99)'
+);
+assertTrue(
+    Houses::isValidHouse('AGHS', 'Joan Mjomba') && Houses::isValidHouse('AGHS', 'Rebecca Karanja'),
+    'Houses::isValidHouse accepts Joan Mjomba and Rebecca Karanja for AGHS'
+);
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 

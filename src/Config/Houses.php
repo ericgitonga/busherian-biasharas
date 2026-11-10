@@ -39,6 +39,7 @@ final class Houses
         'Dorcas Luseno',
         'Joan Waithaka',
         'Joan Mjomba',
+        'Rebecca Karanja',
         'Other / Unlisted House',
     ];
 
