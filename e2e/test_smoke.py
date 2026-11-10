@@ -313,6 +313,18 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert "Joan Mjomba" in body_sub
     assert "Rebecca Karanja" in body_sub
 
+    # 11. Verify Tickets #105 (#106, #107): Direct Edit My Business button in directory.js/API & Owner Sign-In clarity
+    assert "can_edit" in first_biz
+    assert "edit_url" in first_biz
+    assert "Edit My Business" in body_js
+    assert "Own this business? Sign in to edit" in body_js
+    assert 'id="owner-signin-guide"' in body_ol
+    assert "How Owner Sign-In &amp; Business Linking Works" in body_ol
+    st_ol_biz, body_ol_biz, _ = _request(f"/owner/login.php?biz={first_biz['id']}")
+    assert st_ol_biz == 200
+    assert "Sign In to Edit Business Listing" in body_ol_biz
+    assert first_biz["name"] in body_ol_biz
+
 
 TESTS = [
     test_health_endpoint,

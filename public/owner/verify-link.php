@@ -28,8 +28,13 @@ if ($claimedBizId > 0) {
 }
 
 OwnerAuth::establishOwnerSession($owner);
+$targetEditBizId = (int)($_SESSION['bbiz_target_edit_biz_id'] ?? 0);
+unset($_SESSION['bbiz_target_edit_biz_id']);
+
 if ($claimedBizId > 0) {
     header("Location: /owner/edit-business.php?id={$claimedBizId}&claimed=1");
+} elseif ($targetEditBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$owner['id'], $targetEditBizId)) {
+    header("Location: /owner/edit-business.php?id={$targetEditBizId}");
 } else {
     header('Location: /owner/index.php');
 }

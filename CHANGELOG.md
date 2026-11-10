@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.8.2] - 2026-04-19
+
+### Added
+- **Direct "✏️ Edit My Business" Button on Linked Directory Cards & Modals (`#105`, `#106`)**: Updated `public/index.php`, `public/api/businesses.php`, and `public/assets/js/directory.js` to evaluate `OwnerAuth::canOwnerEditBusiness()` (and `AdminAuth::isAuthenticated()`) for the current session, exposing `can_edit` and `edit_url` on business records, switching the homepage header CTA to `👤 My Biasharas` when signed in, and rendering a direct `✏️ Edit My Business` button and `✓ Your Linked Business` badge right on the owner's business card and modal (closes #106).
+- **In-Modal "Own this business? Sign in to edit" Link & Owner Sign-In Guide (`#105`, `#107`)**: Added a contextual `👤 Own this business? Sign in to edit` link (`/owner/login.php?biz=<id>`) in the business modal footer that shows the target business name on `/owner/login.php` and redirects straight to `/owner/edit-business.php?id=<id>` after sign-in, plus a step-by-step **How Owner Sign-In & Business Linking Works** guide on `/owner/login.php` (closes #105, closes #107, tag: `v0.8.2`).
+
 ## [0.8.1] - 2026-04-19
 
 ### Added

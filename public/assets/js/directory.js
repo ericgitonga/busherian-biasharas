@@ -198,7 +198,8 @@
         <article class="biz-card" data-biz-id="${biz.id}">
           <div>
             ${cardPhotosHtml}
-            <div class="card-top-badges" style="justify-content:flex-end;">
+            <div class="card-top-badges" style="justify-content:space-between;">
+              ${biz.can_edit ? `<span style="background:#ECFDF5;color:#065F46;border:1px solid #059669;border-radius:999px;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:800;">✓ Your Linked Business</span>` : '<span></span>'}
               ${distBadge}
             </div>
             <h3 class="card-title">${escapeHtml(biz.name)}</h3>
@@ -213,6 +214,11 @@
                 <button type="button" data-route-biz-id="${biz.id}" title="Get distance and directions to ${escapeHtml(biz.name)}" style="background:#FFFBEB;color:#78350F;border:1px solid #D4AF37;border-radius:6px;padding:0.25rem 0.55rem;font-size:0.74rem;font-weight:700;cursor:pointer;">
                   🧭 Directions
                 </button>
+              ` : ''}
+              ${biz.can_edit && biz.edit_url ? `
+                <a href="${escapeHtml(biz.edit_url)}" data-edit-biz-link="1" title="Edit ${escapeHtml(biz.name)}" style="background:#114B3E;color:#fff;text-decoration:none;border-radius:6px;padding:0.25rem 0.6rem;font-size:0.74rem;font-weight:700;display:inline-flex;align-items:center;gap:0.25rem;">
+                  ✏️ Edit My Business
+                </a>
               ` : ''}
               <button type="button" class="btn-shortlist-toggle" data-shortlist-id="${biz.id}" title="Add to B2B Procurement Shortlist" style="background:${inShortlist ? '#114B3E' : '#F3F4F6'};color:${inShortlist ? '#fff' : '#374151'};border:none;border-radius:6px;padding:0.25rem 0.55rem;font-size:0.74rem;font-weight:600;cursor:pointer;">
                 ${inShortlist ? '✓ Shortlisted' : '+ B2B Shortlist'}
@@ -830,7 +836,10 @@
             ${escapeHtml(biz.sector_name)} &rarr; ${escapeHtml(biz.specialty_name)}
           </div>
         </div>
-        <button type="button" id="btn-close-modal" class="btn btn-outline" aria-label="Close modal">✕ Close</button>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+          ${biz.can_edit && biz.edit_url ? `<a href="${escapeHtml(biz.edit_url)}" class="btn btn-green" style="font-size:0.82rem;padding:0.4rem 0.85rem;">✏️ Edit My Business</a>` : ''}
+          <button type="button" id="btn-close-modal" class="btn btn-outline" aria-label="Close modal">✕ Close</button>
+        </div>
       </div>
       <div class="modal-body">
         ${galleryHtml}
@@ -888,9 +897,14 @@
           </div>
         </div>
 
-        <div style="margin-top:1.15rem;padding-top:0.85rem;border-top:1px solid #F3F4F6;display:flex;justify-content:space-between;align-items:center;font-size:0.76rem;color:#6B7280;">
+        <div style="margin-top:1.15rem;padding-top:0.85rem;border-top:1px solid #F3F4F6;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.65rem;font-size:0.76rem;color:#6B7280;">
           <span>Verified Busherian Biashara</span>
-          <a href="/takedown.php?business_id=${biz.id}" style="color:#7B1113;font-weight:600;">Report / DPA Takedown</a>
+          <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
+            ${biz.can_edit && biz.edit_url
+              ? `<a href="${escapeHtml(biz.edit_url)}" style="color:#114B3E;font-weight:800;">✏️ Edit My Business Listing</a>`
+              : `<a href="/owner/login.php?biz=${biz.id}" style="color:#114B3E;font-weight:700;">👤 Own this business? Sign in to edit</a>`}
+            <a href="/takedown.php?business_id=${biz.id}" style="color:#7B1113;font-weight:600;">Report / DPA Takedown</a>
+          </div>
         </div>
       </div>
     `;
@@ -1147,6 +1161,12 @@
         els.shortlistCount.textContent = String(state.shortlistIds.size);
       }
       renderCards();
+      return;
+    }
+
+    const editBizLink = e.target.closest('[data-edit-biz-link]');
+    if (editBizLink) {
+      e.stopPropagation();
       return;
     }
 

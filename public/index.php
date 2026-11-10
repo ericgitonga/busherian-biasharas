@@ -5,13 +5,17 @@ require_once dirname(__DIR__) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\CategoryMatcher;
+use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\HoursEngine;
 use BusherianBiasharas\Services\LocationEngine;
+use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\PhotoUploader;
 
 bbiz_send_security_headers(false);
 
 $pdo = Database::getConnection();
+$currentOwner = OwnerAuth::getCurrentOwner($pdo);
+$isAdminVisitor = AdminAuth::isAuthenticated();
 $taxonomyTree = CategoryMatcher::getTaxonomyTree($pdo, false);
 $placeHierarchy = LocationEngine::getPlaceHierarchy();
 
@@ -40,8 +44,17 @@ $rows = $stmt->fetchAll();
 
 $initialBusinesses = [];
 foreach ($rows as $r) {
+    $bizId = (int)$r['id'];
+    $canOwnerEdit = $currentOwner !== null && OwnerAuth::canOwnerEditBusiness($pdo, (int)$currentOwner['id'], $bizId);
+    $canEdit = $canOwnerEdit || $isAdminVisitor;
+    $editUrl = $canOwnerEdit
+        ? ('/owner/edit-business.php?id=' . $bizId)
+        : ($isAdminVisitor ? ('/admin/edit-business.php?id=' . $bizId) : null);
+
     $initialBusinesses[] = [
-        'id' => (int)$r['id'],
+        'id' => $bizId,
+        'can_edit' => $canEdit,
+        'edit_url' => $editUrl,
         'business_id' => $r['business_id'],
         'business_number' => (int)$r['business_number'],
         'name' => $r['name'],
@@ -116,7 +129,7 @@ foreach ($rows as $r) {
         <button type="button" id="btn-export-shortlist" class="btn btn-outline-light" title="Export selected B2B vendors as CSV">
           🏢 B2B Shortlist (<span id="shortlist-count">0</span>/5)
         </button>
-        <a href="/owner/login.php" class="btn btn-outline-light">👤 Owner Login</a>
+        <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light">👤 <?= $currentOwner ? 'My Biasharas' : 'Owner Login' ?></a>
         <a href="/privacy.php" class="btn btn-outline-light">🔒 Privacy &amp; DPA Notice</a>
         <a href="/submit.php" class="btn btn-gold">+ List Your Biashara</a>
       </nav>
