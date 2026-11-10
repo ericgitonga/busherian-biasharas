@@ -17,6 +17,8 @@ try {
     $q          = trim((string)($_GET['q'] ?? ''));
     $sectorId   = isset($_GET['sector_id']) && $_GET['sector_id'] !== '' ? (int)$_GET['sector_id'] : null;
     $specId     = isset($_GET['specialty_id']) && $_GET['specialty_id'] !== '' ? (int)$_GET['specialty_id'] : null;
+    $country    = trim((string)($_GET['country'] ?? ''));
+    $cityCounty = trim((string)($_GET['city_county'] ?? ''));
     $school     = strtoupper(trim((string)($_GET['school'] ?? '')));
     $mode       = strtolower(trim((string)($_GET['service_mode'] ?? '')));
     $openNow    = !empty($_GET['open_now']) && $_GET['open_now'] !== '0' && $_GET['open_now'] !== 'false';
@@ -37,7 +39,7 @@ try {
             b.service_mode, b.alumni_perk, b.b2b_ready, b.accepts_lpo,
             b.regulator_name, b.regulator_license,
             b.branch_name, b.building_name, b.floor_suite, b.street_road,
-            b.area_neighborhood, b.city_county, b.landmark_directions,
+            b.area_neighborhood, b.country, b.city_county, b.landmark_directions,
             b.plus_code, b.latitude, b.longitude, b.google_maps_url,
             b.operating_hours_json, b.photos_json,
             b.phone_primary, b.whatsapp_number, b.email_public, b.website_url,
@@ -59,6 +61,14 @@ try {
     if ($specId !== null && $specId > 0) {
         $sql .= " AND b.specialty_id = :specialty_id";
         $params[':specialty_id'] = $specId;
+    }
+    if ($country !== '') {
+        $sql .= " AND LOWER(b.country) = LOWER(:country)";
+        $params[':country'] = $country;
+    }
+    if ($cityCounty !== '') {
+        $sql .= " AND LOWER(b.city_county) = LOWER(:city_county)";
+        $params[':city_county'] = $cityCounty;
     }
     if (in_array($school, ['AHS', 'AGHS'], true)) {
         $sql .= " AND (b.school_badge = :school OR b.school_badge = 'BOTH')";
@@ -89,7 +99,7 @@ try {
     if ($q !== '') {
         $expandedTerms = CategoryMatcher::expandSearchTerms($q);
         $orClauses = [];
-        $colsToSearch = ['b.name', 'b.tagline', 'b.description', 'sec.name', 'spec.name', 'b.area_neighborhood', 'b.city_county', 'b.street_road'];
+        $colsToSearch = ['b.name', 'b.tagline', 'b.description', 'sec.name', 'spec.name', 'b.area_neighborhood', 'b.country', 'b.city_county', 'b.street_road'];
         foreach ($expandedTerms as $idx => $term) {
             $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $term);
             $val = '%' . $escaped . '%';
@@ -150,6 +160,7 @@ try {
             'floor_suite' => $row['floor_suite'],
             'street_road' => $row['street_road'],
             'area_neighborhood' => $row['area_neighborhood'],
+            'country' => $row['country'] ?? 'Kenya',
             'city_county' => $row['city_county'],
             'landmark_directions' => $row['landmark_directions'],
             'plus_code' => $row['plus_code'],

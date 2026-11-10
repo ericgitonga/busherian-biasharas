@@ -6,12 +6,14 @@ require_once dirname(__DIR__) . '/src/bootstrap.php';
 use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\CategoryMatcher;
 use BusherianBiasharas\Services\HoursEngine;
+use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\PhotoUploader;
 
 bbiz_send_security_headers(false);
 
 $pdo = Database::getConnection();
 $taxonomyTree = CategoryMatcher::getTaxonomyTree($pdo, false);
+$placeHierarchy = LocationEngine::getPlaceHierarchy();
 
 // Load initial approved businesses (strictly zero vetting columns)
 $stmt = $pdo->query("
@@ -22,7 +24,7 @@ $stmt = $pdo->query("
         b.service_mode, b.alumni_perk, b.b2b_ready, b.accepts_lpo,
         b.regulator_name, b.regulator_license,
         b.branch_name, b.building_name, b.floor_suite, b.street_road,
-        b.area_neighborhood, b.city_county, b.landmark_directions,
+        b.area_neighborhood, b.country, b.city_county, b.landmark_directions,
         b.plus_code, b.latitude, b.longitude, b.google_maps_url,
         b.operating_hours_json, b.photos_json,
         b.phone_primary, b.whatsapp_number, b.email_public, b.website_url,
@@ -62,6 +64,7 @@ foreach ($rows as $r) {
         'floor_suite' => $r['floor_suite'],
         'street_road' => $r['street_road'],
         'area_neighborhood' => $r['area_neighborhood'],
+        'country' => $r['country'] ?? 'Kenya',
         'city_county' => $r['city_county'],
         'landmark_directions' => $r['landmark_directions'],
         'plus_code' => $r['plus_code'],
@@ -145,6 +148,21 @@ foreach ($rows as $r) {
             <option value="">All Specialties (Level 2)</option>
           </select>
         </div>
+        <div>
+          <label for="filter-country" style="display:none;">Country (Place Level 1)</label>
+          <select id="filter-country" class="select-control" aria-label="Filter by Country">
+            <option value="">🌍 All Countries</option>
+            <?php foreach (array_keys($placeHierarchy) as $cName): ?>
+              <option value="<?= htmlspecialchars($cName, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($cName, ENT_QUOTES, 'UTF-8') ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div>
+          <label for="filter-city" style="display:none;">City / County / State (Place Level 2)</label>
+          <select id="filter-city" class="select-control" aria-label="Filter by City, County, or State">
+            <option value="">📍 All Cities / Counties / States</option>
+          </select>
+        </div>
         <div style="display:flex;gap:0.45rem;">
           <button type="button" id="btn-near-me" class="btn btn-green" style="white-space:nowrap;">📍 Near Me</button>
           <select id="filter-radius" class="select-control" aria-label="Distance Radius" style="width:auto;">
@@ -222,6 +240,7 @@ foreach ($rows as $r) {
 
   <script>
     window.INITIAL_SECTORS = <?= json_encode($taxonomyTree, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
+    window.PLACE_HIERARCHY = <?= json_encode($placeHierarchy, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
     window.INITIAL_BUSINESSES = <?= json_encode($initialBusinesses, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
   </script>
   <script src="/assets/vendor/leaflet/leaflet.js"></script>

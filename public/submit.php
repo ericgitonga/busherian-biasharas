@@ -199,7 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             sector_id, specialty_id, service_mode, alumni_perk,
                             b2b_ready, accepts_lpo, regulator_name, regulator_license,
                             branch_name, building_name, floor_suite, street_road,
-                            area_neighborhood, city_county, landmark_directions,
+                            area_neighborhood, country, city_county, landmark_directions,
                             plus_code, latitude, longitude, google_maps_url,
                             operating_hours_json, photos_json, phone_primary, whatsapp_number,
                             email_public, website_url,
@@ -211,7 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             :sector_id, :specialty_id, :service_mode, :alumni_perk,
                             :b2b_ready, :accepts_lpo, :regulator_name, :regulator_license,
                             :branch_name, :building_name, :floor_suite, :street_road,
-                            :area_neighborhood, :city_county, :landmark_directions,
+                            :area_neighborhood, :country, :city_county, :landmark_directions,
                             :plus_code, :latitude, :longitude, :google_maps_url,
                             :operating_hours_json, :photos_json, :phone_primary, :whatsapp_number,
                             :email_public, :website_url,
@@ -242,7 +242,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':floor_suite' => trim((string)($_POST['floor_suite'] ?? '')) ?: null,
                         ':street_road' => trim((string)($_POST['street_road'] ?? '')) ?: null,
                         ':area_neighborhood' => trim((string)($_POST['area_neighborhood'] ?? '')) ?: null,
-                        ':city_county' => trim((string)($_POST['city_county'] ?? 'Nairobi')) ?: 'Nairobi',
+                        ':country' => LocationEngine::resolvePlaceFromPost($_POST)['country'],
+                        ':city_county' => LocationEngine::resolvePlaceFromPost($_POST)['city_county'],
                         ':landmark_directions' => trim((string)($_POST['landmark_directions'] ?? '')) ?: null,
                         ':plus_code' => $plusCode !== '' ? $plusCode : null,
                         ':latitude' => $lat,
@@ -587,10 +588,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
             <label for="area_neighborhood" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Neighborhood / Area</label>
             <input type="text" id="area_neighborhood" name="area_neighborhood" class="input-control" placeholder="e.g. Westlands">
           </div>
-          <div>
-            <label for="city_county" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">City / County *</label>
-            <input type="text" id="city_county" name="city_county" class="input-control" value="Nairobi" required>
-          </div>
+          <?= bbiz_render_place_fields('Kenya', 'Nairobi') ?>
           <div>
             <label for="landmark_directions" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Landmark Directions</label>
             <input type="text" id="landmark_directions" name="landmark_directions" class="input-control" placeholder="e.g. Opposite KNH Gate">

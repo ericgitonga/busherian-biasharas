@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS businesses (
     floor_suite VARCHAR(80) NULL,
     street_road VARCHAR(160) NULL,
     area_neighborhood VARCHAR(120) NULL,
+    country VARCHAR(80) NOT NULL DEFAULT 'Kenya',
     city_county VARCHAR(100) NOT NULL DEFAULT 'Nairobi',
     landmark_directions VARCHAR(255) NULL,
     plus_code VARCHAR(40) NULL,
@@ -84,7 +85,7 @@ CREATE TABLE IF NOT EXISTS businesses (
     CONSTRAINT fk_biz_specialty FOREIGN KEY (specialty_id) REFERENCES categories(id),
     INDEX idx_status_sector_spec (status, sector_id, specialty_id),
     INDEX idx_coords (latitude, longitude),
-    INDEX idx_city (city_county),
+    INDEX idx_country_city (country, city_county),
     INDEX idx_biz_number (business_number),
     FULLTEXT idx_ft_search (name, tagline, description, area_neighborhood, city_county)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

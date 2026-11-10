@@ -28,6 +28,71 @@
   bindDayClosedToggle('hours_sat_closed', 'hours_sat_open', 'hours_sat_close', '09:00', '14:00');
   bindDayClosedToggle('hours_sun_closed', 'hours_sun_open', 'hours_sun_close', '10:00', '16:00');
 
+  // =========================================================================
+  // 2-Level Place Selector (Country -> City / County / State) (#97)
+  // =========================================================================
+  const countrySel = document.getElementById('country');
+  const countryCustom = document.getElementById('country_custom');
+  const citySel = document.getElementById('city_county');
+  const cityCustom = document.getElementById('city_county_custom');
+  const placeWrap = countrySel ? countrySel.closest('[data-place-hierarchy]') : null;
+
+  if (countrySel && citySel && placeWrap) {
+    let hierarchy = {};
+    try {
+      hierarchy = JSON.parse(placeWrap.getAttribute('data-place-hierarchy') || '{}');
+    } catch (_) {}
+
+    function syncCityOptionsForCountry(preferredCity) {
+      const cVal = countrySel.value;
+      const isCustomCountry = (cVal === '__custom__');
+      if (countryCustom) {
+        countryCustom.style.display = isCustomCountry ? 'block' : 'none';
+        countryCustom.required = isCustomCountry;
+      }
+
+      const list = (!isCustomCountry && Array.isArray(hierarchy[cVal])) ? hierarchy[cVal] : [];
+      citySel.innerHTML = '';
+      list.forEach(placeName => {
+        const opt = document.createElement('option');
+        opt.value = placeName;
+        opt.textContent = placeName;
+        citySel.appendChild(opt);
+      });
+      const customOpt = document.createElement('option');
+      customOpt.value = '__custom__';
+      customOpt.textContent = '+ Other City / County / State (Type Below)';
+      citySel.appendChild(customOpt);
+
+      if (isCustomCountry) {
+        citySel.value = '__custom__';
+      } else if (preferredCity && list.includes(preferredCity)) {
+        citySel.value = preferredCity;
+      } else if (preferredCity && preferredCity !== '__custom__') {
+        citySel.value = '__custom__';
+        if (cityCustom) cityCustom.value = preferredCity;
+      } else if (list.length > 0) {
+        citySel.value = list[0];
+      } else {
+        citySel.value = '__custom__';
+      }
+      syncCustomCityVisibility();
+    }
+
+    function syncCustomCityVisibility() {
+      const isCustomCity = (citySel.value === '__custom__');
+      if (cityCustom) {
+        cityCustom.style.display = isCustomCity ? 'block' : 'none';
+        cityCustom.required = isCustomCity;
+      }
+    }
+
+    countrySel.addEventListener('change', () => {
+      syncCityOptionsForCountry(null);
+    });
+    citySel.addEventListener('change', syncCustomCityVisibility);
+  }
+
   const fileInput = document.getElementById('business_photos');
   const hiddenJsonInput = document.getElementById('business_photos_data_json');
   const previewWrap = document.getElementById('business-photos-preview');
@@ -266,6 +331,18 @@
       houseSel.value = String(fields.house_name);
     }
 
+    // 1b. Cascading country -> city_county (#97)
+    const countryField = submitForm.querySelector('[name="country"]');
+    const cityField = submitForm.querySelector('[name="city_county"]');
+    if (countryField && fields.country) {
+      countryField.value = String(fields.country);
+      countryField.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    if (cityField && fields.city_county) {
+      cityField.value = String(fields.city_county);
+      cityField.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
     // 2. Cascading sector -> specialty -> custom specialty & regulator
     const sectorSel = submitForm.querySelector('[name="sector_id"]');
     const specSel = submitForm.querySelector('[name="specialty_id"]');
@@ -283,7 +360,7 @@
     elements.forEach(el => {
       const name = el.name;
       if (!name || EXCLUDED_DRAFT_NAMES.has(name)) return;
-      if (name === 'school_code' || name === 'house_name' || name === 'sector_id' || name === 'specialty_id') return;
+      if (name === 'school_code' || name === 'house_name' || name === 'sector_id' || name === 'specialty_id' || name === 'country' || name === 'city_county') return;
       if (!(name in fields)) return;
       const val = fields[name];
 
