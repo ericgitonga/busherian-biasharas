@@ -250,6 +250,16 @@ def test_dpa_cookie_consent_and_usage_metrics():
     st_m, _, _ = _request("/admin/metrics.php")
     assert st_m == 401
 
+    # 5. Verify Ticket #42: Owner SSO + Magic Link login portal & homepage Owner Login link
+    st_ol, body_ol, _ = _request("/owner/login.php")
+    assert st_ol == 200
+    assert "Continue with Google (SSO)" in body_ol
+    assert "Send 1-Click Sign-In Link" in body_ol
+
+    st_home, body_home, _ = _request("/")
+    assert st_home == 200
+    assert "/owner/login.php" in body_home
+
 
 TESTS = [
     test_health_endpoint,

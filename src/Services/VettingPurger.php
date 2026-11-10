@@ -59,6 +59,23 @@ final class VettingPurger
                 WHERE id = :id
             ")->execute([':id' => $businessId]);
 
+            // Link submitter's email as persistent business owner before purging temporary vetting credentials
+            $vetRowStmt = $pdo->prepare("SELECT submitter_email, submitter_name, submitter_phone FROM business_vetting_queue WHERE business_id = :id LIMIT 1");
+            $vetRowStmt->execute([':id' => $businessId]);
+            $vetRow = $vetRowStmt->fetch();
+            if ($vetRow && !empty($vetRow['submitter_email']) && filter_var($vetRow['submitter_email'], FILTER_VALIDATE_EMAIL)) {
+                $subEmail = strtolower(trim((string)$vetRow['submitter_email']));
+                $pdo->prepare("UPDATE businesses SET owner_email = :oem WHERE id = :id AND (owner_email IS NULL OR owner_email = '')")
+                    ->execute([':oem' => $subEmail, ':id' => $businessId]);
+                $ownerRec = OwnerAuth::upsertOwner(
+                    $pdo,
+                    $subEmail,
+                    (string)($vetRow['submitter_name'] ?? ''),
+                    (string)($vetRow['submitter_phone'] ?? '')
+                );
+                OwnerAuth::linkOwnerToBusiness($pdo, (int)$ownerRec['id'], $businessId, 'approved_submission');
+            }
+
             // STRICT PRIVACY GUARANTEE: Permanently hard-delete House, Year Left & School Number
             $del = $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id");
             $del->execute([':id' => $businessId]);
@@ -247,6 +264,7 @@ final class VettingPurger
                 phone_primary = :phone_primary,
                 whatsapp_number = :whatsapp_number,
                 email_public = :email_public,
+                owner_email = :owner_email,
                 website_url = :website_url,
                 social_instagram = :social_instagram,
                 social_linkedin = :social_linkedin,
@@ -286,6 +304,7 @@ final class VettingPurger
             ':phone_primary' => trim((string)$data['phone_primary']),
             ':whatsapp_number' => trim((string)($data['whatsapp_number'] ?? '')) ?: null,
             ':email_public' => trim((string)($data['email_public'] ?? '')) ?: null,
+            ':owner_email' => strtolower(trim((string)($data['owner_email'] ?? ''))) ?: null,
             ':website_url' => trim((string)($data['website_url'] ?? '')) ?: null,
             ':social_instagram' => trim((string)($data['social_instagram'] ?? '')) ?: null,
             ':social_linkedin' => trim((string)($data['social_linkedin'] ?? '')) ?: null,
@@ -296,6 +315,13 @@ final class VettingPurger
             ':status' => in_array($data['status'] ?? '', ['approved', 'pending', 'rejected', 'quarantined_dpa'], true) ? $data['status'] : 'approved',
             ':id' => $businessId,
         ]);
+
+        // If Admin assigned an owner_email, ensure owner record and link exist immediately
+        $assignedOwnerEmail = strtolower(trim((string)($data['owner_email'] ?? '')));
+        if ($assignedOwnerEmail !== '' && filter_var($assignedOwnerEmail, FILTER_VALIDATE_EMAIL)) {
+            $ownerRec = OwnerAuth::upsertOwner($pdo, $assignedOwnerEmail);
+            OwnerAuth::linkOwnerToBusiness($pdo, (int)$ownerRec['id'], $businessId, 'admin_assigned');
+        }
 
         // If status is approved/rejected/quarantined_dpa, ensure no vetting queue row remains
         if (in_array($data['status'] ?? 'approved', ['approved', 'rejected', 'quarantined_dpa'], true)) {
@@ -504,5 +530,150 @@ final class VettingPurger
         }
         return $seq;
     }
-}
 
+    /**
+     * Self-service update by an authenticated & linked Business Owner.
+     * Goes live immediately; if `name`, `sector_id`, or `specialty_id` changes, notifies Admin.
+     */
+    public static function updateBusinessByOwner(PDO $pdo, int $businessId, array $owner, array $data): array
+    {
+        if (!OwnerAuth::canOwnerEditBusiness($pdo, (int)$owner['id'], $businessId)) {
+            throw new RuntimeException('You are not authorized to edit this business listing.');
+        }
+
+        $oldStmt = $pdo->prepare("
+            SELECT b.*, sec.name AS sector_name, spec.name AS specialty_name
+            FROM businesses b
+            INNER JOIN categories sec ON sec.id = b.sector_id
+            INNER JOIN categories spec ON spec.id = b.specialty_id
+            WHERE b.id = :id
+            LIMIT 1
+        ");
+        $oldStmt->execute([':id' => $businessId]);
+        $oldBiz = $oldStmt->fetch();
+        if (!$oldBiz) {
+            throw new RuntimeException('Business record not found.');
+        }
+
+        [$resolvedLat, $resolvedLng] = self::resolveCoordsFromAdminData($data);
+        $hoursJson = isset($data['operating_hours_json']) && trim((string)$data['operating_hours_json']) !== ''
+            ? trim((string)$data['operating_hours_json'])
+            : (string)$oldBiz['operating_hours_json'];
+
+        $stmt = $pdo->prepare("
+            UPDATE businesses SET
+                name = :name,
+                tagline = :tagline,
+                description = :description,
+                sector_id = :sector_id,
+                specialty_id = :specialty_id,
+                service_mode = :service_mode,
+                alumni_perk = :alumni_perk,
+                b2b_ready = :b2b_ready,
+                accepts_lpo = :accepts_lpo,
+                regulator_name = :regulator_name,
+                branch_name = :branch_name,
+                building_name = :building_name,
+                floor_suite = :floor_suite,
+                street_road = :street_road,
+                area_neighborhood = :area_neighborhood,
+                city_county = :city_county,
+                landmark_directions = :landmark_directions,
+                plus_code = :plus_code,
+                latitude = :latitude,
+                longitude = :longitude,
+                google_maps_url = :google_maps_url,
+                operating_hours_json = :operating_hours_json,
+                phone_primary = :phone_primary,
+                whatsapp_number = :whatsapp_number,
+                email_public = :email_public,
+                website_url = :website_url,
+                social_instagram = :social_instagram,
+                social_linkedin = :social_linkedin,
+                social_x = :social_x,
+                social_facebook = :social_facebook,
+                social_tiktok = :social_tiktok,
+                social_youtube = :social_youtube,
+                last_confirmed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id
+        ");
+
+        $newName = trim((string)($data['name'] ?? $oldBiz['name']));
+        $newSectorId = (int)($data['sector_id'] ?? $oldBiz['sector_id']);
+        $newSpecId = (int)($data['specialty_id'] ?? $oldBiz['specialty_id']);
+
+        $stmt->execute([
+            ':name' => $newName,
+            ':tagline' => trim((string)($data['tagline'] ?? $oldBiz['tagline'])),
+            ':description' => trim((string)($data['description'] ?? $oldBiz['description'])),
+            ':sector_id' => $newSectorId,
+            ':specialty_id' => $newSpecId,
+            ':service_mode' => in_array($data['service_mode'] ?? '', ['physical', 'hybrid', 'online'], true) ? $data['service_mode'] : $oldBiz['service_mode'],
+            ':alumni_perk' => trim((string)($data['alumni_perk'] ?? '')) ?: null,
+            ':b2b_ready' => !empty($data['b2b_ready']) ? 1 : 0,
+            ':accepts_lpo' => !empty($data['accepts_lpo']) ? 1 : 0,
+            ':regulator_name' => trim((string)($data['regulator_name'] ?? '')) ?: null,
+            ':branch_name' => trim((string)($data['branch_name'] ?? '')) ?: null,
+            ':building_name' => trim((string)($data['building_name'] ?? '')) ?: null,
+            ':floor_suite' => trim((string)($data['floor_suite'] ?? '')) ?: null,
+            ':street_road' => trim((string)($data['street_road'] ?? '')) ?: null,
+            ':area_neighborhood' => trim((string)($data['area_neighborhood'] ?? '')) ?: null,
+            ':city_county' => trim((string)($data['city_county'] ?? 'Nairobi')) ?: 'Nairobi',
+            ':landmark_directions' => trim((string)($data['landmark_directions'] ?? '')) ?: null,
+            ':plus_code' => trim((string)($data['plus_code'] ?? '')) ?: null,
+            ':latitude' => $resolvedLat,
+            ':longitude' => $resolvedLng,
+            ':google_maps_url' => trim((string)($data['google_maps_url'] ?? '')) ?: null,
+            ':operating_hours_json' => $hoursJson,
+            ':phone_primary' => trim((string)($data['phone_primary'] ?? $oldBiz['phone_primary'])),
+            ':whatsapp_number' => trim((string)($data['whatsapp_number'] ?? '')) ?: null,
+            ':email_public' => trim((string)($data['email_public'] ?? '')) ?: null,
+            ':website_url' => trim((string)($data['website_url'] ?? '')) ?: null,
+            ':social_instagram' => trim((string)($data['social_instagram'] ?? '')) ?: null,
+            ':social_linkedin' => trim((string)($data['social_linkedin'] ?? '')) ?: null,
+            ':social_x' => trim((string)($data['social_x'] ?? '')) ?: null,
+            ':social_facebook' => trim((string)($data['social_facebook'] ?? '')) ?: null,
+            ':social_tiktok' => trim((string)($data['social_tiktok'] ?? '')) ?: null,
+            ':social_youtube' => trim((string)($data['social_youtube'] ?? '')) ?: null,
+            ':id' => $businessId,
+        ]);
+
+        $newStmt = $pdo->prepare("
+            SELECT b.*, sec.name AS sector_name, spec.name AS specialty_name
+            FROM businesses b
+            INNER JOIN categories sec ON sec.id = b.sector_id
+            INNER JOIN categories spec ON spec.id = b.specialty_id
+            WHERE b.id = :id
+            LIMIT 1
+        ");
+        $newStmt->execute([':id' => $businessId]);
+        $newBiz = (array)$newStmt->fetch();
+
+        $criticalChanges = [];
+        if (strcasecmp((string)$oldBiz['name'], (string)$newBiz['name']) !== 0) {
+            $criticalChanges['Business Name'] = [
+                'before' => (string)$oldBiz['name'],
+                'after' => (string)$newBiz['name'],
+            ];
+        }
+        if ((int)$oldBiz['sector_id'] !== (int)$newBiz['sector_id'] || (int)$oldBiz['specialty_id'] !== (int)$newBiz['specialty_id']) {
+            $criticalChanges['Category (Sector -> Specialty)'] = [
+                'before' => "{$oldBiz['sector_name']} -> {$oldBiz['specialty_name']}",
+                'after' => "{$newBiz['sector_name']} -> {$newBiz['specialty_name']}",
+            ];
+        }
+
+        $adminNotified = false;
+        if (!empty($criticalChanges)) {
+            Mailer::notifyAdminOwnerCriticalEdit($pdo, $owner, $oldBiz, $newBiz, $criticalChanges);
+            $adminNotified = true;
+        }
+
+        return [
+            'business' => $newBiz,
+            'critical_changes' => $criticalChanges,
+            'admin_notified' => $adminNotified,
+        ];
+    }
+}

@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS businesses (
     phone_primary VARCHAR(40) NOT NULL,
     whatsapp_number VARCHAR(40) NULL,
     email_public VARCHAR(190) NULL,
+    owner_email VARCHAR(190) NULL,
     website_url VARCHAR(350) NULL,
     social_instagram VARCHAR(255) NULL,
     social_linkedin VARCHAR(255) NULL,
@@ -150,4 +151,42 @@ CREATE TABLE IF NOT EXISTS usage_metrics (
     INDEX idx_metric_type_time (event_type, created_at),
     INDEX idx_metric_visitor (visitor_hash, created_at),
     INDEX idx_metric_biz (business_id, event_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- Persistent Verified Business Owners (Strictly zero House / Year Left / School Number columns)
+CREATE TABLE IF NOT EXISTS business_owners (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(190) NOT NULL UNIQUE,
+    full_name VARCHAR(150) NULL,
+    phone VARCHAR(40) NULL,
+    google_sub VARCHAR(120) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_owner_google (google_sub)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Many-to-Many Owner <-> Business Links (Supports single owner with multiple businesses & co-owners)
+CREATE TABLE IF NOT EXISTS business_owner_links (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    owner_id INT UNSIGNED NOT NULL,
+    business_id INT UNSIGNED NOT NULL,
+    linked_via VARCHAR(40) NOT NULL DEFAULT 'auto_match',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_owner_business (owner_id, business_id),
+    INDEX idx_link_business (business_id),
+    CONSTRAINT fk_link_owner FOREIGN KEY (owner_id) REFERENCES business_owners(id) ON DELETE CASCADE,
+    CONSTRAINT fk_link_biz FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Single-Use Passwordless Magic Links & Claim Tokens
+CREATE TABLE IF NOT EXISTS owner_auth_tokens (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(190) NOT NULL,
+    token_hash CHAR(64) NOT NULL UNIQUE,
+    claim_business_id INT UNSIGNED NULL,
+    expires_at INT UNSIGNED NOT NULL,
+    used_at INT UNSIGNED NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_token_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -7,6 +7,7 @@ use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\CategoryMatcher;
+use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\VettingPurger;
 
 bbiz_send_security_headers(false);
@@ -64,6 +65,8 @@ if (!$biz) {
 }
 
 $tokens = AntiSpamGate::generateFormTokens();
+$claimInviteUrl = OwnerAuth::generateClaimInviteUrl((int)$biz['id']);
+$linkedOwners = OwnerAuth::getOwnersForBusiness($pdo, (int)$biz['id']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -102,6 +105,27 @@ $tokens = AntiSpamGate::generateFormTokens();
         ⚠️ <?= htmlspecialchars($errorMsg, ENT_QUOTES, 'UTF-8') ?>
       </div>
     <?php endif; ?>
+
+    <!-- Owner Account Linking & 1-Click DM Claim Link -->
+    <section style="background:#F0FDF4;border:1px solid #059669;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;">
+        <div>
+          <h2 style="margin:0;font-size:0.96rem;color:#065F46;">👤 Business Owner Linking &amp; 1-Click DM Claim Link</h2>
+          <p style="margin:0.2rem 0 0 0;font-size:0.8rem;color:#047857;">
+            Send this link to the business owner in your DM (or set their Owner Email below) so they can sign in via Google SSO or Email Magic Link and manage this listing directly.
+          </p>
+          <?php if (!empty($linkedOwners)): ?>
+            <div style="margin-top:0.35rem;font-size:0.8rem;color:#065F46;">
+              <strong>Currently Linked Owner(s):</strong> <?= htmlspecialchars(implode(', ', array_column($linkedOwners, 'email')), ENT_QUOTES, 'UTF-8') ?>
+            </div>
+          <?php endif; ?>
+        </div>
+      </div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.6rem;">
+        <input type="text" id="admin-claim-link-input" class="input-control" style="flex:1;font-size:0.78rem;background:#fff;" readonly value="<?= htmlspecialchars($claimInviteUrl, ENT_QUOTES, 'UTF-8') ?>">
+        <button type="button" id="btn-copy-claim-link" class="btn btn-green" style="font-size:0.8rem;">🔗 Copy Owner Claim Link</button>
+      </div>
+    </section>
 
     <!-- 1-Click Website URL Re-Extraction inside Admin Editor -->
     <section class="autofill-box">
@@ -198,6 +222,10 @@ $tokens = AntiSpamGate::generateFormTokens();
         <div>
           <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Public Email</label>
           <input type="email" id="email_public" name="email_public" class="input-control" value="<?= htmlspecialchars((string)($biz['email_public'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+        </div>
+        <div>
+          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;color:#065F46;">Owner Login Email (Pre-Assign)</label>
+          <input type="email" id="owner_email" name="owner_email" class="input-control" value="<?= htmlspecialchars((string)($biz['owner_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="owner@gmail.com or @domain">
         </div>
         <div>
           <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Website URL</label>

@@ -7,6 +7,7 @@ use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\Mailer;
+use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\VettingPurger;
 
 bbiz_send_security_headers(false);
@@ -83,7 +84,7 @@ $statusFilter = trim((string)($_GET['status'] ?? ''));
 $allSql = "
     SELECT
         b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.school_badge, b.status,
-        b.city_county, b.area_neighborhood, b.phone_primary, b.website_url,
+        b.city_county, b.area_neighborhood, b.phone_primary, b.email_public, b.owner_email, b.website_url,
         sec.name AS sector_name, spec.name AS specialty_name, b.updated_at
     FROM businesses b
     INNER JOIN categories sec ON sec.id = b.sector_id
@@ -289,6 +290,19 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
                       <?= htmlspecialchars((string)$b['website_url'], ENT_QUOTES, 'UTF-8') ?> &nearr;
                     </a>
                   <?php endif; ?>
+                  <?php
+                    $linkedOwners = OwnerAuth::getOwnersForBusiness($pdo, $bid);
+                    $claimUrl = OwnerAuth::generateClaimInviteUrl($bid);
+                  ?>
+                  <div style="margin-top:0.25rem;font-size:0.74rem;color:#065F46;">
+                    <?php if (!empty($linkedOwners)): ?>
+                      👤 Linked Owner: <strong><?= htmlspecialchars(implode(', ', array_column($linkedOwners, 'email')), ENT_QUOTES, 'UTF-8') ?></strong>
+                    <?php elseif (!empty($b['owner_email'])): ?>
+                      👤 Pre-Assigned Owner: <strong><?= htmlspecialchars((string)$b['owner_email'], ENT_QUOTES, 'UTF-8') ?></strong>
+                    <?php else: ?>
+                      <span style="color:#6B7280;">👤 Auto-links on domain/email login or via DM Claim Link</span>
+                    <?php endif; ?>
+                  </div>
                 </td>
                 <td style="padding:0.75rem 1rem;">
                   <div style="font-weight:600;color:#114B3E;"><?= htmlspecialchars((string)$b['sector_name'], ENT_QUOTES, 'UTF-8') ?></div>
@@ -303,6 +317,9 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
                   </span>
                 </td>
                 <td style="padding:0.75rem 1rem;text-align:right;white-space:nowrap;">
+                  <button type="button" data-copy-claim="<?= htmlspecialchars($claimUrl, ENT_QUOTES, 'UTF-8') ?>" data-biz-name="<?= htmlspecialchars((string)$b['name'], ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="padding:0.35rem 0.65rem;font-size:0.75rem;color:#114B3E;border-color:#114B3E;" title="Copy 1-Click Owner Claim Link to send in DM">
+                    🔗 Claim Link
+                  </button>
                   <a href="/admin/edit-business.php?id=<?= $bid ?>" class="btn btn-outline" style="padding:0.35rem 0.65rem;font-size:0.78rem;">
                     ✏️ Edit
                   </a>
@@ -342,5 +359,21 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
       </div>
     </section>
   </main>
+  <script>
+    document.querySelectorAll('[data-copy-claim]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const url = btn.getAttribute('data-copy-claim');
+        const name = btn.getAttribute('data-biz-name') || 'Business';
+        try {
+          await navigator.clipboard.writeText(url);
+          const orig = btn.textContent;
+          btn.textContent = '✓ Copied Link!';
+          setTimeout(() => { btn.textContent = orig; }, 2200);
+        } catch (_) {
+          window.prompt('Copy 1-Click Owner Claim Link for ' + name + ':', url);
+        }
+      });
+    });
+  </script>
 </body>
 </html>
