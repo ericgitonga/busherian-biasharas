@@ -293,6 +293,26 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert "bbiz_submit_draft_v1" in body_fe
     assert "applyDraftToSubmitForm" in body_fe
 
+    # 9. Verify Tickets #96 (#97, #98): 2-level Place Filter (Country -> City/County/State)
+    assert 'id="filter-country"' in body_home
+    assert 'id="filter-city"' in body_home
+    assert 'window.PLACE_HIERARCHY' in body_home
+    assert 'name="country"' in body_sub
+    assert 'name="city_county"' in body_sub
+    st_place, body_place, _ = _request("/api/businesses.php?country=Kenya&city_county=Nairobi")
+    assert st_place == 200
+    place_data = json.loads(body_place)
+    assert len(place_data["businesses"]) >= 1
+    assert all(b.get("country") == "Kenya" and b.get("city_county") == "Nairobi" for b in place_data["businesses"])
+
+    st_none_place, body_none_place, _ = _request("/api/businesses.php?country=Switzerland&city_county=Geneva")
+    assert st_none_place == 200
+    assert len(json.loads(body_none_place)["businesses"]) == 0
+
+    # 10. Verify Ticket #99: AGHS houses Joan Mjomba & Rebecca Karanja present on /submit.php
+    assert "Joan Mjomba" in body_sub
+    assert "Rebecca Karanja" in body_sub
+
 
 TESTS = [
     test_health_endpoint,
