@@ -37,6 +37,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
         $flashErr = 'Invalid security token (CSRF). Please try again.';
+    } elseif ($adminAction === 'save_google_sso') {
+        $gClientId = trim((string)($_POST['google_client_id'] ?? ''));
+        $gClientSecret = trim((string)($_POST['google_client_secret'] ?? ''));
+        Database::setSetting($pdo, 'GOOGLE_CLIENT_ID', $gClientId);
+        Database::setSetting($pdo, 'GOOGLE_CLIENT_SECRET', $gClientSecret);
+        $flashMsg = $gClientId !== ''
+            ? 'Google SSO (OAuth 2.0) credentials saved! The "Continue with Google (SSO)" button is now active on /owner/login.php.'
+            : 'Google SSO credentials cleared.';
     } elseif ($targetId > 0) {
         if ($adminAction === 'delete') {
             $bizNameStmt = $pdo->prepare("SELECT name, business_number, business_id FROM businesses WHERE id = :id");
@@ -169,6 +177,41 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
       </div>
       <span class="badge-verified">DPA Storage Limitation Enforced</span>
     </div>
+
+    <!-- GOOGLE SSO CONFIGURATION BOX -->
+    <?php
+      $savedGoogleClientId = OwnerAuth::getGoogleClientId($pdo);
+      $savedGoogleSecret = OwnerAuth::getGoogleClientSecret($pdo);
+      $callbackUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/') . '/owner/google-callback.php';
+    ?>
+    <section id="google-sso-config" style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.5rem;">
+      <details <?= $savedGoogleClientId === '' ? '' : '' ?>>
+        <summary style="cursor:pointer;font-weight:800;color:#114B3E;font-size:0.92rem;">
+          🌐 Owner Google SSO Configuration <?= $savedGoogleClientId !== '' ? '<span class="badge-verified" style="margin-left:0.5rem;">✓ Active</span>' : '<span style="font-size:0.78rem;color:#6B7280;font-weight:600;margin-left:0.5rem;">(Optional — Click to configure Google OAuth Client ID &amp; Secret)</span>' ?>
+        </summary>
+        <div style="margin-top:0.85rem;font-size:0.82rem;color:#4B5563;">
+          <p style="margin:0 0 0.6rem 0;">
+            To enable the <strong>Continue with Google (SSO)</strong> button on <code>/owner/login.php</code>, create a Web Application OAuth Client in <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" style="color:#7B1113;font-weight:700;">Google Cloud Console &rarr; Credentials</a> with Authorized Redirect URI:
+            <code style="background:#F3F4F6;padding:0.15rem 0.4rem;border-radius:4px;user-select:all;"><?= htmlspecialchars($callbackUrl, ENT_QUOTES, 'UTF-8') ?></code>
+          </p>
+          <form method="POST" action="/admin/index.php" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.65rem;align-items:end;">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+            <input type="hidden" name="admin_action" value="save_google_sso">
+            <div>
+              <label style="font-weight:700;display:block;margin-bottom:0.2rem;">Google Client ID</label>
+              <input type="text" name="google_client_id" class="input-control" value="<?= htmlspecialchars($savedGoogleClientId, ENT_QUOTES, 'UTF-8') ?>" placeholder="xxxx.apps.googleusercontent.com">
+            </div>
+            <div>
+              <label style="font-weight:700;display:block;margin-bottom:0.2rem;">Google Client Secret</label>
+              <input type="password" name="google_client_secret" class="input-control" value="<?= htmlspecialchars($savedGoogleSecret, ENT_QUOTES, 'UTF-8') ?>" placeholder="GOCSPX-...">
+            </div>
+            <div>
+              <button type="submit" class="btn btn-green" style="width:100%;justify-content:center;">💾 Save Google SSO Settings</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    </section>
 
     <!-- QUICK DIRECT-ADD KNOWN BUSHERIAN BUSINESS FROM URL (BYPASSES VETTING QUEUE) -->
     <section class="autofill-box" style="margin-bottom:2rem;">

@@ -487,22 +487,34 @@ final class OwnerAuth
         unset($_COOKIE[self::COOKIE_NAME]);
     }
 
-    /**
-     * Check whether Google OAuth 2.0 SSO credentials are configured in .env.
-     */
-    public static function isGoogleSsoConfigured(): bool
+    public static function getGoogleClientId(?PDO $pdo = null): string
     {
-        $clientId = trim(Database::env('GOOGLE_CLIENT_ID', ''));
-        $clientSecret = trim(Database::env('GOOGLE_CLIENT_SECRET', ''));
+        $conn = $pdo ?? Database::getConnection();
+        return trim(Database::getSetting($conn, 'GOOGLE_CLIENT_ID', ''));
+    }
+
+    public static function getGoogleClientSecret(?PDO $pdo = null): string
+    {
+        $conn = $pdo ?? Database::getConnection();
+        return trim(Database::getSetting($conn, 'GOOGLE_CLIENT_SECRET', ''));
+    }
+
+    /**
+     * Check whether Google OAuth 2.0 SSO credentials are configured in .env or app_settings.
+     */
+    public static function isGoogleSsoConfigured(?PDO $pdo = null): bool
+    {
+        $clientId = self::getGoogleClientId($pdo);
+        $clientSecret = self::getGoogleClientSecret($pdo);
         return $clientId !== '' && $clientSecret !== '';
     }
 
     /**
      * Build the Google OAuth 2.0 authorization URL.
      */
-    public static function getGoogleAuthorizationUrl(string $stateToken): string
+    public static function getGoogleAuthorizationUrl(string $stateToken, ?PDO $pdo = null): string
     {
-        $clientId = trim(Database::env('GOOGLE_CLIENT_ID', ''));
+        $clientId = self::getGoogleClientId($pdo);
         $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
         $redirectUri = "{$baseUrl}/owner/google-callback.php";
 
@@ -520,13 +532,13 @@ final class OwnerAuth
     /**
      * Exchange Google OAuth 2.0 authorization code for verified user profile ({email, name, sub}).
      */
-    public static function exchangeGoogleCodeForProfile(string $code): ?array
+    public static function exchangeGoogleCodeForProfile(string $code, ?PDO $pdo = null): ?array
     {
-        if (!self::isGoogleSsoConfigured() || !function_exists('curl_init')) {
+        if (!self::isGoogleSsoConfigured($pdo) || !function_exists('curl_init')) {
             return null;
         }
-        $clientId = trim(Database::env('GOOGLE_CLIENT_ID', ''));
-        $clientSecret = trim(Database::env('GOOGLE_CLIENT_SECRET', ''));
+        $clientId = self::getGoogleClientId($pdo);
+        $clientSecret = self::getGoogleClientSecret($pdo);
         $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
         $redirectUri = "{$baseUrl}/owner/google-callback.php";
 

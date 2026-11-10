@@ -392,6 +392,34 @@ final class Database
         }
     }
 
+    public static function getSetting(PDO $pdo, string $key, string $default = ''): string
+    {
+        $envVal = self::env($key, '');
+        if ($envVal !== '') {
+            return $envVal;
+        }
+        try {
+            $stmt = $pdo->prepare("SELECT setting_value FROM app_settings WHERE setting_key = :k LIMIT 1");
+            $stmt->execute([':k' => $key]);
+            $val = $stmt->fetchColumn();
+            if ($val !== false && trim((string)$val) !== '') {
+                return trim((string)$val);
+            }
+        } catch (\Throwable $e) {
+        }
+        return $default;
+    }
+
+    public static function setSetting(PDO $pdo, string $key, string $value): void
+    {
+        $del = $pdo->prepare("DELETE FROM app_settings WHERE setting_key = :k");
+        $del->execute([':k' => $key]);
+        if (trim($value) !== '') {
+            $ins = $pdo->prepare("INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (:k, :v, CURRENT_TIMESTAMP)");
+            $ins->execute([':k' => $key, ':v' => trim($value)]);
+        }
+    }
+
     private static function ensureOwnerTables(PDO $pdo, string $driver): void
     {
         $hasOwnerEmail = false;
@@ -422,6 +450,11 @@ final class Database
                     linked_via TEXT NOT NULL DEFAULT 'auto_match',
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(owner_id, business_id)
+                );
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    setting_key TEXT PRIMARY KEY,
+                    setting_value TEXT NOT NULL,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
                 CREATE TABLE IF NOT EXISTS owner_auth_tokens (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -464,6 +497,13 @@ final class Database
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE KEY uq_owner_business (owner_id, business_id),
                     INDEX idx_link_business (business_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    setting_key VARCHAR(80) PRIMARY KEY,
+                    setting_value TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
             $pdo->exec("
