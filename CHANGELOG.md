@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.8.8] - 2026-11-10
+
+### Changed
+- **Map School Colour Legend (`#130`):**
+  - Updated the map toolbar legend under **Live Busherian Proximity & Pin Map** in `public/index.php` from `Green = Open Now • Crimson = Closed` to **`Green = AHS • Green & Maroon = AGHS`** with matching colour swatches.
+
 ## [0.8.7] - 2026-11-10
 
 ### Added

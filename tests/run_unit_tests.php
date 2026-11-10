@@ -548,6 +548,15 @@ assertTrue(
     'Owner and Admin delete handlers enforce server-side exact confirm_business_name verification (#127, #128)'
 );
 
+// 29. Verify Ticket #130: Map legend in public/index.php reflects AHS (Green) & AGHS (Green & Maroon)
+$indexHtml = (string)file_get_contents(dirname(__DIR__) . '/public/index.php');
+assertTrue(
+    str_contains($indexHtml, 'Green = AHS') &&
+    str_contains($indexHtml, 'Green &amp; Maroon = AGHS') &&
+    !str_contains($indexHtml, 'Green = Open Now • Crimson = Closed'),
+    'public/index.php map legend displays Green = AHS and Green & Maroon = AGHS (#130)'
+);
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 
