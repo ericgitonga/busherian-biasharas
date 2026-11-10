@@ -91,6 +91,7 @@ foreach ($rows as $r) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS &amp; AGHS)</title>
   <meta name="description" content="Discover and support verified businesses owned by alumni of Alliance High School (AHS) and Alliance Girls High School (AGHS) — Strong to Serve &amp; Walk in the Light.">
+<?= bbiz_head_meta_tags('Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS)', 'Discover and support verified businesses owned by alumni of Alliance High School (AHS) and Alliance Girls High School (AGHS) — Strong to Serve & Walk in the Light.', '/') ?>
   <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>

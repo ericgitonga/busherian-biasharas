@@ -33,6 +33,7 @@ $form = [
     'b2b_ready' => 0,
     'accepts_lpo' => 0,
     'alumni_perk' => '',
+    'regulator_name' => '',
     'phone_primary' => '',
     'whatsapp_number' => '',
     'email_public' => '',
@@ -96,12 +97,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $form['b2b_ready'] = !empty($_POST['b2b_ready']) ? 1 : 0;
     $form['accepts_lpo'] = !empty($_POST['accepts_lpo']) ? 1 : 0;
+    $regSel = trim((string)($_POST['regulator_name'] ?? ''));
+    $regCus = trim((string)($_POST['regulator_name_custom'] ?? ''));
+    $form['regulator_name'] = ($regSel === 'Other Statutory Regulator') ? $regCus : $regSel;
+    $isRegSpec = CategoryMatcher::isSpecialtyRegulated($pdo, (int)$form['specialty_id']);
+    if (!$isRegSpec) {
+        $form['regulator_name'] = '';
+    }
 
     $csrf = trim((string)($_POST['csrf_token'] ?? ''));
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
         $errorMsg = 'Invalid security token (CSRF). Please reload and try again.';
     } elseif (trim((string)$form['name']) === '') {
         $errorMsg = 'Business Name is required.';
+    } elseif ($isRegSpec && trim((string)$form['regulator_name']) === '') {
+        $errorMsg = 'Professional Regulator is required for regulated industries.';
     } else {
         try {
             $newId = VettingPurger::createBusinessDirectly($pdo, $form);
@@ -121,6 +131,7 @@ $tokens = AntiSpamGate::generateFormTokens();
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Direct Add Business — Admin Console</title>
+<?= bbiz_head_meta_tags('Direct Add Business — Busherian Biasharas Admin', 'Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS).', '/admin/add-business.php') ?>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>
@@ -226,6 +237,15 @@ $tokens = AntiSpamGate::generateFormTokens();
             <?php endforeach; ?>
           </select>
         </div>
+      </div>
+
+      <div id="regulated-fields-wrap" hidden style="display:none;margin-top:0.9rem;background:#F0FDF4;border:1px solid #059669;border-radius:10px;padding:0.85rem;">
+        <label for="regulator_name" style="font-weight:700;font-size:0.84rem;color:#065F46;display:block;margin-bottom:0.25rem;">
+          🛡️ Professional Regulator / Statutory Body * (Required for Regulated Industry)
+        </label>
+        <select id="regulator_name" name="regulator_name" class="select-control" disabled></select>
+        <input type="text" id="regulator_name_custom" name="regulator_name_custom" class="input-control"
+          placeholder="Specify statutory regulator..." style="margin-top:0.45rem;display:none;" disabled>
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.9rem;margin-top:0.9rem;">
@@ -335,6 +355,59 @@ $tokens = AntiSpamGate::generateFormTokens();
       const sectorSel = document.getElementById('sector_id');
       const specSel = document.getElementById('specialty_id');
 
+      const regulatedWrap = document.getElementById('regulated-fields-wrap');
+      const regNameSel = document.getElementById('regulator_name');
+      const regNameCustom = document.getElementById('regulator_name_custom');
+
+      function syncCustomReg() {
+        if (!regNameSel || !regNameCustom) return;
+        const isOther = !regNameSel.disabled && regNameSel.value === 'Other Statutory Regulator';
+        regNameCustom.style.display = isOther ? 'block' : 'none';
+        regNameCustom.disabled = !isOther;
+        regNameCustom.required = isOther;
+        if (!isOther) regNameCustom.value = '';
+      }
+
+      function updateRegulatorVisibility() {
+        if (!regulatedWrap || !regNameSel || !regNameCustom) return;
+        const sec = SECTORS.find(s => String(s.id) === String(sectorSel.value));
+        const sp = sec && Array.isArray(sec.specialties)
+          ? sec.specialties.find(x => String(x.id) === String(specSel.value))
+          : null;
+        if (sp && sp.is_regulated) {
+          regulatedWrap.style.display = 'block';
+          regulatedWrap.removeAttribute('hidden');
+          regNameSel.innerHTML = '';
+          const opts = Array.isArray(sp.regulator_options) && sp.regulator_options.length > 0
+            ? sp.regulator_options
+            : [sp.regulator_default || 'Other Statutory Regulator'];
+          opts.forEach(lbl => {
+            const opt = document.createElement('option');
+            opt.value = lbl;
+            opt.textContent = lbl;
+            if (sp.regulator_default && lbl === sp.regulator_default) opt.selected = true;
+            regNameSel.appendChild(opt);
+          });
+          regNameSel.disabled = false;
+          regNameSel.required = true;
+          syncCustomReg();
+        } else {
+          regulatedWrap.style.display = 'none';
+          regulatedWrap.setAttribute('hidden', 'hidden');
+          regNameSel.innerHTML = '';
+          regNameSel.value = '';
+          regNameSel.disabled = true;
+          regNameSel.required = false;
+          regNameCustom.value = '';
+          regNameCustom.style.display = 'none';
+          regNameCustom.disabled = true;
+          regNameCustom.required = false;
+        }
+      }
+
+      if (regNameSel) regNameSel.addEventListener('change', syncCustomReg);
+      specSel.addEventListener('change', updateRegulatorVisibility);
+
       function populateSpecs(sectorId, selectedSpecId) {
         specSel.innerHTML = '';
         const sec = SECTORS.find(s => String(s.id) === String(sectorId));
@@ -346,6 +419,7 @@ $tokens = AntiSpamGate::generateFormTokens();
           if (String(sp.id) === String(selectedSpecId)) opt.selected = true;
           specSel.appendChild(opt);
         });
+        updateRegulatorVisibility();
       }
 
       sectorSel.addEventListener('change', () => populateSpecs(sectorSel.value, null));

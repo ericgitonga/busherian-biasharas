@@ -231,6 +231,33 @@ $deletedOk = VettingPurger::deleteBusiness($pdo, $testBizId);
 $afterDelCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE id = {$testBizId}")->fetchColumn();
 assertTrue($deletedOk && $afterDelCount === 0, 'VettingPurger::deleteBusiness permanently deletes business record');
 
+// 12. Verify Ticket #33: Regulated Level 2 Specialties & Conditional Pre-Filled Regulator Metadata
+$advReg = CategoryMatcher::getRegulationInfoForSpecialty('Advocates & Law Firm');
+assertTrue($advReg !== null && str_contains($advReg['default'], 'LSK'), 'Advocates & Law Firm is mapped to LSK statutory regulator');
+
+$dentalReg = CategoryMatcher::getRegulationInfoForSpecialty('Dental Clinic & Orthodontics');
+assertTrue($dentalReg !== null && str_contains($dentalReg['default'], 'KMPDC'), 'Dental Clinic & Orthodontics is mapped to KMPDC statutory regulator');
+
+$unregulatedGym = CategoryMatcher::getRegulationInfoForSpecialty('Gym, Fitness & Yoga Studio');
+assertTrue($unregulatedGym === null, 'Gym, Fitness & Yoga Studio is unregulated (no statutory regulator box)');
+
+$unregulatedPizza = CategoryMatcher::getRegulationInfoForSpecialty('Restaurant, Nyama Choma & Bistro');
+assertTrue($unregulatedPizza === null, 'Restaurant, Nyama Choma & Bistro is unregulated (no statutory regulator box)');
+
+$advSpecId = (int)$pdo->query("SELECT id FROM categories WHERE name = 'Advocates & Law Firm' LIMIT 1")->fetchColumn();
+$pizzaSpecId = (int)$pdo->query("SELECT id FROM categories WHERE name LIKE 'Restaurant, Nyama Choma%' LIMIT 1")->fetchColumn();
+assertTrue(CategoryMatcher::isSpecialtyRegulated($pdo, $advSpecId), 'CategoryMatcher::isSpecialtyRegulated returns true for Advocates & Law Firm');
+assertTrue(!CategoryMatcher::isSpecialtyRegulated($pdo, $pizzaSpecId), 'CategoryMatcher::isSpecialtyRegulated returns false for Restaurant specialty');
+
+// 13. Verify Ticket #34: Favicon, OG Preview Assets & bbiz_head_meta_tags()
+$headMeta = bbiz_head_meta_tags('Test Title', 'Test Description', '/');
+assertTrue(str_contains($headMeta, '/favicon.svg') && str_contains($headMeta, '/assets/img/og-preview.png') && str_contains($headMeta, '/assets/img/bb-icon-512.png'), 'bbiz_head_meta_tags emits favicon.svg, og-preview.png, and bb-icon-512.png for WhatsApp & Search previews');
+assertTrue(is_file(dirname(__DIR__) . '/public/favicon.svg') && is_file(dirname(__DIR__) . '/public/favicon.ico') && is_file(dirname(__DIR__) . '/public/assets/img/og-preview.png'), 'All favicon and OG preview image assets exist on disk');
+
+// 14. Verify Ticket #35: Looser High-Level Route Directions
+$offlineRoute = LocationEngine::calculateRouteAndDirections(-1.286389, 36.817223, -1.278800, 36.771200, false);
+assertTrue(count($offlineRoute['steps']) <= 4 && isset($offlineRoute['corridors']), 'LocationEngine::calculateRouteAndDirections produces loose high-level overview steps');
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 

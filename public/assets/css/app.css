@@ -72,15 +72,16 @@ a {
 .brand-crest {
   width: 44px;
   height: 44px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1.5px solid var(--bush-gold);
+  border-radius: 11px;
+  background: linear-gradient(135deg, #114B3E 0%, #1F513F 32%, #582428 68%, #7B1113 100%);
+  border: none;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 1.05rem;
-  color: var(--bush-gold);
+  font-size: 1.06rem;
+  color: #FDF6E2;
   letter-spacing: 0.5px;
 }
 

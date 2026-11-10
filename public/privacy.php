@@ -9,6 +9,7 @@ bbiz_send_security_headers(false);
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Privacy Notice (Kenya DPA 2019 Section 29) — Busherian Biasharas</title>
+<?= bbiz_head_meta_tags('Privacy Notice (Kenya DPA 2019 Section 29) — Busherian Biasharas', 'Kenya Data Protection Act 2019 Section 29 Privacy & Data Disposal Notice for Busherian Biasharas.', '/privacy.php') ?>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>

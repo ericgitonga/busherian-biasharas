@@ -72,6 +72,7 @@ $businesses = $pdo->query("SELECT id, name, city_county FROM businesses WHERE st
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Section 40 Takedown &amp; Rectification — Busherian Biasharas</title>
+<?= bbiz_head_meta_tags('Section 40 Takedown & Rectification — Busherian Biasharas', 'Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS).', '/takedown.php') ?>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>

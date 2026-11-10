@@ -33,11 +33,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: /admin/index.php');
         exit;
     } else {
-        try {
-            VettingPurger::updateBusiness($pdo, $businessId, $_POST);
-            $savedMsg = 'Business record updated successfully.';
-        } catch (\Throwable $e) {
-            $errorMsg = 'Could not update business record. Please check required fields.';
+        $postData = $_POST;
+        $regSel = trim((string)($postData['regulator_name'] ?? ''));
+        $regCus = trim((string)($postData['regulator_name_custom'] ?? ''));
+        $postData['regulator_name'] = ($regSel === 'Other Statutory Regulator') ? $regCus : $regSel;
+        $isRegSpec = CategoryMatcher::isSpecialtyRegulated($pdo, (int)($postData['specialty_id'] ?? 0));
+        if (!$isRegSpec) {
+            $postData['regulator_name'] = '';
+            $postData['regulator_license'] = '';
+        }
+        if ($isRegSpec && trim((string)$postData['regulator_name']) === '') {
+            $errorMsg = 'Professional Regulator is required for regulated industries.';
+        } else {
+            try {
+                VettingPurger::updateBusiness($pdo, $businessId, $postData);
+                $savedMsg = 'Business record updated successfully.';
+            } catch (\Throwable $e) {
+                $errorMsg = 'Could not update business record. Please check required fields.';
+            }
         }
     }
 }
@@ -58,6 +71,7 @@ $tokens = AntiSpamGate::generateFormTokens();
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Edit Business #<?= (int)($biz['business_number'] ?? $biz['id']) ?> (<?= htmlspecialchars((string)($biz['business_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>) — Admin Console</title>
+<?= bbiz_head_meta_tags('Edit Business — Busherian Biasharas Admin', 'Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS).', '/admin/edit-business.php') ?>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>
@@ -161,6 +175,15 @@ $tokens = AntiSpamGate::generateFormTokens();
             <?php endforeach; ?>
           </select>
         </div>
+      </div>
+
+      <div id="regulated-fields-wrap" hidden style="display:none;margin-top:0.9rem;background:#F0FDF4;border:1px solid #059669;border-radius:10px;padding:0.85rem;">
+        <label for="regulator_name" style="font-weight:700;font-size:0.84rem;color:#065F46;display:block;margin-bottom:0.25rem;">
+          🛡️ Professional Regulator / Statutory Body * (Required for Regulated Industry)
+        </label>
+        <select id="regulator_name" name="regulator_name" class="select-control" disabled></select>
+        <input type="text" id="regulator_name_custom" name="regulator_name_custom" class="input-control"
+          placeholder="Specify statutory regulator..." style="margin-top:0.45rem;display:none;" disabled>
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.9rem;margin-top:0.9rem;">
@@ -282,10 +305,72 @@ $tokens = AntiSpamGate::generateFormTokens();
     (function () {
       const SECTORS = <?= json_encode($taxonomyTree, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
       const INITIAL_SPEC_ID = <?= (int)$biz['specialty_id'] ?>;
+      const INITIAL_REGULATOR = <?= json_encode((string)($biz['regulator_name'] ?? ''), JSON_HEX_TAG) ?>;
       const sectorSel = document.getElementById('sector_id');
       const specSel = document.getElementById('specialty_id');
+      const regulatedWrap = document.getElementById('regulated-fields-wrap');
+      const regNameSel = document.getElementById('regulator_name');
+      const regNameCustom = document.getElementById('regulator_name_custom');
 
-      function populateSpecs(sectorId, selectedSpecId) {
+      function syncCustomReg() {
+        if (!regNameSel || !regNameCustom) return;
+        const isOther = !regNameSel.disabled && regNameSel.value === 'Other Statutory Regulator';
+        regNameCustom.style.display = isOther ? 'block' : 'none';
+        regNameCustom.disabled = !isOther;
+        regNameCustom.required = isOther;
+        if (!isOther) regNameCustom.value = '';
+      }
+
+      function updateRegulatorVisibility(preferredReg) {
+        if (!regulatedWrap || !regNameSel || !regNameCustom) return;
+        const sec = SECTORS.find(s => String(s.id) === String(sectorSel.value));
+        const sp = sec && Array.isArray(sec.specialties)
+          ? sec.specialties.find(x => String(x.id) === String(specSel.value))
+          : null;
+        if (sp && sp.is_regulated) {
+          regulatedWrap.style.display = 'block';
+          regulatedWrap.removeAttribute('hidden');
+          regNameSel.innerHTML = '';
+          const opts = Array.isArray(sp.regulator_options) && sp.regulator_options.length > 0
+            ? sp.regulator_options
+            : [sp.regulator_default || 'Other Statutory Regulator'];
+          const targetVal = (preferredReg && preferredReg.trim() !== '') ? preferredReg.trim() : (sp.regulator_default || opts[0]);
+          let matched = false;
+          opts.forEach(lbl => {
+            const opt = document.createElement('option');
+            opt.value = lbl;
+            opt.textContent = lbl;
+            if (lbl === targetVal) {
+              opt.selected = true;
+              matched = true;
+            }
+            regNameSel.appendChild(opt);
+          });
+          if (!matched && preferredReg && preferredReg.trim() !== '') {
+            regNameSel.value = 'Other Statutory Regulator';
+            regNameCustom.value = preferredReg.trim();
+          }
+          regNameSel.disabled = false;
+          regNameSel.required = true;
+          syncCustomReg();
+        } else {
+          regulatedWrap.style.display = 'none';
+          regulatedWrap.setAttribute('hidden', 'hidden');
+          regNameSel.innerHTML = '';
+          regNameSel.value = '';
+          regNameSel.disabled = true;
+          regNameSel.required = false;
+          regNameCustom.value = '';
+          regNameCustom.style.display = 'none';
+          regNameCustom.disabled = true;
+          regNameCustom.required = false;
+        }
+      }
+
+      if (regNameSel) regNameSel.addEventListener('change', syncCustomReg);
+      specSel.addEventListener('change', () => updateRegulatorVisibility(''));
+
+      function populateSpecs(sectorId, selectedSpecId, preferredReg) {
         specSel.innerHTML = '';
         const sec = SECTORS.find(s => String(s.id) === String(sectorId));
         if (!sec || !Array.isArray(sec.specialties)) return;
@@ -296,10 +381,11 @@ $tokens = AntiSpamGate::generateFormTokens();
           if (String(sp.id) === String(selectedSpecId)) opt.selected = true;
           specSel.appendChild(opt);
         });
+        updateRegulatorVisibility(preferredReg || '');
       }
 
-      sectorSel.addEventListener('change', () => populateSpecs(sectorSel.value, null));
-      populateSpecs(sectorSel.value, INITIAL_SPEC_ID);
+      sectorSel.addEventListener('change', () => populateSpecs(sectorSel.value, null, ''));
+      populateSpecs(sectorSel.value, INITIAL_SPEC_ID, INITIAL_REGULATOR);
 
       const btnAuto = document.getElementById('btn-admin-autofill');
       const urlInput = document.getElementById('admin-autofill-url');
