@@ -15,6 +15,18 @@ if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
 }
 
 $pdo = Database::getConnection();
+$targetBizId = (int)($_GET['biz'] ?? ($_SESSION['bbiz_target_edit_biz_id'] ?? 0));
+if (isset($_GET['biz']) && (int)$_GET['biz'] > 0) {
+    $_SESSION['bbiz_target_edit_biz_id'] = (int)$_GET['biz'];
+    $targetBizId = (int)$_GET['biz'];
+}
+$targetBizName = null;
+if ($targetBizId > 0) {
+    $tbStmt = $pdo->prepare("SELECT name FROM businesses WHERE id = :id LIMIT 1");
+    $tbStmt->execute([':id' => $targetBizId]);
+    $targetBizName = $tbStmt->fetchColumn() ?: null;
+}
+
 $currentOwner = OwnerAuth::getCurrentOwner($pdo);
 if ($currentOwner !== null) {
     $pendingClaimId = (int)($_SESSION['bbiz_pending_claim_biz_id'] ?? 0);
@@ -22,6 +34,11 @@ if ($currentOwner !== null) {
         OwnerAuth::linkOwnerToBusiness($pdo, (int)$currentOwner['id'], $pendingClaimId, 'claim_invite_link');
         unset($_SESSION['bbiz_pending_claim_biz_id']);
         header("Location: /owner/edit-business.php?id={$pendingClaimId}&claimed=1");
+        exit;
+    }
+    if ($targetBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$currentOwner['id'], $targetBizId)) {
+        unset($_SESSION['bbiz_target_edit_biz_id']);
+        header("Location: /owner/edit-business.php?id={$targetBizId}");
         exit;
     }
     header('Location: /owner/index.php');
@@ -117,6 +134,16 @@ $isAdminVisitor = AdminAuth::isAuthenticated();
       </div>
     <?php endif; ?>
 
+    <?php if ($claimBizName === null && $targetBizName !== null): ?>
+      <div style="background:#EFF6FF;border:2px solid #1D4ED8;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;">
+        <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;color:#1E40AF;letter-spacing:0.04em;">✏️ Sign In to Edit Business Listing</div>
+        <div style="font-size:1.02rem;font-weight:800;color:#111827;margin-top:0.2rem;"><?= htmlspecialchars((string)$targetBizName, ENT_QUOTES, 'UTF-8') ?></div>
+        <p style="margin:0.35rem 0 0 0;font-size:0.84rem;color:#1E3A8A;">
+          Enter the email address associated with <strong><?= htmlspecialchars((string)$targetBizName, ENT_QUOTES, 'UTF-8') ?></strong> below. Once you click your 1-click sign-in link, you will be taken directly to the edit form and an <strong>✏️ Edit My Business</strong> button will appear right on your listing card!
+        </p>
+      </div>
+    <?php endif; ?>
+
     <?php if ($flashSuccess !== ''): ?>
       <div style="background:#ECFDF5;border:2px solid #059669;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;color:#065F46;font-weight:600;">
         ✓ <?= htmlspecialchars($flashSuccess, ENT_QUOTES, 'UTF-8') ?>
@@ -171,6 +198,23 @@ $isAdminVisitor = AdminAuth::isAuthenticated();
           ✉️ Send 1-Click Sign-In Link
         </button>
       </form>
+
+      <!-- Step-by-Step Guide: How Owner Sign-In & Business Linking Works (#107) -->
+      <div id="owner-signin-guide" style="margin-top:1.35rem;padding-top:1.15rem;border-top:1px solid #E5E7EB;">
+        <h3 style="margin:0 0 0.5rem 0;font-size:0.92rem;color:#114B3E;">🔑 How Owner Sign-In &amp; Business Linking Works</h3>
+        <ol style="margin:0;padding-left:1.2rem;font-size:0.81rem;color:#374151;line-height:1.55;">
+          <li style="margin-bottom:0.35rem;"><strong>1-Click Passwordless Sign-In:</strong> Enter your email above and click <em>Send 1-Click Sign-In Link</em>. Click the link in your email to sign in for 30 days (no password required).</li>
+          <li style="margin-bottom:0.35rem;"><strong>Automatic Business Linking (4 Ways):</strong> Your account automatically links to any business matching:
+            <ul style="margin:0.2rem 0 0.2rem 0;padding-left:1.1rem;color:#4B5563;">
+              <li>The <strong>Submitter Email</strong> you used when registering on <code>/submit.php</code></li>
+              <li>Your business's <strong>Public Contact Email</strong> shown on the listing</li>
+              <li>Any email on your business's <strong>Official Website Domain</strong> (e.g. <code>you@yourcompany.co.ke</code>)</li>
+              <li>An <strong>Admin-Assigned Owner Email</strong> or <strong>1-Click WhatsApp/DM Claim Link</strong></li>
+            </ul>
+          </li>
+          <li><strong>Direct "✏️ Edit My Business" Button:</strong> Once signed in, an <strong>✏️ Edit My Business</strong> button appears directly on your business card and modal in the public directory, as well as in your <strong>My Biasharas</strong> dashboard.</li>
+        </ol>
+      </div>
     </section>
   </main>
 </body>

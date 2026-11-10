@@ -6,13 +6,17 @@ require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\CategoryMatcher;
 use BusherianBiasharas\Services\HoursEngine;
+use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\LocationEngine;
+use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\PhotoUploader;
 
 bbiz_send_security_headers(true);
 
 try {
     $pdo = Database::getConnection();
+    $currentOwner = OwnerAuth::getCurrentOwner($pdo);
+    $isAdminVisitor = AdminAuth::isAuthenticated();
 
     $q          = trim((string)($_GET['q'] ?? ''));
     $sectorId   = isset($_GET['sector_id']) && $_GET['sector_id'] !== '' ? (int)$_GET['sector_id'] : null;
@@ -136,8 +140,17 @@ try {
             }
         }
 
+        $bizId = (int)$row['id'];
+        $canOwnerEdit = $currentOwner !== null && OwnerAuth::canOwnerEditBusiness($pdo, (int)$currentOwner['id'], $bizId);
+        $canEdit = $canOwnerEdit || $isAdminVisitor;
+        $editUrl = $canOwnerEdit
+            ? ('/owner/edit-business.php?id=' . $bizId)
+            : ($isAdminVisitor ? ('/admin/edit-business.php?id=' . $bizId) : null);
+
         $results[] = [
-            'id' => (int)$row['id'],
+            'id' => $bizId,
+            'can_edit' => $canEdit,
+            'edit_url' => $editUrl,
             'business_id' => $row['business_id'],
             'business_number' => (int)$row['business_number'],
             'name' => $row['name'],
