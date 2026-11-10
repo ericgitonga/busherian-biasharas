@@ -292,3 +292,163 @@ if (!function_exists('bbiz_render_place_fields')) {
 HTML;
     }
 }
+
+
+if (!function_exists('bbiz_render_github_delete_modal')) {
+    /**
+     * Render GitHub-style 2-step Delete Listing Confirmation Modal (#126, #127, #128):
+     * Step 1: Ask if the user is sure of what they are doing ("Yes, I am sure — Proceed").
+     * Step 2: Require typing the exact Business Name to unlock the final Delete submit button.
+     */
+    function bbiz_render_github_delete_modal(
+        string $csrfToken,
+        string $defaultActionUrl = '',
+        int $defaultBizId = 0,
+        string $defaultBizName = '',
+        string $actionFieldName = 'post_action',
+        string $actionFieldValue = 'delete'
+    ): string {
+        $escCsrf = htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8');
+        $escActionUrl = htmlspecialchars($defaultActionUrl, ENT_QUOTES, 'UTF-8');
+        $escBizName = htmlspecialchars($defaultBizName, ENT_QUOTES, 'UTF-8');
+        $escActionField = htmlspecialchars($actionFieldName, ENT_QUOTES, 'UTF-8');
+        $escActionVal = htmlspecialchars($actionFieldValue, ENT_QUOTES, 'UTF-8');
+
+        return <<<HTML
+        <div id="bbiz-github-delete-modal" hidden style="display:none;position:fixed;inset:0;background:rgba(17,24,39,0.68);z-index:9999;align-items:center;justify-content:center;padding:1rem;">
+          <div role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" style="background:#ffffff;border:2px solid #DC2626;border-radius:14px;max-width:520px;width:100%;box-shadow:0 20px 45px rgba(0,0,0,0.32);overflow:hidden;">
+            <div style="background:#FEF2F2;border-bottom:1px solid #FECACA;padding:1rem 1.25rem;display:flex;justify-content:space-between;align-items:center;">
+              <h3 id="delete-modal-title" style="margin:0;font-size:1.05rem;color:#991B1B;font-weight:800;">
+                ⚠️ Delete Business Listing
+              </h3>
+              <button type="button" id="btn-delete-modal-close" aria-label="Close" style="background:none;border:none;font-size:1.25rem;font-weight:800;color:#991B1B;cursor:pointer;line-height:1;">&times;</button>
+            </div>
+
+            <div style="padding:1.25rem;">
+              <div style="background:#FFFBEB;border:1px solid #F59E0B;border-radius:8px;padding:0.75rem 0.9rem;margin-bottom:1rem;font-size:0.84rem;color:#92400E;">
+                <strong>Unexpected bad things will happen if you don't read this!</strong><br>
+                This will permanently delete <strong id="delete-modal-biz-label">{$escBizName}</strong>, its uploaded photos, and its directory record. This action cannot be undone.
+              </div>
+
+              <!-- STEP 1: Ask if they are sure of what they are doing -->
+              <div id="delete-modal-step-1">
+                <p style="margin:0 0 1rem 0;font-size:0.92rem;font-weight:700;color:#111827;">
+                  Are you sure you know what you are doing and want to permanently delete this business listing?
+                </p>
+                <div style="display:flex;justify-content:flex-end;gap:0.65rem;flex-wrap:wrap;">
+                  <button type="button" id="btn-delete-step1-cancel" class="btn btn-outline">No, Keep Listing</button>
+                  <button type="button" id="btn-delete-step1-yes" class="btn btn-crimson">Yes, I am sure — Proceed</button>
+                </div>
+              </div>
+
+              <!-- STEP 2: Type exact business name to unlock submit button -->
+              <form id="delete-modal-step-2" method="POST" action="{$escActionUrl}" style="display:none;margin:0;">
+                <input type="hidden" name="csrf_token" value="{$escCsrf}">
+                <input type="hidden" name="business_id" id="delete-modal-biz-id" value="{$defaultBizId}">
+                <input type="hidden" name="{$escActionField}" id="delete-modal-action-field" value="{$escActionVal}">
+
+                <label for="delete-confirm-name-input" style="display:block;font-size:0.86rem;color:#111827;margin-bottom:0.45rem;">
+                  To confirm deletion, type <strong id="delete-modal-expected-name" style="color:#991B1B;user-select:all;">{$escBizName}</strong> in the box below:
+                </label>
+                <input type="text" id="delete-confirm-name-input" name="confirm_business_name" class="input-control"
+                  autocomplete="off" spellcheck="false" placeholder="Type the exact business name..." required
+                  style="margin-bottom:0.9rem;border:2px solid #FCA5A5;">
+
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.65rem;">
+                  <button type="button" id="btn-delete-step2-cancel" class="btn btn-outline">Cancel</button>
+                  <button type="submit" id="btn-delete-final-submit" class="btn btn-crimson" disabled
+                    style="flex:1;justify-content:center;opacity:0.45;cursor:not-allowed;">
+                    🗑️ I understand, delete this listing
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <script>
+          (function () {
+            const modal = document.getElementById('bbiz-github-delete-modal');
+            const step1 = document.getElementById('delete-modal-step-1');
+            const step2Form = document.getElementById('delete-modal-step-2');
+            const bizLabel = document.getElementById('delete-modal-biz-label');
+            const expectedLabel = document.getElementById('delete-modal-expected-name');
+            const bizIdInput = document.getElementById('delete-modal-biz-id');
+            const nameInput = document.getElementById('delete-confirm-name-input');
+            const finalSubmitBtn = document.getElementById('btn-delete-final-submit');
+            const yesBtn = document.getElementById('btn-delete-step1-yes');
+            const closeBtns = [
+              document.getElementById('btn-delete-modal-close'),
+              document.getElementById('btn-delete-step1-cancel'),
+              document.getElementById('btn-delete-step2-cancel')
+            ];
+
+            if (!modal || !step1 || !step2Form || !nameInput || !finalSubmitBtn || !yesBtn) return;
+
+            let expectedName = expectedLabel ? expectedLabel.textContent.trim() : '';
+
+            function syncSubmitState() {
+              const typed = nameInput.value.trim();
+              const matches = expectedName !== '' && typed === expectedName;
+              finalSubmitBtn.disabled = !matches;
+              finalSubmitBtn.style.opacity = matches ? '1' : '0.45';
+              finalSubmitBtn.style.cursor = matches ? 'pointer' : 'not-allowed';
+            }
+
+            function openDeleteModal(bizName, bizId, actionUrl) {
+              expectedName = (bizName || '').trim();
+              if (bizLabel) bizLabel.textContent = expectedName;
+              if (expectedLabel) expectedLabel.textContent = expectedName;
+              if (bizIdInput && bizId) bizIdInput.value = String(bizId);
+              if (actionUrl) step2Form.setAttribute('action', actionUrl);
+
+              nameInput.value = '';
+              syncSubmitState();
+              step1.style.display = 'block';
+              step2Form.style.display = 'none';
+              modal.hidden = false;
+              modal.style.display = 'flex';
+            }
+
+            function closeDeleteModal() {
+              modal.hidden = true;
+              modal.style.display = 'none';
+              nameInput.value = '';
+              syncSubmitState();
+            }
+
+            yesBtn.addEventListener('click', () => {
+              step1.style.display = 'none';
+              step2Form.style.display = 'block';
+              nameInput.focus();
+            });
+
+            nameInput.addEventListener('input', syncSubmitState);
+
+            step2Form.addEventListener('submit', (e) => {
+              if (nameInput.value.trim() !== expectedName) {
+                e.preventDefault();
+              }
+            });
+
+            closeBtns.forEach(btn => {
+              if (btn) btn.addEventListener('click', closeDeleteModal);
+            });
+
+            modal.addEventListener('click', (e) => {
+              if (e.target === modal) closeDeleteModal();
+            });
+
+            document.querySelectorAll('[data-open-delete-modal]').forEach(trigger => {
+              trigger.addEventListener('click', () => {
+                const bName = trigger.getAttribute('data-delete-biz-name') || expectedName;
+                const bId = trigger.getAttribute('data-delete-biz-id') || (bizIdInput ? bizIdInput.value : '');
+                const aUrl = trigger.getAttribute('data-delete-action-url') || step2Form.getAttribute('action');
+                openDeleteModal(bName, bId, aUrl);
+              });
+            });
+          })();
+        </script>
+HTML;
+    }
+}

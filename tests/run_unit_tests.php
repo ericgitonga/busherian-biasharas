@@ -525,6 +525,29 @@ assertTrue(
     'Cookie banner and Privacy Notice use Allow for Analysis and Allow only Essential (#124)'
 );
 
+// 28. Verify Tickets #126, #127, #128: GitHub-style 2-step Delete Listing modal & server-side exact name confirmation
+$modalHtml = bbiz_render_github_delete_modal('csrf123', '/owner/edit-business.php?id=5', 5, 'Bustani Bistro', 'post_action', 'delete');
+assertTrue(
+    str_contains($modalHtml, 'id="delete-modal-step-1"') &&
+    str_contains($modalHtml, 'id="btn-delete-step1-yes"') &&
+    str_contains($modalHtml, 'Yes, I am sure — Proceed') &&
+    str_contains($modalHtml, 'id="delete-modal-step-2"') &&
+    str_contains($modalHtml, 'id="delete-confirm-name-input"') &&
+    str_contains($modalHtml, 'name="confirm_business_name"') &&
+    str_contains($modalHtml, 'id="btn-delete-final-submit"') &&
+    str_contains($modalHtml, 'disabled'),
+    'bbiz_render_github_delete_modal renders 2-step modal ("Yes, I am sure" -> type exact business name -> disabled submit button) (#127)'
+);
+$ownerEditPhp = (string)file_get_contents(dirname(__DIR__) . '/public/owner/edit-business.php');
+$adminEditPhp = (string)file_get_contents(dirname(__DIR__) . '/public/admin/edit-business.php');
+$adminIndexPhp = (string)file_get_contents(dirname(__DIR__) . '/public/admin/index.php');
+assertTrue(
+    str_contains($ownerEditPhp, 'confirm_business_name') &&
+    str_contains($adminEditPhp, 'confirm_business_name') &&
+    str_contains($adminIndexPhp, 'confirm_business_name'),
+    'Owner and Admin delete handlers enforce server-side exact confirm_business_name verification (#127, #128)'
+);
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 

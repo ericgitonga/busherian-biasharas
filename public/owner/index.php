@@ -6,6 +6,7 @@ require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\OwnerAuth;
+use BusherianBiasharas\Services\VettingPurger;
 
 bbiz_send_security_headers(false);
 
@@ -14,6 +15,29 @@ $owner = OwnerAuth::requireOwner($pdo);
 
 $profileSaved = '';
 $profileError = '';
+if (isset($_GET['deleted'])) {
+    $profileSaved = 'The business listing has been permanently deleted from the directory.';
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_business') {
+    $csrf = trim((string)($_POST['csrf_token'] ?? ''));
+    $delBizId = (int)($_POST['business_id'] ?? 0);
+    $typedConfirm = trim((string)($_POST['confirm_business_name'] ?? ''));
+    if (!AntiSpamGate::verifyCsrfToken($csrf)) {
+        $profileError = 'Your page session expired. Please reload and try again.';
+    } elseif ($delBizId <= 0 || !OwnerAuth::canOwnerEditBusiness($pdo, (int)$owner['id'], $delBizId)) {
+        $profileError = 'You are not authorized to delete that listing.';
+    } else {
+        $nmStmt = $pdo->prepare("SELECT name FROM businesses WHERE id = :id LIMIT 1");
+        $nmStmt->execute([':id' => $delBizId]);
+        $actualName = trim((string)($nmStmt->fetchColumn() ?: ''));
+        if ($actualName === '' || $typedConfirm !== $actualName) {
+            $profileError = 'Deletion cancelled: You must type the exact business name to confirm permanent deletion.';
+        } else {
+            VettingPurger::deleteBusiness($pdo, $delBizId);
+            $profileSaved = "Permanently deleted '{$actualName}' from the directory.";
+        }
+    }
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_profile') {
     $csrf = trim((string)($_POST['csrf_token'] ?? ''));
     if (AntiSpamGate::verifyCsrfToken($csrf)) {
@@ -117,6 +141,13 @@ $tokens = AntiSpamGate::generateFormTokens();
               </div>
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
                 <a href="/owner/edit-business.php?id=<?= $bid ?>" class="btn btn-green">✏️ Edit Business Details</a>
+                <button type="button" class="btn btn-outline" style="color:#991B1B;border-color:#FCA5A5;"
+                  data-open-delete-modal="1"
+                  data-delete-biz-id="<?= $bid ?>"
+                  data-delete-biz-name="<?= htmlspecialchars((string)$biz['name'], ENT_QUOTES, 'UTF-8') ?>"
+                  data-delete-action-url="/owner/index.php">
+                  🗑️ Delete Listing
+                </button>
               </div>
             </div>
           <?php endforeach; ?>
@@ -156,6 +187,7 @@ $tokens = AntiSpamGate::generateFormTokens();
         </div>
       </form>
     </section>
+    <?= bbiz_render_github_delete_modal($tokens['csrf_token'], '/owner/index.php', 0, '', 'action', 'delete_business') ?>
   </main>
 </body>
 </html>
