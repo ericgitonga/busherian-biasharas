@@ -129,4 +129,69 @@ final class Mailer
 
         return $outboxId;
     }
+
+    /**
+     * Send a passwordless sign-in / business-claim Magic Link to a business owner.
+     */
+    public static function sendOwnerMagicLink(PDO $pdo, string $ownerEmail, string $magicUrl, ?string $claimBusinessName = null): int
+    {
+        $safeEmail = htmlspecialchars(AntiSpamGate::sanitizeHeaderValue($ownerEmail), ENT_QUOTES, 'UTF-8');
+        $safeUrl = htmlspecialchars($magicUrl, ENT_QUOTES, 'UTF-8');
+        $claimLine = '';
+        if ($claimBusinessName !== null && trim($claimBusinessName) !== '') {
+            $safeBiz = htmlspecialchars($claimBusinessName, ENT_QUOTES, 'UTF-8');
+            $claimLine = "<p style='background:#F0FDF4;border-left:4px solid #114B3E;padding:10px;'>Signing in with this link will also link <strong>{$safeBiz}</strong> to your persistent Owner Account so you can manage and update it anytime.</p>";
+        }
+
+        $subject = '[Busherian Biasharas] Your Sign-In Link to Manage Your Business Listing';
+        $bodyHtml = "
+            <div style='font-family:sans-serif;max-width:580px;color:#111827;'>
+                <h2 style='color:#114B3E;margin-bottom:6px;'>Sign in to Busherian Biasharas</h2>
+                <p style='color:#4B5563;'>Click the button below to sign in as <strong>{$safeEmail}</strong> and manage your business listing(s). Your session will stay signed in on this device for 30 days.</p>
+                {$claimLine}
+                <p style='margin:22px 0;'>
+                    <a href='{$safeUrl}' style='background:#7B1113;color:#ffffff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;'>Sign In &amp; Manage My Business</a>
+                </p>
+                <p style='font-size:12px;color:#6B7280;'>This single-use link expires in 30 minutes. If you did not request it, you can safely ignore this email.</p>
+            </div>
+        ";
+
+        return self::enqueueAndSend($pdo, $ownerEmail, $subject, $bodyHtml);
+    }
+
+    /**
+     * Notify Admin when a verified owner changes their Business Name or Sector/Specialty Category.
+     */
+    public static function notifyAdminOwnerCriticalEdit(PDO $pdo, array $owner, array $oldBiz, array $newBiz, array $changes): int
+    {
+        $adminEmail = Database::env('ADMIN_EMAIL', 'admin@busherianbiasharas.com');
+        $ownerEmail = htmlspecialchars((string)($owner['email'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $bizId = (int)($newBiz['id'] ?? $oldBiz['id'] ?? 0);
+        $bizUid = htmlspecialchars((string)($newBiz['business_id'] ?? $oldBiz['business_id'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $newName = htmlspecialchars((string)($newBiz['name'] ?? ''), ENT_QUOTES, 'UTF-8');
+
+        $diffRows = '';
+        foreach ($changes as $fieldLabel => $pair) {
+            $before = htmlspecialchars((string)($pair['before'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $after = htmlspecialchars((string)($pair['after'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $diffRows .= "<li><strong>{$fieldLabel}:</strong> <span style='color:#991B1B;text-decoration:line-through;'>{$before}</span> &rarr; <strong style='color:#065F46;'>{$after}</strong></li>";
+        }
+
+        $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
+        $editUrl = "{$baseUrl}/admin/edit-business.php?id={$bizId}";
+
+        $subject = "[Busherian Biasharas] Owner Updated Name/Category: {$newBiz['name']} ({$bizUid})";
+        $bodyHtml = "
+            <div style='font-family:sans-serif;max-width:620px;color:#111827;'>
+                <h2 style='color:#7B1113;margin-bottom:4px;'>Owner Updated Business Name or Category</h2>
+                <p style='color:#4B5563;margin-top:0;'>Verified owner <strong>{$ownerEmail}</strong> updated a core identity field on Business #{$bizId} (<code>{$bizUid}</code>):</p>
+                <ul style='background:#FFFBEB;border:1px solid #F59E0B;border-radius:8px;padding:12px 28px;margin:14px 0;'>
+                    {$diffRows}
+                </ul>
+                <p><a href='{$editUrl}' style='background:#114B3E;color:#ffffff;padding:9px 16px;border-radius:6px;text-decoration:none;font-weight:bold;'>Review in Admin Console</a></p>
+            </div>
+        ";
+
+        return self::enqueueAndSend($pdo, $adminEmail, $subject, $bodyHtml, (string)($owner['email'] ?? null));
+    }
 }

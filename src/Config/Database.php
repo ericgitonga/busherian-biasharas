@@ -248,6 +248,7 @@ final class Database
                     phone_primary TEXT NOT NULL,
                     whatsapp_number TEXT NULL,
                     email_public TEXT NULL,
+                    owner_email TEXT NULL,
                     website_url TEXT NULL,
                     social_instagram TEXT NULL,
                     social_linkedin TEXT NULL,
@@ -314,6 +315,7 @@ final class Database
         // Ensure business_id and business_number columns exist on pre-existing databases
         self::ensureBusinessIdentityAndNumberColumns($pdo, $driver);
         self::ensureUsageMetricsTable($pdo, $driver);
+        self::ensureOwnerTables($pdo, $driver);
 
         // Seed categories and initial verified listings if empty
         $count = (int)$pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
@@ -385,6 +387,95 @@ final class Database
                     INDEX idx_metric_type_time (event_type, created_at),
                     INDEX idx_metric_visitor (visitor_hash, created_at),
                     INDEX idx_metric_biz (business_id, event_type)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        }
+    }
+
+    private static function ensureOwnerTables(PDO $pdo, string $driver): void
+    {
+        $hasOwnerEmail = false;
+        if ($driver === 'sqlite') {
+            $cols = $pdo->query("PRAGMA table_info(businesses)")->fetchAll();
+            foreach ($cols as $col) {
+                if (($col['name'] ?? '') === 'owner_email') {
+                    $hasOwnerEmail = true;
+                }
+            }
+            if (!$hasOwnerEmail) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN owner_email TEXT NULL");
+            }
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS business_owners (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL UNIQUE,
+                    full_name TEXT NULL,
+                    phone TEXT NULL,
+                    google_sub TEXT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    last_login_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE IF NOT EXISTS business_owner_links (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    owner_id INTEGER NOT NULL REFERENCES business_owners(id) ON DELETE CASCADE,
+                    business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+                    linked_via TEXT NOT NULL DEFAULT 'auto_match',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(owner_id, business_id)
+                );
+                CREATE TABLE IF NOT EXISTS owner_auth_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    claim_business_id INTEGER NULL,
+                    expires_at INTEGER NOT NULL,
+                    used_at INTEGER NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+        } else {
+            $cols = $pdo->query("SHOW COLUMNS FROM businesses")->fetchAll();
+            foreach ($cols as $col) {
+                if (($col['Field'] ?? '') === 'owner_email') {
+                    $hasOwnerEmail = true;
+                }
+            }
+            if (!$hasOwnerEmail) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN owner_email VARCHAR(190) NULL AFTER email_public");
+            }
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS business_owners (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    email VARCHAR(190) NOT NULL UNIQUE,
+                    full_name VARCHAR(150) NULL,
+                    phone VARCHAR(40) NULL,
+                    google_sub VARCHAR(120) NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_owner_google (google_sub)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS business_owner_links (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    owner_id INT UNSIGNED NOT NULL,
+                    business_id INT UNSIGNED NOT NULL,
+                    linked_via VARCHAR(40) NOT NULL DEFAULT 'auto_match',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_owner_business (owner_id, business_id),
+                    INDEX idx_link_business (business_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS owner_auth_tokens (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    email VARCHAR(190) NOT NULL,
+                    token_hash CHAR(64) NOT NULL UNIQUE,
+                    claim_business_id INT UNSIGNED NULL,
+                    expires_at INT UNSIGNED NOT NULL,
+                    used_at INT UNSIGNED NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_token_expires (expires_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
         }

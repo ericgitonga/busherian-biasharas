@@ -111,6 +111,7 @@ foreach ($rows as $r) {
         <button type="button" id="btn-export-shortlist" class="btn btn-outline-light" title="Export selected B2B vendors as CSV">
           🏢 B2B Shortlist (<span id="shortlist-count">0</span>/5)
         </button>
+        <a href="/owner/login.php" class="btn btn-outline-light">👤 Owner Login</a>
         <a href="/privacy.php" class="btn btn-outline-light">🔒 Privacy &amp; DPA Notice</a>
         <a href="/submit.php" class="btn btn-gold">+ List Your Biashara</a>
       </nav>

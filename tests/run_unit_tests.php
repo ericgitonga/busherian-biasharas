@@ -20,6 +20,7 @@ use BusherianBiasharas\Services\HoursEngine;
 use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\AdminAuth;
+use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\VettingPurger;
 use BusherianBiasharas\Services\WebsiteEnricher;
 
@@ -270,6 +271,59 @@ assertTrue(
     && abs($maristGeo['longitude'] - 36.728656) < 0.01
     && str_contains($maristGeo['label'], 'Marist Lane'),
     'LocationEngine::geocodeKenyanLocation resolves Marist Lane, Karen accurately'
+);
+
+// 15. Verify Ticket #42: Owner SSO / Magic-Link Auth, Post-Registration Corporate Domain & Claim Linking, and Self-Service Edits
+$branfootOwner = OwnerAuth::upsertOwner($pdo, 'director@branfoot.com', 'Branfoot Director');
+$branfootBizId = (int)$pdo->query("SELECT id FROM businesses WHERE slug = 'branfoot-enterprises' LIMIT 1")->fetchColumn();
+assertTrue(
+    $branfootBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$branfootOwner['id'], $branfootBizId),
+    'Owner signing in with @branfoot.com is automatically linked to pre-populated Branfoot Enterprises Limited'
+);
+
+$bustaniOwner = OwnerAuth::upsertOwner($pdo, 'bustanibistro@gmail.com', 'Bustani Owner');
+$bustaniBizId = (int)$pdo->query("SELECT id FROM businesses WHERE slug = 'bustani-bistro' LIMIT 1")->fetchColumn();
+assertTrue(
+    $bustaniBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$bustaniOwner['id'], $bustaniBizId),
+    'Owner signing in with bustanibistro@gmail.com is automatically linked via public_email_match'
+);
+assertTrue(
+    !OwnerAuth::canOwnerEditBusiness($pdo, (int)$bustaniOwner['id'], $branfootBizId),
+    'Owner of Bustani Bistro cannot edit unrelated Branfoot Enterprises listing'
+);
+
+// Verify signed 1-click DM Claim Link & Magic Link single-use consumption
+$sasaBizId = (int)$pdo->query("SELECT id FROM businesses WHERE slug = 'sasasignal' LIMIT 1")->fetchColumn();
+$claimUrl = OwnerAuth::generateClaimInviteUrl($sasaBizId);
+$parsedClaim = [];
+parse_str((string)parse_url($claimUrl, PHP_URL_QUERY), $parsedClaim);
+assertTrue(
+    OwnerAuth::verifyClaimInviteSignature((int)$parsedClaim['biz_id'], (int)$parsedClaim['exp'], (string)$parsedClaim['sig']),
+    'OwnerAuth::generateClaimInviteUrl produces a valid HMAC-signed DM claim URL'
+);
+
+$magic = OwnerAuth::createMagicLink($pdo, 'personal.founder@gmail.com', $sasaBizId);
+$consumed1 = OwnerAuth::verifyAndConsumeMagicLink($pdo, $magic['raw_token']);
+$consumed2 = OwnerAuth::verifyAndConsumeMagicLink($pdo, $magic['raw_token']);
+assertTrue(
+    $consumed1 !== null && $consumed2 === null && OwnerAuth::canOwnerEditBusiness($pdo, (int)$consumed1['owner']['id'], $sasaBizId),
+    'Single-use Magic Link authenticates owner, links claimed pre-populated business, and blocks replay'
+);
+
+// Verify Owner self-service edit: normal edit goes live immediately without admin alert; name/category edit alerts admin
+$sasaBefore = $pdo->query("SELECT * FROM businesses WHERE id = {$sasaBizId}")->fetch();
+$sasaBefore['tagline'] = 'Updated by Owner Without Admin Delay';
+$editRes1 = VettingPurger::updateBusinessByOwner($pdo, $sasaBizId, $consumed1['owner'], $sasaBefore);
+assertTrue(
+    $editRes1['admin_notified'] === false && $editRes1['business']['tagline'] === 'Updated by Owner Without Admin Delay',
+    'Owner contact/tagline edit goes live immediately without alerting admin'
+);
+
+$sasaBefore['name'] = 'SasaSignal Communications Ltd';
+$editRes2 = VettingPurger::updateBusinessByOwner($pdo, $sasaBizId, $consumed1['owner'], $sasaBefore);
+assertTrue(
+    $editRes2['admin_notified'] === true && $editRes2['business']['name'] === 'SasaSignal Communications Ltd',
+    'Owner Business Name change goes live and dispatches before/after notification to Admin'
 );
 
 @unlink(getenv('DB_SQLITE_PATH'));

@@ -9,6 +9,7 @@ use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\CategoryMatcher;
 use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\Mailer;
+use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\VettingPurger;
 use BusherianBiasharas\Services\WebsiteEnricher;
 
@@ -317,6 +318,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $tokens = AntiSpamGate::generateFormTokens();
+$loggedOwner = OwnerAuth::getCurrentOwner($pdo);
 $ahsHouses = Houses::AHS_HOUSES;
 $aghsHouses = Houses::AGHS_HOUSES;
 ?>
@@ -343,6 +345,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
       </a>
       <nav class="header-actions">
         <a href="/" class="btn btn-outline-light">&larr; Back to Directory</a>
+        <a href="/owner/login.php" class="btn btn-outline-light">👤 <?= $loggedOwner ? "My Biasharas" : "Owner Login" ?></a>
         <a href="/privacy.php" class="btn btn-outline-light">🔒 Section 29 Privacy Notice</a>
       </nav>
     </div>
