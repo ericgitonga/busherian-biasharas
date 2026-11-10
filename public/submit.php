@@ -94,8 +94,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $alumniPerk  = trim((string)($_POST['alumni_perk'] ?? ''));
             $b2bReady    = !empty($_POST['b2b_ready']) ? 1 : 0;
             $acceptsLpo  = !empty($_POST['accepts_lpo']) ? 1 : 0;
-            $regName     = trim((string)($_POST['regulator_name'] ?? ''));
-            $regLicense  = trim((string)($_POST['regulator_license'] ?? ''));
+            $regSelect   = trim((string)($_POST['regulator_name'] ?? ''));
+            $regCustom   = trim((string)($_POST['regulator_name_custom'] ?? ''));
+            $regName     = ($regSelect === 'Other Statutory Regulator') ? $regCustom : $regSelect;
+            $regLicense  = '';
 
             if ($bizName === '' || mb_strlen($bizName) < 2) {
                 $errors[] = 'Please enter the Business Name.';
@@ -113,8 +115,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($customSpec === '' || mb_strlen($customSpec) < 3) {
                     $errors[] = 'Please enter the name of your custom Level 2 Specialty.';
                 }
+                $regName = '';
             } elseif ((int)$specialtyId <= 0) {
                 $errors[] = 'Please select a Level 2 Specialty (or choose "+ Add New Specialty").';
+                $regName = '';
+            } else {
+                $regInfo = CategoryMatcher::getSpecialtyRegulationById($pdo, (int)$specialtyId);
+                if ($regInfo !== null) {
+                    if ($regName === '') {
+                        $errors[] = 'Please confirm your Professional Regulator / Statutory Body (required for regulated businesses).';
+                    }
+                } else {
+                    // Unregulated business specialty: regulator field is hidden and cleared
+                    $regName = '';
+                }
             }
 
             // Validate Step 3 & 4: Location & Direct Contacts
@@ -312,6 +326,8 @@ $aghsHouses = Houses::AGHS_HOUSES;
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>List Your Biashara — Busherian Biasharas (AHS &amp; AGHS Alumni Directory)</title>
+  <meta name="description" content="Register your verified AHS or AGHS alumni business on the Busherian Biasharas directory.">
+<?= bbiz_head_meta_tags('List Your Biashara — Busherian Biasharas (AHS & AGHS Alumni Directory)', 'Register your verified AHS or AGHS alumni business on the Busherian Biasharas directory.', '/submit.php') ?>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>
@@ -511,19 +527,19 @@ $aghsHouses = Houses::AGHS_HOUSES;
           <div id="fuzzy-suggestion-box" style="margin-top:0.45rem;font-size:0.8rem;color:#78350F;"></div>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.9rem;margin-top:0.9rem;">
-          <div>
-            <label for="alumni_perk" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Busherian Alumni Perk / Discount (Optional)</label>
-            <input type="text" id="alumni_perk" name="alumni_perk" class="input-control" placeholder="e.g. 10% off for fellow Busherians">
-          </div>
-          <div>
-            <label for="regulator_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Professional Regulator (Optional)</label>
-            <input type="text" id="regulator_name" name="regulator_name" class="input-control" placeholder="e.g. LSK, KMPDC, EBK, ICPAK, BORAQS, NCA">
-          </div>
-          <div>
-            <label for="regulator_license" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Regulator License / Reg No. (Optional)</label>
-            <input type="text" id="regulator_license" name="regulator_license" class="input-control" placeholder="e.g. LSK/2026/04819">
-          </div>
+        <!-- Conditionally shown & required ONLY when a regulated Level 2 specialty is selected -->
+        <div id="regulated-fields-wrap" hidden style="display:none;margin-top:0.9rem;background:#F0FDF4;border:1px solid #059669;border-radius:10px;padding:0.9rem;">
+          <label for="regulator_name" style="font-weight:700;font-size:0.85rem;color:#065F46;display:block;margin-bottom:0.3rem;">
+            🛡️ Professional Regulator / Statutory Body * (Required for Regulated Industry)
+          </label>
+          <select id="regulator_name" name="regulator_name" class="select-control" disabled></select>
+          <input type="text" id="regulator_name_custom" name="regulator_name_custom" class="input-control"
+            placeholder="Specify statutory regulator..." style="margin-top:0.45rem;display:none;" disabled>
+        </div>
+
+        <div style="margin-top:0.9rem;">
+          <label for="alumni_perk" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Busherian Alumni Perk / Discount (Optional)</label>
+          <input type="text" id="alumni_perk" name="alumni_perk" class="input-control" placeholder="e.g. 10% off for fellow Busherians">
         </div>
 
         <div style="display:flex;gap:1.25rem;flex-wrap:wrap;margin-top:0.75rem;font-size:0.85rem;">
@@ -725,6 +741,67 @@ $aghsHouses = Houses::AGHS_HOUSES;
       });
       updateHousesDropdown();
 
+      const regulatedWrap = document.getElementById('regulated-fields-wrap');
+      const regNameSel = document.getElementById('regulator_name');
+      const regNameCustom = document.getElementById('regulator_name_custom');
+
+      function findSelectedSpecialtyObj() {
+        const sec = SECTORS.find(s => String(s.id) === String(sectorSel.value));
+        if (!sec || !Array.isArray(sec.specialties)) return null;
+        return sec.specialties.find(sp => String(sp.id) === String(specSel.value)) || null;
+      }
+
+      function syncCustomRegulatorInput() {
+        if (!regNameSel || !regNameCustom) return;
+        const isOther = !regNameSel.disabled && regNameSel.value === 'Other Statutory Regulator';
+        regNameCustom.style.display = isOther ? 'block' : 'none';
+        regNameCustom.disabled = !isOther;
+        regNameCustom.required = isOther;
+        if (!isOther) {
+          regNameCustom.value = '';
+        }
+      }
+
+      function updateRegulatorVisibility() {
+        if (!regulatedWrap || !regNameSel || !regNameCustom) return;
+        const sp = findSelectedSpecialtyObj();
+        if (sp && sp.is_regulated) {
+          regulatedWrap.style.display = 'block';
+          regulatedWrap.removeAttribute('hidden');
+          regNameSel.innerHTML = '';
+          const opts = Array.isArray(sp.regulator_options) && sp.regulator_options.length > 0
+            ? sp.regulator_options
+            : [sp.regulator_default || 'Other Statutory Regulator'];
+          opts.forEach(regLabel => {
+            const opt = document.createElement('option');
+            opt.value = regLabel;
+            opt.textContent = regLabel;
+            if (sp.regulator_default && regLabel === sp.regulator_default) {
+              opt.selected = true;
+            }
+            regNameSel.appendChild(opt);
+          });
+          regNameSel.disabled = false;
+          regNameSel.required = true;
+          syncCustomRegulatorInput();
+        } else {
+          regulatedWrap.style.display = 'none';
+          regulatedWrap.setAttribute('hidden', 'hidden');
+          regNameSel.innerHTML = '';
+          regNameSel.value = '';
+          regNameSel.disabled = true;
+          regNameSel.required = false;
+          regNameCustom.value = '';
+          regNameCustom.style.display = 'none';
+          regNameCustom.disabled = true;
+          regNameCustom.required = false;
+        }
+      }
+
+      if (regNameSel) {
+        regNameSel.addEventListener('change', syncCustomRegulatorInput);
+      }
+
       function populateSpecialties(sectorId, selectedSpecialtyId) {
         specSel.innerHTML = '<option value="">Select Specialty (Level 2)...</option>';
         const sec = SECTORS.find(s => String(s.id) === String(sectorId));
@@ -743,6 +820,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
         addOpt.value = '__custom__';
         addOpt.textContent = '+ Add New Specialty (Not Listed Above)';
         specSel.appendChild(addOpt);
+        updateRegulatorVisibility();
       }
 
       sectorSel.addEventListener('change', () => {
@@ -752,7 +830,9 @@ $aghsHouses = Houses::AGHS_HOUSES;
 
       specSel.addEventListener('change', () => {
         customWrap.style.display = (specSel.value === '__custom__') ? 'block' : 'none';
+        updateRegulatorVisibility();
       });
+      updateRegulatorVisibility();
 
       // Live Jaro-Winkler Fuzzy Duplicate Check for custom category
       if (customInput) {

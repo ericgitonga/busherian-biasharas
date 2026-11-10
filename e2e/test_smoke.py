@@ -14,9 +14,9 @@ def _request(path: str, method: str = "GET", data: bytes | None = None, headers:
     req = urllib.request.Request(url, data=data, method=method, headers=headers or {})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            return resp.status, resp.read().decode("utf-8"), dict(resp.headers)
+            return resp.status, resp.read().decode("utf-8", errors="replace"), dict(resp.headers)
     except urllib.error.HTTPError as e:
-        return e.code, e.read().decode("utf-8"), dict(e.headers)
+        return e.code, e.read().decode("utf-8", errors="replace"), dict(e.headers)
 
 
 def test_health_endpoint():
@@ -32,6 +32,19 @@ def test_directory_homepage_and_zero_vetting_exposure():
     status, html, _ = _request("/")
     assert status == 200
     assert "Busherian Biasharas" in html
+    # Verify Ticket #34: Favicon & WhatsApp/Search OpenGraph preview tags present in <head>
+    assert 'href="/favicon.svg"' in html
+    assert 'href="/apple-touch-icon.png"' in html
+    assert '/assets/img/og-preview.png' in html
+    assert '/assets/img/bb-icon-512.png' in html
+    assert 'application/ld+json' in html
+
+    st_svg, svg_body, _ = _request("/favicon.svg")
+    assert st_svg == 200 and "#114B3E" in svg_body and "#7B1113" in svg_body
+    st_og, _, _ = _request("/assets/img/og-preview.png")
+    assert st_og == 200
+    st_css, css_body, _ = _request("/assets/css/app.css")
+    assert st_css == 200 and "border: none;" in css_body
     # Verify zero external CDN leaks on load (Kenya DPA 2019 L2)
     for cdn in ["fonts.googleapis.com", "cdn.jsdelivr.net", "unpkg.com", "cdnjs.cloudflare.com"]:
         assert cdn not in html, f"Found forbidden CDN {cdn} on homepage"
@@ -70,6 +83,12 @@ def test_website_autofill_api_and_ssrf_protection():
     assert "Extract &amp; Auto-Fill from Website" in submit_html
     assert "School Number" in submit_html
     assert "Admission Number" not in submit_html
+    # Verify Ticket #33: Regulator box is hidden by default, required when regulated specialty picked, and license number box is omitted
+    assert 'id="regulated-fields-wrap" hidden' in submit_html
+    assert "Professional Regulator (Optional)" not in submit_html
+    assert 'name="regulator_license"' not in submit_html
+    assert '"is_regulated":true' in submit_html
+    assert "LSK (Law Society of Kenya)" in submit_html
 
     m = re.search(r'name="csrf_token"[^>]+value="([^"]+)"', submit_html)
     assert m, "Could not find csrf_token in /submit.php"
@@ -166,6 +185,8 @@ def test_school_filters_and_route_directions_api():
     assert rt["duration_min"] >= 1
     assert len(rt["polyline"]) >= 2
     assert len(rt["steps"]) >= 1
+    assert len(rt["steps"]) <= 4, f"Expected loose route overview (<=4 steps), got {len(rt['steps'])}"
+    assert "corridors" in rt
 
 
 def test_dpa_cookie_consent_and_usage_metrics():

@@ -219,38 +219,58 @@ final class LocationEngine
                             }
                         }
 
-                        $steps = [];
+                        // Aggregate OSRM micro-steps into loose, high-level corridor directions
+                        $roadTotals = [];
+                        $roadOrder = [];
                         foreach (($route['legs'][0]['steps'] ?? []) as $st) {
-                            $maneuver = $st['maneuver'] ?? [];
-                            $type = (string)($maneuver['type'] ?? 'continue');
-                            $modifier = (string)($maneuver['modifier'] ?? '');
-                            $roadName = trim((string)($st['name'] ?? ''));
-                            $distM = (float)($st['distance'] ?? 0);
-                            if ($distM < 8 && $type !== 'arrive') {
+                            $rName = trim((string)($st['name'] ?? ''));
+                            $dM = (float)($st['distance'] ?? 0);
+                            if ($rName === '' || strtolower($rName) === 'unnamed road') {
                                 continue;
                             }
-                            $distLabel = $distM >= 1000
-                                ? round($distM / 1000.0, 1) . ' km'
-                                : (int)round($distM) . ' m';
-
-                            if ($type === 'depart') {
-                                $text = 'Head ' . ($modifier ?: $bearing) . ($roadName !== '' ? " on {$roadName}" : '');
-                            } elseif ($type === 'arrive') {
-                                $text = 'Arrive at destination' . ($roadName !== '' ? " ({$roadName})" : '');
-                                $distLabel = '';
-                            } elseif ($type === 'roundabout' || $type === 'rotary') {
-                                $exit = isset($maneuver['exit']) ? " (exit {$maneuver['exit']})" : '';
-                                $text = "At the roundabout, take exit{$exit}" . ($roadName !== '' ? " onto {$roadName}" : '');
-                            } elseif ($type === 'turn' || $type === 'end of road' || $type === 'fork') {
-                                $dir = $modifier !== '' ? $modifier : 'ahead';
-                                $text = ucfirst("Turn {$dir}") . ($roadName !== '' ? " onto {$roadName}" : '');
-                            } else {
-                                $text = 'Continue' . ($modifier !== '' ? " {$modifier}" : '') . ($roadName !== '' ? " on {$roadName}" : '');
+                            if (!isset($roadTotals[$rName])) {
+                                $roadTotals[$rName] = 0.0;
+                                $roadOrder[] = $rName;
                             }
+                            $roadTotals[$rName] += $dM;
+                        }
 
+                        // Keep significant named corridors (>= 250m, or all if route has <= 3 named roads) in traversal order
+                        $corridors = [];
+                        foreach ($roadOrder as $rName) {
+                            if ($roadTotals[$rName] >= 250.0 || count($roadOrder) <= 3) {
+                                $corridors[] = $rName;
+                            }
+                        }
+                        if (empty($corridors) && !empty($roadOrder)) {
+                            $corridors = array_slice($roadOrder, 0, 3);
+                        }
+                        $corridors = array_slice($corridors, 0, 4);
+
+                        $steps = [];
+                        if (!empty($corridors)) {
+                            $firstRoad = $corridors[0];
                             $steps[] = [
-                                'instruction' => $text,
-                                'distance' => $distLabel,
+                                'instruction' => "Head {$bearing} starting via {$firstRoad}",
+                                'distance' => '',
+                            ];
+                            if (count($corridors) > 1) {
+                                $steps[] = [
+                                    'instruction' => 'Main route corridor: ' . implode(' → ', $corridors),
+                                    'distance' => "{$roadKm} km",
+                                ];
+                            } else {
+                                $steps[0]['distance'] = "{$roadKm} km";
+                            }
+                            $lastRoad = $corridors[count($corridors) - 1];
+                            $steps[] = [
+                                'instruction' => "Approach destination off {$lastRoad}",
+                                'distance' => "~{$durationMin} min drive",
+                            ];
+                        } else {
+                            $steps[] = [
+                                'instruction' => "Head {$bearing} toward destination",
+                                'distance' => "{$roadKm} km (~{$durationMin} min)",
                             ];
                         }
 
@@ -260,8 +280,9 @@ final class LocationEngine
                                 'straight_km' => $straightKm,
                                 'road_km' => $roadKm,
                                 'duration_min' => $durationMin,
+                                'corridors' => $corridors,
                                 'polyline' => $latLngs,
-                                'steps' => array_slice($steps, 0, 18),
+                                'steps' => $steps,
                             ];
                         }
                     }
@@ -280,14 +301,11 @@ final class LocationEngine
                 [round($fromLat, 6), round($fromLng, 6)],
                 [round($toLat, 6), round($toLng, 6)],
             ],
+            'corridors' => [],
             'steps' => [
                 [
-                    'instruction' => "Head {$bearing} toward destination",
-                    'distance' => "{$estRoadKm} km",
-                ],
-                [
-                    'instruction' => 'Open Google Maps or Waze below for live turn-by-turn voice navigation',
-                    'distance' => '',
+                    'instruction' => "General direction: head {$bearing} toward destination",
+                    'distance' => "~{$estRoadKm} km (~{$estDurationMin} min)",
                 ],
             ],
         ];

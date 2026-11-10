@@ -409,6 +409,475 @@ final class CategoryMatcher
         return ($bestScore >= 1.5) ? $best : null;
     }
 
+    /**
+     * Kenyan Statutory Regulators & License Hints for Regulated Level 2 Specialties.
+     * Only specialties present in this map require & display Regulator + License/Reg No. fields.
+     */
+    public const REGULATED_SPECIALTIES = [
+        // 1. Legal, Accounting & Advisory
+        'Advocates & Law Firm' => [
+            'default' => 'LSK (Law Society of Kenya)',
+            'options' => [
+                'LSK (Law Society of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. LSK/2026/04819 or P.105/...',
+        ],
+        'Audit, Tax & Accounting (CPA)' => [
+            'default' => 'ICPAK (Institute of Certified Public Accountants of Kenya)',
+            'options' => [
+                'ICPAK (Institute of Certified Public Accountants of Kenya)',
+                'KRA (Authorized Tax Agent)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. ICPAK Practising Cert / Reg No.',
+        ],
+        'Company Secretarial & Governance' => [
+            'default' => 'ICPSK (Institute of Certified Public Secretaries of Kenya)',
+            'options' => [
+                'ICPSK (Institute of Certified Public Secretaries of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. CPS(K) Practising No.',
+        ],
+        'HR Recruitment & Payroll' => [
+            'default' => 'IHRM (Institute of Human Resource Management)',
+            'options' => [
+                'IHRM (Institute of Human Resource Management)',
+                'NEA (National Employment Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. IHRM Practising Cert No.',
+        ],
+        'Actuarial & Risk Advisory' => [
+            'default' => 'IRA (Insurance Regulatory Authority)',
+            'options' => [
+                'IRA (Insurance Regulatory Authority)',
+                'TASK (The Actuarial Society of Kenya)',
+                'RBA (Retirement Benefits Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. IRA / TASK Reg No.',
+        ],
+        'Arbitration & Mediation' => [
+            'default' => 'CIArb (Chartered Institute of Arbitrators — Kenya)',
+            'options' => [
+                'CIArb (Chartered Institute of Arbitrators — Kenya)',
+                'NCIA (Nairobi Centre for International Arbitration)',
+                'Judiciary MAC (Mediation Accreditation Committee)',
+                'LSK (Law Society of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. CIArb / MAC Accreditation No.',
+        ],
+        'Intellectual Property & Trademarks' => [
+            'default' => 'KIPI (Kenya Industrial Property Institute)',
+            'options' => [
+                'KIPI (Kenya Industrial Property Institute)',
+                'LSK (Law Society of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. KIPI Patent/TM Agent No. or LSK No.',
+        ],
+
+        // 2. Health, Medical & Wellness
+        'General Medical & Family Clinic' => [
+            'default' => 'KMPDC (Kenya Medical Practitioners and Dentists Council)',
+            'options' => [
+                'KMPDC (Kenya Medical Practitioners and Dentists Council)',
+                'COC (Clinical Officers Council)',
+                'NCK (Nursing Council of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. KMPDC Facility / Practitioner Reg No.',
+        ],
+        'Dental Clinic & Orthodontics' => [
+            'default' => 'KMPDC (Kenya Medical Practitioners and Dentists Council)',
+            'options' => [
+                'KMPDC (Kenya Medical Practitioners and Dentists Council)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. KMPDC Dental Reg / Facility No.',
+        ],
+        'Optometry & Eye Care' => [
+            'default' => 'KMPDC (Kenya Medical Practitioners and Dentists Council)',
+            'options' => [
+                'KMPDC (Kenya Medical Practitioners and Dentists Council)',
+                'OCK (Optometrists Council / Association of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. KMPDC / OCK Reg No.',
+        ],
+        'Pharmacy & Chemist' => [
+            'default' => 'PPB (Pharmacy and Poisons Board)',
+            'options' => [
+                'PPB (Pharmacy and Poisons Board)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. PPB Premises / Superintendent License No.',
+        ],
+        'Diagnostic Lab & Imaging' => [
+            'default' => 'KMLTTB (Kenya Medical Laboratory Technicians & Technologists Board)',
+            'options' => [
+                'KMLTTB (Kenya Medical Laboratory Technicians & Technologists Board)',
+                'KMPDC (Kenya Medical Practitioners and Dentists Council)',
+                'KNRA (Kenya Nuclear Regulatory Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. KMLTTB / KMPDC Lab License No.',
+        ],
+        'Physiotherapy & Rehabilitation' => [
+            'default' => 'PCK (Physiotherapy Council of Kenya)',
+            'options' => [
+                'PCK (Physiotherapy Council of Kenya)',
+                'KMPDC (Kenya Medical Practitioners and Dentists Council)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. PCK Practising License No.',
+        ],
+        'Mental Health & Counselling' => [
+            'default' => 'KCPC (Counsellors and Psychologists Board / KCPA)',
+            'options' => [
+                'KCPC (Counsellors and Psychologists Board / KCPA)',
+                'KMPDC (Kenya Medical Practitioners and Dentists Council)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. KCPC / KMPDC Reg No.',
+        ],
+        'Pediatric & Maternal Care' => [
+            'default' => 'KMPDC (Kenya Medical Practitioners and Dentists Council)',
+            'options' => [
+                'KMPDC (Kenya Medical Practitioners and Dentists Council)',
+                'NCK (Nursing Council of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. KMPDC / NCK Reg No.',
+        ],
+
+        // 3. Technology, Software & Digital (Regulated Financial/Telecom Specialties Only)
+        'Fintech & Payment Integration' => [
+            'default' => 'CBK (Central Bank of Kenya)',
+            'options' => [
+                'CBK (Central Bank of Kenya — PSP / DCP)',
+                'ODPC (Office of the Data Protection Commissioner)',
+                'CA (Communications Authority of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. CBK PSP/DCP License or ODPC Reg No.',
+        ],
+        'Bulk SMS, Voice, USSD & Communications APIs' => [
+            'default' => 'CA (Communications Authority of Kenya)',
+            'options' => [
+                'CA (Communications Authority of Kenya — ASP / CSP)',
+                'ODPC (Office of the Data Protection Commissioner)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. CA ASP/CSP License No.',
+        ],
+
+        // 4. Real Estate, Construction & Architecture
+        'Architecture & Urban Planning' => [
+            'default' => 'BORAQS (Board of Registration of Architects and Quantity Surveyors)',
+            'options' => [
+                'BORAQS (Board of Registration of Architects and Quantity Surveyors)',
+                'KIP (Kenya Institute of Planners)',
+                'AAK (Architectural Association of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. BORAQS Architect Reg No. (A...)',
+        ],
+        'Civil & Structural Engineering' => [
+            'default' => 'EBK (Engineers Board of Kenya)',
+            'options' => [
+                'EBK (Engineers Board of Kenya)',
+                'NCA (National Construction Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. EBK Reg No. (A... / C...)',
+        ],
+        'Building & General Contractor' => [
+            'default' => 'NCA (National Construction Authority)',
+            'options' => [
+                'NCA (National Construction Authority)',
+                'EBK (Engineers Board of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. NCA Contractor Reg No. (NCA1–NCA8)',
+        ],
+        'Quantity Surveying' => [
+            'default' => 'BORAQS (Board of Registration of Architects and Quantity Surveyors)',
+            'options' => [
+                'BORAQS (Board of Registration of Architects and Quantity Surveyors)',
+                'IQSK (Institute of Quantity Surveyors of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. BORAQS QS Reg No. (Q...)',
+        ],
+        'Property Sales, Letting & Management' => [
+            'default' => 'EARB (Estate Agents Registration Board)',
+            'options' => [
+                'EARB (Estate Agents Registration Board)',
+                'ISK (Institution of Surveyors of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. EARB Reg / Practising Cert No.',
+        ],
+        'Land Surveying & Valuation' => [
+            'default' => 'ISK / VRB (Valuers Registration Board / Land Surveyors Board)',
+            'options' => [
+                'ISK / VRB (Valuers Registration Board / Land Surveyors Board)',
+                'VRB (Valuers Registration Board)',
+                'LSB (Land Surveyors Board)',
+                'ISK (Institution of Surveyors of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. VRB / LSB / ISK Reg No.',
+        ],
+        'Plumbing, Electrical & Solar Installation' => [
+            'default' => 'EPRA (Energy & Petroleum Regulatory Authority)',
+            'options' => [
+                'EPRA (Energy & Petroleum Regulatory Authority)',
+                'NCA (National Construction Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. EPRA Electrical/Solar License or NCA No.',
+        ],
+
+        // 5. Finance, Insurance & Investment
+        'Insurance Agency & Brokerage' => [
+            'default' => 'IRA (Insurance Regulatory Authority)',
+            'options' => [
+                'IRA (Insurance Regulatory Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. IRA License No. (IRA/05/...)',
+        ],
+        'Wealth Management & Investment Advisory' => [
+            'default' => 'CMA (Capital Markets Authority)',
+            'options' => [
+                'CMA (Capital Markets Authority)',
+                'RBA (Retirement Benefits Authority)',
+                'CBK (Central Bank of Kenya)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. CMA Investment Adviser License No.',
+        ],
+        'SACCO, Microfinance & Credit' => [
+            'default' => 'SASRA (SACCO Societies Regulatory Authority)',
+            'options' => [
+                'SASRA (SACCO Societies Regulatory Authority)',
+                'CBK (Central Bank of Kenya — Microfinance / DCP)',
+                'State Dept for Co-operatives',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. SASRA / CBK / Co-op Reg No.',
+        ],
+        'Forex, Remittances & Treasury' => [
+            'default' => 'CBK (Central Bank of Kenya)',
+            'options' => [
+                'CBK (Central Bank of Kenya)',
+                'CMA (Capital Markets Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. CBK Forex Bureau / MRP License No.',
+        ],
+        'Venture Capital & Private Equity' => [
+            'default' => 'CMA (Capital Markets Authority)',
+            'options' => [
+                'CMA (Capital Markets Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. CMA Fund Manager / License No.',
+        ],
+        'Pension & Retirement Planning' => [
+            'default' => 'RBA (Retirement Benefits Authority)',
+            'options' => [
+                'RBA (Retirement Benefits Authority)',
+                'IRA (Insurance Regulatory Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. RBA Administrator / Manager Reg No.',
+        ],
+        'Stockbrokerage & Capital Markets' => [
+            'default' => 'CMA (Capital Markets Authority)',
+            'options' => [
+                'CMA (Capital Markets Authority)',
+                'NSE (Nairobi Securities Exchange)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. CMA Stockbroker / Dealer License No.',
+        ],
+        'Mortgages & Property Finance' => [
+            'default' => 'CBK (Central Bank of Kenya)',
+            'options' => [
+                'CBK (Central Bank of Kenya)',
+                'SASRA (SACCO Societies Regulatory Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. CBK / SASRA License No.',
+        ],
+
+        // 6. Agriculture & Agribusiness (Regulated Vet / Agrovet Specialties Only)
+        'Agrovet, Seeds & Crop Protection' => [
+            'default' => 'PCPB (Pest Control Products Board)',
+            'options' => [
+                'PCPB (Pest Control Products Board)',
+                'KVB (Kenya Veterinary Board)',
+                'KEPHIS (Kenya Plant Health Inspectorate Service)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. PCPB / KVB / KEPHIS License No.',
+        ],
+        'Animal Feeds & Veterinary Services' => [
+            'default' => 'KVB (Kenya Veterinary Board)',
+            'options' => [
+                'KVB (Kenya Veterinary Board)',
+                'KEBS (Kenya Bureau of Standards)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. KVB Veterinary Practice / Reg No.',
+        ],
+
+        // 7. Automotive, Logistics & Transport (Customs Clearing Only)
+        'Clearing, Forwarding & Customs' => [
+            'default' => 'KRA (Kenya Revenue Authority — Licensed Customs Agent)',
+            'options' => [
+                'KRA (Kenya Revenue Authority — Licensed Customs Agent)',
+                'KIFWA (Kenya International Freight and Warehousing Association)',
+                'KMA (Kenya Maritime Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. KRA Customs Agent License No.',
+        ],
+
+        // 8. Education, Training & Coaching (Formal Schools & TVET/Driving Only)
+        'Kindergarten, Primary & High School' => [
+            'default' => 'MoE (Ministry of Education)',
+            'options' => [
+                'MoE (Ministry of Education)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. Ministry of Education School Reg No.',
+        ],
+        'Driving School & Technical TVET' => [
+            'default' => 'TVETA (Technical and Vocational Education and Training Authority)',
+            'options' => [
+                'TVETA (Technical and Vocational Education and Training Authority)',
+                'NTSA (National Transport and Safety Authority)',
+                'NITA (National Industrial Training Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. TVETA / NTSA / NITA Reg No.',
+        ],
+
+        // 9. Manufacturing, Energy & Industrial (Regulated Energy & Water Only)
+        'Solar PV, Inverters & Clean Energy' => [
+            'default' => 'EPRA (Energy & Petroleum Regulatory Authority)',
+            'options' => [
+                'EPRA (Energy & Petroleum Regulatory Authority)',
+                'NCA (National Construction Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. EPRA Solar PV License No. (T1/T2/T3/C1)',
+        ],
+        'Water Borehole Drilling & Treatment' => [
+            'default' => 'WRA (Water Resources Authority)',
+            'options' => [
+                'WRA (Water Resources Authority)',
+                'Ministry of Water & Irrigation',
+                'NCA (National Construction Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. WRA Licensed Borehole Contractor No.',
+        ],
+
+        // 10. Travel, Tours & Safari (Regulated Tour Operators & Lodges Only)
+        'Safari Operator & Tour Packages' => [
+            'default' => 'TRA (Tourism Regulatory Authority)',
+            'options' => [
+                'TRA (Tourism Regulatory Authority)',
+                'KATO (Kenya Association of Tour Operators)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. TRA Tour Operator License No.',
+        ],
+        'Eco-Camp & Safari Lodge' => [
+            'default' => 'TRA (Tourism Regulatory Authority)',
+            'options' => [
+                'TRA (Tourism Regulatory Authority)',
+                'NEMA (National Environment Management Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. TRA Hospitality License No.',
+        ],
+
+        // 11. Home, Security & Facility Services (Regulated Security & Pest Control Only)
+        'CCTV, Electric Fencing & Guarding' => [
+            'default' => 'PSRA (Private Security Regulatory Authority)',
+            'options' => [
+                'PSRA (Private Security Regulatory Authority)',
+                'CA (Communications Authority of Kenya)',
+                'NCA (National Construction Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. PSRA Corporate Registration No.',
+        ],
+        'Pest Control & Fumigation' => [
+            'default' => 'PCPB (Pest Control Products Board)',
+            'options' => [
+                'PCPB (Pest Control Products Board)',
+                'NEMA (National Environment Management Authority)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. PCPB Pest Control Operator License No.',
+        ],
+    ];
+
+    /**
+     * Return statutory regulation config for a Level 2 specialty name, or null if unregulated.
+     */
+    public static function getRegulationInfoForSpecialty(string $specialtyName): ?array
+    {
+        $clean = trim($specialtyName);
+        if ($clean === '') {
+            return null;
+        }
+        if (isset(self::REGULATED_SPECIALTIES[$clean])) {
+            return self::REGULATED_SPECIALTIES[$clean];
+        }
+        foreach (self::REGULATED_SPECIALTIES as $name => $info) {
+            if (strcasecmp($name, $clean) === 0) {
+                return $info;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Look up statutory regulation config by database specialty category ID.
+     */
+    public static function getSpecialtyRegulationById(PDO $pdo, int $specialtyId): ?array
+    {
+        if ($specialtyId <= 0) {
+            return null;
+        }
+        $stmt = $pdo->prepare("SELECT name FROM categories WHERE id = :id AND parent_id IS NOT NULL LIMIT 1");
+        $stmt->execute([':id' => $specialtyId]);
+        $name = $stmt->fetchColumn();
+        if (!is_string($name) || trim($name) === '') {
+            return null;
+        }
+        return self::getRegulationInfoForSpecialty($name);
+    }
+
+    /**
+     * Return true if the given database specialty category ID belongs to a regulated specialty.
+     */
+    public static function isSpecialtyRegulated(PDO $pdo, int $specialtyId): bool
+    {
+        return self::getSpecialtyRegulationById($pdo, $specialtyId) !== null;
+    }
+
     public static function getTaxonomyTree(PDO $pdo, bool $includePending = false): array
     {
         $statusClause = $includePending ? "status IN ('approved', 'pending_approval')" : "status = 'approved'";
@@ -418,12 +887,17 @@ final class CategoryMatcher
         $byParent = [];
         foreach ($specialties as $sp) {
             $pid = (int)$sp['parent_id'];
+            $regInfo = self::getRegulationInfoForSpecialty((string)$sp['name']);
             $byParent[$pid][] = [
                 'id' => (int)$sp['id'],
                 'parent_id' => $pid,
                 'name' => $sp['name'],
                 'slug' => $sp['slug'],
                 'status' => $sp['status'],
+                'is_regulated' => $regInfo !== null,
+                'regulator_default' => $regInfo['default'] ?? null,
+                'regulator_options' => $regInfo['options'] ?? [],
+                'regulator_placeholder' => $regInfo['placeholder'] ?? null,
             ];
         }
 

@@ -201,14 +201,20 @@
     const { biz, fromLat, fromLng, data } = activeRoute;
     const gmapsDirUrl = `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${biz.latitude},${biz.longitude}&travelmode=driving`;
     const wazeDirUrl = `https://waze.com/ul?ll=${biz.latitude},${biz.longitude}&navigate=yes`;
-    const stepsHtml = (data.steps || []).map(st => (
+    const destCues = [biz.building_name, biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(', ');
+    const landmarkCue = biz.landmark_directions ? `Landmark: ${biz.landmark_directions}` : '';
+    const overviewItems = (data.steps || []).map(st => (
       `<li>${escapeHtml(st.instruction)}${st.distance ? ` <strong style="color:#114B3E;">(${escapeHtml(st.distance)})</strong>` : ''}</li>`
-    )).join('');
+    ));
+    if (destCues) {
+      overviewItems.push(`<li>Destination area: <strong>${escapeHtml(destCues)}</strong>${landmarkCue ? ` — <em>${escapeHtml(landmarkCue)}</em>` : ''}</li>`);
+    }
+    const stepsHtml = overviewItems.join('');
 
     return `
       <div class="route-summary-row">
         <div>
-          <span class="route-metrics-pill">🚗 ${Number(data.road_km).toFixed(1)} km drive • ~${Number(data.duration_min)} min</span>
+          <span class="route-metrics-pill">🚗 ~${Number(data.road_km).toFixed(1)} km drive • ~${Number(data.duration_min)} min</span>
           <span style="font-size:0.75rem;color:#4B5563;margin-left:0.35rem;">(${Number(data.straight_km).toFixed(1)} km direct to <strong>${escapeHtml(biz.name)}</strong>)</span>
         </div>
         <button type="button" data-clear-route="1" style="background:none;border:none;color:#7B1113;font-weight:800;font-size:0.76rem;cursor:pointer;">✕ Clear Route</button>
@@ -220,7 +226,7 @@
           ${buildOriginOptionsHtml()}
         </select>
         <a href="${escapeHtml(gmapsDirUrl)}" target="_blank" rel="noopener noreferrer" data-track="map_pin" class="btn btn-green" style="padding:0.28rem 0.65rem;font-size:0.75rem;">
-          🗺️ Google Maps Turn-by-Turn
+          🗺️ Open in Google Maps
         </a>
         <a href="${escapeHtml(wazeDirUrl)}" target="_blank" rel="noopener noreferrer" data-track="map_pin" class="btn btn-outline" style="padding:0.28rem 0.65rem;font-size:0.75rem;background:#fff;">
           🚗 Waze
@@ -228,10 +234,10 @@
       </div>
 
       ${stepsHtml ? `
-        <details style="margin-top:0.5rem;" open>
-          <summary style="cursor:pointer;font-size:0.76rem;font-weight:700;color:#7B1113;">Turn-by-Turn Road Directions (${(data.steps || []).length} steps)</summary>
-          <ol class="route-steps-list">${stepsHtml}</ol>
-        </details>
+        <div style="margin-top:0.5rem;">
+          <div style="font-size:0.76rem;font-weight:700;color:#7B1113;margin-bottom:0.2rem;">General Route Overview</div>
+          <ul class="route-steps-list" style="list-style:disc;padding-left:1.15rem;">${stepsHtml}</ul>
+        </div>
       ` : ''}
     `;
   }
@@ -532,7 +538,7 @@
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem;">
             <span class="status-dot status-${escapeHtml(hours.state)}">● ${escapeHtml(hours.badge_text)}</span>
             ${biz.b2b_ready ? '<span class="badge-distance">🏢 B2B & LPO Ready</span>' : ''}
-            ${biz.regulator_name ? `<span class="badge-distance">🛡️ ${escapeHtml(biz.regulator_name)}: ${escapeHtml(biz.regulator_license || 'Verified')}</span>` : ''}
+            ${biz.regulator_name ? `<span class="badge-distance">🛡️ ${escapeHtml(biz.regulator_name)}${biz.regulator_license ? ': ' + escapeHtml(biz.regulator_license) : ''}</span>` : ''}
           </div>
           <h2 style="margin:0;font-size:1.4rem;color:#111827;">${escapeHtml(biz.name)}</h2>
           <div style="font-size:0.86rem;font-weight:700;color:#7B1113;margin-top:0.2rem;">
@@ -626,7 +632,7 @@
       `${b.area_neighborhood || ''} ${b.city_county || ''}`.trim(),
       b.b2b_ready ? 'Yes' : 'No',
       b.accepts_lpo ? 'Yes' : 'No',
-      b.regulator_name ? `${b.regulator_name} (${b.regulator_license || ''})` : '',
+      b.regulator_name ? (b.regulator_license ? `${b.regulator_name} (${b.regulator_license})` : b.regulator_name) : '',
       b.phone_primary,
       b.email_public,
       b.website_url,
