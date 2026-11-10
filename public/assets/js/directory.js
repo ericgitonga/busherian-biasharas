@@ -675,15 +675,18 @@
     }
 
     visiblePinned.forEach((b) => {
-      const isOpen = b.hours_status && b.hours_status.is_open;
-      const bg = isOpen ? '#114B3E' : '#7B1113';
+      const isAghs = b.school_badge === 'AGHS' || b.school_badge === 'BOTH';
+      const bg = isAghs
+        ? 'linear-gradient(135deg, #114B3E 0%, #1F513F 32%, #582428 68%, #7B1113 100%)'
+        : '#114B3E';
+      const pinSchoolClass = isAghs ? 'bbiz-pin-aghs' : 'bbiz-pin-ahs';
       const label = b.name.length > 24 ? b.name.slice(0, 22) + '…' : b.name;
       const area = b.area_neighborhood || b.city_county || '';
       const isFocused = focused && Number(focused.id) === Number(b.id);
 
       const icon = window.L.divIcon({
         className: 'bbiz-leaflet-pin',
-        html: `<div class="bbiz-pin-pill ${isFocused ? 'bbiz-pin-focused' : ''}" style="background:${bg};" title="${escapeHtml(b.name)} — ${escapeHtml(area)}">📍 ${escapeHtml(label)}</div>`,
+        html: `<div class="bbiz-pin-pill ${pinSchoolClass} ${isFocused ? 'bbiz-pin-focused' : ''}" style="background:${bg};" title="${escapeHtml(b.name)} (${escapeHtml(b.school_badge || 'AHS')}) — ${escapeHtml(area)}">📍 ${escapeHtml(label)}</div>`,
         iconSize: [0, 0],
         iconAnchor: [0, 0],
       });

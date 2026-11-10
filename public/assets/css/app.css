@@ -537,6 +537,12 @@ a {
 .bbiz-pin-pill:hover {
   transform: translate(-50%, -108%) scale(1.04);
 }
+.bbiz-pin-ahs {
+  background: #114B3E;
+}
+.bbiz-pin-aghs {
+  background: linear-gradient(135deg, #114B3E 0%, #1F513F 32%, #582428 68%, #7B1113 100%);
+}
 
 /* Search Box Clear (✕) Button */
 .search-input-wrap {

@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.8.5] - 2026-11-10
+
+### Changed
+- **School-Themed Map Markers for AHS & AGHS (`#122`):**
+  - Styled **AHS** map markers in solid Busherian forest green (`#114B3E`, `.bbiz-pin-ahs`) and **AGHS** map markers with the green-and-maroon gradient blend matching the logo crest (`linear-gradient(135deg, #114B3E 0%, #1F513F 32%, #582428 68%, #7B1113 100%)`, `.bbiz-pin-aghs`) in `public/assets/js/directory.js` and `public/assets/css/app.css`.
+
 ## [0.8.4] - 2026-11-10
 
 ### Added

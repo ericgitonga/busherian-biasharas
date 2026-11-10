@@ -357,6 +357,11 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert 'Sign In Immediately with Password' in body_ol
     assert 'Send 1-Click Sign-In Link' in body_ol
 
+    # 17. Verify Ticket #122: AHS solid green & AGHS green-maroon blend map markers
+    assert "bbiz-pin-ahs" in body_js
+    assert "bbiz-pin-aghs" in body_js
+    assert "linear-gradient(135deg, #114B3E 0%, #1F513F 32%, #582428 68%, #7B1113 100%)" in body_js
+
 
 TESTS = [
     test_health_endpoint,

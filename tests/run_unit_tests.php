@@ -503,6 +503,17 @@ assertTrue(
     'OwnerAuth::authenticateWithPassword rejects invalid password (#119)'
 );
 
+// 26. Verify Ticket #122: School-themed map markers (AHS green #114B3E, AGHS green-maroon gradient blend)
+$dirJs = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+$appCss = (string)file_get_contents(dirname(__DIR__) . '/public/assets/css/app.css');
+assertTrue(
+    str_contains($dirJs, 'bbiz-pin-aghs') &&
+    str_contains($dirJs, 'bbiz-pin-ahs') &&
+    str_contains($dirJs, 'linear-gradient(135deg, #114B3E 0%, #1F513F 32%, #582428 68%, #7B1113 100%)') &&
+    str_contains($appCss, '.bbiz-pin-aghs'),
+    'Map markers use solid green (#114B3E) for AHS and the green-maroon logo gradient blend for AGHS (#122)'
+);
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 
