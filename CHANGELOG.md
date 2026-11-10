@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.7.1] - 2026-04-19
+
+### Added
+- **Outbound Website Referral Attribution (`#94`)**: Updated outbound business website and social links in `public/assets/js/directory.js` (`withOutboundAttribution()`) to append `utm_source=busherianbiasharas.com&utm_medium=referral&utm_campaign=alumni_directory` and use `rel="noopener"` (instead of `rel="noopener noreferrer"`) so destination analytics (GA4, Plausible, server logs) record both the `Referer: https://www.busherianbiasharas.com/` header and UTM source attribution (closes #94, tag: `v0.7.1`).
+
 ## [0.7.0] - 2026-11-10
 
 ### Added
