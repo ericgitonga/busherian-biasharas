@@ -45,7 +45,7 @@ $tokens = AntiSpamGate::generateFormTokens();
         <div class="brand-crest">BB</div>
         <div>
           <h1 class="brand-title">Busherian Biasharas — My Businesses</h1>
-          <p class="brand-subtitle">Signed in as <?= htmlspecialchars((string)$owner['email'], ENT_QUOTES, 'UTF-8') ?> (30-Day Persistent Session)</p>
+          <p class="brand-subtitle">Signed in as <?= htmlspecialchars((string)$owner['email'], ENT_QUOTES, 'UTF-8') ?> (You stay signed in for 30 days)</p>
         </div>
       </a>
       <nav class="header-actions">
@@ -74,7 +74,7 @@ $tokens = AntiSpamGate::generateFormTokens();
         <div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1.5rem;color:#374151;">
           <h3 style="margin:0 0 0.4rem 0;color:#7B1113;">No Business Linked to <?= htmlspecialchars((string)$owner['email'], ENT_QUOTES, 'UTF-8') ?> Yet</h3>
           <p style="margin:0 0 0.9rem 0;font-size:0.88rem;color:#4B5563;">
-            If your business was pre-populated on the directory, sign in using your business email/website domain (e.g. <code>@yourcompany.co.ke</code>) or click the 1-click claim link shared with you. You can also register a new Busherian business below.
+            If your business is already listed in the directory, sign in using your business email address (for example, info@yourcompany.co.ke) or click the 1-click invitation link shared with you. You can also register a new Busherian business below.
           </p>
           <a href="/submit.php" class="btn btn-green">+ Register Your Busherian Business</a>
         </div>
@@ -111,13 +111,13 @@ $tokens = AntiSpamGate::generateFormTokens();
     <section style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1.35rem;">
       <h3 style="margin:0 0 0.3rem 0;color:#7B1113;font-size:1rem;">Persistent Owner Contact Details</h3>
       <p style="margin:0 0 0.9rem 0;font-size:0.82rem;color:#6B7280;">
-        Saved to your Owner Account so you don't have to re-type your details when registering additional businesses. (Per Kenya DPA 2019, House, Year Left, and School Number are never stored here.)
+        Saved to your Owner Account so you don't have to re-type your details when registering additional businesses. (For your privacy, your House, Year Left, and School Number are never stored here.)
       </p>
       <form method="POST" action="/owner/index.php" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;align-items:end;">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
         <input type="hidden" name="action" value="update_profile">
         <div>
-          <label style="font-weight:700;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Verified Email (SSO / Login ID)</label>
+          <label style="font-weight:700;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Signed-In Email Address</label>
           <input type="email" class="input-control" value="<?= htmlspecialchars((string)$owner['email'], ENT_QUOTES, 'UTF-8') ?>" disabled style="background:#F3F4F6;">
         </div>
         <div>

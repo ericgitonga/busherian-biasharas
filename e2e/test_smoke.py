@@ -135,11 +135,14 @@ def test_privacy_and_dpa_takedown_pages():
     st_priv, html_priv, _ = _request("/privacy.php")
     assert st_priv == 200
     assert "Kenya Data Protection Act, 2019" in html_priv
-    assert "DELETE FROM business_vetting_queue" in html_priv
+    assert "DELETE FROM" not in html_priv
+    assert "business_vetting_queue" not in html_priv
+    assert "<code>" not in html_priv
 
     st_td, html_td, _ = _request("/takedown.php")
     assert st_td == 200
-    assert "Section 40" in html_td
+    assert "Request Immediate Listing Removal or Correction" in html_td
+    assert "<code>" not in html_td
     assert 'name="form_sig"' in html_td
 
     # Verify Ticket #10: /admin/index.php returns 401 when unauthenticated and does not leak pending vetting queue
@@ -324,6 +327,30 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert st_ol_biz == 200
     assert "Sign In to Edit Business Listing" in body_ol_biz
     assert first_biz["name"] in body_ol_biz
+
+    # 12. Verify Tickets #109, #110, #111: Zero displayed code/SQL/filenames across public & owner pages
+    assert "<code>" not in body_home
+    assert "<code>" not in body_sub
+    assert "DELETE FROM" not in body_sub
+    assert "<code>" not in body_ol
+    assert "/submit.php</code>" not in body_ol
+
+    # 13. Verify Tickets #112, #113, #114: Arts, Visual & Performing Arts sector & specialties
+    assert "Arts, Visual &amp; Performing Arts" in body_home
+    assert "Arts, Visual &amp; Performing Arts" in body_sub
+    assert "Visual Arts, Fine Art & Galleries" in body_sub
+    assert "Performing Arts, Theatre & Dance" in body_sub
+
+    # 14. Verify Ticket #115: "Same as Direct Phone above" checkboxes on /submit.php
+    assert 'id="same_as_direct_phone_primary"' in body_sub
+    assert 'id="same_as_direct_phone_whatsapp"' in body_sub
+    assert "Same as Direct Phone above" in body_sub
+    assert "bindSameAsDirectPhone" in body_fe
+
+    # 15. Verify Ticket #116: All world countries rendered in country dropdown
+    for c_name in ("Afghanistan", "Brazil", "Japan", "Switzerland", "Zambia", "Zimbabwe"):
+        assert f'<option value="{c_name}"' in body_home, f"Missing country {c_name} in homepage filter"
+        assert f'<option value="{c_name}"' in body_sub, f"Missing country {c_name} in submit.php dropdown" 
 
 
 TESTS = [

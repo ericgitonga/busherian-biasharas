@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.8.3] - 2026-11-10
+
+### Added
+- **Arts, Visual & Performing Arts Industry Sector & Specialties (`#112`, `#113`, `#114`):**
+  - Added **Arts, Visual & Performing Arts** (`arts-visual-performing-arts`) as a dedicated Industry Sector in `CategoryMatcher::DEFAULT_TAXONOMY` with 8 specialties: *Visual Arts, Fine Art & Galleries*, *Performing Arts, Theatre & Dance*, *Music, Live Bands, DJs & Sound Production*, *Film, Cinema, Animation & Directing*, *Sculpture, Ceramics, Pottery & Crafts*, *Illustration, Comics & Digital Art*, *Literary Arts, Poetry & Creative Writing*, and *Cultural Heritage, Curatorial & Museums*.
+  - Added Swahili and English search synonyms (`sanaa`, `art`, `arts`, `artist`, `theatre`, `gallery`, `band`, `mziki`, `muziki`) in `CategoryMatcher::SYNONYM_LEXICON` and idempotent taxonomy synchronization (`CategoryMatcher::ensureTaxonomyUpToDate`) in `Database::ensureInitialized()`.
+- **All 197 World Countries in Place Taxonomy (`#116`):**
+  - Expanded `LocationEngine::PLACE_HIERARCHY` from 14 countries to **all 197 countries in the world** (Kenya first as default, followed alphabetically from Afghanistan to Zimbabwe), including all 47 Kenyan counties + major towns, all 50 US states + D.C., all Canadian provinces, UK cities, Australian states, and capital/major cities for every country worldwide.
+- **"Same as Direct Phone above" Checkboxes on `/submit.php` (`#115`):**
+  - Added **Same as Direct Phone above** checkboxes (`#same_as_direct_phone_primary` and `#same_as_direct_phone_whatsapp`) under **Public Business Phone** and **WhatsApp Business Number** on `/submit.php`, with live client-side auto-sync in `public/assets/js/form-enhancements.js` and server-side POST fallback in `public/submit.php`.
+
+### Changed
+- **Site-Wide Lay-Friendly Copy & Zero Displayed Code/Jargon (`#109`, `#110`, `#111`):**
+  - Removed all displayed `<code>` blocks, raw SQL commands (`DELETE FROM business_vetting_queue`), internal filenames (`/submit.php`), database table/status/cookie identifiers (`business_vetting_queue`, `quarantined_dpa`, `bbiz_vid`), and developer/cryptographic/statutory jargon (`HMAC-SHA256`, `Schema.org JSON-LD, OpenGraph tags`, `EXIF GPS stripped`, `SSO`, `Level 1` / `Level 2`, `DPA s.29` / `s.33` / `s.40`) across `/submit.php`, `/privacy.php`, `/takedown.php`, `/index.php`, `/owner/*`, `src/bootstrap.php`, `directory.js`, and `consent-metrics.js`.
+
 ## [0.8.2] - 2026-04-19
 
 ### Added

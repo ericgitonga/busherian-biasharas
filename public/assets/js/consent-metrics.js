@@ -121,8 +121,8 @@
     bar.innerHTML = `
       <div class="bbiz-cookie-inner">
         <div class="bbiz-cookie-text">
-          <strong>🍪 Cookie &amp; Usage Metrics Notice (Kenya DPA 2019):</strong>
-          We use a first-party cookie only with your consent to measure anonymous directory usage (page views, searches, and business clicks). Zero third-party trackers are used.
+          <strong>🍪 Cookie &amp; Privacy Choice:</strong>
+          With your permission, we use a single anonymous cookie to count overall page visits and popular searches so we can improve the directory. We never use outside ad trackers.
           <a href="/privacy.php">Privacy Notice</a>
         </div>
         <div class="bbiz-cookie-actions">

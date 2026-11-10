@@ -77,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrf = trim((string)($_POST['csrf_token'] ?? ''));
     $email = strtolower(trim((string)($_POST['email'] ?? '')));
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
-        $flashError = 'Invalid security token (CSRF). Please reload and try again.';
+        $flashError = 'Your page session expired. Please reload and try again.';
     } elseif ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $flashError = 'Please enter a valid email address.';
     } else {
@@ -113,7 +113,7 @@ $isAdminVisitor = AdminAuth::isAuthenticated();
         <div class="brand-crest">BB</div>
         <div>
           <h1 class="brand-title">Busherian Biasharas — Owner Portal</h1>
-          <p class="brand-subtitle">Persistent SSO &amp; Self-Service Listing Management</p>
+          <p class="brand-subtitle">Sign In to Manage Your Business Listing</p>
         </div>
       </a>
       <nav class="header-actions">
@@ -169,7 +169,7 @@ $isAdminVisitor = AdminAuth::isAuthenticated();
 
       <?php if ($googleReady): ?>
         <a href="/owner/login.php?action=google" class="btn btn-outline" style="width:100%;justify-content:center;padding:0.7rem 1rem;font-weight:700;font-size:0.9rem;border:2px solid #D1D5DB;display:flex;align-items:center;gap:0.55rem;box-sizing:border-box;">
-          <span>🌐</span> Continue with Google (SSO)
+          <span>🌐</span> Continue with Google
         </a>
 
         <div style="display:flex;align-items:center;gap:0.75rem;margin:1.15rem 0;color:#9CA3AF;font-size:0.78rem;font-weight:700;text-transform:uppercase;">
@@ -179,7 +179,7 @@ $isAdminVisitor = AdminAuth::isAuthenticated();
         </div>
       <?php elseif ($isAdminVisitor): ?>
         <div style="background:#FFFBEB;border:1px solid #F59E0B;border-radius:10px;padding:0.65rem 0.85rem;margin-bottom:1rem;font-size:0.78rem;color:#92400E;">
-          ⚙️ <strong>Admin Note:</strong> To enable the <em>Continue with Google (SSO)</em> button alongside Email Sign-In, paste your Google OAuth Client ID &amp; Secret in <a href="/admin/index.php#google-sso-config" style="color:#7B1113;font-weight:700;">Admin Console &rarr; Google SSO Settings</a>.
+          ⚙️ <strong>Admin Note:</strong> To enable the <em>Continue with Google</em> button alongside Email Sign-In, configure your Google Sign-In credentials in <a href="/admin/index.php#google-sso-config" style="color:#7B1113;font-weight:700;">Admin Console &rarr; Google Sign-In Settings</a>.
         </div>
       <?php endif; ?>
 
@@ -192,7 +192,7 @@ $isAdminVisitor = AdminAuth::isAuthenticated();
         <input type="email" id="owner-email" name="email" class="input-control"
           placeholder="e.g. you@yourbusiness.co.ke or yourname@gmail.com" required>
         <p style="margin:0.4rem 0 0.9rem 0;font-size:0.77rem;color:#6B7280;">
-          💡 <strong>Automatic Linking:</strong> If you sign in with an email matching your business's listed email or website domain (e.g. <code>@branfoot.com</code>, <code>@prescott.co.ke</code>, <code>@sasasignal.com</code>), your pre-populated listing is linked to your account automatically.
+          💡 <strong>Automatic Linking:</strong> If you sign in with the email shown on your listing or an email matching your business website (for example, info@yourbusiness.co.ke), your business is linked to your account automatically.
         </p>
         <button type="submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.72rem 1rem;font-size:0.92rem;">
           ✉️ Send 1-Click Sign-In Link
@@ -206,10 +206,10 @@ $isAdminVisitor = AdminAuth::isAuthenticated();
           <li style="margin-bottom:0.35rem;"><strong>1-Click Passwordless Sign-In:</strong> Enter your email above and click <em>Send 1-Click Sign-In Link</em>. Click the link in your email to sign in for 30 days (no password required).</li>
           <li style="margin-bottom:0.35rem;"><strong>Automatic Business Linking (4 Ways):</strong> Your account automatically links to any business matching:
             <ul style="margin:0.2rem 0 0.2rem 0;padding-left:1.1rem;color:#4B5563;">
-              <li>The <strong>Submitter Email</strong> you used when registering on <code>/submit.php</code></li>
+              <li>The <strong>email address you used when registering</strong> your business on the site</li>
               <li>Your business's <strong>Public Contact Email</strong> shown on the listing</li>
-              <li>Any email on your business's <strong>Official Website Domain</strong> (e.g. <code>you@yourcompany.co.ke</code>)</li>
-              <li>An <strong>Admin-Assigned Owner Email</strong> or <strong>1-Click WhatsApp/DM Claim Link</strong></li>
+              <li>Any email address matching your <strong>business website</strong> (for example, info@yourcompany.co.ke)</li>
+              <li>An <strong>owner email or 1-click invitation link</strong> shared with you by the directory team</li>
             </ul>
           </li>
           <li><strong>Direct "✏️ Edit My Business" Button:</strong> Once signed in, an <strong>✏️ Edit My Business</strong> button appears directly on your business card and modal in the public directory, as well as in your <strong>My Biasharas</strong> dashboard.</li>

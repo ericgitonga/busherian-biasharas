@@ -41,24 +41,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$spamCheck['passed']) {
             if ($spamCheck['silent_drop']) {
                 // Silent 200 drop for bots/rate-limits without quarantining the business!
-                $message = 'Your Section 40 request has been logged for review.';
+                $message = 'Your listing removal or correction request has been received for review.';
             } else {
                 $error = 'Security verification failed (' . $spamCheck['reason'] . '). Please reload and try again.';
             }
         } elseif ($bizId <= 0 || !filter_var($requesterEmail, FILTER_VALIDATE_EMAIL) || $reason === '') {
-            $error = 'Please provide the Business ID, your email address, and the reason for your Section 40 request.';
+            $error = 'Please select the business listing, enter your email address, and tell us how we can help.';
         } else {
             VettingPurger::quarantineBusinessDpa($pdo, $bizId);
             Mailer::enqueueAndSend(
                 $pdo,
                 Database::env('ADMIN_EMAIL', 'admin@busherianbiasharas.com'),
                 "[DPA Section 40 Quarantine] Business #{$bizId} Quarantined",
-                "<p>Business #{$bizId} has been placed in instant <code>quarantined_dpa</code> state by "
+                "<p>Business #{$bizId} has been immediately hidden from public view pending review by "
                 . htmlspecialchars(AntiSpamGate::sanitizeHeaderValue($requesterEmail), ENT_QUOTES, 'UTF-8') . ".</p><p>Reason: "
                 . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . "</p>",
                 $requesterEmail
             );
-            $message = "Business #{$bizId} has been immediately placed into Section 40 DPA Quarantine and hidden from the public directory while admin@busherianbiasharas.com completes erasure/rectification.";
+            $message = "Listing #{$bizId} has been immediately hidden from the public directory while our team at admin@busherianbiasharas.com completes your removal or correction request.";
         }
     }
 }
@@ -71,7 +71,7 @@ $businesses = $pdo->query("SELECT id, name, city_county FROM businesses WHERE st
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Section 40 Takedown &amp; Rectification — Busherian Biasharas</title>
+  <title>Report or Remove a Listing — Busherian Biasharas</title>
 <?= bbiz_head_meta_tags('Section 40 Takedown & Rectification — Busherian Biasharas', 'Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS).', '/takedown.php') ?>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
@@ -82,7 +82,7 @@ $businesses = $pdo->query("SELECT id, name, city_county FROM businesses WHERE st
         <div class="brand-crest">BB</div>
         <div>
           <h1 class="brand-title">Busherian Biasharas</h1>
-          <p class="brand-subtitle">Kenya DPA 2019 Section 40 — Right to Erasure / Instant Quarantine</p>
+          <p class="brand-subtitle">Request Immediate Listing Removal or Correction</p>
         </div>
       </a>
       <nav class="header-actions">
@@ -94,7 +94,7 @@ $businesses = $pdo->query("SELECT id, name, city_county FROM businesses WHERE st
   <main style="max-width:680px;margin:2rem auto;padding:0 1.25rem;">
     <?php if ($message !== ''): ?>
       <div style="background:#ECFDF5;border:2px solid #059669;border-radius:12px;padding:1.25rem;margin-bottom:1.25rem;color:#065F46;">
-        <strong>✓ Instant DPA Quarantine Activated:</strong> <?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?>
+        <strong>✓ Listing Immediately Hidden from Public View:</strong> <?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?>
       </div>
     <?php endif; ?>
     <?php if ($error !== ''): ?>
@@ -116,9 +116,9 @@ $businesses = $pdo->query("SELECT id, name, city_county FROM businesses WHERE st
         <input type="text" id="td_website_ref" name="website" value="" tabindex="-1" autocomplete="nope">
       </div>
 
-      <h2 style="margin-top:0;color:#7B1113;">Request Immediate Listing Quarantine or Erasure (DPA s.40)</h2>
+      <h2 style="margin-top:0;color:#7B1113;">Request Immediate Listing Removal or Correction</h2>
       <p style="font-size:0.88rem;color:#4B5563;">
-        Submitting this form immediately transitions the selected listing to <code>quarantined_dpa</code> (removing it from public display and search APIs) and notifies <code>admin@busherianbiasharas.com</code>.
+        Submitting this form immediately hides the selected business listing from the public directory and notifies our team at admin@busherianbiasharas.com so we can complete your removal or correction request.
       </p>
 
       <div style="margin-bottom:0.9rem;">
@@ -144,11 +144,11 @@ $businesses = $pdo->query("SELECT id, name, city_county FROM businesses WHERE st
       </div>
 
       <div style="margin-bottom:1.1rem;">
-        <label for="reason" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Reason for Erasure / Rectification Request *</label>
+        <label for="reason" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Reason for Removal or Correction Request *</label>
         <textarea id="reason" name="reason" rows="3" class="input-control" required placeholder="Specify why this listing should be removed or updated..."></textarea>
       </div>
 
-      <button type="submit" class="btn btn-crimson">Immediately Quarantine Listing</button>
+      <button type="submit" class="btn btn-crimson">Immediately Hide &amp; Submit Request</button>
     </form>
   </main>
 

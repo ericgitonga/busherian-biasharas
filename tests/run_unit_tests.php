@@ -51,7 +51,7 @@ assertTrue(in_array('Watson', Houses::AGHS_HOUSES, true) && in_array('Joan Mjomb
 
 // 2. Verify 2-Level Taxonomy & Synonym Expansion
 $tree = CategoryMatcher::getTaxonomyTree($pdo);
-assertTrue(count($tree) === 14, 'Taxonomy has 14 Level 1 Industry Sectors');
+assertTrue(count($tree) === 15, 'Taxonomy has 15 Industry Sectors including Arts, Visual & Performing Arts (#112)');
 $totalSpecs = array_sum(array_map(fn($s) => count($s['specialties']), $tree));
 assertTrue($totalSpecs >= 100, "Taxonomy has 100+ Level 2 Specialties (found {$totalSpecs})");
 
@@ -424,6 +424,69 @@ assertTrue(
 assertTrue(
     Houses::isValidHouse('AGHS', 'Joan Mjomba') && Houses::isValidHouse('AGHS', 'Rebecca Karanja'),
     'Houses::isValidHouse accepts Joan Mjomba and Rebecca Karanja for AGHS'
+);
+
+// 21. Verify Tickets #109, #110, #111: Lay-friendly copy across the site (zero <code>, SQL, or submit.php jargon)
+$submitHtml = (string)file_get_contents(dirname(__DIR__) . '/public/submit.php');
+$ownerLoginHtml = (string)file_get_contents(dirname(__DIR__) . '/public/owner/login.php');
+$privacyHtml = (string)file_get_contents(dirname(__DIR__) . '/public/privacy.php');
+$takedownHtml = (string)file_get_contents(dirname(__DIR__) . '/public/takedown.php');
+
+assertTrue(
+    !str_contains($submitHtml, 'DELETE FROM business_vetting_queue') && !str_contains($submitHtml, 'Schema.org JSON-LD'),
+    'submit.php contains zero SQL DELETE commands or Schema.org JSON-LD developer jargon (#110)'
+);
+assertTrue(
+    !str_contains($ownerLoginHtml, '<code>') && !str_contains($ownerLoginHtml, '/submit.php</code>'),
+    'owner/login.php contains zero <code> tags or /submit.php filename jargon (#110)'
+);
+assertTrue(
+    !str_contains($privacyHtml, '<code>') && !str_contains($privacyHtml, 'DELETE FROM') && !str_contains($privacyHtml, 'HMAC-SHA256'),
+    'privacy.php contains zero <code> tags, SQL commands, or cryptographic jargon (#111)'
+);
+assertTrue(
+    !str_contains($takedownHtml, '<code>') && !str_contains($takedownHtml, 'quarantined_dpa</code>'),
+    'takedown.php contains zero <code> tags or internal status identifiers (#111)'
+);
+
+// 22. Verify Tickets #112, #113, #114: Arts, Visual & Performing Arts sector, specialties & search synonyms
+$sectorNames = array_map(fn($s) => $s['name'], $tree);
+assertTrue(
+    in_array('Arts, Visual & Performing Arts', $sectorNames, true),
+    'Taxonomy includes Arts, Visual & Performing Arts sector (#113)'
+);
+$artsSector = array_values(array_filter($tree, fn($s) => $s['name'] === 'Arts, Visual & Performing Arts'))[0] ?? null;
+$artsSpecs = $artsSector ? array_map(fn($sp) => $sp['name'], $artsSector['specialties']) : [];
+assertTrue(
+    in_array('Visual Arts, Fine Art & Galleries', $artsSpecs, true) &&
+    in_array('Performing Arts, Theatre & Dance', $artsSpecs, true) &&
+    in_array('Music, Live Bands, DJs & Sound Production', $artsSpecs, true),
+    'Arts sector includes Visual Arts, Performing Arts, and Music specialties (#113)'
+);
+$sanaaExpanded = CategoryMatcher::expandSearchTerms('sanaa');
+assertTrue(
+    in_array('Visual Arts', $sanaaExpanded, true) && in_array('Performing Arts', $sanaaExpanded, true),
+    'Swahili term "sanaa" expands to Visual Arts and Performing Arts (#113)'
+);
+
+// 23. Verify Ticket #115: "Same as Direct Phone above" checkboxes on /submit.php & form-enhancements.js
+$feJs = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/form-enhancements.js');
+assertTrue(
+    str_contains($submitHtml, 'id="same_as_direct_phone_primary"') &&
+    str_contains($submitHtml, 'id="same_as_direct_phone_whatsapp"') &&
+    str_contains($feJs, 'bindSameAsDirectPhone'),
+    'submit.php and form-enhancements.js wire Same as Direct Phone checkboxes for Public Phone and WhatsApp (#115)'
+);
+
+// 24. Verify Ticket #116: All 197 world countries included in LocationEngine::getPlaceHierarchy
+assertTrue(
+    count($placeHierarchy) >= 195 &&
+    isset($placeHierarchy['Afghanistan']) &&
+    isset($placeHierarchy['Japan']) &&
+    isset($placeHierarchy['Brazil']) &&
+    isset($placeHierarchy['Zimbabwe']) &&
+    count($placeHierarchy['United States']) === 51,
+    'LocationEngine::getPlaceHierarchy includes all 197 world countries and all 50 US states + D.C. (#116)'
 );
 
 @unlink(getenv('DB_SQLITE_PATH'));

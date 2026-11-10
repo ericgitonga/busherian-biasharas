@@ -211,11 +211,11 @@ WRAP;
               📸 Business Photos (Optional — 3 to 5 Photos Recommended, Max 5)
             </label>
             <span id="photo-count-badge" style="font-size:0.76rem;font-weight:700;background:#D1FAE5;color:#065F46;padding:0.2rem 0.6rem;border-radius:999px;">
-              Up to 5 photos • Auto-optimized &amp; EXIF GPS stripped
+              Up to 5 photos • Automatically resized &amp; location privacy protected
             </span>
           </div>
           <p style="margin:0 0 0.65rem 0;font-size:0.8rem;color:#047857;">
-            Showcase your storefront, products, team, or work in action. Large phone photos are automatically resized in your browser for fast upload and stripped of private camera/GPS metadata.
+            Showcase your storefront, products, team, or work in action. Large phone photos are automatically resized in your browser for fast upload and any private location details attached by your phone camera are automatically removed.
           </p>
           {$existingPhotosHtml}
           <input type="file" id="business_photos" name="business_photos[]" accept="image/jpeg,image/png,image/webp" multiple class="input-control" style="background:#fff;padding:0.45rem;">

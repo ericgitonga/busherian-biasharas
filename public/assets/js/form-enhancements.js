@@ -93,6 +93,44 @@
     citySel.addEventListener('change', syncCustomCityVisibility);
   }
 
+  // =========================================================================
+  // "Same as Direct Phone above" Checkboxes for Public Phone & WhatsApp (#115)
+  // =========================================================================
+  const directPhoneInput = document.getElementById('submitter_phone');
+  const primaryPhoneInput = document.getElementById('phone_primary');
+  const whatsappPhoneInput = document.getElementById('whatsapp_number');
+  const samePrimaryChk = document.getElementById('same_as_direct_phone_primary');
+  const sameWhatsappChk = document.getElementById('same_as_direct_phone_whatsapp');
+
+  function bindSameAsDirectPhone(chkEl, targetInput) {
+    if (!chkEl || !targetInput || !directPhoneInput) return;
+    function syncFromDirect() {
+      if (chkEl.checked) {
+        targetInput.value = directPhoneInput.value;
+      }
+    }
+    chkEl.addEventListener('change', () => {
+      if (chkEl.checked) {
+        targetInput.value = directPhoneInput.value;
+        targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    directPhoneInput.addEventListener('input', () => {
+      if (chkEl.checked) {
+        targetInput.value = directPhoneInput.value;
+      }
+    });
+    targetInput.addEventListener('input', () => {
+      if (chkEl.checked && targetInput.value.trim() !== directPhoneInput.value.trim()) {
+        chkEl.checked = false;
+      }
+    });
+    syncFromDirect();
+  }
+
+  bindSameAsDirectPhone(samePrimaryChk, primaryPhoneInput);
+  bindSameAsDirectPhone(sameWhatsappChk, whatsappPhoneInput);
+
   const fileInput = document.getElementById('business_photos');
   const hiddenJsonInput = document.getElementById('business_photos_data_json');
   const previewWrap = document.getElementById('business-photos-preview');
