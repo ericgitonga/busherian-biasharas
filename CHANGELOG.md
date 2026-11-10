@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.8.4] - 2026-11-10
+
+### Added
+- **Multi-Device Owner Password Sign-In & Rolling 30-Day Session Renewal (`#118`, `#119`, `#120`):**
+  - Added `password_hash` to `business_owners` (`src/Config/Database.php` and `src/schema.sql`) and added `OwnerAuth::setOwnerPassword()` and `OwnerAuth::authenticateWithPassword()` (`src/Services/OwnerAuth.php`).
+  - Added rolling 30-day session cookie auto-renewal in `OwnerAuth::getCurrentOwner()` so active owners stay signed in continuously without expiring after 30 days.
+  - Updated `/owner/login.php` so returning owners on any computer or phone can sign in immediately with **Email + Password**, **Continue with Google**, or **Send 1-Click Sign-In Link (No Password Needed)**.
+  - Updated `/owner/index.php` and `/owner/claim.php` so owners can set or update their password anytime.
+
 ## [0.8.3] - 2026-11-10
 
 ### Added

@@ -462,6 +462,7 @@ final class Database
                     full_name TEXT NULL,
                     phone TEXT NULL,
                     google_sub TEXT NULL,
+                    password_hash TEXT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     last_login_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
@@ -488,6 +489,16 @@ final class Database
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
             ");
+            $ownerCols = $pdo->query("PRAGMA table_info(business_owners)")->fetchAll();
+            $hasPwHash = false;
+            foreach ($ownerCols as $oc) {
+                if (($oc['name'] ?? '') === 'password_hash') {
+                    $hasPwHash = true;
+                }
+            }
+            if (!$hasPwHash) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN password_hash TEXT NULL");
+            }
         } else {
             $cols = $pdo->query("SHOW COLUMNS FROM businesses")->fetchAll();
             foreach ($cols as $col) {
@@ -514,11 +525,22 @@ final class Database
                     full_name VARCHAR(150) NULL,
                     phone VARCHAR(40) NULL,
                     google_sub VARCHAR(120) NULL,
+                    password_hash VARCHAR(255) NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     INDEX idx_owner_google (google_sub)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
+            $ownerColsMysql = $pdo->query("SHOW COLUMNS FROM business_owners")->fetchAll();
+            $hasPwHashMysql = false;
+            foreach ($ownerColsMysql as $ocm) {
+                if (($ocm['Field'] ?? '') === 'password_hash') {
+                    $hasPwHashMysql = true;
+                }
+            }
+            if (!$hasPwHashMysql) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN password_hash VARCHAR(255) NULL AFTER google_sub");
+            }
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS business_owner_links (
                     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

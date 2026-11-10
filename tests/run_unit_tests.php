@@ -489,6 +489,20 @@ assertTrue(
     'LocationEngine::getPlaceHierarchy includes all 197 world countries and all 50 US states + D.C. (#116)'
 );
 
+// 25. Verify Tickets #118, #119, #120: Owner Password Auth + Rolling Session Renewal
+$pwOwner = OwnerAuth::upsertOwner($pdo, 'owner-pw@branfoot.com', 'Pw Owner', '+254722111222');
+OwnerAuth::setOwnerPassword($pdo, (int)$pwOwner['id'], 'BusherianStrong2026!');
+$authOk = OwnerAuth::authenticateWithPassword($pdo, 'owner-pw@branfoot.com', 'BusherianStrong2026!');
+assertTrue(
+    $authOk !== null && (int)$authOk['id'] === (int)$pwOwner['id'],
+    'OwnerAuth::authenticateWithPassword authenticates valid owner password across devices (#119)'
+);
+$authBad = OwnerAuth::authenticateWithPassword($pdo, 'owner-pw@branfoot.com', 'WrongPassword999');
+assertTrue(
+    $authBad === null,
+    'OwnerAuth::authenticateWithPassword rejects invalid password (#119)'
+);
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 

@@ -13,16 +13,28 @@ $pdo = Database::getConnection();
 $owner = OwnerAuth::requireOwner($pdo);
 
 $profileSaved = '';
+$profileError = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_profile') {
     $csrf = trim((string)($_POST['csrf_token'] ?? ''));
     if (AntiSpamGate::verifyCsrfToken($csrf)) {
-        $owner = OwnerAuth::upsertOwner(
-            $pdo,
-            (string)$owner['email'],
-            trim((string)($_POST['full_name'] ?? '')),
-            trim((string)($_POST['phone'] ?? ''))
-        );
-        $profileSaved = 'Your persistent owner profile details have been updated.';
+        $newPw = (string)($_POST['new_password'] ?? '');
+        if ($newPw !== '' && mb_strlen($newPw) < 8) {
+            $profileError = 'Your new password must be at least 8 characters long.';
+        } else {
+            $owner = OwnerAuth::upsertOwner(
+                $pdo,
+                (string)$owner['email'],
+                trim((string)($_POST['full_name'] ?? '')),
+                trim((string)($_POST['phone'] ?? ''))
+            );
+            if ($newPw !== '') {
+                OwnerAuth::setOwnerPassword($pdo, (int)$owner['id'], $newPw);
+                $owner = OwnerAuth::getCurrentOwner($pdo) ?? $owner;
+                $profileSaved = 'Your owner profile and password have been saved. You can now sign in with this password on any computer or phone.';
+            } else {
+                $profileSaved = 'Your owner profile details have been updated.';
+            }
+        }
     }
 }
 
@@ -60,6 +72,11 @@ $tokens = AntiSpamGate::generateFormTokens();
     <?php if ($profileSaved !== ''): ?>
       <div style="background:#ECFDF5;border:2px solid #059669;border-radius:12px;padding:0.9rem 1.2rem;margin-bottom:1.25rem;color:#065F46;font-weight:600;">
         ✓ <?= htmlspecialchars($profileSaved, ENT_QUOTES, 'UTF-8') ?>
+      </div>
+    <?php endif; ?>
+    <?php if ($profileError !== ''): ?>
+      <div style="background:#FEF2F2;border:2px solid #DC2626;border-radius:12px;padding:0.9rem 1.2rem;margin-bottom:1.25rem;color:#991B1B;font-weight:600;">
+        ⚠️ <?= htmlspecialchars($profileError, ENT_QUOTES, 'UTF-8') ?>
       </div>
     <?php endif; ?>
 
@@ -129,7 +146,13 @@ $tokens = AntiSpamGate::generateFormTokens();
           <input type="text" name="phone" class="input-control" value="<?= htmlspecialchars((string)($owner['phone'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="+2547...">
         </div>
         <div>
-          <button type="submit" class="btn btn-outline" style="width:100%;justify-content:center;">💾 Save Owner Profile</button>
+          <label for="new_password" style="font-weight:700;font-size:0.8rem;display:block;margin-bottom:0.25rem;">
+            Set / Update Password <?= !empty($owner['password_hash']) ? '<span style="color:#059669;">(✓ Password Set)</span>' : '<span style="color:#6B7280;">(Optional — for other devices)</span>' ?>
+          </label>
+          <input type="password" id="new_password" name="new_password" class="input-control" minlength="8" autocomplete="new-password" placeholder="At least 8 characters...">
+        </div>
+        <div>
+          <button type="submit" class="btn btn-outline" style="width:100%;justify-content:center;">💾 Save Owner Profile &amp; Password</button>
         </div>
       </form>
     </section>
