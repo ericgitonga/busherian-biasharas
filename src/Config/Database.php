@@ -218,6 +218,8 @@ final class Database
                 );
                 CREATE TABLE IF NOT EXISTS businesses (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    business_id TEXT NULL UNIQUE,
+                    business_number INTEGER NOT NULL DEFAULT 1,
                     name TEXT NOT NULL,
                     slug TEXT NOT NULL UNIQUE,
                     tagline TEXT NOT NULL,
@@ -300,11 +302,49 @@ final class Database
             ");
         }
 
+        // Ensure business_id and business_number columns exist on pre-existing databases
+        self::ensureBusinessIdentityAndNumberColumns($pdo, $driver);
+
         // Seed categories and initial verified listings if empty
         $count = (int)$pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
         if ($count === 0) {
             \BusherianBiasharas\Services\CategoryMatcher::seedDefaultTaxonomy($pdo);
             \BusherianBiasharas\Services\CategoryMatcher::seedSampleBusinesses($pdo);
+        }
+    }
+
+    private static function ensureBusinessIdentityAndNumberColumns(PDO $pdo, string $driver): void
+    {
+        $hasBizId = false;
+        $hasBizNum = false;
+        if ($driver === 'sqlite') {
+            $cols = $pdo->query("PRAGMA table_info(businesses)")->fetchAll();
+            foreach ($cols as $col) {
+                if (($col['name'] ?? '') === 'business_id') $hasBizId = true;
+                if (($col['name'] ?? '') === 'business_number') $hasBizNum = true;
+            }
+            if (!$hasBizId) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN business_id TEXT NULL");
+            }
+            if (!$hasBizNum) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN business_number INTEGER NOT NULL DEFAULT 1");
+            }
+        } else {
+            $cols = $pdo->query("SHOW COLUMNS FROM businesses")->fetchAll();
+            foreach ($cols as $col) {
+                if (($col['Field'] ?? '') === 'business_id') $hasBizId = true;
+                if (($col['Field'] ?? '') === 'business_number') $hasBizNum = true;
+            }
+            if (!$hasBizId) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN business_id VARCHAR(32) NULL UNIQUE AFTER id");
+            }
+            if (!$hasBizNum) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN business_number INT UNSIGNED NOT NULL DEFAULT 1 AFTER business_id");
+            }
+        }
+
+        if (!$hasBizId || !$hasBizNum) {
+            \BusherianBiasharas\Services\VettingPurger::renumberBusinesses($pdo);
         }
     }
 }

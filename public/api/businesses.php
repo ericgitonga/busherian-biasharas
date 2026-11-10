@@ -29,7 +29,7 @@ try {
     // `business_vetting_queue` is NEVER joined or queried in public APIs.
     $sql = "
         SELECT
-            b.id, b.name, b.slug, b.tagline, b.description,
+            b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.description,
             b.school_badge, b.sector_id, b.specialty_id,
             sec.name AS sector_name, sec.slug AS sector_slug,
             spec.name AS specialty_name, spec.slug AS specialty_slug,
@@ -121,6 +121,8 @@ try {
 
         $results[] = [
             'id' => (int)$row['id'],
+            'business_id' => $row['business_id'],
+            'business_number' => (int)$row['business_number'],
             'name' => $row['name'],
             'slug' => $row['slug'],
             'tagline' => $row['tagline'],

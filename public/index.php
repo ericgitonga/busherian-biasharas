@@ -15,7 +15,7 @@ $taxonomyTree = CategoryMatcher::getTaxonomyTree($pdo, false);
 // Load initial approved businesses (strictly zero vetting columns)
 $stmt = $pdo->query("
     SELECT
-        b.id, b.name, b.slug, b.tagline, b.description,
+        b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.description,
         b.school_badge, b.sector_id, b.specialty_id,
         sec.name AS sector_name, spec.name AS specialty_name,
         b.service_mode, b.alumni_perk, b.b2b_ready, b.accepts_lpo,
@@ -31,7 +31,7 @@ $stmt = $pdo->query("
     INNER JOIN categories sec ON sec.id = b.sector_id
     INNER JOIN categories spec ON spec.id = b.specialty_id
     WHERE b.status = 'approved'
-    ORDER BY b.id ASC
+    ORDER BY b.business_number ASC, b.id ASC
 ");
 $rows = $stmt->fetchAll();
 
@@ -39,6 +39,8 @@ $initialBusinesses = [];
 foreach ($rows as $r) {
     $initialBusinesses[] = [
         'id' => (int)$r['id'],
+        'business_id' => $r['business_id'],
+        'business_number' => (int)$r['business_number'],
         'name' => $r['name'],
         'slug' => $r['slug'],
         'tagline' => $r['tagline'],

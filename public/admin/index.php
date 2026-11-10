@@ -19,7 +19,14 @@ $flashMsg = '';
 $flashErr = '';
 if (isset($_GET['added']) && (int)$_GET['added'] > 0) {
     $addedId = (int)$_GET['added'];
-    $flashMsg = "Business #{$addedId} was added directly and published live to the directory (no verification queue required).";
+    $addedRowStmt = $pdo->prepare("SELECT business_number, business_id, name FROM businesses WHERE id = :id");
+    $addedRowStmt->execute([':id' => $addedId]);
+    $addedRow = $addedRowStmt->fetch();
+    if ($addedRow) {
+        $flashMsg = "Added '{$addedRow['name']}' as Business #{$addedRow['business_number']} (ID: {$addedRow['business_id']}) and published live.";
+    } else {
+        $flashMsg = "Business was added directly and published live to the directory.";
+    }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -31,11 +38,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flashErr = 'Invalid security token (CSRF). Please try again.';
     } elseif ($targetId > 0) {
         if ($adminAction === 'delete') {
-            $bizNameStmt = $pdo->prepare("SELECT name FROM businesses WHERE id = :id");
+            $bizNameStmt = $pdo->prepare("SELECT name, business_number, business_id FROM businesses WHERE id = :id");
             $bizNameStmt->execute([':id' => $targetId]);
-            $deletedName = (string)($bizNameStmt->fetchColumn() ?: "#{$targetId}");
+            $delInfo = $bizNameStmt->fetch() ?: ['name' => "Record", 'business_number' => $targetId, 'business_id' => ''];
             VettingPurger::deleteBusiness($pdo, $targetId);
-            $flashMsg = "Permanently deleted business record '{$deletedName}' (#{$targetId}).";
+            $totalNow = (int)$pdo->query("SELECT COUNT(*) FROM businesses")->fetchColumn();
+            $flashMsg = "Permanently deleted '{$delInfo['name']}' (was #{$delInfo['business_number']}, ID: {$delInfo['business_id']}). Remaining {$totalNow} businesses renumbered sequentially (1–{$totalNow}).";
         } elseif ($adminAction === 'unpublish') {
             VettingPurger::quarantineBusinessDpa($pdo, $targetId);
             $flashMsg = "Business #{$targetId} has been unpublished (moved to quarantined/taken-down state).";
@@ -74,7 +82,7 @@ $statusFilter = trim((string)($_GET['status'] ?? ''));
 
 $allSql = "
     SELECT
-        b.id, b.name, b.slug, b.tagline, b.school_badge, b.status,
+        b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.school_badge, b.status,
         b.city_county, b.area_neighborhood, b.phone_primary, b.website_url,
         sec.name AS sector_name, spec.name AS specialty_name, b.updated_at
     FROM businesses b
@@ -91,7 +99,7 @@ if ($statusFilter !== '' && in_array($statusFilter, ['approved', 'pending', 'qua
     $allSql .= " AND b.status = :st";
     $allParams[':st'] = $statusFilter;
 }
-$allSql .= " ORDER BY b.id DESC";
+$allSql .= " ORDER BY b.business_number ASC, b.id ASC";
 $allStmt = $pdo->prepare($allSql);
 $allStmt->execute($allParams);
 $allBusinesses = $allStmt->fetchAll();
@@ -249,7 +257,7 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
         <table style="width:100%;border-collapse:collapse;font-size:0.86rem;">
           <thead>
             <tr style="background:#F9FAFB;border-bottom:1px solid #E5E7EB;text-align:left;">
-              <th style="padding:0.75rem 1rem;">ID</th>
+              <th style="padding:0.75rem 1rem;">No. / Unique ID</th>
               <th style="padding:0.75rem 1rem;">Business Name &amp; Website</th>
               <th style="padding:0.75rem 1rem;">Category (Level 1 &rarr; Level 2)</th>
               <th style="padding:0.75rem 1rem;">Location</th>
@@ -263,7 +271,10 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
                 $st = (string)$b['status'];
             ?>
               <tr style="border-bottom:1px solid #F3F4F6;">
-                <td style="padding:0.75rem 1rem;font-weight:700;color:#6B7280;">#<?= $bid ?></td>
+                <td style="padding:0.75rem 1rem;">
+                  <div style="font-weight:800;color:#114B3E;font-size:0.92rem;">#<?= (int)$b['business_number'] ?></div>
+                  <div style="font-family:monospace;font-size:0.72rem;color:#6B7280;" title="Immutable unique business_id"><?= htmlspecialchars((string)($b['business_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?></div>
+                </td>
                 <td style="padding:0.75rem 1rem;">
                   <div style="font-weight:800;color:#111827;"><?= htmlspecialchars((string)$b['name'], ENT_QUOTES, 'UTF-8') ?></div>
                   <?php if (!empty($b['website_url'])): ?>

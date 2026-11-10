@@ -887,7 +887,7 @@ final class CategoryMatcher
 
         $stmt = $pdo->prepare("
             INSERT INTO businesses (
-                name, slug, tagline, description, school_badge,
+                business_id, business_number, name, slug, tagline, description, school_badge,
                 sector_id, specialty_id, service_mode, alumni_perk,
                 b2b_ready, accepts_lpo, regulator_name, regulator_license,
                 branch_name, building_name, floor_suite, street_road,
@@ -898,7 +898,7 @@ final class CategoryMatcher
                 social_x, social_facebook, social_tiktok, social_youtube,
                 status, verified_at, last_confirmed_at
             ) VALUES (
-                :name, :slug, :tagline, :description, :school_badge,
+                :business_id, :business_number, :name, :slug, :tagline, :description, :school_badge,
                 :sector_id, :specialty_id, :service_mode, :alumni_perk,
                 :b2b_ready, :accepts_lpo, :regulator_name, :regulator_license,
                 :branch_name, :building_name, :floor_suite, :street_road,
@@ -911,8 +911,13 @@ final class CategoryMatcher
             )
         ");
 
+        $seqNum = 0;
         foreach ($samples as $s) {
+            $seqNum++;
+            $detUid = 'BBIZ-' . strtoupper(substr(md5($s['slug']), 0, 8));
             $stmt->execute([
+                ':business_id' => $detUid,
+                ':business_number' => $seqNum,
                 ':name' => $s['name'],
                 ':slug' => $s['slug'],
                 ':tagline' => $s['tagline'],

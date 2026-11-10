@@ -148,6 +148,15 @@ def test_school_filters_and_route_directions_api():
     ahs_data = json.loads(body_ahs)
     assert ahs_data["count"] == 9, f"Expected 9 AHS businesses, got {ahs_data['count']}"
 
+    # Verify sequential 1..12 business_number and distinct BBIZ-* business_id across all 12 records
+    st_all, body_all, _ = _request("/api/businesses.php")
+    assert st_all == 200
+    all_biz = json.loads(body_all)["businesses"]
+    nums = sorted([b["business_number"] for b in all_biz])
+    uids = {b["business_id"] for b in all_biz}
+    assert nums == list(range(1, 13)), f"Expected gapless 1..12 business_number, got {nums}"
+    assert len(uids) == 12 and all(u.startswith("BBIZ-") for u in uids), f"Expected 12 unique BBIZ-* IDs, got {uids}" 
+
     # Verify /api/route-directions.php returns distance, duration, polyline & steps
     st_rt, body_rt, _ = _request("/api/route-directions.php?from_lat=-1.286389&from_lng=36.817223&to_lat=-1.278800&to_lng=36.771200")
     assert st_rt == 200, f"Expected 200 from route-directions.php, got {st_rt}: {body_rt}"

@@ -9,6 +9,7 @@ use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\CategoryMatcher;
 use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\Mailer;
+use BusherianBiasharas\Services\VettingPurger;
 use BusherianBiasharas\Services\WebsiteEnricher;
 
 bbiz_send_security_headers(false);
@@ -178,11 +179,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $slugBase = CategoryMatcher::slugify($bizName);
                     $slug = $slugBase . '-' . substr(bin2hex(random_bytes(3)), 0, 6);
+                    $bizUid = VettingPurger::generateUniqueBusinessUid($pdo);
+                    $nextBizNum = ((int)$pdo->query("SELECT COALESCE(MAX(business_number), 0) FROM businesses")->fetchColumn()) + 1;
 
                     // Insert into `businesses` (STRICTLY ZERO House, Year Left, or School Number columns)
                     $insBiz = $pdo->prepare("
                         INSERT INTO businesses (
-                            name, slug, tagline, description, school_badge,
+                            business_id, business_number, name, slug, tagline, description, school_badge,
                             sector_id, specialty_id, service_mode, alumni_perk,
                             b2b_ready, accepts_lpo, regulator_name, regulator_license,
                             branch_name, building_name, floor_suite, street_road,
@@ -194,7 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             social_facebook, social_tiktok, social_youtube,
                             status
                         ) VALUES (
-                            :name, :slug, :tagline, :description, :school_badge,
+                            :business_id, :business_number, :name, :slug, :tagline, :description, :school_badge,
                             :sector_id, :specialty_id, :service_mode, :alumni_perk,
                             :b2b_ready, :accepts_lpo, :regulator_name, :regulator_license,
                             :branch_name, :building_name, :floor_suite, :street_road,
@@ -209,6 +212,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ");
 
                     $insBiz->execute([
+                        ':business_id' => $bizUid,
+                        ':business_number' => $nextBizNum,
                         ':name' => $bizName,
                         ':slug' => $slug,
                         ':tagline' => $tagline,
