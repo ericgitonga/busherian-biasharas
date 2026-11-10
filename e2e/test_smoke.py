@@ -361,6 +361,9 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert "bbiz-pin-ahs" in body_js
     assert "bbiz-pin-aghs" in body_js
     assert "linear-gradient(135deg, #114B3E 0%, #1F513F 32%, #582428 68%, #7B1113 100%)" in body_js
+    assert "Green = AHS" in body_home
+    assert "Green &amp; Maroon = AGHS" in body_home
+    assert "Green = Open Now" not in body_home
 
 
 TESTS = [

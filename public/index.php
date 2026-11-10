@@ -225,7 +225,11 @@ foreach ($rows as $r) {
       <div class="map-toolbar">
         <div>
           <strong style="font-size:0.85rem;color:#114B3E;">🗺️ Live Busherian Proximity &amp; Pin Map</strong>
-          <div style="font-size:0.72rem;color:#6B7280;">Green = Open Now • Crimson = Closed</div>
+          <div style="font-size:0.72rem;color:#4B5563;display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;margin-top:0.15rem;">
+            <span style="display:inline-flex;align-items:center;gap:0.25rem;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#114B3E;border:1px solid #D4AF37;"></span>Green = AHS</span>
+            <span>•</span>
+            <span style="display:inline-flex;align-items:center;gap:0.25rem;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg, #114B3E 0%, #1F513F 32%, #582428 68%, #7B1113 100%);border:1px solid #D4AF37;"></span>Green &amp; Maroon = AGHS</span>
+          </div>
         </div>
         <div id="map-focus-actions" style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;"></div>
       </div>
