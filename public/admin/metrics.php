@@ -131,7 +131,7 @@ $dailyRows = $dailyStmt->fetchAll();
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1.25rem;">
       <div>
         <strong style="color:#114B3E;font-size:1rem;">📊 Reporting Window: Last <?= $days ?> Days</strong>
-        <span style="font-size:0.82rem;color:#6B7280;margin-left:0.5rem;">(Zero tracking for visitors who selected "Reject All" or have not consented)</span>
+        <span style="font-size:0.82rem;color:#6B7280;margin-left:0.5rem;">(Zero tracking for visitors who selected "Allow only Essential" or have not consented)</span>
       </div>
       <div style="display:flex;gap:0.45rem;">
         <?php foreach ([7 => 'Last 7 Days', 30 => 'Last 30 Days', 90 => 'Last 90 Days'] as $d => $lbl): ?>

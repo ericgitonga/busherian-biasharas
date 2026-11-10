@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.8.6] - 2026-11-10
+
+### Changed
+- **Cookie Consent Button Wording (`#124`):**
+  - Updated the cookie consent banner buttons and matching Privacy Notice labels from `Accept` / `Reject All` to **`Allow for Analysis`** and **`Allow only Essential`** across `public/assets/js/consent-metrics.js`, `public/privacy.php`, and `public/admin/metrics.php`.
+
 ## [0.8.5] - 2026-11-10
 
 ### Changed

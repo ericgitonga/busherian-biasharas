@@ -216,8 +216,8 @@ def test_dpa_cookie_consent_and_usage_metrics():
     # 1. Verify consent-metrics.js is served and strictly defines 'Reject All' and 'Accept' buttons
     st_js, js_body, _ = _request("/assets/js/consent-metrics.js")
     assert st_js == 200
-    assert "Reject All" in js_body
-    assert "Accept" in js_body
+    assert "Allow only Essential" in js_body
+    assert "Allow for Analysis" in js_body
     assert "bbiz_cookie_consent" in js_body
 
     # 2. Verify /api/track-metric.php ignores requests when consent cookie is absent or 'rejected'

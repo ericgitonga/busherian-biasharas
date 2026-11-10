@@ -126,8 +126,8 @@
           <a href="/privacy.php">Privacy Notice</a>
         </div>
         <div class="bbiz-cookie-actions">
-          <button type="button" id="btn-cookie-reject" class="bbiz-cookie-btn bbiz-cookie-btn-reject">Reject All</button>
-          <button type="button" id="btn-cookie-accept" class="bbiz-cookie-btn bbiz-cookie-btn-accept">Accept</button>
+          <button type="button" id="btn-cookie-reject" class="bbiz-cookie-btn bbiz-cookie-btn-reject">Allow only Essential</button>
+          <button type="button" id="btn-cookie-accept" class="bbiz-cookie-btn bbiz-cookie-btn-accept">Allow for Analysis</button>
         </div>
       </div>
     `;
@@ -143,11 +143,11 @@
     const labelEl = document.getElementById('dpa-cookie-status-label');
     if (!labelEl) return;
     if (currentDecision === 'accepted') {
-      labelEl.textContent = 'Accepted (First-party anonymous usage metrics enabled on this browser)';
+      labelEl.textContent = 'Allow for Analysis (Anonymous directory usage statistics enabled on this browser)';
     } else if (currentDecision === 'rejected') {
-      labelEl.textContent = 'Rejected All (Usage metrics cookies disabled on this browser)';
+      labelEl.textContent = 'Allow only Essential (Usage analysis cookies disabled on this browser)';
     } else {
-      labelEl.textContent = 'No choice recorded yet (Usage metrics inactive until Accepted)';
+      labelEl.textContent = 'No choice recorded yet (Only essential functionality active)';
     }
   }
 
