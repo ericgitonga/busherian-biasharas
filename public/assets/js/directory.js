@@ -43,6 +43,26 @@
     shortlistExportBtn: document.getElementById('btn-export-shortlist'),
   };
 
+  function withOutboundAttribution(rawUrl) {
+    if (!rawUrl) return '';
+    try {
+      const u = new URL(rawUrl, window.location.origin);
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        if (!u.searchParams.has('utm_source')) {
+          u.searchParams.set('utm_source', 'busherianbiasharas.com');
+        }
+        if (!u.searchParams.has('utm_medium')) {
+          u.searchParams.set('utm_medium', 'referral');
+        }
+        if (!u.searchParams.has('utm_campaign')) {
+          u.searchParams.set('utm_campaign', 'alumni_directory');
+        }
+        return u.toString();
+      }
+    } catch (e) {}
+    return rawUrl;
+  }
+
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     return String(str)
@@ -733,7 +753,7 @@
       ['tiktok', 'TikTok', socials.tiktok],
       ['youtube', 'YouTube', socials.youtube],
     ].filter(s => !!s[2]).map(([key, label, url]) => `
-      <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="btn btn-outline" style="font-size:0.8rem;padding:0.4rem 0.75rem;">
+      <a href="${escapeHtml(withOutboundAttribution(url))}" target="_blank" rel="noopener" class="btn btn-outline" style="font-size:0.8rem;padding:0.4rem 0.75rem;">
         ${escapeHtml(label)} &nearr;
       </a>
     `).join('');
@@ -789,7 +809,7 @@
         ` : ''}
 
         <div class="cta-grid">
-          ${biz.website_url ? `<a href="${escapeHtml(biz.website_url)}" target="_blank" rel="noopener noreferrer" data-track="website" class="btn btn-crimson">🌐 Visit Website &nearr;</a>` : ''}
+          ${biz.website_url ? `<a href="${escapeHtml(withOutboundAttribution(biz.website_url))}" target="_blank" rel="noopener" data-track="website" class="btn btn-crimson">🌐 Visit Website &nearr;</a>` : ''}
           ${biz.phone_primary ? `<a href="tel:${escapeHtml(biz.phone_primary)}" data-track="call" class="btn btn-green">📞 Call ${escapeHtml(biz.phone_primary)}</a>` : ''}
           ${waUrl ? `<a href="${escapeHtml(waUrl)}" target="_blank" rel="noopener noreferrer" data-track="whatsapp" class="btn btn-gold">💬 WhatsApp Now</a>` : ''}
           ${biz.email_public ? `<a href="mailto:${escapeHtml(biz.email_public)}" data-track="email" class="btn btn-outline">✉️ Email Business</a>` : ''}

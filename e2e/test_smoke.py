@@ -277,6 +277,13 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert "photos" in first_biz and isinstance(first_biz["photos"], list)
     assert "sun" in first_biz["hours_status"]["schedule_table"]
 
+    # 7. Verify Ticket #94: Outbound referral attribution in directory.js
+    st_js, body_js, _ = _request("/assets/js/directory.js")
+    assert st_js == 200
+    assert "withOutboundAttribution" in body_js
+    assert "busherianbiasharas.com" in body_js
+    assert 'rel="noopener" data-track="website"' in body_js
+
 
 TESTS = [
     test_health_endpoint,
