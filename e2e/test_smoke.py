@@ -185,13 +185,25 @@ def test_school_filters_and_route_directions_api():
     assert rt["duration_min"] >= 1
     assert len(rt["polyline"]) >= 2
     assert len(rt["steps"]) >= 1
-    assert len(rt["steps"]) <= 4, f"Expected loose route overview (<=4 steps), got {len(rt['steps'])}"
     assert "corridors" in rt
+    steps_joined = " ".join(s.get("instruction", "") for s in rt["steps"]).lower()
+    for compass_word in ("northwest", "northeast", "southwest", "southeast", "head north", "head south", "head east", "head west"):
+        assert compass_word not in steps_joined, f"Unexpected compass word {compass_word} in steps: {steps_joined}"
 
-    # Verify Ticket #37: directory.js strictly uses browser GPS (captureBrowserLocation) without nairobi_cbd fallback and isolates selected business on map
+    # Verify Ticket #39: /api/geocode.php resolves Kenyan streets/estates (Marist Lane, Karen)
+    st_geo, geo_body, _ = _request("/api/geocode.php?q=Marist+Lane,+Karen")
+    assert st_geo == 200, f"Expected 200 from /api/geocode.php, got {st_geo}: {geo_body}"
+    geo_payload = json.loads(geo_body)
+    assert geo_payload["status"] == "ok"
+    assert abs(geo_payload["location"]["latitude"] - (-1.34447)) < 0.02
+    assert abs(geo_payload["location"]["longitude"] - 36.72865) < 0.02
+
+    # Verify Tickets #37 & #39: directory.js uses watchPosition, custom origin search, and isolates selected business on map
     st_djs, djs_body, _ = _request("/assets/js/directory.js")
     assert st_djs == 200
     assert "captureBrowserLocation" in djs_body
+    assert "watchPosition" in djs_body
+    assert "data-origin-search-form" in djs_body
     assert "ORIGIN_PRESETS" not in djs_body
     assert "Showing only:" in djs_body
     assert "visiblePinned" in djs_body

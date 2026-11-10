@@ -13,8 +13,10 @@
     b2bReady: false,
     userLat: null,
     userLng: null,
+    userAccuracy: null,
+    isCustomOrigin: false,
     originKey: 'gps',
-    originLabel: 'My Current Location',
+    originLabel: 'My Current Browser Location',
     radiusKm: '',
     searchQuery: '',
     shortlistIds: new Set(),
@@ -187,9 +189,58 @@
     `;
   }
 
+  function saveCustomOriginToSession(lat, lng, label) {
+    state.userLat = Number(lat);
+    state.userLng = Number(lng);
+    state.userAccuracy = 15;
+    state.isCustomOrigin = true;
+    state.originLabel = label || 'Custom Starting Location';
+    try {
+      sessionStorage.setItem('bbiz_custom_origin', JSON.stringify({
+        lat: state.userLat,
+        lng: state.userLng,
+        label: state.originLabel,
+      }));
+    } catch (_) {}
+  }
+
+  function clearCustomOriginFromSession() {
+    state.isCustomOrigin = false;
+    try {
+      sessionStorage.removeItem('bbiz_custom_origin');
+    } catch (_) {}
+  }
+
+  function loadCustomOriginFromSession() {
+    try {
+      const raw = sessionStorage.getItem('bbiz_custom_origin');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
+        state.userLat = parsed.lat;
+        state.userLng = parsed.lng;
+        state.userAccuracy = 15;
+        state.isCustomOrigin = true;
+        state.originLabel = parsed.label || 'Custom Starting Location';
+        return {
+          lat: state.userLat,
+          lng: state.userLng,
+          accuracy: 15,
+          isCustomOrigin: true,
+          label: state.originLabel,
+        };
+      }
+    } catch (_) {}
+    return null;
+  }
+
   function buildRouteCardHtml(activeRoute) {
-    const { biz, fromLat, fromLng, data } = activeRoute;
-    const gmapsDirUrl = `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${biz.latitude},${biz.longitude}&travelmode=driving`;
+    const { biz, fromLat, fromLng, originLabel, accuracy, isCustomOrigin, data } = activeRoute;
+    const isCoarseIp = !isCustomOrigin && Number(accuracy || 0) > 400;
+    // If laptop returned a coarse ISP location (e.g. Pumwani), let Google Maps determine origin itself unless user set a precise origin
+    const gmapsDirUrl = isCoarseIp
+      ? `https://www.google.com/maps/dir/?api=1&destination=${biz.latitude},${biz.longitude}&travelmode=driving`
+      : `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${biz.latitude},${biz.longitude}&travelmode=driving`;
     const wazeDirUrl = `https://waze.com/ul?ll=${biz.latitude},${biz.longitude}&navigate=yes`;
     const destCues = [biz.building_name, biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(', ');
     const landmarkCue = biz.landmark_directions ? `Landmark: ${biz.landmark_directions}` : '';
@@ -201,6 +252,12 @@
     }
     const stepsHtml = overviewItems.join('');
 
+    const coarseBanner = isCoarseIp ? `
+      <div style="background:#FFFBEB;border:1px solid #F59E0B;border-radius:8px;padding:0.45rem 0.65rem;margin-top:0.45rem;font-size:0.75rem;color:#92400E;">
+        ⚠️ <strong>Laptop coarse ISP location detected (±${Math.max(1, Math.round(Number(accuracy) / 1000))} km):</strong> Laptops without GPS hardware often report your ISP's central Nairobi exchange (e.g. Pumwani). Type your street/estate below (e.g. <em>Marist Lane, Karen</em>) or drag the blue pin on the map:
+      </div>
+    ` : '';
+
     return `
       <div class="route-summary-row">
         <div>
@@ -210,18 +267,24 @@
         <button type="button" data-clear-route="1" style="background:none;border:none;color:#7B1113;font-weight:800;font-size:0.76rem;cursor:pointer;">✕ Show All Businesses</button>
       </div>
 
-      <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;margin-top:0.5rem;">
-        <span style="font-size:0.75rem;font-weight:700;color:#114B3E;">📍 From: My Current Browser Location</span>
-        <button type="button" data-refresh-gps="${biz.id}" class="btn btn-outline" style="padding:0.22rem 0.55rem;font-size:0.72rem;background:#fff;" title="Re-capture current browser GPS coordinates">
-          🔄 Refresh My Location
+      ${coarseBanner}
+
+      <form data-origin-search-form="${biz.id}" style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;margin-top:0.5rem;">
+        <span style="font-size:0.74rem;font-weight:700;color:#114B3E;">📍 Start (${escapeHtml(originLabel || 'My Location')}):</span>
+        <input type="text" name="origin_query" class="input-control" style="flex:1;min-width:190px;padding:0.26rem 0.55rem;font-size:0.75rem;"
+          placeholder="Type your street/area (e.g. Marist Lane, Karen) or drag blue pin..."
+          value="${isCustomOrigin ? escapeHtml(originLabel) : ''}">
+        <button type="submit" class="btn btn-crimson" style="padding:0.26rem 0.6rem;font-size:0.74rem;">Set Start</button>
+        <button type="button" data-refresh-gps="${biz.id}" class="btn btn-outline" style="padding:0.26rem 0.55rem;font-size:0.72rem;background:#fff;" title="Capture live browser GPS coordinates">
+          🔄 Use GPS
         </button>
-        <a href="${escapeHtml(gmapsDirUrl)}" target="_blank" rel="noopener noreferrer" data-track="map_pin" class="btn btn-green" style="padding:0.28rem 0.65rem;font-size:0.75rem;">
+        <a href="${escapeHtml(gmapsDirUrl)}" target="_blank" rel="noopener noreferrer" data-track="map_pin" class="btn btn-green" style="padding:0.26rem 0.6rem;font-size:0.74rem;">
           🗺️ Open in Google Maps
         </a>
-        <a href="${escapeHtml(wazeDirUrl)}" target="_blank" rel="noopener noreferrer" data-track="map_pin" class="btn btn-outline" style="padding:0.28rem 0.65rem;font-size:0.75rem;background:#fff;">
+        <a href="${escapeHtml(wazeDirUrl)}" target="_blank" rel="noopener noreferrer" data-track="map_pin" class="btn btn-outline" style="padding:0.26rem 0.6rem;font-size:0.74rem;background:#fff;">
           🚗 Waze
         </a>
-      </div>
+      </form>
 
       ${stepsHtml ? `
         <div style="margin-top:0.5rem;">
@@ -256,14 +319,30 @@
   }
 
   /**
-   * Capture the user's real browser location via Geolocation API.
-   * Never falls back to Museum Hill / Nairobi CBD fake coordinates.
+   * Capture the user's real browser location via Geolocation API using watchPosition
+   * with maximumAge: 0 so coarse cached ISP IP fixes (e.g. Pumwani on laptops) can be
+   * refined by Wi-Fi positioning if available, while preserving any user-specified street origin.
    */
-  function captureBrowserLocation(forceRefresh) {
+  function captureBrowserLocation(forceRefreshGps) {
     return new Promise((resolve, reject) => {
-      if (!forceRefresh && state.userLat !== null && state.userLng !== null) {
-        resolve({ lat: state.userLat, lng: state.userLng, label: 'My Current Location' });
-        return;
+      if (forceRefreshGps) {
+        clearCustomOriginFromSession();
+      } else {
+        const savedCustom = loadCustomOriginFromSession();
+        if (savedCustom) {
+          resolve(savedCustom);
+          return;
+        }
+        if (state.userLat !== null && state.userLng !== null && state.userAccuracy !== null && state.userAccuracy <= 150) {
+          resolve({
+            lat: state.userLat,
+            lng: state.userLng,
+            accuracy: state.userAccuracy,
+            isCustomOrigin: state.isCustomOrigin,
+            label: state.originLabel || 'My Current Location',
+          });
+          return;
+        }
       }
 
       if (!navigator.geolocation) {
@@ -271,32 +350,127 @@
         return;
       }
 
-      const onSuccess = (pos) => {
+      let bestPos = null;
+      let settled = false;
+      let watchId = null;
+      let settleTimer = null;
+
+      const finishWithPos = (pos) => {
+        if (settled) return;
+        settled = true;
+        if (watchId !== null) {
+          try { navigator.geolocation.clearWatch(watchId); } catch (_) {}
+        }
+        if (settleTimer !== null) clearTimeout(settleTimer);
         state.userLat = pos.coords.latitude;
         state.userLng = pos.coords.longitude;
-        state.originKey = 'gps';
-        resolve({ lat: state.userLat, lng: state.userLng, label: 'My Current Location' });
+        state.userAccuracy = Math.round(pos.coords.accuracy || 0);
+        state.isCustomOrigin = false;
+        state.originLabel = state.userAccuracy > 400 ? 'Browser ISP Estimate' : 'My Current GPS Location';
+        resolve({
+          lat: state.userLat,
+          lng: state.userLng,
+          accuracy: state.userAccuracy,
+          isCustomOrigin: false,
+          label: state.originLabel,
+        });
       };
 
-      // Try high accuracy first; if it times out or position is unavailable, retry with network/standard accuracy
-      navigator.geolocation.getCurrentPosition(
-        onSuccess,
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          if (!bestPos || (pos.coords.accuracy && pos.coords.accuracy < bestPos.coords.accuracy)) {
+            bestPos = pos;
+          }
+          // If mobile GPS or accurate Wi-Fi BSSID fix (<= 150m), resolve immediately
+          if (pos.coords.accuracy && pos.coords.accuracy <= 150) {
+            finishWithPos(pos);
+          } else if (settleTimer === null) {
+            // Coarse initial reading (e.g. laptop ISP centroid): wait up to 2.0s for a finer Wi-Fi scan fix
+            settleTimer = setTimeout(() => {
+              if (bestPos) finishWithPos(bestPos);
+            }, 2000);
+          }
+        },
         (err) => {
+          if (bestPos) {
+            finishWithPos(bestPos);
+            return;
+          }
+          if (watchId !== null) {
+            try { navigator.geolocation.clearWatch(watchId); } catch (_) {}
+          }
           if (err && err.code === 1) {
-            reject(new Error('Browser location access was blocked. Please allow location access in your browser address bar to calculate directions from your location.'));
+            reject(new Error('Browser location access was blocked. Type your street/estate below (e.g. Marist Lane, Karen) or allow location access in your browser.'));
             return;
           }
           navigator.geolocation.getCurrentPosition(
-            onSuccess,
-            () => {
-              reject(new Error('Could not determine your current location from the browser. Please check that location services are enabled.'));
-            },
-            { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
+            (pos2) => finishWithPos(pos2),
+            () => reject(new Error('Could not determine your location automatically. Type your street/estate below (e.g. Marist Lane, Karen).')),
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 }
           );
         },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 120000 }
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
       );
     });
+  }
+
+  async function calculateRouteFromOrigin(biz, origin) {
+    const qs = new URLSearchParams({
+      from_lat: String(origin.lat),
+      from_lng: String(origin.lng),
+      to_lat: String(biz.latitude),
+      to_lng: String(biz.longitude),
+    });
+    const res = await fetch('/api/route-directions.php?' + qs.toString());
+    const json = await res.json();
+    if (json && json.status === 'ok' && json.route) {
+      state.activeRoute = {
+        biz,
+        fromLat: origin.lat,
+        fromLng: origin.lng,
+        originLabel: origin.label,
+        accuracy: origin.accuracy || 0,
+        isCustomOrigin: Boolean(origin.isCustomOrigin),
+        data: json.route,
+      };
+      trackClick(biz.id, 'map_pin');
+      if (window.BBizMetrics) window.BBizMetrics.track('route_request', { business_id: biz.id, meta_label: biz.name });
+      renderRouteDrawerAndModalBox();
+      renderInteractiveMap();
+    }
+  }
+
+  async function geocodeAndSetCustomOrigin(bizId, queryText) {
+    const biz = state.businesses.find(b => Number(b.id) === Number(bizId));
+    if (!biz || !queryText.trim()) return;
+    const loadingHtml = `<div style="font-weight:700;color:#114B3E;">📍 Locating "${escapeHtml(queryText.trim())}" &amp; calculating route to ${escapeHtml(biz.name)}...</div>`;
+    if (els.mapRouteDrawer) {
+      els.mapRouteDrawer.style.display = 'block';
+      els.mapRouteDrawer.innerHTML = loadingHtml;
+    }
+    const modalRouteBox = document.getElementById('modal-route-box');
+    if (modalRouteBox) {
+      modalRouteBox.style.display = 'block';
+      modalRouteBox.innerHTML = loadingHtml;
+    }
+    try {
+      const res = await fetch('/api/geocode.php?q=' + encodeURIComponent(queryText.trim()));
+      const json = await res.json();
+      if (!res.ok || !json || json.status !== 'ok' || !json.location) {
+        throw new Error((json && json.message) || 'Could not find that street or area.');
+      }
+      saveCustomOriginToSession(json.location.latitude, json.location.longitude, json.location.label);
+      await calculateRouteFromOrigin(biz, {
+        lat: json.location.latitude,
+        lng: json.location.longitude,
+        accuracy: 15,
+        isCustomOrigin: true,
+        label: json.location.label,
+      });
+    } catch (err) {
+      alert(err.message || 'Could not find that street or area. Try adding the neighborhood (e.g. "Marist Lane, Karen").');
+      renderRouteDrawerAndModalBox();
+    }
   }
 
   async function requestDistanceAndDirections(bizId, forceRefreshGps) {
@@ -307,7 +481,7 @@
     state.focusedBusinessId = biz.id;
     renderInteractiveMap();
 
-    const loadingHtml = `<div style="font-weight:700;color:#114B3E;">📍 Getting your location from browser &amp; calculating route to ${escapeHtml(biz.name)}...</div>`;
+    const loadingHtml = `<div style="font-weight:700;color:#114B3E;">📍 Getting your location &amp; calculating route to ${escapeHtml(biz.name)}...</div>`;
     if (els.mapRouteDrawer) {
       els.mapRouteDrawer.style.display = 'block';
       els.mapRouteDrawer.innerHTML = loadingHtml;
@@ -325,13 +499,16 @@
       const gmapsDirect = `https://www.google.com/maps/dir/?api=1&destination=${biz.latitude},${biz.longitude}&travelmode=driving`;
       const errHtml = `
         <div style="color:#991B1B;font-weight:600;font-size:0.82rem;margin-bottom:0.45rem;">
-          ⚠️ ${escapeHtml(geoErr.message || 'Please allow browser location access to calculate directions from your location.')}
+          ⚠️ ${escapeHtml(geoErr.message || 'Please enter your starting street/estate below or allow browser location access.')}
         </div>
-        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
-          <button type="button" data-refresh-gps="${biz.id}" class="btn btn-gold" style="padding:0.28rem 0.65rem;font-size:0.75rem;">🔄 Try Browser Location Again</button>
+        <form data-origin-search-form="${biz.id}" style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
+          <input type="text" name="origin_query" class="input-control" style="flex:1;min-width:190px;padding:0.28rem 0.55rem;font-size:0.75rem;"
+            placeholder="Type your street/area (e.g. Marist Lane, Karen)..." required>
+          <button type="submit" class="btn btn-crimson" style="padding:0.28rem 0.65rem;font-size:0.75rem;">📍 Set Start</button>
+          <button type="button" data-refresh-gps="${biz.id}" class="btn btn-gold" style="padding:0.28rem 0.65rem;font-size:0.75rem;">🔄 Retry GPS</button>
           <a href="${escapeHtml(gmapsDirect)}" target="_blank" rel="noopener noreferrer" class="btn btn-green" style="padding:0.28rem 0.65rem;font-size:0.75rem;">🗺️ Open in Google Maps</a>
           <button type="button" data-clear-route="1" class="btn btn-outline" style="padding:0.28rem 0.65rem;font-size:0.75rem;background:#fff;">✕ Show All Businesses</button>
-        </div>
+        </form>
       `;
       if (els.mapRouteDrawer) els.mapRouteDrawer.innerHTML = errHtml;
       if (modalRouteBox) modalRouteBox.innerHTML = errHtml;
@@ -339,27 +516,7 @@
     }
 
     try {
-      const qs = new URLSearchParams({
-        from_lat: String(origin.lat),
-        from_lng: String(origin.lng),
-        to_lat: String(biz.latitude),
-        to_lng: String(biz.longitude),
-      });
-      const res = await fetch('/api/route-directions.php?' + qs.toString());
-      const json = await res.json();
-      if (json && json.status === 'ok' && json.route) {
-        state.activeRoute = {
-          biz,
-          fromLat: origin.lat,
-          fromLng: origin.lng,
-          originLabel: origin.label,
-          data: json.route,
-        };
-        trackClick(biz.id, 'map_pin');
-        if (window.BBizMetrics) window.BBizMetrics.track('route_request', { business_id: biz.id, meta_label: biz.name });
-        renderRouteDrawerAndModalBox();
-        renderInteractiveMap();
-      }
+      await calculateRouteFromOrigin(biz, origin);
     } catch (_) {
       if (els.mapRouteDrawer) {
         els.mapRouteDrawer.innerHTML = `<div style="color:#991B1B;font-weight:600;">Could not calculate route right now. Try opening Google Maps directly.</div>`;
@@ -480,14 +637,31 @@
       window.L.polyline(polyPts, { color: '#D4AF37', weight: 8, opacity: 0.85 }).addTo(routeLayer);
       const mainLine = window.L.polyline(polyPts, { color: '#7B1113', weight: 4.5, opacity: 0.95 }).addTo(routeLayer);
 
-      const startMarker = window.L.circleMarker([state.activeRoute.fromLat, state.activeRoute.fromLng], {
-        radius: 9,
-        color: '#ffffff',
-        weight: 3,
-        fillColor: '#2563EB',
-        fillOpacity: 1,
+      const startIcon = window.L.divIcon({
+        className: 'bbiz-start-pin',
+        html: '<div style="width:20px;height:20px;border-radius:50%;background:#2563EB;border:3px solid #ffffff;box-shadow:0 2px 6px rgba(0,0,0,0.35);cursor:grab;" title="Drag to adjust your exact starting location"></div>',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10],
+      });
+      const startMarker = window.L.marker([state.activeRoute.fromLat, state.activeRoute.fromLng], {
+        icon: startIcon,
+        draggable: true,
       }).addTo(routeLayer);
-      startMarker.bindTooltip(`Start: ${state.activeRoute.originLabel}`, { permanent: false, direction: 'top' });
+      startMarker.bindTooltip(`Start: ${state.activeRoute.originLabel} (Drag blue dot to adjust)`, { permanent: false, direction: 'top' });
+      startMarker.on('dragend', async (ev) => {
+        const pos = ev.target.getLatLng();
+        if (pos && state.activeRoute && state.activeRoute.biz) {
+          const customLbl = `Pinned on Map (${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)})`;
+          saveCustomOriginToSession(pos.lat, pos.lng, customLbl);
+          await calculateRouteFromOrigin(state.activeRoute.biz, {
+            lat: pos.lat,
+            lng: pos.lng,
+            accuracy: 10,
+            isCustomOrigin: true,
+            label: customLbl,
+          });
+        }
+      });
 
       leafletMap.fitBounds(mainLine.getBounds(), { padding: [50, 50], maxZoom: 16, animate: true });
       return;
@@ -769,6 +943,18 @@
       if (window.BBizMetrics) window.BBizMetrics.track('filter', { meta_label: f });
       fetchBusinesses();
     });
+  });
+
+  document.addEventListener('submit', (e) => {
+    const originForm = e.target.closest('[data-origin-search-form]');
+    if (originForm) {
+      e.preventDefault();
+      const bizId = Number(originForm.getAttribute('data-origin-search-form'));
+      const input = originForm.querySelector('input[name="origin_query"]');
+      if (input && input.value.trim() !== '') {
+        geocodeAndSetCustomOrigin(bizId, input.value.trim());
+      }
+    }
   });
 
   document.addEventListener('click', (e) => {

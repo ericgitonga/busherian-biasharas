@@ -254,9 +254,23 @@ $headMeta = bbiz_head_meta_tags('Test Title', 'Test Description', '/');
 assertTrue(str_contains($headMeta, '/favicon.svg') && str_contains($headMeta, '/assets/img/og-preview.png') && str_contains($headMeta, '/assets/img/bb-icon-512.png'), 'bbiz_head_meta_tags emits favicon.svg, og-preview.png, and bb-icon-512.png for WhatsApp & Search previews');
 assertTrue(is_file(dirname(__DIR__) . '/public/favicon.svg') && is_file(dirname(__DIR__) . '/public/favicon.ico') && is_file(dirname(__DIR__) . '/public/assets/img/og-preview.png'), 'All favicon and OG preview image assets exist on disk');
 
-// 14. Verify Ticket #35: Looser High-Level Route Directions
-$offlineRoute = LocationEngine::calculateRouteAndDirections(-1.286389, 36.817223, -1.278800, 36.771200, false);
-assertTrue(count($offlineRoute['steps']) <= 4 && isset($offlineRoute['corridors']), 'LocationEngine::calculateRouteAndDirections produces loose high-level overview steps');
+// 14. Verify Tickets #35, #39 & #40: Kenyan Left/Right Route Directions (No Compass Bearings) & Kenyan Street Geocoder
+$offlineRoute = LocationEngine::calculateRouteAndDirections(-1.344470, 36.728656, -1.278800, 36.771200, false);
+$combinedInstr = strtolower(implode(' | ', array_column($offlineRoute['steps'], 'instruction')));
+assertTrue(
+    (str_contains($combinedInstr, 'turn left') || str_contains($combinedInstr, 'turn right'))
+    && !preg_match('/\b(north|south|east|west|northwest|northeast|southwest|southeast)\b/i', $combinedInstr),
+    'LocationEngine::calculateRouteAndDirections uses Kenyan left/right turns and omits compass bearings'
+);
+
+$maristGeo = LocationEngine::geocodeKenyanLocation('Marist Lane, Karen', false);
+assertTrue(
+    $maristGeo !== null
+    && abs($maristGeo['latitude'] - (-1.344470)) < 0.01
+    && abs($maristGeo['longitude'] - 36.728656) < 0.01
+    && str_contains($maristGeo['label'], 'Marist Lane'),
+    'LocationEngine::geocodeKenyanLocation resolves Marist Lane, Karen accurately'
+);
 
 @unlink(getenv('DB_SQLITE_PATH'));
 
