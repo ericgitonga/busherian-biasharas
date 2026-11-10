@@ -34,13 +34,18 @@
   const countrySel = document.getElementById('country');
   const countryCustom = document.getElementById('country_custom');
   const citySel = document.getElementById('city_county');
+  const cityLabel = document.getElementById('city_county_label');
   const cityCustom = document.getElementById('city_county_custom');
   const placeWrap = countrySel ? countrySel.closest('[data-place-hierarchy]') : null;
 
   if (countrySel && citySel && placeWrap) {
     let hierarchy = {};
+    let unitLabels = {};
     try {
       hierarchy = JSON.parse(placeWrap.getAttribute('data-place-hierarchy') || '{}');
+    } catch (_) {}
+    try {
+      unitLabels = JSON.parse(placeWrap.getAttribute('data-place-unit-labels') || '{}');
     } catch (_) {}
 
     function syncCityOptionsForCountry(preferredCity) {
@@ -49,6 +54,14 @@
       if (countryCustom) {
         countryCustom.style.display = isCustomCountry ? 'block' : 'none';
         countryCustom.required = isCustomCountry;
+      }
+
+      const unitLabel = (!isCustomCountry && unitLabels[cVal]) ? unitLabels[cVal] : 'County / State / District';
+      if (cityLabel) {
+        cityLabel.textContent = unitLabel + ' *';
+      }
+      if (cityCustom) {
+        cityCustom.placeholder = 'Enter ' + unitLabel + '...';
       }
 
       const list = (!isCustomCountry && Array.isArray(hierarchy[cVal])) ? hierarchy[cVal] : [];
@@ -61,7 +74,7 @@
       });
       const customOpt = document.createElement('option');
       customOpt.value = '__custom__';
-      customOpt.textContent = '+ Other City / County / State (Type Below)';
+      customOpt.textContent = '+ Other ' + unitLabel + ' (Type Below)';
       citySel.appendChild(customOpt);
 
       if (isCustomCountry) {
@@ -71,6 +84,8 @@
       } else if (preferredCity && preferredCity !== '__custom__') {
         citySel.value = '__custom__';
         if (cityCustom) cityCustom.value = preferredCity;
+      } else if (cVal === 'Kenya' && list.includes('Nairobi')) {
+        citySel.value = 'Nairobi';
       } else if (list.length > 0) {
         citySel.value = list[0];
       } else {

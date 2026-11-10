@@ -365,6 +365,16 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert "Green &amp; Maroon = AGHS" in body_home
     assert "Green = Open Now" not in body_home
 
+    # 18. Verify Tickets #132, #133, #134: Alphabetical countries & standard administrative units (County for Kenya, State for US, District for Tanzania)
+    assert 'window.PLACE_UNIT_LABELS' in body_home
+    assert 'data-place-unit-labels=' in body_sub
+    assert 'id="city_county_label"' in body_sub
+    assert 'County *</label>' in body_sub
+    assert '<option value="Kenya" selected>Kenya</option>' in body_sub
+    assert '<option value="Nairobi" selected>Nairobi</option>' in body_sub
+    assert body_sub.index('<option value="Afghanistan"') < body_sub.index('<option value="Kenya"') < body_sub.index('<option value="Zimbabwe"')
+    assert body_sub.index('<option value="Baringo"') < body_sub.index('<option value="Nairobi"') < body_sub.index('<option value="West Pokot"')
+
 
 TESTS = [
     test_health_endpoint,

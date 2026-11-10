@@ -78,26 +78,54 @@
       .replace(/'/g, '&#039;');
   }
 
+  function pluralizeUnitLabel(unitLabel) {
+    if (!unitLabel) return 'Counties / States / Districts';
+    const map = {
+      'County': 'Counties',
+      'State': 'States',
+      'District': 'Districts',
+      'Province': 'Provinces',
+      'Region': 'Regions',
+      'Governorate': 'Governorates',
+      'Prefecture': 'Prefectures',
+      'Parish': 'Parishes',
+      'Emirate': 'Emirates',
+      'Canton': 'Cantons',
+      'Municipality': 'Municipalities',
+      'Department': 'Departments',
+      'Division': 'Divisions',
+      'Province / Territory': 'Provinces & Territories',
+      'State / Territory': 'States & Territories',
+      'State / Union Territory': 'States & Union Territories',
+      'County / Council': 'Counties & Councils'
+    };
+    return map[unitLabel] || (unitLabel + 's');
+  }
+
   function populateCitiesDropdown(countryName) {
     if (!els.citySelect) return;
-    els.citySelect.innerHTML = '<option value="">📍 All Cities / Counties / States</option>';
+    const unitLabels = window.PLACE_UNIT_LABELS || {};
+    const unitPlural = (countryName && unitLabels[countryName])
+      ? pluralizeUnitLabel(unitLabels[countryName])
+      : 'Counties / States / Districts';
+    els.citySelect.innerHTML = `<option value="">📍 All ${escapeHtml(unitPlural)}</option>`;
     const places = new Set();
     if (countryName && Array.isArray(state.placeHierarchy[countryName])) {
       state.placeHierarchy[countryName].forEach(p => places.add(p));
     } else if (!countryName) {
+      if (Array.isArray(state.placeHierarchy['Kenya'])) {
+        state.placeHierarchy['Kenya'].forEach(p => places.add(p));
+      }
       (state.businesses || []).forEach(b => {
         if (b.city_county) places.add(b.city_county);
       });
-      if (Array.isArray(state.placeHierarchy['Kenya'])) {
-        state.placeHierarchy['Kenya'].slice(0, 12).forEach(p => places.add(p));
-      }
     }
     (state.businesses || []).forEach(b => {
       if ((!countryName || String(b.country || 'Kenya').toLowerCase() === String(countryName).toLowerCase()) && b.city_county) {
         places.add(b.city_county);
       }
     });
-    Array.from(places).forEach(city => {
+    Array.from(places).sort((a, b) => a.localeCompare(b)).forEach(city => {
       const opt = document.createElement('option');
       opt.value = city;
       opt.textContent = city;
