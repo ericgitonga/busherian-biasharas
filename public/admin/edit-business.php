@@ -246,10 +246,7 @@ $linkedOwners = OwnerAuth::getOwnersForBusiness($pdo, (int)$biz['id']);
           <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Neighborhood / Area</label>
           <input type="text" id="area_neighborhood" name="area_neighborhood" class="input-control" value="<?= htmlspecialchars((string)($biz['area_neighborhood'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
         </div>
-        <div>
-          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">City / County *</label>
-          <input type="text" id="city_county" name="city_county" class="input-control" value="<?= htmlspecialchars((string)$biz['city_county'], ENT_QUOTES, 'UTF-8') ?>" required>
-        </div>
+        <?= bbiz_render_place_fields((string)($biz['country'] ?? 'Kenya'), (string)($biz['city_county'] ?? 'Nairobi')) ?>
         <div>
           <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Latitude</label>
           <input type="number" step="any" id="latitude" name="latitude" class="input-control" value="<?= htmlspecialchars((string)($biz['latitude'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">

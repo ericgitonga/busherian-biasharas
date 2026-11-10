@@ -280,10 +280,7 @@ $tokens = AntiSpamGate::generateFormTokens();
           <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Neighborhood / Area</label>
           <input type="text" id="area_neighborhood" name="area_neighborhood" class="input-control" value="<?= htmlspecialchars((string)$form['area_neighborhood'], ENT_QUOTES, 'UTF-8') ?>">
         </div>
-        <div>
-          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">City / County *</label>
-          <input type="text" id="city_county" name="city_county" class="input-control" value="<?= htmlspecialchars((string)$form['city_county'], ENT_QUOTES, 'UTF-8') ?>" required>
-        </div>
+        <?= bbiz_render_place_fields((string)($form['country'] ?? 'Kenya'), (string)($form['city_county'] ?? 'Nairobi')) ?>
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.9rem;margin-top:0.9rem;">

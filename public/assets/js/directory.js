@@ -5,8 +5,11 @@
   const state = {
     businesses: window.INITIAL_BUSINESSES || [],
     sectors: window.INITIAL_SECTORS || [],
+    placeHierarchy: window.PLACE_HIERARCHY || {},
     selectedSectorId: '',
     selectedSpecialtyId: '',
+    selectedCountry: '',
+    selectedCity: '',
     selectedSchool: '',
     openNow: false,
     hasPerk: false,
@@ -30,6 +33,8 @@
     searchClearBtn: document.getElementById('btn-clear-search'),
     sectorSelect: document.getElementById('filter-sector'),
     specialtySelect: document.getElementById('filter-specialty'),
+    countrySelect: document.getElementById('filter-country'),
+    citySelect: document.getElementById('filter-city'),
     radiusSelect: document.getElementById('filter-radius'),
     nearMeBtn: document.getElementById('btn-near-me'),
     cardsGrid: document.getElementById('cards-grid'),
@@ -73,6 +78,33 @@
       .replace(/'/g, '&#039;');
   }
 
+  function populateCitiesDropdown(countryName) {
+    if (!els.citySelect) return;
+    els.citySelect.innerHTML = '<option value="">📍 All Cities / Counties / States</option>';
+    const places = new Set();
+    if (countryName && Array.isArray(state.placeHierarchy[countryName])) {
+      state.placeHierarchy[countryName].forEach(p => places.add(p));
+    } else if (!countryName) {
+      (state.businesses || []).forEach(b => {
+        if (b.city_county) places.add(b.city_county);
+      });
+      if (Array.isArray(state.placeHierarchy['Kenya'])) {
+        state.placeHierarchy['Kenya'].slice(0, 12).forEach(p => places.add(p));
+      }
+    }
+    (state.businesses || []).forEach(b => {
+      if ((!countryName || String(b.country || 'Kenya').toLowerCase() === String(countryName).toLowerCase()) && b.city_county) {
+        places.add(b.city_county);
+      }
+    });
+    Array.from(places).forEach(city => {
+      const opt = document.createElement('option');
+      opt.value = city;
+      opt.textContent = city;
+      els.citySelect.appendChild(opt);
+    });
+  }
+
   function populateSpecialtiesDropdown(sectorId) {
     if (!els.specialtySelect) return;
     els.specialtySelect.innerHTML = '<option value="">All Specialties (Level 2)</option>';
@@ -103,6 +135,8 @@
     if (state.searchQuery) params.set('q', state.searchQuery);
     if (state.selectedSectorId) params.set('sector_id', state.selectedSectorId);
     if (state.selectedSpecialtyId) params.set('specialty_id', state.selectedSpecialtyId);
+    if (state.selectedCountry) params.set('country', state.selectedCountry);
+    if (state.selectedCity) params.set('city_county', state.selectedCity);
     if (state.selectedSchool) params.set('school', state.selectedSchool);
     if (state.openNow) params.set('open_now', '1');
     if (state.hasPerk) params.set('has_perk', '1');
@@ -831,7 +865,7 @@
               ${biz.floor_suite ? `, ${escapeHtml(biz.floor_suite)}` : ''}
             </p>
             <p style="margin:0 0 0.35rem 0;font-size:0.85rem;color:#4B5563;">
-              ${escapeHtml([biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(', '))}
+              ${escapeHtml([biz.street_road, biz.area_neighborhood, biz.city_county, (biz.country && biz.country !== 'Kenya') ? biz.country : ''].filter(Boolean).join(', '))}
             </p>
             ${biz.landmark_directions ? `<p style="margin:0 0 0.5rem 0;font-size:0.8rem;color:#6B7280;"><em>Landmark: ${escapeHtml(biz.landmark_directions)}</em></p>` : ''}
             ${biz.plus_code ? `<p style="margin:0 0 0.65rem 0;font-size:0.78rem;color:#114B3E;font-family:monospace;">Plus Code: ${escapeHtml(biz.plus_code)}</p>` : ''}
@@ -944,6 +978,23 @@
     });
   }
 
+  if (els.countrySelect) {
+    populateCitiesDropdown('');
+    els.countrySelect.addEventListener('change', (e) => {
+      state.selectedCountry = e.target.value;
+      state.selectedCity = '';
+      populateCitiesDropdown(state.selectedCountry);
+      fetchBusinesses();
+    });
+  }
+
+  if (els.citySelect) {
+    els.citySelect.addEventListener('change', (e) => {
+      state.selectedCity = e.target.value;
+      fetchBusinesses();
+    });
+  }
+
   if (els.radiusSelect) {
     els.radiusSelect.addEventListener('change', (e) => {
       state.radiusKm = e.target.value;
@@ -974,6 +1025,13 @@
         state.hasPerk = false;
         state.b2bReady = false;
         state.selectedSchool = '';
+        state.selectedCountry = '';
+        state.selectedCity = '';
+        if (els.countrySelect) els.countrySelect.value = '';
+        if (els.citySelect) {
+          populateCitiesDropdown('');
+          els.citySelect.value = '';
+        }
         document.querySelectorAll('[data-quick-filter]').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
       } else if (f === 'open_now') {

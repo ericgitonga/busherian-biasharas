@@ -22,6 +22,71 @@ final class LocationEngine
     ];
 
     /**
+     * 2-Level Place Taxonomy (Level 1: Country -> Level 2: City / County / State) (#96, #97, #98).
+     * Includes all 47 Kenyan Counties + key towns, East African neighbors, and major Busherian diaspora hubs.
+     */
+    public const PLACE_HIERARCHY = [
+        'Kenya' => [
+            'Nairobi', 'Kiambu', 'Kikuyu', 'Thika', 'Mombasa', 'Kisumu', 'Nakuru', 'Naivasha',
+            'Uasin Gishu (Eldoret)', 'Machakos', 'Kajiado', 'Nyeri', 'Meru', 'Kilifi', 'Kwale',
+            'Laikipia (Nanyuki)', "Murang'a", 'Kirinyaga', 'Embu', 'Kakamega', 'Bungoma', 'Kisii',
+            'Nyamira', 'Kericho', 'Bomet', 'Nandi', 'Trans Nzoia (Kitale)', 'Narok', 'Nyandarua',
+            'Tharaka-Nithi', 'Kitui', 'Makueni', 'Taita-Taveta', 'Garissa', 'Isiolo', 'Marsabit',
+            'Turkana', 'Baringo', 'Elgeyo-Marakwet', 'West Pokot', 'Samburu', 'Siaya', 'Homa Bay',
+            'Migori', 'Busia', 'Vihiga', 'Lamu', 'Tana River', 'Wajir', 'Mandera',
+        ],
+        'Uganda' => ['Kampala', 'Entebbe', 'Wakiso', 'Jinja', 'Mbarara', 'Gulu'],
+        'Tanzania' => ['Dar es Salaam', 'Arusha', 'Dodoma', 'Mwanza', 'Zanzibar', 'Moshi'],
+        'Rwanda' => ['Kigali', 'Musanze', 'Rubavu', 'Huye'],
+        'Ethiopia' => ['Addis Ababa', 'Hawassa', 'Bahir Dar', 'Adama'],
+        'South Africa' => ['Johannesburg (Gauteng)', 'Pretoria (Gauteng)', 'Cape Town (Western Cape)', 'Durban (KwaZulu-Natal)'],
+        'Nigeria' => ['Lagos', 'Abuja (FCT)', 'Port Harcourt (Rivers)', 'Ibadan (Oyo)'],
+        'United Kingdom' => ['London', 'Manchester', 'Birmingham', 'Leeds', 'Edinburgh', 'Glasgow', 'Bristol', 'Oxford', 'Cambridge', 'Reading'],
+        'United States' => [
+            'California', 'New York', 'Texas', 'Massachusetts', 'Washington', 'Illinois',
+            'Georgia', 'Maryland', 'Virginia', 'Washington, D.C.', 'New Jersey', 'Pennsylvania',
+            'Florida', 'Minnesota', 'North Carolina', 'Michigan', 'Ohio', 'Colorado',
+        ],
+        'Canada' => ['Ontario (Toronto / Ottawa)', 'British Columbia (Vancouver)', 'Alberta (Calgary / Edmonton)', 'Quebec (Montreal)', 'Manitoba (Winnipeg)'],
+        'United Arab Emirates' => ['Dubai', 'Abu Dhabi', 'Sharjah'],
+        'Australia' => ['New South Wales (Sydney)', 'Victoria (Melbourne)', 'Queensland (Brisbane)', 'Western Australia (Perth)', 'South Australia (Adelaide)'],
+        'Germany' => ['Berlin', 'Munich (Bavaria)', 'Frankfurt (Hesse)', 'Hamburg', 'Cologne (NRW)'],
+        'Netherlands' => ['Amsterdam (North Holland)', 'Rotterdam / The Hague (South Holland)', 'Utrecht', 'Eindhoven'],
+    ];
+
+    public static function getPlaceHierarchy(): array
+    {
+        return self::PLACE_HIERARCHY;
+    }
+
+    /**
+     * Resolve Level 1 Country and Level 2 City/County/State from POST payload, supporting custom "Other" values.
+     *
+     * @return array{country: string, city_county: string}
+     */
+    public static function resolvePlaceFromPost(array $post, string $defaultCountry = 'Kenya', string $defaultCity = 'Nairobi'): array
+    {
+        $countrySel = trim((string)($post['country'] ?? ''));
+        $countryCustom = trim((string)($post['country_custom'] ?? ''));
+        $country = ($countrySel === '__custom__') ? $countryCustom : $countrySel;
+        if ($country === '') {
+            $country = $defaultCountry;
+        }
+
+        $citySel = trim((string)($post['city_county'] ?? ''));
+        $cityCustom = trim((string)($post['city_county_custom'] ?? ''));
+        $city = ($citySel === '__custom__') ? $cityCustom : $citySel;
+        if ($city === '') {
+            $city = $defaultCity;
+        }
+
+        return [
+            'country' => mb_substr($country, 0, 80),
+            'city_county' => mb_substr($city, 0, 100),
+        ];
+    }
+
+    /**
      * Exact Spherical Haversine distance in kilometers.
      */
     public static function haversineKm(float $lat1, float $lng1, float $lat2, float $lng2): float

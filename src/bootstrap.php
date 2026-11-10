@@ -227,3 +227,68 @@ HTML;
     }
 }
 
+
+if (!function_exists('bbiz_render_place_fields')) {
+    /**
+     * Render cascading 2-level Place selectors (Level 1: Country -> Level 2: City / County / State) (#97).
+     */
+    function bbiz_render_place_fields(string $currentCountry = 'Kenya', string $currentCity = 'Nairobi'): string
+    {
+        $hierarchy = \BusherianBiasharas\Services\LocationEngine::getPlaceHierarchy();
+        $curCountry = trim($currentCountry) !== '' ? trim($currentCountry) : 'Kenya';
+        $curCity = trim($currentCity) !== '' ? trim($currentCity) : 'Nairobi';
+
+        $isKnownCountry = array_key_exists($curCountry, $hierarchy);
+        $countrySelectVal = $isKnownCountry ? $curCountry : '__custom__';
+        $countryCustomVal = $isKnownCountry ? '' : htmlspecialchars($curCountry, ENT_QUOTES, 'UTF-8');
+        $countryCustomDisplay = $isKnownCountry ? 'none' : 'block';
+
+        $countryOptionsHtml = '';
+        foreach (array_keys($hierarchy) as $cName) {
+            $sel = ($countrySelectVal === $cName) ? 'selected' : '';
+            $esc = htmlspecialchars($cName, ENT_QUOTES, 'UTF-8');
+            $countryOptionsHtml .= "<option value=\"{$esc}\" {$sel}>{$esc}</option>";
+        }
+        $customCountrySel = ($countrySelectVal === '__custom__') ? 'selected' : '';
+        $countryOptionsHtml .= "<option value=\"__custom__\" {$customCountrySel}>+ Other Country (Type Below)</option>";
+
+        $knownCities = $isKnownCountry ? $hierarchy[$curCountry] : [];
+        $isKnownCity = in_array($curCity, $knownCities, true);
+        $citySelectVal = ($isKnownCountry && $isKnownCity) ? $curCity : '__custom__';
+        $cityCustomVal = ($citySelectVal === '__custom__') ? htmlspecialchars($curCity, ENT_QUOTES, 'UTF-8') : '';
+        $cityCustomDisplay = ($citySelectVal === '__custom__') ? 'block' : 'none';
+
+        $cityOptionsHtml = '';
+        foreach ($knownCities as $plName) {
+            $sel = ($citySelectVal === $plName) ? 'selected' : '';
+            $esc = htmlspecialchars($plName, ENT_QUOTES, 'UTF-8');
+            $cityOptionsHtml .= "<option value=\"{$esc}\" {$sel}>{$esc}</option>";
+        }
+        $customCitySel = ($citySelectVal === '__custom__') ? 'selected' : '';
+        $cityOptionsHtml .= "<option value=\"__custom__\" {$customCitySel}>+ Other City / County / State (Type Below)</option>";
+
+        $hierarchyJson = htmlspecialchars((string)json_encode($hierarchy, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8');
+        $escInitCity = htmlspecialchars($curCity, ENT_QUOTES, 'UTF-8');
+
+        return <<<HTML
+          <div data-place-hierarchy="{$hierarchyJson}" data-initial-city="{$escInitCity}">
+            <label for="country" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Country *</label>
+            <select id="country" name="country" class="select-control" required>
+              {$countryOptionsHtml}
+            </select>
+            <input type="text" id="country_custom" name="country_custom" class="input-control"
+              value="{$countryCustomVal}" placeholder="Enter Country Name..."
+              style="margin-top:0.4rem;display:{$countryCustomDisplay};">
+          </div>
+          <div>
+            <label for="city_county" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">City / County / State *</label>
+            <select id="city_county" name="city_county" class="select-control" required>
+              {$cityOptionsHtml}
+            </select>
+            <input type="text" id="city_county_custom" name="city_county_custom" class="input-control"
+              value="{$cityCustomVal}" placeholder="Enter City, County, or State..."
+              style="margin-top:0.4rem;display:{$cityCustomDisplay};">
+          </div>
+HTML;
+    }
+}

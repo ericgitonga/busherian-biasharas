@@ -238,6 +238,7 @@ final class Database
                     floor_suite TEXT NULL,
                     street_road TEXT NULL,
                     area_neighborhood TEXT NULL,
+                    country TEXT NOT NULL DEFAULT 'Kenya',
                     city_county TEXT NOT NULL DEFAULT 'Nairobi',
                     landmark_directions TEXT NULL,
                     plus_code TEXT NULL,
@@ -330,11 +331,13 @@ final class Database
     {
         $hasBizId = false;
         $hasBizNum = false;
+        $hasCountry = false;
         if ($driver === 'sqlite') {
             $cols = $pdo->query("PRAGMA table_info(businesses)")->fetchAll();
             foreach ($cols as $col) {
                 if (($col['name'] ?? '') === 'business_id') $hasBizId = true;
                 if (($col['name'] ?? '') === 'business_number') $hasBizNum = true;
+                if (($col['name'] ?? '') === 'country') $hasCountry = true;
             }
             if (!$hasBizId) {
                 $pdo->exec("ALTER TABLE businesses ADD COLUMN business_id TEXT NULL");
@@ -342,17 +345,24 @@ final class Database
             if (!$hasBizNum) {
                 $pdo->exec("ALTER TABLE businesses ADD COLUMN business_number INTEGER NOT NULL DEFAULT 1");
             }
+            if (!$hasCountry) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN country TEXT NOT NULL DEFAULT 'Kenya'");
+            }
         } else {
             $cols = $pdo->query("SHOW COLUMNS FROM businesses")->fetchAll();
             foreach ($cols as $col) {
                 if (($col['Field'] ?? '') === 'business_id') $hasBizId = true;
                 if (($col['Field'] ?? '') === 'business_number') $hasBizNum = true;
+                if (($col['Field'] ?? '') === 'country') $hasCountry = true;
             }
             if (!$hasBizId) {
                 $pdo->exec("ALTER TABLE businesses ADD COLUMN business_id VARCHAR(32) NULL UNIQUE AFTER id");
             }
             if (!$hasBizNum) {
                 $pdo->exec("ALTER TABLE businesses ADD COLUMN business_number INT UNSIGNED NOT NULL DEFAULT 1 AFTER business_id");
+            }
+            if (!$hasCountry) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN country VARCHAR(80) NOT NULL DEFAULT 'Kenya' AFTER area_neighborhood");
             }
         }
 
