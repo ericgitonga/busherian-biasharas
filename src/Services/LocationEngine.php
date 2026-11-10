@@ -219,57 +219,122 @@ final class LocationEngine
                             }
                         }
 
-                        // Aggregate OSRM micro-steps into loose, high-level corridor directions
-                        $roadTotals = [];
-                        $roadOrder = [];
+                        // Consolidate OSRM steps into natural Kenyan left/right road transitions (no compass bearings)
+                        $segments = [];
+                        $pendingMod = '';
+                        $pendingType = '';
+
                         foreach (($route['legs'][0]['steps'] ?? []) as $st) {
-                            $rName = trim((string)($st['name'] ?? ''));
-                            $dM = (float)($st['distance'] ?? 0);
-                            if ($rName === '' || strtolower($rName) === 'unnamed road') {
+                            $maneuver = (array)($st['maneuver'] ?? []);
+                            $mType = strtolower(trim((string)($maneuver['type'] ?? '')));
+                            $mMod = strtolower(trim((string)($maneuver['modifier'] ?? '')));
+                            if ($mType === 'arrive') {
                                 continue;
                             }
-                            if (!isset($roadTotals[$rName])) {
-                                $roadTotals[$rName] = 0.0;
-                                $roadOrder[] = $rName;
-                            }
-                            $roadTotals[$rName] += $dM;
-                        }
+                            $rName = trim((string)($st['name'] ?? ''));
+                            $dM = (float)($st['distance'] ?? 0.0);
+                            $rLower = strtolower($rName);
 
-                        // Keep significant named corridors (>= 250m, or all if route has <= 3 named roads) in traversal order
-                        $corridors = [];
-                        foreach ($roadOrder as $rName) {
-                            if ($roadTotals[$rName] >= 250.0 || count($roadOrder) <= 3) {
-                                $corridors[] = $rName;
+                            if ($rName === '' || $rLower === 'unnamed road' || str_contains($rLower, 'roundabout')) {
+                                if (($mMod !== '' && (str_contains($mMod, 'left') || str_contains($mMod, 'right'))) && $pendingMod === '') {
+                                    $pendingMod = $mMod;
+                                    $pendingType = $mType;
+                                }
+                                if (!empty($segments)) {
+                                    $segments[count($segments) - 1]['distance'] += $dM;
+                                }
+                                continue;
                             }
-                        }
-                        if (empty($corridors) && !empty($roadOrder)) {
-                            $corridors = array_slice($roadOrder, 0, 3);
-                        }
-                        $corridors = array_slice($corridors, 0, 4);
 
-                        $steps = [];
-                        if (!empty($corridors)) {
-                            $firstRoad = $corridors[0];
-                            $steps[] = [
-                                'instruction' => "Head {$bearing} starting via {$firstRoad}",
-                                'distance' => '',
-                            ];
-                            if (count($corridors) > 1) {
-                                $steps[] = [
-                                    'instruction' => 'Main route corridor: ' . implode(' → ', $corridors),
-                                    'distance' => "{$roadKm} km",
-                                ];
+                            $lastIdx = count($segments) - 1;
+                            if ($lastIdx >= 0 && self::isSameRoadName($segments[$lastIdx]['name'], $rName)) {
+                                $segments[$lastIdx]['distance'] += $dM;
                             } else {
-                                $steps[0]['distance'] = "{$roadKm} km";
+                                $useType = $mType;
+                                $useMod = $mMod;
+                                if ($useMod === '' && $pendingMod !== '') {
+                                    $useMod = $pendingMod;
+                                    $useType = $pendingType !== '' ? $pendingType : $useType;
+                                }
+                                $segments[] = [
+                                    'name' => $rName,
+                                    'distance' => $dM,
+                                    'type' => $useType,
+                                    'modifier' => $useMod,
+                                ];
+                                $pendingMod = '';
+                                $pendingType = '';
                             }
-                            $lastRoad = $corridors[count($corridors) - 1];
+                        }
+
+                        // Absorb intermediate micro-crossings (< 120m) so roundabout islands don't split a continuous road
+                        $cleaned = [];
+                        $segCount = count($segments);
+                        foreach ($segments as $idx => $seg) {
+                            $isFirst = ($idx === 0);
+                            $isLast = ($idx === $segCount - 1);
+                            if (!$isFirst && !$isLast && $seg['distance'] < 120.0 && !empty($cleaned)) {
+                                $cleaned[count($cleaned) - 1]['distance'] += $seg['distance'];
+                                continue;
+                            }
+                            $cLast = count($cleaned) - 1;
+                            if ($cLast >= 0 && self::isSameRoadName($cleaned[$cLast]['name'], $seg['name'])) {
+                                $cleaned[$cLast]['distance'] += $seg['distance'];
+                            } else {
+                                $cleaned[] = $seg;
+                            }
+                        }
+
+                        $corridors = [];
+                        $steps = [];
+                        foreach ($cleaned as $i => $seg) {
+                            $rName = $seg['name'];
+                            $corridors[] = $rName;
+                            $dM = (float)$seg['distance'];
+                            $dLabel = $dM >= 1000.0
+                                ? (round($dM / 1000.0, 1) . ' km')
+                                : (max(10, (int)round($dM / 10.0) * 10) . ' m');
+                            $t = $seg['type'];
+                            $mod = $seg['modifier'];
+
+                            if ($i === 0) {
+                                if (str_contains($mod, 'left') && $t !== 'depart') {
+                                    $instr = "Start by turning left onto {$rName}";
+                                } elseif (str_contains($mod, 'right') && $t !== 'depart') {
+                                    $instr = "Start by turning right onto {$rName}";
+                                } else {
+                                    $instr = "Start on {$rName} and keep straight";
+                                }
+                            } else {
+                                if (in_array($t, ['roundabout', 'rotary', 'exit roundabout', 'exit rotary'], true)) {
+                                    if (str_contains($mod, 'left')) {
+                                        $instr = "At the roundabout, turn left onto {$rName}";
+                                    } elseif (str_contains($mod, 'right')) {
+                                        $instr = "At the roundabout, turn right onto {$rName}";
+                                    } else {
+                                        $instr = "At the roundabout, take the exit onto {$rName}";
+                                    }
+                                } elseif (str_contains($mod, 'left')) {
+                                    $instr = "Turn left onto {$rName}";
+                                } elseif (str_contains($mod, 'right')) {
+                                    $instr = "Turn right onto {$rName}";
+                                } elseif ($mod === 'uturn') {
+                                    $instr = "Make a U-turn onto {$rName}";
+                                } else {
+                                    $instr = "Continue straight onto {$rName}";
+                                }
+                            }
+
                             $steps[] = [
-                                'instruction' => "Approach destination off {$lastRoad}",
-                                'distance' => "~{$durationMin} min drive",
+                                'instruction' => $instr,
+                                'distance' => $dLabel,
                             ];
-                        } else {
+                        }
+
+                        if (empty($steps)) {
+                            $turnWord = ($toLng >= $fromLng) ? 'Turn right' : 'Turn left';
                             $steps[] = [
-                                'instruction' => "Head {$bearing} toward destination",
+                                'instruction' => "{$turnWord} onto the main road and continue toward destination",
                                 'distance' => "{$roadKm} km (~{$durationMin} min)",
                             ];
                         }
@@ -292,6 +357,7 @@ final class LocationEngine
 
         $estRoadKm = round($straightKm * 1.28, 2);
         $estDurationMin = max(2, (int)round(($estRoadKm / 30.0) * 60.0));
+        $turnDir = ($toLng >= $fromLng) ? 'right' : 'left';
         return [
             'mode' => 'estimated_direct',
             'straight_km' => $straightKm,
@@ -304,10 +370,150 @@ final class LocationEngine
             'corridors' => [],
             'steps' => [
                 [
-                    'instruction' => "General direction: head {$bearing} toward destination",
+                    'instruction' => 'Start on your nearest main road and keep straight',
+                    'distance' => '',
+                ],
+                [
+                    'instruction' => "Turn {$turnDir} at the main junction toward destination",
                     'distance' => "~{$estRoadKm} km (~{$estDurationMin} min)",
                 ],
             ],
         ];
+    }
+
+    private static function isSameRoadName(string $a, string $b): bool
+    {
+        $ca = strtolower(trim($a));
+        $cb = strtolower(trim($b));
+        if ($ca === $cb) {
+            return true;
+        }
+        similar_text($ca, $cb, $pct);
+        return $pct >= 88.0;
+    }
+
+    /**
+     * Built-in Kenyan street, neighborhood, and town coordinates for instant/offline fallback.
+     */
+    public const KENYA_PLACE_INDEX = [
+        'marist lane' => [-1.344470, 36.728656, 'Marist Lane, Karen, Nairobi'],
+        'karen' => [-1.321000, 36.704200, 'Karen, Nairobi'],
+        'langata' => [-1.348900, 36.747900, 'Langata, Nairobi'],
+        'lavington' => [-1.278800, 36.771200, 'Lavington, Nairobi'],
+        'kilimani' => [-1.292100, 36.787900, 'Kilimani, Nairobi'],
+        'kileleshwa' => [-1.281400, 36.782800, 'Kileleshwa, Nairobi'],
+        'westlands' => [-1.263500, 36.803200, 'Westlands, Nairobi'],
+        'parklands' => [-1.261200, 36.817500, 'Parklands, Nairobi'],
+        'gigiri' => [-1.236400, 36.812200, 'Gigiri, Nairobi'],
+        'runda' => [-1.219500, 36.819000, 'Runda, Nairobi'],
+        'muthaiga' => [-1.249800, 36.836500, 'Muthaiga, Nairobi'],
+        'upper hill' => [-1.298600, 36.814700, 'Upper Hill, Nairobi'],
+        'hurlingham' => [-1.293500, 36.796200, 'Hurlingham, Nairobi'],
+        'ngong road' => [-1.300500, 36.768900, 'Ngong Road, Nairobi'],
+        'south c' => [-1.319800, 36.828600, 'South C, Nairobi'],
+        'south b' => [-1.310200, 36.840500, 'South B, Nairobi'],
+        'industrial area' => [-1.308800, 36.855200, 'Industrial Area, Nairobi'],
+        'mombasa road' => [-1.328500, 36.854200, 'Mombasa Road, Nairobi'],
+        'jkia' => [-1.319167, 36.927500, 'JKIA Airport, Nairobi'],
+        'syokimau' => [-1.359200, 36.935800, 'Syokimau, Machakos'],
+        'athi river' => [-1.456300, 36.978200, 'Athi River, Machakos'],
+        'lukenya' => [-1.482500, 37.051400, 'Lukenya, Machakos'],
+        'kitengela' => [-1.474800, 36.960200, 'Kitengela, Kajiado'],
+        'isinya' => [-1.683300, 36.850000, 'Isinya, Kajiado'],
+        'ngong' => [-1.361800, 36.656600, 'Ngong, Kajiado'],
+        'ongata rongai' => [-1.396400, 36.758200, 'Ongata Rongai, Kajiado'],
+        'kikuyu' => [-1.246300, 36.662900, 'Kikuyu (Alliance / Bush), Kiambu'],
+        'alliance' => [-1.246300, 36.662900, 'Alliance (Bush), Kikuyu'],
+        'lower kabete' => [-1.240500, 36.762200, 'Lower Kabete, Nairobi'],
+        'waiyaki way' => [-1.264700, 36.792100, 'Waiyaki Way, Nairobi'],
+        'thika road' => [-1.232200, 36.878800, 'Thika Road, Nairobi'],
+        'kasarani' => [-1.221000, 36.897500, 'Kasarani, Nairobi'],
+        'roysambu' => [-1.218500, 36.887000, 'Roysambu, Nairobi'],
+        'ruaka' => [-1.204500, 36.776500, 'Ruaka, Kiambu'],
+        'kiambu' => [-1.171400, 36.835600, 'Kiambu Road / Town'],
+        'tigoni' => [-1.135400, 36.674200, 'Tigoni, Limuru'],
+        'limuru' => [-1.106900, 36.642900, 'Limuru, Kiambu'],
+        'ruiru' => [-1.148600, 36.960500, 'Ruiru, Kiambu'],
+        'juja' => [-1.102600, 37.013200, 'Juja, Kiambu'],
+        'thika' => [-1.033300, 37.069300, 'Thika, Kiambu'],
+        'cbd' => [-1.286389, 36.817223, 'Nairobi CBD'],
+    ];
+
+    /**
+     * Geocode a Kenyan street, estate, landmark, Plus Code, or coordinate string into {latitude, longitude, label}.
+     */
+    public static function geocodeKenyanLocation(string $rawQuery, bool $allowExternal = true): ?array
+    {
+        $q = trim($rawQuery);
+        if ($q === '') {
+            return null;
+        }
+
+        // 1. Check if it is already coordinates, a Google Maps URL, or an Open Location Code (Plus Code)
+        $parsed = self::parseCoordinatesFromInput($q);
+        if ($parsed !== null) {
+            return [
+                'latitude' => $parsed['latitude'],
+                'longitude' => $parsed['longitude'],
+                'label' => $q,
+                'source' => 'coordinates_or_plus_code',
+            ];
+        }
+
+        $lower = strtolower($q);
+
+        // 2. Query OpenStreetMap Nominatim (bounded to Kenya) when external requests are enabled
+        if ($allowExternal && function_exists('curl_init')) {
+            $searchQuery = str_contains($lower, 'kenya') ? $q : ($q . ', Kenya');
+            $url = 'https://nominatim.openstreetmap.org/search?' . http_build_query([
+                'q' => $searchQuery,
+                'format' => 'jsonv2',
+                'countrycodes' => 'ke',
+                'limit' => 1,
+            ]);
+            $ch = curl_init($url);
+            if ($ch !== false) {
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT => 4,
+                    CURLOPT_CONNECTTIMEOUT => 2,
+                    CURLOPT_USERAGENT => 'BusherianBiasharasDirectory/0.5 (+https://www.busherianbiasharas.com)',
+                    CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+                ]);
+                $raw = curl_exec($ch);
+                $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+
+                if (is_string($raw) && $code === 200) {
+                    $json = json_decode($raw, true);
+                    if (is_array($json) && !empty($json[0]['lat']) && !empty($json[0]['lon'])) {
+                        $lat = round((float)$json[0]['lat'], 6);
+                        $lng = round((float)$json[0]['lon'], 6);
+                        $disp = (string)($json[0]['display_name'] ?? $q);
+                        $parts = array_slice(array_map('trim', explode(',', $disp)), 0, 3);
+                        return [
+                            'latitude' => $lat,
+                            'longitude' => $lng,
+                            'label' => implode(', ', $parts) ?: $q,
+                            'source' => 'nominatim_ke',
+                        ];
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback to built-in Kenyan place index (also ensures deterministic offline/CI tests)
+        foreach (self::KENYA_PLACE_INDEX as $key => $info) {
+            if (str_contains($lower, $key)) {
+                return [
+                    'latitude' => $info[0],
+                    'longitude' => $info[1],
+                    'label' => $info[2],
+                    'source' => 'kenya_place_index',
+                ];
+            }
+        }
+
+        return null;
     }
 }
