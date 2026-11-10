@@ -613,3 +613,70 @@ a {
   outline: 3px solid #F59E0B;
   outline-offset: 2px;
 }
+
+/* Kenya DPA 2019 Cookie Consent Banner (Equal-Prominence Accept & Reject All) */
+.bbiz-cookie-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2500;
+  background: #111827;
+  color: #F9FAFB;
+  border-top: 3px solid var(--bush-gold);
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.28);
+  padding: 0.9rem 1.25rem;
+}
+.bbiz-cookie-inner {
+  max-width: 1360px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.15rem;
+  flex-wrap: wrap;
+}
+.bbiz-cookie-text {
+  flex: 1 1 520px;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: #E5E7EB;
+}
+.bbiz-cookie-text strong {
+  color: #FFFFFF;
+}
+.bbiz-cookie-text a {
+  color: var(--bush-gold);
+  font-weight: 700;
+  text-decoration: underline;
+  margin-left: 0.25rem;
+}
+.bbiz-cookie-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-shrink: 0;
+}
+.bbiz-cookie-btn {
+  min-width: 122px;
+  padding: 0.58rem 1.15rem;
+  font-size: 0.85rem;
+  font-weight: 800;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+.bbiz-cookie-btn:hover {
+  opacity: 0.92;
+}
+.bbiz-cookie-btn-reject {
+  background: #FFFFFF;
+  color: #111827;
+  border: 2px solid #FFFFFF;
+}
+.bbiz-cookie-btn-accept {
+  background: var(--bush-gold);
+  color: #111827;
+  border: 2px solid var(--bush-gold);
+}

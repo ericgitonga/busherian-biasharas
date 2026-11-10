@@ -14,6 +14,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+// Strict Kenya DPA 2019 s.32 Opt-In Gate: ignore analytics clicks unless user explicitly clicked 'Accept'
+if (($_COOKIE['bbiz_consent'] ?? '') !== 'accepted') {
+    echo json_encode(['status' => 'ignored_no_consent']);
+    exit;
+}
+
 $raw = file_get_contents('php://input') ?: '';
 $data = json_decode($raw, true) ?: $_POST;
 

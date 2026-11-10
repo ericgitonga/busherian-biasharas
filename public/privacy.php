@@ -48,12 +48,17 @@ bbiz_send_security_headers(false);
         </ul>
       </div>
 
-      <h2 style="color:#114B3E;">3. Zero Pre-Consent Cross-Border Tracking &amp; Keyed IP Pseudonymization (DPA ss. 25(h), 31, 41, 48)</h2>
+            <h2 style="color:#114B3E;">3. First-Party Cookie Consent &amp; Anonymous Usage Metrics (DPA ss. 25, 29, 32)</h2>
       <ul>
-        <li><strong>100% Self-Hosted Assets:</strong> All stylesheets, fonts, and interactive scripts are served directly from <code>busherianbiasharas.com</code>. Zero third-party CDN requests (no Google Fonts, jsDelivr, or external analytics) fire on page load.</li>
-        <li><strong>Keyed HMAC-SHA256 IP Pseudonymization:</strong> To protect our outbound mail server from spam without logging raw visitor IP addresses, rate-limit checks store only a keyed cryptographic hash (<code>HMAC-SHA256</code>) that expires automatically after 24 hours.</li>
-        <li><strong>Sub-Processors:</strong> Hosting and MySQL storage are provided on Angryhosting. No personal vetting data is ever shared with third parties.</li>
+        <li><strong>Strictly Opt-In Consent (<code>Accept</code> / <code>Reject All</code>):</strong> On your first visit, we present a clear two-option cookie banner (<strong>Accept</strong> or <strong>Reject All</strong>). Your decision persists on your browser until you clear browsing data or reset it below.</li>
+        <li><strong>What Happens When You Click <code>Reject All</code> (or Before Choosing):</strong> Zero usage-metric cookies are set and zero analytics events are recorded. All directory search, filtering, map, and business contact features remain 100% available.</li>
+        <li><strong>What Happens When You Click <code>Accept</code>:</strong> A random first-party cookie (<code>bbiz_vid</code>) is stored and hashed via keyed <code>HMAC-SHA256</code> on our server to count anonymous page views, search terms, and outbound business clicks. Records are automatically purged after 180 days.</li>
+        <li><strong>100% Self-Hosted Assets &amp; Keyed IP Pseudonymization:</strong> All stylesheets and scripts are served directly from <code>busherianbiasharas.com</code> with zero third-party ad/analytics trackers, and anti-spam rate limits store only 24-hour keyed <code>HMAC-SHA256</code> hashes.</li>
       </ul>
+      <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:0.9rem 1.1rem;margin:0.9rem 0 1.25rem 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;font-size:0.86rem;">
+        <div><strong>Current Browser Consent Status:</strong> <span id="dpa-cookie-status-label">Checking...</span></div>
+        <button type="button" onclick="if(window.BBizMetrics) window.BBizMetrics.resetChoice();" class="btn btn-outline" style="font-size:0.8rem;padding:0.35rem 0.8rem;">Change Cookie Choice</button>
+      </div>
 
       <h2 style="color:#114B3E;">4. Your Statutory Rights Under the Kenya Data Protection Act, 2019 (ss. 26, 40)</h2>
       <p>
@@ -62,5 +67,6 @@ bbiz_send_security_headers(false);
       </p>
     </article>
   </main>
+  <script src="/assets/js/consent-metrics.js"></script>
 </body>
 </html>

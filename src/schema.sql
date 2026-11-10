@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS categories (
 
 CREATE TABLE IF NOT EXISTS businesses (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    business_id VARCHAR(32) NULL UNIQUE,
+    business_number INT UNSIGNED NOT NULL DEFAULT 1,
     name VARCHAR(180) NOT NULL,
     slug VARCHAR(200) NOT NULL UNIQUE,
     tagline VARCHAR(180) NOT NULL,
@@ -81,6 +83,7 @@ CREATE TABLE IF NOT EXISTS businesses (
     INDEX idx_status_sector_spec (status, sector_id, specialty_id),
     INDEX idx_coords (latitude, longitude),
     INDEX idx_city (city_county),
+    INDEX idx_biz_number (business_number),
     FULLTEXT idx_ft_search (name, tagline, description, area_neighborhood, city_county)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -133,4 +136,18 @@ CREATE TABLE IF NOT EXISTS click_events (
     event_type VARCHAR(30) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_biz_event (business_id, event_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Consented First-Party Usage Metrics (Strictly Opt-In per Kenya DPA 2019 s.32)
+CREATE TABLE IF NOT EXISTS usage_metrics (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    event_type VARCHAR(40) NOT NULL,
+    visitor_hash CHAR(64) NOT NULL,
+    page_path VARCHAR(160) NULL,
+    business_id INT UNSIGNED NULL,
+    meta_label VARCHAR(120) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_metric_type_time (event_type, created_at),
+    INDEX idx_metric_visitor (visitor_hash, created_at),
+    INDEX idx_metric_biz (business_id, event_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -57,7 +57,7 @@ $tokens = AntiSpamGate::generateFormTokens();
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Edit Business #<?= (int)$biz['id'] ?> — Admin Console</title>
+  <title>Edit Business #<?= (int)($biz['business_number'] ?? $biz['id']) ?> (<?= htmlspecialchars((string)($biz['business_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>) — Admin Console</title>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>
@@ -66,8 +66,8 @@ $tokens = AntiSpamGate::generateFormTokens();
       <a href="/admin/index.php" class="brand-group">
         <div class="brand-crest">BB</div>
         <div>
-          <h1 class="brand-title">Edit Business #<?= (int)$biz['id'] ?>: <?= htmlspecialchars((string)$biz['name'], ENT_QUOTES, 'UTF-8') ?></h1>
-          <p class="brand-subtitle">Admin Record Editor &amp; 1-Click Website Re-Extraction</p>
+          <h1 class="brand-title">Edit Business #<?= (int)($biz['business_number'] ?? $biz['id']) ?>: <?= htmlspecialchars((string)$biz['name'], ENT_QUOTES, 'UTF-8') ?></h1>
+          <p class="brand-subtitle">Unique Business ID: <code><?= htmlspecialchars((string)($biz['business_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?></code> • Admin Record Editor &amp; 1-Click Website Re-Extraction</p>
         </div>
       </a>
       <nav class="header-actions">

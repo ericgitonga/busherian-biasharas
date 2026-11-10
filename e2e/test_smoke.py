@@ -148,6 +148,15 @@ def test_school_filters_and_route_directions_api():
     ahs_data = json.loads(body_ahs)
     assert ahs_data["count"] == 9, f"Expected 9 AHS businesses, got {ahs_data['count']}"
 
+    # Verify sequential 1..12 business_number and distinct BBIZ-* business_id across all 12 records
+    st_all, body_all, _ = _request("/api/businesses.php")
+    assert st_all == 200
+    all_biz = json.loads(body_all)["businesses"]
+    nums = sorted([b["business_number"] for b in all_biz])
+    uids = {b["business_id"] for b in all_biz}
+    assert nums == list(range(1, 13)), f"Expected gapless 1..12 business_number, got {nums}"
+    assert len(uids) == 12 and all(u.startswith("BBIZ-") for u in uids), f"Expected 12 unique BBIZ-* IDs, got {uids}" 
+
     # Verify /api/route-directions.php returns distance, duration, polyline & steps
     st_rt, body_rt, _ = _request("/api/route-directions.php?from_lat=-1.286389&from_lng=36.817223&to_lat=-1.278800&to_lng=36.771200")
     assert st_rt == 200, f"Expected 200 from route-directions.php, got {st_rt}: {body_rt}"
@@ -159,6 +168,48 @@ def test_school_filters_and_route_directions_api():
     assert len(rt["steps"]) >= 1
 
 
+def test_dpa_cookie_consent_and_usage_metrics():
+    # 1. Verify consent-metrics.js is served and strictly defines 'Reject All' and 'Accept' buttons
+    st_js, js_body, _ = _request("/assets/js/consent-metrics.js")
+    assert st_js == 200
+    assert "Reject All" in js_body
+    assert "Accept" in js_body
+    assert "bbiz_cookie_consent" in js_body
+
+    # 2. Verify /api/track-metric.php ignores requests when consent cookie is absent or 'rejected'
+    st_no, body_no, _ = _request(
+        "/api/track-metric.php",
+        method="POST",
+        data=json.dumps({"event_type": "page_view", "page_path": "/"}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert st_no == 200
+    assert json.loads(body_no)["status"] == "ignored_no_consent"
+
+    st_rej, body_rej, _ = _request(
+        "/api/track-metric.php",
+        method="POST",
+        data=json.dumps({"event_type": "page_view", "page_path": "/"}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Cookie": "bbiz_consent=rejected"},
+    )
+    assert st_rej == 200
+    assert json.loads(body_rej)["status"] == "ignored_no_consent"
+
+    # 3. Verify /api/track-metric.php records metric when consent cookie is 'accepted'
+    st_acc, body_acc, _ = _request(
+        "/api/track-metric.php",
+        method="POST",
+        data=json.dumps({"event_type": "page_view", "page_path": "/"}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Cookie": "bbiz_consent=accepted; bbiz_vid=e2econsentedvisitor1234"},
+    )
+    assert st_acc == 200, f"Expected 200 from consented track-metric, got {st_acc}: {body_acc}"
+    assert json.loads(body_acc)["status"] == "ok"
+
+    # 4. Verify /admin/metrics.php enforces 401 when unauthenticated
+    st_m, _, _ = _request("/admin/metrics.php")
+    assert st_m == 401
+
+
 TESTS = [
     test_health_endpoint,
     test_directory_homepage_and_zero_vetting_exposure,
@@ -166,4 +217,5 @@ TESTS = [
     test_website_autofill_api_and_ssrf_protection,
     test_privacy_and_dpa_takedown_pages,
     test_school_filters_and_route_directions_api,
+    test_dpa_cookie_consent_and_usage_metrics,
 ]

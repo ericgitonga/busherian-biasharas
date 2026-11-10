@@ -162,5 +162,6 @@ $businesses = $pdo->query("SELECT id, name, city_county FROM businesses WHERE st
       });
     })();
   </script>
+  <script src="/assets/js/consent-metrics.js"></script>
 </body>
 </html>

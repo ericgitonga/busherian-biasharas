@@ -106,12 +106,27 @@ final class Database
                 if (!extension_loaded('pdo_mysql')) {
                     throw new PDOException('pdo_mysql extension not loaded');
                 }
-                $dsn = "mysql:host={$host};port={$port};dbname={$db};charset=utf8mb4";
-                self::$pdo = new PDO($dsn, $user, $pass, [
-                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    PDO::ATTR_EMULATE_PREPARES => false,
-                ]);
+                $hostsToTry = array_values(array_unique([$host, 'localhost', '127.0.0.1']));
+                $lastErr = null;
+                foreach ($hostsToTry as $candidateHost) {
+                    try {
+                        $dsn = ($candidateHost === 'localhost')
+                            ? "mysql:host=localhost;dbname={$db};charset=utf8mb4"
+                            : "mysql:host={$candidateHost};port={$port};dbname={$db};charset=utf8mb4";
+                        self::$pdo = new PDO($dsn, $user, $pass, [
+                            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                            PDO::ATTR_EMULATE_PREPARES => false,
+                        ]);
+                        $lastErr = null;
+                        break;
+                    } catch (PDOException $connEx) {
+                        $lastErr = $connEx;
+                    }
+                }
+                if ($lastErr !== null || self::$pdo === null) {
+                    throw $lastErr ?? new PDOException('MySQL connection failed');
+                }
                 self::$activeDriver = 'mysql';
                 self::ensureInitialized(self::$pdo, 'mysql');
                 return self::$pdo;
@@ -170,7 +185,26 @@ final class Database
 
     private static function ensureInitialized(PDO $pdo, string $driver): void
     {
-        if ($driver === 'sqlite') {
+        if ($driver === 'mysql') {
+            $hasCat = $pdo->query("SHOW TABLES LIKE 'categories'")->fetchColumn();
+            if (!$hasCat) {
+                $schemaFile = dirname(__DIR__) . '/schema.sql';
+                if (is_file($schemaFile)) {
+                    $rawSql = (string)file_get_contents($schemaFile);
+                    // Strip full-line SQL comments before splitting by ';'
+                    $cleanLines = array_filter(
+                        explode("\n", $rawSql),
+                        static fn(string $line): bool => !str_starts_with(ltrim($line), '--')
+                    );
+                    foreach (explode(';', implode("\n", $cleanLines)) as $stmtSql) {
+                        $trimmed = trim($stmtSql);
+                        if ($trimmed !== '') {
+                            $pdo->exec($trimmed);
+                        }
+                    }
+                }
+            }
+        } elseif ($driver === 'sqlite') {
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS categories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -184,6 +218,8 @@ final class Database
                 );
                 CREATE TABLE IF NOT EXISTS businesses (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    business_id TEXT NULL UNIQUE,
+                    business_number INTEGER NOT NULL DEFAULT 1,
                     name TEXT NOT NULL,
                     slug TEXT NOT NULL UNIQUE,
                     tagline TEXT NOT NULL,
@@ -263,14 +299,94 @@ final class Database
                     event_type TEXT NOT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS usage_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    visitor_hash TEXT NOT NULL,
+                    page_path TEXT NULL,
+                    business_id INTEGER NULL,
+                    meta_label TEXT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
             ");
         }
+
+        // Ensure business_id and business_number columns exist on pre-existing databases
+        self::ensureBusinessIdentityAndNumberColumns($pdo, $driver);
+        self::ensureUsageMetricsTable($pdo, $driver);
 
         // Seed categories and initial verified listings if empty
         $count = (int)$pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
         if ($count === 0) {
             \BusherianBiasharas\Services\CategoryMatcher::seedDefaultTaxonomy($pdo);
             \BusherianBiasharas\Services\CategoryMatcher::seedSampleBusinesses($pdo);
+        }
+    }
+
+    private static function ensureBusinessIdentityAndNumberColumns(PDO $pdo, string $driver): void
+    {
+        $hasBizId = false;
+        $hasBizNum = false;
+        if ($driver === 'sqlite') {
+            $cols = $pdo->query("PRAGMA table_info(businesses)")->fetchAll();
+            foreach ($cols as $col) {
+                if (($col['name'] ?? '') === 'business_id') $hasBizId = true;
+                if (($col['name'] ?? '') === 'business_number') $hasBizNum = true;
+            }
+            if (!$hasBizId) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN business_id TEXT NULL");
+            }
+            if (!$hasBizNum) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN business_number INTEGER NOT NULL DEFAULT 1");
+            }
+        } else {
+            $cols = $pdo->query("SHOW COLUMNS FROM businesses")->fetchAll();
+            foreach ($cols as $col) {
+                if (($col['Field'] ?? '') === 'business_id') $hasBizId = true;
+                if (($col['Field'] ?? '') === 'business_number') $hasBizNum = true;
+            }
+            if (!$hasBizId) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN business_id VARCHAR(32) NULL UNIQUE AFTER id");
+            }
+            if (!$hasBizNum) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN business_number INT UNSIGNED NOT NULL DEFAULT 1 AFTER business_id");
+            }
+        }
+
+        if (!$hasBizId || !$hasBizNum) {
+            \BusherianBiasharas\Services\VettingPurger::renumberBusinesses($pdo);
+        }
+    }
+
+    private static function ensureUsageMetricsTable(PDO $pdo, string $driver): void
+    {
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS usage_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    visitor_hash TEXT NOT NULL,
+                    page_path TEXT NULL,
+                    business_id INTEGER NULL,
+                    meta_label TEXT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS usage_metrics (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    event_type VARCHAR(40) NOT NULL,
+                    visitor_hash CHAR(64) NOT NULL,
+                    page_path VARCHAR(160) NULL,
+                    business_id INT UNSIGNED NULL,
+                    meta_label VARCHAR(120) NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_metric_type_time (event_type, created_at),
+                    INDEX idx_metric_visitor (visitor_hash, created_at),
+                    INDEX idx_metric_biz (business_id, event_type)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
         }
     }
 }

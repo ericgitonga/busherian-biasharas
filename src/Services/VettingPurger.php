@@ -172,6 +172,8 @@ final class VettingPurger
         // 3. Purge expired nonces and >24h rate-limit hashes
         $pdo->prepare("DELETE FROM used_nonces WHERE expires_at < :now")->execute([':now' => time()]);
         $pdo->prepare("DELETE FROM rate_limits WHERE created_at < :cut")->execute([':cut' => time() - 86400]);
+        $metricsCutoff = gmdate('Y-m-d H:i:s', time() - (180 * 86400));
+        $pdo->prepare("DELETE FROM usage_metrics WHERE created_at < :mcut")->execute([':mcut' => $metricsCutoff]);
 
         return [
             'vetting_rows_purged' => $vettingPurged,
@@ -192,9 +194,13 @@ final class VettingPurger
         try {
             $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")->execute([':id' => $businessId]);
             $pdo->prepare("DELETE FROM click_events WHERE business_id = :id")->execute([':id' => $businessId]);
+            $pdo->prepare("DELETE FROM usage_metrics WHERE business_id = :id")->execute([':id' => $businessId]);
             $del = $pdo->prepare("DELETE FROM businesses WHERE id = :id");
             $del->execute([':id' => $businessId]);
             $deleted = $del->rowCount() > 0;
+            if ($deleted) {
+                self::renumberBusinesses($pdo);
+            }
             if ($ownTx) {
                 $pdo->commit();
             }
@@ -366,6 +372,8 @@ final class VettingPurger
         }
 
         $slug = self::generateUniqueSlug($pdo, $name);
+        $businessUid = self::generateUniqueBusinessUid($pdo);
+        $nextNum = ((int)$pdo->query("SELECT COALESCE(MAX(business_number), 0) FROM businesses")->fetchColumn()) + 1;
         [$lat, $lng] = self::resolveCoordsFromAdminData($data);
         $plusCode = trim((string)($data['plus_code'] ?? '')) ?: null;
         if ($plusCode === null && $lat !== null && $lng !== null) {
@@ -388,7 +396,7 @@ final class VettingPurger
 
         $stmt = $pdo->prepare("
             INSERT INTO businesses (
-                name, slug, tagline, description, school_badge,
+                business_id, business_number, name, slug, tagline, description, school_badge,
                 sector_id, specialty_id, service_mode, alumni_perk,
                 b2b_ready, accepts_lpo, regulator_name, regulator_license,
                 branch_name, building_name, floor_suite, street_road,
@@ -399,7 +407,7 @@ final class VettingPurger
                 social_x, social_facebook, social_tiktok, social_youtube,
                 status, verified_at, last_confirmed_at
             ) VALUES (
-                :name, :slug, :tagline, :description, :school_badge,
+                :business_id, :business_number, :name, :slug, :tagline, :description, :school_badge,
                 :sector_id, :specialty_id, :service_mode, :alumni_perk,
                 :b2b_ready, :accepts_lpo, :regulator_name, :regulator_license,
                 :branch_name, :building_name, :floor_suite, :street_road,
@@ -413,6 +421,8 @@ final class VettingPurger
         ");
 
         $stmt->execute([
+            ':business_id' => $businessUid,
+            ':business_number' => $nextNum,
             ':name' => $name,
             ':slug' => $slug,
             ':tagline' => mb_substr($tagline, 0, 180),
@@ -451,6 +461,48 @@ final class VettingPurger
             ':status' => $status,
         ]);
 
-        return (int)$pdo->lastInsertId();
+        $newId = (int)$pdo->lastInsertId();
+        self::renumberBusinesses($pdo);
+        return $newId;
+    }
+
+    /**
+     * Generate an immutable unique business_id (e.g., BBIZ-7F3A9C12).
+     */
+    public static function generateUniqueBusinessUid(PDO $pdo): string
+    {
+        $chk = $pdo->prepare("SELECT COUNT(*) FROM businesses WHERE business_id = :uid");
+        while (true) {
+            $uid = 'BBIZ-' . strtoupper(bin2hex(random_bytes(4)));
+            $chk->execute([':uid' => $uid]);
+            if ((int)$chk->fetchColumn() === 0) {
+                return $uid;
+            }
+        }
+    }
+
+    /**
+     * Sequentially renumber all businesses (1 .. N) with zero gaps while preserving immutable business_id.
+     */
+    public static function renumberBusinesses(PDO $pdo): int
+    {
+        $rows = $pdo->query("SELECT id, business_id FROM businesses ORDER BY id ASC")->fetchAll();
+        $updNum = $pdo->prepare("UPDATE businesses SET business_number = :num WHERE id = :id");
+        $updBoth = $pdo->prepare("UPDATE businesses SET business_id = :uid, business_number = :num WHERE id = :id");
+
+        $seq = 0;
+        foreach ($rows as $r) {
+            $seq++;
+            $id = (int)$r['id'];
+            $existingUid = trim((string)($r['business_id'] ?? ''));
+            if ($existingUid === '') {
+                $uid = self::generateUniqueBusinessUid($pdo);
+                $updBoth->execute([':uid' => $uid, ':num' => $seq, ':id' => $id]);
+            } else {
+                $updNum->execute([':num' => $seq, ':id' => $id]);
+            }
+        }
+        return $seq;
     }
 }
+
