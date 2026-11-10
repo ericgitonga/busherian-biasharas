@@ -514,6 +514,17 @@ assertTrue(
     'Map markers use solid green (#114B3E) for AHS and the green-maroon logo gradient blend for AGHS (#122)'
 );
 
+// 27. Verify Ticket #124: Cookie banner buttons use 'Allow for Analysis' and 'Allow only Essential'
+$cmJs = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/consent-metrics.js');
+$privPage = (string)file_get_contents(dirname(__DIR__) . '/public/privacy.php');
+assertTrue(
+    str_contains($cmJs, 'Allow for Analysis') &&
+    str_contains($cmJs, 'Allow only Essential') &&
+    str_contains($privPage, 'Allow for Analysis') &&
+    str_contains($privPage, 'Allow only Essential'),
+    'Cookie banner and Privacy Notice use Allow for Analysis and Allow only Essential (#124)'
+);
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 
