@@ -30,9 +30,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
         $errorMsg = 'Invalid security token (CSRF). Please reload and try again.';
     } elseif (($_POST['post_action'] ?? '') === 'delete') {
-        VettingPurger::deleteBusiness($pdo, $businessId);
-        header('Location: /admin/index.php');
-        exit;
+        $nmStmt = $pdo->prepare("SELECT name FROM businesses WHERE id = :id LIMIT 1");
+        $nmStmt->execute([':id' => $businessId]);
+        $actualBizName = trim((string)($nmStmt->fetchColumn() ?: ''));
+        $typedConfirm = trim((string)($_POST['confirm_business_name'] ?? ''));
+        if ($actualBizName === '' || $typedConfirm !== $actualBizName) {
+            $errorMsg = 'Deletion cancelled: You must type the exact business name to confirm permanent deletion.';
+        } else {
+            VettingPurger::deleteBusiness($pdo, $businessId);
+            header('Location: /admin/index.php');
+            exit;
+        }
     } else {
         $postData = $_POST;
         $regSel = trim((string)($postData['regulator_name'] ?? ''));
@@ -316,16 +324,21 @@ $linkedOwners = OwnerAuth::getOwnersForBusiness($pdo, (int)$biz['id']);
       </div>
     </form>
 
-    <!-- Permanent Delete Box -->
-    <form method="POST" action="/admin/edit-business.php?id=<?= (int)$biz['id'] ?>" style="margin-top:1.5rem;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:12px;padding:1.1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;" onsubmit="return confirm('Permanently DELETE this business record from the database?');">
-      <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
-      <input type="hidden" name="post_action" value="delete">
+    <!-- GitHub-Style 2-Step Permanent Delete Box (#126, #128) -->
+    <div style="margin-top:1.5rem;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:12px;padding:1.1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
       <div>
-        <strong style="color:#991B1B;">🗑️ Danger Zone: Permanently Delete Record</strong>
-        <div style="font-size:0.82rem;color:#B91C1C;">Completely removes this business from the directory database.</div>
+        <strong style="color:#991B1B;">🗑️ Danger Zone: Permanently Delete Listing</strong>
+        <div style="font-size:0.82rem;color:#B91C1C;">Completely removes this business from the directory. Requires two-step confirmation.</div>
       </div>
-      <button type="submit" class="btn btn-crimson">Delete Business Permanently</button>
-    </form>
+      <button type="button" class="btn btn-crimson"
+        data-open-delete-modal="1"
+        data-delete-biz-id="<?= (int)$biz['id'] ?>"
+        data-delete-biz-name="<?= htmlspecialchars((string)$biz['name'], ENT_QUOTES, 'UTF-8') ?>"
+        data-delete-action-url="/admin/edit-business.php?id=<?= (int)$biz['id'] ?>">
+        🗑️ Delete Listing
+      </button>
+    </div>
+    <?= bbiz_render_github_delete_modal($tokens['csrf_token'], '/admin/edit-business.php?id=' . (int)$biz['id'], (int)$biz['id'], (string)$biz['name'], 'post_action', 'delete') ?>
   </main>
 
   <script>

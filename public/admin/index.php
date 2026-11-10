@@ -49,10 +49,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($adminAction === 'delete') {
             $bizNameStmt = $pdo->prepare("SELECT name, business_number, business_id FROM businesses WHERE id = :id");
             $bizNameStmt->execute([':id' => $targetId]);
-            $delInfo = $bizNameStmt->fetch() ?: ['name' => "Record", 'business_number' => $targetId, 'business_id' => ''];
-            VettingPurger::deleteBusiness($pdo, $targetId);
-            $totalNow = (int)$pdo->query("SELECT COUNT(*) FROM businesses")->fetchColumn();
-            $flashMsg = "Permanently deleted '{$delInfo['name']}' (was #{$delInfo['business_number']}, ID: {$delInfo['business_id']}). Remaining {$totalNow} businesses renumbered sequentially (1–{$totalNow}).";
+            $delInfo = $bizNameStmt->fetch();
+            $typedConfirm = trim((string)($_POST['confirm_business_name'] ?? ''));
+            if (!$delInfo || $typedConfirm !== trim((string)$delInfo['name'])) {
+                $flashErr = 'Deletion cancelled: You must type the exact business name to confirm permanent deletion.';
+            } else {
+                VettingPurger::deleteBusiness($pdo, $targetId);
+                $totalNow = (int)$pdo->query("SELECT COUNT(*) FROM businesses")->fetchColumn();
+                $flashMsg = "Permanently deleted '{$delInfo['name']}' (was #{$delInfo['business_number']}, ID: {$delInfo['business_id']}). Remaining {$totalNow} businesses renumbered sequentially (1–{$totalNow}).";
+            }
         } elseif ($adminAction === 'unpublish') {
             VettingPurger::quarantineBusinessDpa($pdo, $targetId);
             $flashMsg = "Business #{$targetId} has been unpublished (moved to quarantined/taken-down state).";
@@ -386,14 +391,13 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
                     </form>
                   <?php endif; ?>
 
-                  <form method="POST" action="/admin/index.php" style="display:inline;" onsubmit="return confirm('Permanently DELETE this business record from the database? This cannot be undone.');">
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
-                    <input type="hidden" name="business_id" value="<?= $bid ?>">
-                    <input type="hidden" name="admin_action" value="delete">
-                    <button type="submit" class="btn btn-crimson" style="padding:0.35rem 0.65rem;font-size:0.78rem;">
-                      🗑️ Delete
-                    </button>
-                  </form>
+                  <button type="button" class="btn btn-crimson" style="padding:0.35rem 0.65rem;font-size:0.78rem;"
+                    data-open-delete-modal="1"
+                    data-delete-biz-id="<?= $bid ?>"
+                    data-delete-biz-name="<?= htmlspecialchars((string)$b['name'], ENT_QUOTES, 'UTF-8') ?>"
+                    data-delete-action-url="/admin/index.php">
+                    🗑️ Delete Listing
+                  </button>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -401,6 +405,7 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
         </table>
       </div>
     </section>
+    <?= bbiz_render_github_delete_modal($tokens['csrf_token'], '/admin/index.php', 0, '', 'admin_action', 'delete') ?>
   </main>
   <script>
     document.querySelectorAll('[data-copy-claim]').forEach(btn => {

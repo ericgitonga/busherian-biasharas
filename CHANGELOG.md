@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.8.7] - 2026-11-10
+
+### Added
+- **GitHub-Style 2-Step "Delete Listing" Confirmation Modal (`#126`, `#127`, `#128`):**
+  - Added `bbiz_render_github_delete_modal()` in `src/bootstrap.php` and wired it across `/owner/edit-business.php`, `/owner/index.php`, `/admin/edit-business.php`, and `/admin/index.php`.
+  - **Step 1:** Asks if the user is sure of what they are doing and requires clicking **Yes, I am sure — Proceed** (`#btn-delete-step1-yes`).
+  - **Step 2:** Requires typing the exact **Business Name** (`#delete-confirm-name-input`) before unlocking the final Delete submit button (`#btn-delete-final-submit`), backed by strict server-side `confirm_business_name` verification.
+
 ## [0.8.6] - 2026-11-10
 
 ### Changed

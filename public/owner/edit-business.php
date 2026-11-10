@@ -27,10 +27,23 @@ if (isset($_GET['claimed'])) {
     $savedMsg = 'This business is now permanently linked to your Owner Account! You can review and update its details anytime below.';
 }
 
+$curNameStmt = $pdo->prepare("SELECT name FROM businesses WHERE id = :id LIMIT 1");
+$curNameStmt->execute([':id' => $businessId]);
+$currentBizNameForCheck = (string)($curNameStmt->fetchColumn() ?: '');
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrf = trim((string)($_POST['csrf_token'] ?? ''));
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
         $errorMsg = 'Invalid security token (CSRF). Please reload and try again.';
+    } elseif (($_POST['post_action'] ?? '') === 'delete') {
+        $typedConfirm = trim((string)($_POST['confirm_business_name'] ?? ''));
+        if ($typedConfirm === '' || $typedConfirm !== trim($currentBizNameForCheck)) {
+            $errorMsg = 'Deletion cancelled: You must type the exact business name to confirm permanent deletion.';
+        } else {
+            VettingPurger::deleteBusiness($pdo, $businessId);
+            header('Location: /owner/index.php?deleted=1');
+            exit;
+        }
     } else {
         $postData = $_POST;
         $regSel = trim((string)($postData['regulator_name'] ?? ''));
@@ -268,6 +281,22 @@ $tokens = AntiSpamGate::generateFormTokens();
         <a href="/owner/index.php" class="btn btn-outline">Back to My Businesses</a>
       </div>
     </form>
+
+    <!-- GitHub-Style Danger Zone: Delete Listing (#126, #127) -->
+    <section id="danger-zone" style="margin-top:1.5rem;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:12px;padding:1.1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+      <div>
+        <strong style="color:#991B1B;">🗑️ Danger Zone: Delete This Business Listing</strong>
+        <div style="font-size:0.82rem;color:#B91C1C;">Permanently removes this business listing from the directory. Once deleted, it cannot be recovered.</div>
+      </div>
+      <button type="button" class="btn btn-crimson"
+        data-open-delete-modal="1"
+        data-delete-biz-id="<?= (int)$biz['id'] ?>"
+        data-delete-biz-name="<?= htmlspecialchars((string)$biz['name'], ENT_QUOTES, 'UTF-8') ?>"
+        data-delete-action-url="/owner/edit-business.php?id=<?= (int)$biz['id'] ?>">
+        🗑️ Delete Listing
+      </button>
+    </section>
+    <?= bbiz_render_github_delete_modal($tokens['csrf_token'], '/owner/edit-business.php?id=' . (int)$biz['id'], (int)$biz['id'], (string)$biz['name'], 'post_action', 'delete') ?>
   </main>
 
   <script>
