@@ -49,11 +49,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $errorMsg = 'Please enter a valid email address for your Owner Account.';
     } else {
-        $owner = OwnerAuth::upsertOwner($pdo, $email, $fullName ?: null, $phone ?: null);
-        OwnerAuth::linkOwnerToBusiness($pdo, (int)$owner['id'], $bizId, 'claim_invite_link');
-        OwnerAuth::establishOwnerSession($owner);
-        header("Location: /owner/edit-business.php?id={$bizId}&claimed=1");
-        exit;
+        $newPw = (string)($_POST['new_password'] ?? '');
+        if ($newPw !== '' && mb_strlen($newPw) < 8) {
+            $errorMsg = 'If you choose to set a password, it must be at least 8 characters long.';
+        } else {
+            $owner = OwnerAuth::upsertOwner($pdo, $email, $fullName ?: null, $phone ?: null);
+            if ($newPw !== '') {
+                OwnerAuth::setOwnerPassword($pdo, (int)$owner['id'], $newPw);
+            }
+            OwnerAuth::linkOwnerToBusiness($pdo, (int)$owner['id'], $bizId, 'claim_invite_link');
+            OwnerAuth::establishOwnerSession($owner);
+            header("Location: /owner/edit-business.php?id={$bizId}&claimed=1");
+            exit;
+        }
     }
 }
 
@@ -130,6 +138,13 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
             <label style="display:block;font-weight:700;font-size:0.82rem;margin-bottom:0.25rem;">Direct Phone (Optional)</label>
             <input type="text" name="phone" class="input-control" value="<?= htmlspecialchars($suggestedPhone, ENT_QUOTES, 'UTF-8') ?>" placeholder="+2547...">
           </div>
+        </div>
+
+        <div style="margin-bottom:1.1rem;">
+          <label for="claim_new_password" style="display:block;font-weight:700;font-size:0.82rem;margin-bottom:0.25rem;">
+            Create a Password (Optional — to sign in from any computer or phone later)
+          </label>
+          <input type="password" id="claim_new_password" name="new_password" class="input-control" minlength="8" autocomplete="new-password" placeholder="At least 8 characters (or leave blank to use email links)">
         </div>
 
         <button type="submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.94rem;">

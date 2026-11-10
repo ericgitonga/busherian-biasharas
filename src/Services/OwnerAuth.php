@@ -419,6 +419,7 @@ final class OwnerAuth
         }
 
         $ownerId = (int)($_SESSION['bbiz_owner_id'] ?? 0);
+        $shouldExtendRollingCookie = false;
         if ($ownerId <= 0 && !empty($_COOKIE[self::COOKIE_NAME])) {
             $decoded = base64_decode((string)$_COOKIE[self::COOKIE_NAME], true);
             if (is_string($decoded) && substr_count($decoded, '|') === 3) {
@@ -431,6 +432,7 @@ final class OwnerAuth
                         $ownerId = (int)$cid;
                         $_SESSION['bbiz_owner_id'] = $ownerId;
                         $_SESSION['bbiz_owner_email'] = $cem;
+                        $shouldExtendRollingCookie = true;
                     }
                 }
             }
@@ -445,6 +447,11 @@ final class OwnerAuth
         $owner = $stmt->fetch();
         if (!$owner) {
             return null;
+        }
+
+        // Rolling 30-day session renewal so active owners stay signed in continuously (#119)
+        if ($shouldExtendRollingCookie) {
+            self::establishOwnerSession($owner);
         }
 
         // Ensure any newly matching businesses are auto-linked
@@ -485,6 +492,49 @@ final class OwnerAuth
             ]);
         }
         unset($_COOKIE[self::COOKIE_NAME]);
+    }
+
+    /**
+     * Set or update an owner's password for instant multi-device sign-in (#119).
+     */
+    public static function setOwnerPassword(PDO $pdo, int $ownerId, string $plainPassword): void
+    {
+        if ($ownerId <= 0) {
+            throw new \InvalidArgumentException('Invalid owner account.');
+        }
+        if (mb_strlen($plainPassword) < 8) {
+            throw new \InvalidArgumentException('Password must be at least 8 characters long.');
+        }
+        $hash = password_hash($plainPassword, PASSWORD_DEFAULT);
+        $pdo->prepare("UPDATE business_owners SET password_hash = :ph WHERE id = :id")
+            ->execute([':ph' => $hash, ':id' => $ownerId]);
+    }
+
+    /**
+     * Authenticate an owner using email and password from any device (#119).
+     */
+    public static function authenticateWithPassword(PDO $pdo, string $email, string $plainPassword): ?array
+    {
+        $normEmail = strtolower(trim($email));
+        if ($normEmail === '' || $plainPassword === '' || !filter_var($normEmail, FILTER_VALIDATE_EMAIL)) {
+            return null;
+        }
+        $stmt = $pdo->prepare("SELECT * FROM business_owners WHERE LOWER(email) = :em LIMIT 1");
+        $stmt->execute([':em' => $normEmail]);
+        $owner = $stmt->fetch();
+        if (!$owner || empty($owner['password_hash'])) {
+            return null;
+        }
+        if (!password_verify($plainPassword, (string)$owner['password_hash'])) {
+            return null;
+        }
+        $pdo->prepare("UPDATE business_owners SET last_login_at = CURRENT_TIMESTAMP WHERE id = :id")
+            ->execute([':id' => (int)$owner['id']]);
+        self::autoLinkMatchingBusinesses($pdo, (int)$owner['id'], $normEmail);
+
+        $out = $pdo->prepare("SELECT * FROM business_owners WHERE id = :id");
+        $out->execute([':id' => (int)$owner['id']]);
+        return (array)$out->fetch();
     }
 
     public static function getGoogleClientId(?PDO $pdo = null): string

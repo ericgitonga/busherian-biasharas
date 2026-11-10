@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS business_owners (
     full_name VARCHAR(150) NULL,
     phone VARCHAR(40) NULL,
     google_sub VARCHAR(120) NULL,
+    password_hash VARCHAR(255) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_owner_google (google_sub)

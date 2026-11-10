@@ -76,15 +76,40 @@ if (isset($_GET['err']) && $_GET['err'] === 'invalid_link') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrf = trim((string)($_POST['csrf_token'] ?? ''));
     $email = strtolower(trim((string)($_POST['email'] ?? '')));
+    $password = (string)($_POST['password'] ?? '');
+    $loginMode = trim((string)($_POST['login_mode'] ?? 'auto'));
+
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
         $flashError = 'Your page session expired. Please reload and try again.';
     } elseif ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $flashError = 'Please enter a valid email address.';
+    } elseif ($loginMode === 'password' || ($loginMode === 'auto' && $password !== '')) {
+        $authOwner = OwnerAuth::authenticateWithPassword($pdo, $email, $password);
+        if ($authOwner !== null) {
+            if ($claimBizId > 0) {
+                OwnerAuth::linkOwnerToBusiness($pdo, (int)$authOwner['id'], $claimBizId, 'claim_invite_link');
+                unset($_SESSION['bbiz_pending_claim_biz_id']);
+            }
+            OwnerAuth::establishOwnerSession($authOwner);
+            if ($claimBizId > 0) {
+                header("Location: /owner/edit-business.php?id={$claimBizId}&claimed=1");
+                exit;
+            }
+            if ($targetBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$authOwner['id'], $targetBizId)) {
+                unset($_SESSION['bbiz_target_edit_biz_id']);
+                header("Location: /owner/edit-business.php?id={$targetBizId}");
+                exit;
+            }
+            header('Location: /owner/index.php');
+            exit;
+        } else {
+            $flashError = 'Incorrect password, or you have not set a password yet. Click "Send 1-Click Sign-In Link" below to sign in via email and set your password.';
+        }
     } else {
         try {
             $magic = OwnerAuth::createMagicLink($pdo, $email, $claimBizId > 0 ? $claimBizId : null);
             Mailer::sendOwnerMagicLink($pdo, $email, $magic['url'], $claimBizName ? (string)$claimBizName : null);
-            $flashSuccess = "We have sent a one-click sign-in link to {$email}. Click the link in your email to sign in and stay logged in for 30 days.";
+            $flashSuccess = "We have sent a one-click sign-in link to {$email}. Click the link in your email to sign in and stay logged in automatically.";
             if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
                 $devPreviewMagicUrl = $magic['url'];
             }
@@ -183,27 +208,44 @@ $isAdminVisitor = AdminAuth::isAuthenticated();
         </div>
       <?php endif; ?>
 
-      <!-- Passwordless Email Magic Link -->
+      <!-- Email + Password OR 1-Click Email Sign-In Link (#118, #120) -->
       <form method="POST" action="/owner/login.php">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
         <label for="owner-email" style="display:block;font-weight:700;font-size:0.84rem;margin-bottom:0.35rem;color:#111827;">
           Your Business or Personal Email Address *
         </label>
         <input type="email" id="owner-email" name="email" class="input-control"
+          value="<?= htmlspecialchars((string)($_POST['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
           placeholder="e.g. you@yourbusiness.co.ke or yourname@gmail.com" required>
-        <p style="margin:0.4rem 0 0.9rem 0;font-size:0.77rem;color:#6B7280;">
+
+        <div style="margin-top:0.85rem;">
+          <label for="owner-password" style="display:block;font-weight:700;font-size:0.84rem;margin-bottom:0.35rem;color:#111827;">
+            Password <span style="font-weight:500;color:#6B7280;">(Optional — for instant sign-in on any computer or phone)</span>
+          </label>
+          <input type="password" id="owner-password" name="password" class="input-control"
+            autocomplete="current-password"
+            placeholder="Enter your password, or leave blank to get an email link">
+        </div>
+
+        <p style="margin:0.45rem 0 0.9rem 0;font-size:0.77rem;color:#6B7280;">
           💡 <strong>Automatic Linking:</strong> If you sign in with the email shown on your listing or an email matching your business website (for example, info@yourbusiness.co.ke), your business is linked to your account automatically.
         </p>
-        <button type="submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.72rem 1rem;font-size:0.92rem;">
-          ✉️ Send 1-Click Sign-In Link
-        </button>
+
+        <div style="display:grid;gap:0.55rem;">
+          <button type="submit" name="login_mode" value="magic_link" class="btn btn-green" style="width:100%;justify-content:center;padding:0.72rem 1rem;font-size:0.92rem;">
+            ✉️ Send 1-Click Sign-In Link (No Password Needed)
+          </button>
+          <button type="submit" name="login_mode" value="password" class="btn btn-outline" style="width:100%;justify-content:center;padding:0.65rem 1rem;font-size:0.88rem;border:2px solid #114B3E;color:#114B3E;font-weight:700;">
+            🔑 Sign In Immediately with Password
+          </button>
+        </div>
       </form>
 
       <!-- Step-by-Step Guide: How Owner Sign-In & Business Linking Works (#107) -->
       <div id="owner-signin-guide" style="margin-top:1.35rem;padding-top:1.15rem;border-top:1px solid #E5E7EB;">
         <h3 style="margin:0 0 0.5rem 0;font-size:0.92rem;color:#114B3E;">🔑 How Owner Sign-In &amp; Business Linking Works</h3>
         <ol style="margin:0;padding-left:1.2rem;font-size:0.81rem;color:#374151;line-height:1.55;">
-          <li style="margin-bottom:0.35rem;"><strong>1-Click Passwordless Sign-In:</strong> Enter your email above and click <em>Send 1-Click Sign-In Link</em>. Click the link in your email to sign in for 30 days (no password required).</li>
+          <li style="margin-bottom:0.35rem;"><strong>Sign In From Any Device or After 30 Days:</strong> Enter your email above and either click <em>Send 1-Click Sign-In Link</em> (no password needed) or sign in immediately with your <em>Password</em> or <em>Google</em>. Your session automatically renews for 30 days each time you visit.</li>
           <li style="margin-bottom:0.35rem;"><strong>Automatic Business Linking (4 Ways):</strong> Your account automatically links to any business matching:
             <ul style="margin:0.2rem 0 0.2rem 0;padding-left:1.1rem;color:#4B5563;">
               <li>The <strong>email address you used when registering</strong> your business on the site</li>

@@ -350,7 +350,12 @@ def test_dpa_cookie_consent_and_usage_metrics():
     # 15. Verify Ticket #116: All world countries rendered in country dropdown
     for c_name in ("Afghanistan", "Brazil", "Japan", "Switzerland", "Zambia", "Zimbabwe"):
         assert f'<option value="{c_name}"' in body_home, f"Missing country {c_name} in homepage filter"
-        assert f'<option value="{c_name}"' in body_sub, f"Missing country {c_name} in submit.php dropdown" 
+        assert f'<option value="{c_name}"' in body_sub, f"Missing country {c_name} in submit.php dropdown"
+
+    # 16. Verify Tickets #118, #119, #120: Multi-device Email + Password option alongside 1-Click Email Link on /owner/login.php
+    assert 'id="owner-password"' in body_ol
+    assert 'Sign In Immediately with Password' in body_ol
+    assert 'Send 1-Click Sign-In Link' in body_ol
 
 
 TESTS = [
