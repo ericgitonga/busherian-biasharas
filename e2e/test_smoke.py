@@ -250,10 +250,10 @@ def test_dpa_cookie_consent_and_usage_metrics():
     st_m, _, _ = _request("/admin/metrics.php")
     assert st_m == 401
 
-    # 5. Verify Ticket #42: Owner SSO + Magic Link login portal & homepage Owner Login link
+    # 5. Verify Tickets #42 & #44: Owner login portal never renders broken unconfigured Google error & serves Email Sign-In Link
     st_ol, body_ol, _ = _request("/owner/login.php")
     assert st_ol == 200
-    assert "Continue with Google (SSO)" in body_ol
+    assert "google_unconfigured" not in body_ol
     assert "Send 1-Click Sign-In Link" in body_ol
 
     st_home, body_home, _ = _request("/")

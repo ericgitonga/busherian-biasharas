@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
+use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\OwnerAuth;
@@ -35,13 +36,13 @@ if ($claimBizId > 0) {
     $claimBizName = $bStmt->fetchColumn() ?: null;
 }
 
-if (($_GET['action'] ?? '') === 'google') {
-    if (OwnerAuth::isGoogleSsoConfigured()) {
-        $state = bin2hex(random_bytes(16));
-        $_SESSION['bbiz_google_oauth_state'] = $state;
-        header('Location: ' . OwnerAuth::getGoogleAuthorizationUrl($state));
-        exit;
-    }
+$googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
+
+if (($_GET['action'] ?? '') === 'google' && $googleReady) {
+    $state = bin2hex(random_bytes(16));
+    $_SESSION['bbiz_google_oauth_state'] = $state;
+    header('Location: ' . OwnerAuth::getGoogleAuthorizationUrl($state, $pdo));
+    exit;
 }
 
 $flashSuccess = '';
@@ -53,9 +54,6 @@ if (isset($_GET['logged_out'])) {
 }
 if (isset($_GET['err']) && $_GET['err'] === 'invalid_link') {
     $flashError = 'That sign-in link has expired or was already used. Please request a fresh link below.';
-}
-if (isset($_GET['err']) && $_GET['err'] === 'google_unconfigured') {
-    $flashError = 'Google OAuth credentials are not yet set on this environment. Please use the instant Email Sign-In Link below.';
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -80,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $tokens = AntiSpamGate::generateFormTokens();
-$googleReady = OwnerAuth::isGoogleSsoConfigured();
+$isAdminVisitor = AdminAuth::isAuthenticated();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -88,7 +86,7 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured();
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Business Owner Sign In — Busherian Biasharas</title>
-<?= bbiz_head_meta_tags('Business Owner Sign In — Busherian Biasharas', 'Sign in via Google SSO or Email Magic Link to manage your Busherian Biashara listing.', '/owner/login.php') ?>
+<?= bbiz_head_meta_tags('Business Owner Sign In — Busherian Biasharas', 'Sign in to manage your Busherian Biashara listing.', '/owner/login.php') ?>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>
@@ -114,7 +112,7 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured();
         <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;color:#114B3E;letter-spacing:0.04em;">🔗 Claim &amp; Link Pre-Populated Business</div>
         <div style="font-size:1.02rem;font-weight:800;color:#111827;margin-top:0.2rem;"><?= htmlspecialchars((string)$claimBizName, ENT_QUOTES, 'UTF-8') ?></div>
         <p style="margin:0.35rem 0 0 0;font-size:0.84rem;color:#374151;">
-          Sign in below with Google or your Email address to link <strong><?= htmlspecialchars((string)$claimBizName, ENT_QUOTES, 'UTF-8') ?></strong> to your persistent Owner Account so you can edit its details anytime.
+          Sign in below to link <strong><?= htmlspecialchars((string)$claimBizName, ENT_QUOTES, 'UTF-8') ?></strong> to your persistent Owner Account so you can edit its details anytime.
         </p>
       </div>
     <?php endif; ?>
@@ -142,24 +140,23 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured();
         Sign in once to stay logged in for 30 days and update your business hours, contacts, location pin, or description anytime without waiting on admin.
       </p>
 
-      <!-- Option 1: Google SSO -->
       <?php if ($googleReady): ?>
         <a href="/owner/login.php?action=google" class="btn btn-outline" style="width:100%;justify-content:center;padding:0.7rem 1rem;font-weight:700;font-size:0.9rem;border:2px solid #D1D5DB;display:flex;align-items:center;gap:0.55rem;box-sizing:border-box;">
           <span>🌐</span> Continue with Google (SSO)
         </a>
-      <?php else: ?>
-        <a href="/owner/login.php?err=google_unconfigured" class="btn btn-outline" style="width:100%;justify-content:center;padding:0.7rem 1rem;font-weight:700;font-size:0.9rem;border:1px solid #D1D5DB;display:flex;align-items:center;gap:0.55rem;box-sizing:border-box;color:#374151;">
-          <span>🌐</span> Continue with Google (SSO)
-        </a>
+
+        <div style="display:flex;align-items:center;gap:0.75rem;margin:1.15rem 0;color:#9CA3AF;font-size:0.78rem;font-weight:700;text-transform:uppercase;">
+          <div style="flex:1;height:1px;background:#E5E7EB;"></div>
+          <span>Or Sign In via Email Link</span>
+          <div style="flex:1;height:1px;background:#E5E7EB;"></div>
+        </div>
+      <?php elseif ($isAdminVisitor): ?>
+        <div style="background:#FFFBEB;border:1px solid #F59E0B;border-radius:10px;padding:0.65rem 0.85rem;margin-bottom:1rem;font-size:0.78rem;color:#92400E;">
+          ⚙️ <strong>Admin Note:</strong> To enable the <em>Continue with Google (SSO)</em> button alongside Email Sign-In, paste your Google OAuth Client ID &amp; Secret in <a href="/admin/index.php#google-sso-config" style="color:#7B1113;font-weight:700;">Admin Console &rarr; Google SSO Settings</a>.
+        </div>
       <?php endif; ?>
 
-      <div style="display:flex;align-items:center;gap:0.75rem;margin:1.15rem 0;color:#9CA3AF;font-size:0.78rem;font-weight:700;text-transform:uppercase;">
-        <div style="flex:1;height:1px;background:#E5E7EB;"></div>
-        <span>Or Sign In via Email Link</span>
-        <div style="flex:1;height:1px;background:#E5E7EB;"></div>
-      </div>
-
-      <!-- Option 2: Passwordless Email Magic Link -->
+      <!-- Passwordless Email Magic Link -->
       <form method="POST" action="/owner/login.php">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
         <label for="owner-email" style="display:block;font-weight:700;font-size:0.84rem;margin-bottom:0.35rem;color:#111827;">

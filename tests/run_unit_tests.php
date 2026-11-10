@@ -326,6 +326,15 @@ assertTrue(
     'Owner Business Name change goes live and dispatches before/after notification to Admin'
 );
 
+// 16. Verify Ticket #44: Database::setSetting / getSetting for Google OAuth Client ID & Secret
+assertTrue(!OwnerAuth::isGoogleSsoConfigured($pdo), 'Google SSO is initially unconfigured when no env/db credentials exist');
+Database::setSetting($pdo, 'GOOGLE_CLIENT_ID', '123456789-test.apps.googleusercontent.com');
+Database::setSetting($pdo, 'GOOGLE_CLIENT_SECRET', 'GOCSPX-testsecret123');
+assertTrue(OwnerAuth::isGoogleSsoConfigured($pdo), 'Google SSO becomes active immediately when GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET are saved in app_settings');
+assertTrue(str_contains(OwnerAuth::getGoogleAuthorizationUrl('state123', $pdo), '123456789-test.apps.googleusercontent.com'), 'getGoogleAuthorizationUrl uses DB-stored GOOGLE_CLIENT_ID');
+Database::setSetting($pdo, 'GOOGLE_CLIENT_ID', '');
+Database::setSetting($pdo, 'GOOGLE_CLIENT_SECRET', '');
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 
