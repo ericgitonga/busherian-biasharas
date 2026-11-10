@@ -8,8 +8,8 @@ bbiz_send_security_headers(false);
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Privacy Notice (Kenya DPA 2019 Section 29) — Busherian Biasharas</title>
-<?= bbiz_head_meta_tags('Privacy Notice (Kenya DPA 2019 Section 29) — Busherian Biasharas', 'Kenya Data Protection Act 2019 Section 29 Privacy & Data Disposal Notice for Busherian Biasharas.', '/privacy.php') ?>
+  <title>Privacy Notice — Busherian Biasharas</title>
+<?= bbiz_head_meta_tags('Privacy Notice — Busherian Biasharas', 'Plain-language Privacy Notice and Alumni Data Protection Commitments for Busherian Biasharas.', '/privacy.php') ?>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>
@@ -19,53 +19,58 @@ bbiz_send_security_headers(false);
         <div class="brand-crest">BB</div>
         <div>
           <h1 class="brand-title">Busherian Biasharas</h1>
-          <p class="brand-subtitle">Kenya Data Protection Act, 2019 (Section 29) Privacy &amp; Data Disposal Notice</p>
+          <p class="brand-subtitle">Plain-Language Privacy Notice &amp; Alumni Privacy Guarantee</p>
         </div>
       </a>
       <nav class="header-actions">
         <a href="/" class="btn btn-outline-light">&larr; Back to Directory</a>
-        <a href="/takedown.php" class="btn btn-gold">Section 40 Takedown / Erasure</a>
+        <a href="/takedown.php" class="btn btn-gold">Report or Remove a Listing</a>
       </nav>
     </div>
   </header>
 
   <main style="max-width:860px;margin:2rem auto;padding:0 1.25rem;">
     <article style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:2rem;box-shadow:0 2px 10px rgba(0,0,0,0.04);">
-      <h2 style="margin-top:0;color:#7B1113;">1. Data Controller &amp; Purpose of Collection (DPA s.29)</h2>
+      <h2 style="margin-top:0;color:#7B1113;">1. Who We Are &amp; Why We Collect Information</h2>
       <p>
-        <strong>Busherian Biasharas</strong> (<code>busherianbiasharas.com</code>) operates as a verified business directory for alumni of
-        <strong>Alliance High School (AHS)</strong> and <strong>Alliance Girls High School (AGHS)</strong>.
-        Contact for all Data Protection inquiries: <a href="mailto:admin@busherianbiasharas.com" style="color:#7B1113;font-weight:600;">admin@busherianbiasharas.com</a>.
+        <strong>Busherian Biasharas</strong> operates as a verified business directory for alumni of
+        <strong>Alliance High School (AHS)</strong> and <strong>Alliance Girls High School (AGHS)</strong>, in full compliance with the
+        <strong>Kenya Data Protection Act, 2019</strong>.
+        For any privacy questions or requests, you can reach our team directly at
+        <a href="mailto:admin@busherianbiasharas.com" style="color:#7B1113;font-weight:600;">admin@busherianbiasharas.com</a>.
       </p>
 
-      <h2 style="color:#114B3E;">2. One-Time Alumni Vetting &amp; Immediate Cryptographic Disposal (DPA ss. 25, 39)</h2>
+      <h2 style="color:#114B3E;">2. One-Time Alumni Verification &amp; Immediate Deletion of School Details</h2>
       <div class="vetting-privacy-banner">
-        <strong>Zero Public Exposure &amp; Immediate Deletion of Vetting Data:</strong>
+        <strong>Your School Details Are Never Shown Publicly &amp; Are Deleted Immediately After Review:</strong>
         <ul>
-          <li>When you submit a business, Step 1 collects your <strong>School</strong> (AHS or AGHS), <strong>House</strong> (compulsory), <strong>Year Left</strong> (compulsory), and <strong>School Number</strong> (optional).</li>
-          <li>These credentials are stored in an isolated table (<code>business_vetting_queue</code>) strictly for one-time alumni verification.</li>
-          <li><strong>Houses, Years Left, and School Numbers DO NOT feature anywhere in the public directory.</strong></li>
-          <li>The moment an administrator approves or rejects your submission, the system executes an immediate hard-delete (<code>DELETE FROM business_vetting_queue WHERE business_id = :id</code>), permanently destroying your House, Year Left, and School Number.</li>
+          <li>When you list a business, Step 1 asks for your <strong>School</strong> (AHS or AGHS), <strong>House</strong>, <strong>Year Left</strong>, and optional <strong>School Number</strong>.</li>
+          <li>These details are used <strong>strictly once</strong> by our verification team to confirm that the business belongs to a fellow Busherian.</li>
+          <li><strong>Your House, Year Left, and School Number DO NOT appear anywhere in the public directory.</strong></li>
+          <li>The moment your listing is reviewed (whether approved or declined), your House, Year Left, and School Number are <strong>permanently deleted from our records</strong>.</li>
         </ul>
       </div>
 
-            <h2 style="color:#114B3E;">3. First-Party Cookie Consent &amp; Anonymous Usage Metrics (DPA ss. 25, 29, 32)</h2>
+      <h2 style="color:#114B3E;">3. Your Cookie Choice &amp; Anonymous Directory Statistics</h2>
       <ul>
-        <li><strong>Strictly Opt-In Consent (<code>Accept</code> / <code>Reject All</code>):</strong> On your first visit, we present a clear two-option cookie banner (<strong>Accept</strong> or <strong>Reject All</strong>). Your decision persists on your browser until you clear browsing data or reset it below.</li>
-        <li><strong>What Happens When You Click <code>Reject All</code> (or Before Choosing):</strong> Zero usage-metric cookies are set and zero analytics events are recorded. All directory search, filtering, map, and business contact features remain 100% available.</li>
-        <li><strong>What Happens When You Click <code>Accept</code>:</strong> A random first-party cookie (<code>bbiz_vid</code>) is stored and hashed via keyed <code>HMAC-SHA256</code> on our server to count anonymous page views, search terms, and outbound business clicks. Records are automatically purged after 180 days.</li>
-        <li><strong>100% Self-Hosted Assets &amp; Keyed IP Pseudonymization:</strong> All stylesheets and scripts are served directly from <code>busherianbiasharas.com</code> with zero third-party ad/analytics trackers, and anti-spam rate limits store only 24-hour keyed <code>HMAC-SHA256</code> hashes.</li>
+        <li><strong>Your Choice Comes First (Accept or Reject All):</strong> On your first visit, we show a simple banner asking whether you wish to <strong>Accept</strong> or <strong>Reject All</strong> optional cookies. Your choice is remembered on your browser and can be changed anytime using the button below.</li>
+        <li><strong>If You Click "Reject All" (or Before You Choose):</strong> No usage cookies are saved and no visit statistics are recorded. Every directory feature — searching, filtering, maps, and contacting businesses — works 100% normally.</li>
+        <li><strong>If You Click "Accept":</strong> We save a single anonymous browser cookie to help us count overall page visits, popular search terms, and clicks to businesses so we can improve the directory. These anonymous counts are cleared automatically after 6 months.</li>
+        <li><strong>Zero Outside Ad Trackers:</strong> All fonts, maps, icons, and scripts are hosted directly by Busherian Biasharas. We never share your browsing activity with outside advertisers.</li>
       </ul>
       <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:0.9rem 1.1rem;margin:0.9rem 0 1.25rem 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;font-size:0.86rem;">
-        <div><strong>Current Browser Consent Status:</strong> <span id="dpa-cookie-status-label">Checking...</span></div>
+        <div><strong>Your Current Cookie Preference:</strong> <span id="dpa-cookie-status-label">Checking...</span></div>
         <button type="button" onclick="if(window.BBizMetrics) window.BBizMetrics.resetChoice();" class="btn btn-outline" style="font-size:0.8rem;padding:0.35rem 0.8rem;">Change Cookie Choice</button>
       </div>
 
-      <h2 style="color:#114B3E;">4. Your Statutory Rights Under the Kenya Data Protection Act, 2019 (ss. 26, 40)</h2>
+      <h2 style="color:#114B3E;">4. Updating or Removing a Business Listing Anytime</h2>
       <p>
-        Under Sections 26 and 40 of the Kenya Data Protection Act, 2019, you have the right to access, rectify, object to processing, or demand immediate erasure of any listing referencing your business or contact details.
-        Use our self-service <a href="/takedown.php" style="color:#7B1113;font-weight:700;">Section 40 Instant Quarantine &amp; Takedown Form</a> at any time to immediately hide a disputed listing from public view pending review.
+        Under the <strong>Kenya Data Protection Act, 2019</strong>, you have the right to update, correct, or remove any business listing that includes your business or contact details:
       </p>
+      <ul>
+        <li><strong>Update Your Own Listing Anytime:</strong> Sign in via the <a href="/owner/login.php" style="color:#114B3E;font-weight:700;">Owner Sign-In</a> page using your email address to edit your business details directly.</li>
+        <li><strong>Immediately Hide or Remove a Listing:</strong> Use our <a href="/takedown.php" style="color:#7B1113;font-weight:700;">Report or Remove a Listing Form</a> at any time to immediately hide a listing from public view while our team completes your removal or correction request.</li>
+      </ul>
     </article>
   </main>
   <script src="/assets/js/consent-metrics.js"></script>

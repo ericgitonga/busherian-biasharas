@@ -324,6 +324,8 @@ final class Database
         if ($count === 0) {
             \BusherianBiasharas\Services\CategoryMatcher::seedDefaultTaxonomy($pdo);
             \BusherianBiasharas\Services\CategoryMatcher::seedSampleBusinesses($pdo);
+        } else {
+            \BusherianBiasharas\Services\CategoryMatcher::ensureTaxonomyUpToDate($pdo);
         }
     }
 

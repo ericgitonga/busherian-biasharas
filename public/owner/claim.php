@@ -79,7 +79,7 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
         <div class="brand-crest">BB</div>
         <div>
           <h1 class="brand-title">Busherian Biasharas — Claim Your Listing</h1>
-          <p class="brand-subtitle">1-Click Verified Owner Onboarding &amp; 30-Day Persistent Session</p>
+          <p class="brand-subtitle">1-Click Business Owner Verification</p>
         </div>
       </a>
       <nav class="header-actions">
@@ -106,7 +106,7 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
 
       <?php if ($googleReady): ?>
         <a href="/owner/login.php?action=google&amp;claim=<?= $bizId ?>" class="btn btn-outline" style="width:100%;justify-content:center;padding:0.7rem 1rem;font-weight:700;font-size:0.9rem;border:2px solid #D1D5DB;display:flex;align-items:center;gap:0.55rem;box-sizing:border-box;margin-bottom:1rem;">
-          <span>🌐</span> Claim &amp; Continue with Google (SSO)
+          <span>🌐</span> Claim &amp; Continue with Google
         </a>
       <?php endif; ?>
 

@@ -8,7 +8,7 @@ use PDO;
 final class CategoryMatcher
 {
     /**
-     * 14 Standard Level 1 Industry Sectors & 105 Pre-Populated Level 2 Specialties
+     * 15 Standard Industry Sectors & 113 Pre-Populated Specialties
      */
     public const DEFAULT_TAXONOMY = [
         [
@@ -174,6 +174,21 @@ final class CategoryMatcher
             ],
         ],
         [
+            'name' => 'Arts, Visual & Performing Arts',
+            'slug' => 'arts-visual-performing-arts',
+            'icon' => 'palette',
+            'specialties' => [
+                'Visual Arts, Fine Art & Galleries',
+                'Performing Arts, Theatre & Dance',
+                'Music, Live Bands, DJs & Sound Production',
+                'Film, Cinema, Animation & Directing',
+                'Sculpture, Ceramics, Pottery & Crafts',
+                'Illustration, Comics & Digital Art',
+                'Literary Arts, Poetry & Creative Writing',
+                'Cultural Heritage, Curatorial & Museums',
+            ],
+        ],
+        [
             'name' => 'Manufacturing, Energy & Industrial',
             'slug' => 'manufacturing-energy-industrial',
             'icon' => 'factory',
@@ -260,6 +275,15 @@ final class CategoryMatcher
         'salon' => ['Beauty', 'Hair Salon', 'Cosmetics'],
         'ushuru' => ['Tax', 'Accounting', 'Audit'],
         'bima' => ['Insurance'],
+        'sanaa' => ['Visual Arts', 'Performing Arts', 'Fine Art', 'Music', 'Sculpture'],
+        'art' => ['Visual Arts', 'Fine Art', 'Performing Arts', 'Illustration', 'Galleries'],
+        'arts' => ['Visual Arts', 'Performing Arts', 'Fine Art', 'Theatre', 'Music'],
+        'artist' => ['Visual Arts', 'Fine Art', 'Performing Arts', 'Music', 'Sculpture'],
+        'theatre' => ['Performing Arts', 'Theatre', 'Dance'],
+        'gallery' => ['Visual Arts', 'Fine Art', 'Galleries'],
+        'band' => ['Music', 'Live Bands', 'Performing Arts'],
+        'mziki' => ['Music', 'Live Bands', 'Sound Production'],
+        'muziki' => ['Music', 'Live Bands', 'Sound Production'],
     ];
 
     public static function slugify(string $text): string
@@ -918,24 +942,39 @@ final class CategoryMatcher
 
     public static function seedDefaultTaxonomy(PDO $pdo): void
     {
+        self::ensureTaxonomyUpToDate($pdo);
+    }
+
+    public static function ensureTaxonomyUpToDate(PDO $pdo): void
+    {
+        $findSector = $pdo->prepare("SELECT id FROM categories WHERE parent_id IS NULL AND slug = :slug LIMIT 1");
         $insertSector = $pdo->prepare("INSERT INTO categories (parent_id, name, slug, icon, status) VALUES (NULL, :name, :slug, :icon, 'approved')");
+        $findSpec = $pdo->prepare("SELECT id FROM categories WHERE parent_id IS NOT NULL AND slug = :slug LIMIT 1");
         $insertSpec = $pdo->prepare("INSERT INTO categories (parent_id, name, slug, icon, status) VALUES (:parent_id, :name, :slug, NULL, 'approved')");
 
         foreach (self::DEFAULT_TAXONOMY as $sector) {
-            $insertSector->execute([
-                ':name' => $sector['name'],
-                ':slug' => $sector['slug'],
-                ':icon' => $sector['icon'],
-            ]);
-            $sectorId = (int)$pdo->lastInsertId();
+            $findSector->execute([':slug' => $sector['slug']]);
+            $sectorId = (int)$findSector->fetchColumn();
+            if ($sectorId <= 0) {
+                $insertSector->execute([
+                    ':name' => $sector['name'],
+                    ':slug' => $sector['slug'],
+                    ':icon' => $sector['icon'],
+                ]);
+                $sectorId = (int)$pdo->lastInsertId();
+            }
 
             foreach ($sector['specialties'] as $specName) {
                 $specSlug = $sector['slug'] . '-' . self::slugify($specName);
-                $insertSpec->execute([
-                    ':parent_id' => $sectorId,
-                    ':name' => $specName,
-                    ':slug' => $specSlug,
-                ]);
+                $findSpec->execute([':slug' => $specSlug]);
+                $specId = (int)$findSpec->fetchColumn();
+                if ($specId <= 0) {
+                    $insertSpec->execute([
+                        ':parent_id' => $sectorId,
+                        ':name' => $specName,
+                        ':slug' => $specSlug,
+                    ]);
+                }
             }
         }
     }

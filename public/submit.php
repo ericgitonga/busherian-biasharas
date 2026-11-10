@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Validate Kenya DPA 2019 s.33 Age Gate & s.29 Unbundled Consent
             if (empty($_POST['age_attestation_18'])) {
-                $errors[] = 'You must confirm that you are 18 years of age or older (Kenya DPA 2019 s.33).';
+                $errors[] = 'You must confirm that you are 18 years of age or older.';
             }
             if (empty($_POST['dpa_consent_directory'])) {
                 $errors[] = 'Please confirm your consent to publish the business contact details in the public directory.';
@@ -112,15 +112,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Please enter a Business Description.';
             }
             if ($sectorId <= 0) {
-                $errors[] = 'Please select a Level 1 Industry Sector.';
+                $errors[] = 'Please select an Industry Sector.';
             }
             if ($specialtyId === '__custom__') {
                 if ($customSpec === '' || mb_strlen($customSpec) < 3) {
-                    $errors[] = 'Please enter the name of your custom Level 2 Specialty.';
+                    $errors[] = 'Please enter the name of your custom Specialty.';
                 }
                 $regName = '';
             } elseif ((int)$specialtyId <= 0) {
-                $errors[] = 'Please select a Level 2 Specialty (or choose "+ Add New Specialty").';
+                $errors[] = 'Please select a Specialty (or choose "+ Add New Specialty").';
                 $regName = '';
             } else {
                 $regInfo = CategoryMatcher::getSpecialtyRegulationById($pdo, (int)$specialtyId);
@@ -135,8 +135,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             // Validate Step 3 & 4: Location & Direct Contacts
-            $phonePrimary = WebsiteEnricher::normalizeKenyanPhone((string)($_POST['phone_primary'] ?? ''));
-            $whatsappNum  = WebsiteEnricher::normalizeKenyanPhone((string)($_POST['whatsapp_number'] ?? $phonePrimary));
+            $rawPrimaryPhone = trim((string)($_POST['phone_primary'] ?? ''));
+            if (!empty($_POST['same_as_direct_phone_primary']) && $submitterPhone !== '') {
+                $rawPrimaryPhone = $submitterPhone;
+            }
+            $rawWhatsappPhone = trim((string)($_POST['whatsapp_number'] ?? ''));
+            if (!empty($_POST['same_as_direct_phone_whatsapp']) && $submitterPhone !== '') {
+                $rawWhatsappPhone = $submitterPhone;
+            } elseif ($rawWhatsappPhone === '') {
+                $rawWhatsappPhone = $rawPrimaryPhone;
+            }
+            $phonePrimary = WebsiteEnricher::normalizeKenyanPhone($rawPrimaryPhone);
+            $whatsappNum  = WebsiteEnricher::normalizeKenyanPhone($rawWhatsappPhone);
             $emailPublic  = strtolower(trim((string)($_POST['email_public'] ?? '')));
             $websiteUrl   = trim((string)($_POST['website_url'] ?? ''));
 
@@ -343,7 +353,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
       <nav class="header-actions">
         <a href="/" class="btn btn-outline-light">&larr; Back to Directory</a>
         <a href="/owner/login.php" class="btn btn-outline-light">👤 <?= $loggedOwner ? "My Biasharas" : "Owner Login" ?></a>
-        <a href="/privacy.php" class="btn btn-outline-light">🔒 Section 29 Privacy Notice</a>
+        <a href="/privacy.php" class="btn btn-outline-light">🔒 Privacy Notice</a>
       </nav>
     </div>
   </header>
@@ -427,11 +437,11 @@ $aghsHouses = Houses::AGHS_HOUSES;
 
         <div class="vetting-privacy-banner">
           <strong style="color:#114B3E;font-size:0.92rem;display:block;margin-bottom:0.25rem;">
-            🔒 Strict Alumni Privacy &amp; Immediate Data Disposal Guarantee (Kenya DPA 2019 s.29)
+            🔒 Strict Alumni Privacy &amp; Immediate Deletion Guarantee
           </strong>
           <p style="margin:0;font-size:0.84rem;color:#1F2937;">
             Your <strong>House</strong>, <strong>Year Left</strong>, and optional <strong>School Number</strong> are collected <strong>strictly for one-time alumni vetting</strong>.
-            <strong>Houses and Years DO NOT feature anywhere in the public directory</strong>, are never shown to visitors, and are <strong>permanently deleted from our database (`DELETE FROM business_vetting_queue`) the instant your listing is reviewed</strong>.
+            <strong>Houses and Years DO NOT feature anywhere in the public directory</strong>, are never shown to visitors, and are <strong>permanently deleted from our records the instant your listing is reviewed</strong>.
           </p>
         </div>
 
@@ -481,7 +491,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
       <!-- STEP 2: BUSINESS IDENTITY & 2-LEVEL CATEGORY -->
       <fieldset style="border:none;padding:1.25rem 0 0 0;margin:0 0 1.75rem 0;border-top:1px solid #E5E7EB;">
         <legend style="font-size:1.15rem;font-weight:800;color:#7B1113;margin-bottom:0.65rem;">
-          Step 2 of 4: Business Identity &amp; 2-Level Category
+          Step 2 of 4: Business Identity &amp; Category
         </legend>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0.9rem;">
@@ -513,7 +523,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0.9rem;margin-top:0.9rem;">
           <div>
-            <label for="sector_id" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Level 1: Industry Sector *</label>
+            <label for="sector_id" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Industry Sector *</label>
             <select id="sector_id" name="sector_id" class="select-control" required>
               <option value="">Select Industry Sector...</option>
               <?php foreach ($taxonomyTree as $sec): ?>
@@ -523,9 +533,9 @@ $aghsHouses = Houses::AGHS_HOUSES;
           </div>
 
           <div>
-            <label for="specialty_id" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Level 2: Specialty / Product or Service Type *</label>
+            <label for="specialty_id" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Specialty / Product or Service Type *</label>
             <select id="specialty_id" name="specialty_id" class="select-control" required>
-              <option value="">Select Level 1 Sector first...</option>
+              <option value="">Select Industry Sector first...</option>
             </select>
           </div>
         </div>
@@ -533,14 +543,14 @@ $aghsHouses = Houses::AGHS_HOUSES;
         <!-- Inline Self-Service Custom Category Addition (+ Add New) -->
         <div id="custom-specialty-wrap" style="display:none;margin-top:0.85rem;background:#FFFBEB;border:1px solid #F59E0B;border-radius:10px;padding:0.9rem;">
           <label for="custom_specialty_name" style="font-weight:700;font-size:0.85rem;color:#92400E;display:block;margin-bottom:0.3rem;">
-            + Propose a New Level 2 Specialty (Subject to Admin Review)
+            + Propose a New Specialty (Subject to Admin Review)
           </label>
           <input type="text" id="custom_specialty_name" name="custom_specialty_name" class="input-control"
             placeholder="e.g. Aviation Charter &amp; Helicopter Services">
           <div id="fuzzy-suggestion-box" style="margin-top:0.45rem;font-size:0.8rem;color:#78350F;"></div>
         </div>
 
-        <!-- Conditionally shown & required ONLY when a regulated Level 2 specialty is selected -->
+        <!-- Conditionally shown & required ONLY when a regulated specialty is selected -->
         <div id="regulated-fields-wrap" hidden style="display:none;margin-top:0.9rem;background:#F0FDF4;border:1px solid #059669;border-radius:10px;padding:0.9rem;">
           <label for="regulator_name" style="font-weight:700;font-size:0.85rem;color:#065F46;display:block;margin-bottom:0.3rem;">
             🛡️ Professional Regulator / Statutory Body * (Required for Regulated Industry)
@@ -560,7 +570,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
             <input type="checkbox" name="b2b_ready" value="1"> <strong>B2B Corporate Vendor Ready</strong>
           </label>
           <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
-            <input type="checkbox" name="accepts_lpo" value="1"> <strong>Accepts Corporate LPO / Invoice</strong>
+            <input type="checkbox" name="accepts_lpo" value="1"> <strong>Accepts Corporate Purchase Orders (LPO) &amp; Invoices</strong>
           </label>
         </div>
       </fieldset>
@@ -620,17 +630,25 @@ $aghsHouses = Houses::AGHS_HOUSES;
       <!-- STEP 4: DIRECT CONTACTS, SOCIAL MEDIA & KENYA DPA 2019 CONSENT -->
       <fieldset style="border:none;padding:1.25rem 0 0 0;margin:0;border-top:1px solid #E5E7EB;">
         <legend style="font-size:1.15rem;font-weight:800;color:#7B1113;margin-bottom:0.65rem;">
-          Step 4 of 4: Public Contacts, Social Media &amp; DPA Consent
+          Step 4 of 4: Public Contacts, Social Media &amp; Privacy Confirmation
         </legend>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0.9rem;">
           <div>
             <label for="phone_primary" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Public Business Phone *</label>
             <input type="tel" id="phone_primary" name="phone_primary" class="input-control" placeholder="+254722100200" required>
+            <label style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:#374151;margin-top:0.35rem;cursor:pointer;">
+              <input type="checkbox" id="same_as_direct_phone_primary" name="same_as_direct_phone_primary" value="1">
+              <span>Same as Direct Phone above</span>
+            </label>
           </div>
           <div>
             <label for="whatsapp_number" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">WhatsApp Business Number</label>
             <input type="tel" id="whatsapp_number" name="whatsapp_number" class="input-control" placeholder="+254722100200">
+            <label style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:#374151;margin-top:0.35rem;cursor:pointer;">
+              <input type="checkbox" id="same_as_direct_phone_whatsapp" name="same_as_direct_phone_whatsapp" value="1">
+              <span>Same as Direct Phone above</span>
+            </label>
           </div>
           <div>
             <label for="email_public" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Public Business Email</label>
@@ -672,11 +690,11 @@ $aghsHouses = Houses::AGHS_HOUSES;
         <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:1rem;margin-top:1.15rem;font-size:0.84rem;">
           <label style="display:flex;align-items:flex-start;gap:0.55rem;margin-bottom:0.55rem;cursor:pointer;">
             <input type="checkbox" name="age_attestation_18" value="1" required style="margin-top:0.2rem;">
-            <span><strong>Age Attestation (Kenya DPA 2019 s.33):</strong> I confirm that I am 18 years of age or older and authorized to list this business. *</span>
+            <span><strong>Age Confirmation:</strong> I confirm that I am 18 years of age or older and authorized to list this business. *</span>
           </label>
           <label style="display:flex;align-items:flex-start;gap:0.55rem;cursor:pointer;">
             <input type="checkbox" name="dpa_consent_directory" value="1" required style="margin-top:0.2rem;">
-            <span><strong>Section 29 Notice &amp; Unbundled Consent:</strong> I have read the <a href="/privacy.php" target="_blank" style="color:#7B1113;text-decoration:underline;">Kenya DPA 2019 Privacy Notice</a>. I understand that my House, Year Left, and School Number are used strictly once for alumni vetting, are never displayed publicly, and are permanently deleted upon review. *</span>
+            <span><strong>Privacy Confirmation:</strong> I have read the <a href="/privacy.php" target="_blank" style="color:#7B1113;text-decoration:underline;">Privacy Notice</a>. I understand that my House, Year Left, and School Number are used strictly once for alumni verification, are never displayed publicly, and are permanently deleted upon review. *</span>
           </label>
         </div>
 
@@ -796,7 +814,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
       }
 
       function populateSpecialties(sectorId, selectedSpecialtyId) {
-        specSel.innerHTML = '<option value="">Select Specialty (Level 2)...</option>';
+        specSel.innerHTML = '<option value="">Select Specialty...</option>';
         const sec = SECTORS.find(s => String(s.id) === String(sectorId));
         if (sec && Array.isArray(sec.specialties)) {
           sec.specialties.forEach(sp => {
@@ -885,7 +903,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
           btnExtract.textContent = '⏳ Extracting from Website...';
           statusBox.style.display = 'block';
           statusBox.style.color = '#114B3E';
-          statusBox.textContent = 'Fetching website metadata, Schema.org JSON-LD, OpenGraph tags, and contact links...';
+          statusBox.textContent = 'Reading your website to fill in your business name, description, contacts, and location...';
 
           try {
             const csrf = document.getElementById('csrf_token').value;

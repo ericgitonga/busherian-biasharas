@@ -130,7 +130,7 @@ foreach ($rows as $r) {
           🏢 B2B Shortlist (<span id="shortlist-count">0</span>/5)
         </button>
         <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light">👤 <?= $currentOwner ? 'My Biasharas' : 'Owner Login' ?></a>
-        <a href="/privacy.php" class="btn btn-outline-light">🔒 Privacy &amp; DPA Notice</a>
+        <a href="/privacy.php" class="btn btn-outline-light">🔒 Privacy Notice</a>
         <a href="/submit.php" class="btn btn-gold">+ List Your Biashara</a>
       </nav>
     </div>
@@ -147,22 +147,22 @@ foreach ($rows as $r) {
           <button type="button" id="btn-clear-search" class="search-clear-btn" aria-label="Clear search" title="Clear search" style="display:none;">✕</button>
         </div>
         <div>
-          <label for="filter-sector" style="display:none;">Level 1 Industry Sector</label>
+          <label for="filter-sector" style="display:none;">Industry Sector</label>
           <select id="filter-sector" class="select-control">
-            <option value="">All 14 Industry Sectors (Level 1)</option>
+            <option value="">All Industry Sectors</option>
             <?php foreach ($taxonomyTree as $sector): ?>
               <option value="<?= (int)$sector['id'] ?>"><?= htmlspecialchars((string)$sector['name'], ENT_QUOTES, 'UTF-8') ?></option>
             <?php endforeach; ?>
           </select>
         </div>
         <div>
-          <label for="filter-specialty" style="display:none;">Level 2 Specialty</label>
+          <label for="filter-specialty" style="display:none;">Specialty</label>
           <select id="filter-specialty" class="select-control">
-            <option value="">All Specialties (Level 2)</option>
+            <option value="">All Specialties</option>
           </select>
         </div>
         <div>
-          <label for="filter-country" style="display:none;">Country (Place Level 1)</label>
+          <label for="filter-country" style="display:none;">Country</label>
           <select id="filter-country" class="select-control" aria-label="Filter by Country">
             <option value="">🌍 All Countries</option>
             <?php foreach (array_keys($placeHierarchy) as $cName): ?>
@@ -171,7 +171,7 @@ foreach ($rows as $r) {
           </select>
         </div>
         <div>
-          <label for="filter-city" style="display:none;">City / County / State (Place Level 2)</label>
+          <label for="filter-city" style="display:none;">City / County / State</label>
           <select id="filter-city" class="select-control" aria-label="Filter by City, County, or State">
             <option value="">📍 All Cities / Counties / States</option>
           </select>
@@ -246,8 +246,8 @@ foreach ($rows as $r) {
     </div>
     <div style="display:flex;gap:1rem;">
       <a href="/submit.php" style="color:#7B1113;font-weight:600;">Register a Business</a>
-      <a href="/privacy.php">Kenya DPA 2019 Privacy Notice</a>
-      <a href="/takedown.php">Section 40 Takedown / Rectification</a>
+      <a href="/privacy.php">Privacy Notice</a>
+      <a href="/takedown.php">Report or Remove a Listing</a>
     </div>
   </footer>
 

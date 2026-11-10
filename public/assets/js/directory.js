@@ -107,7 +107,7 @@
 
   function populateSpecialtiesDropdown(sectorId) {
     if (!els.specialtySelect) return;
-    els.specialtySelect.innerHTML = '<option value="">All Specialties (Level 2)</option>';
+    els.specialtySelect.innerHTML = '<option value="">All Specialties</option>';
     const sec = state.sectors.find(s => String(s.id) === String(sectorId));
     if (!sec || !Array.isArray(sec.specialties)) return;
     sec.specialties.forEach(sp => {
@@ -903,7 +903,7 @@
             ${biz.can_edit && biz.edit_url
               ? `<a href="${escapeHtml(biz.edit_url)}" style="color:#114B3E;font-weight:800;">✏️ Edit My Business Listing</a>`
               : `<a href="/owner/login.php?biz=${biz.id}" style="color:#114B3E;font-weight:700;">👤 Own this business? Sign in to edit</a>`}
-            <a href="/takedown.php?business_id=${biz.id}" style="color:#7B1113;font-weight:600;">Report / DPA Takedown</a>
+            <a href="/takedown.php?business_id=${biz.id}" style="color:#7B1113;font-weight:600;">Report or Remove Listing</a>
           </div>
         </div>
       </div>

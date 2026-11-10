@@ -147,7 +147,7 @@ $tokens = AntiSpamGate::generateFormTokens();
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.9rem;margin-top:0.9rem;">
         <div>
-          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Level 1: Industry Sector *</label>
+          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Industry Sector *</label>
           <select id="sector_id" name="sector_id" class="select-control" required>
             <?php foreach ($taxonomyTree as $sec): ?>
               <option value="<?= (int)$sec['id'] ?>" <?= (int)$biz['sector_id'] === (int)$sec['id'] ? 'selected' : '' ?>>
@@ -157,7 +157,7 @@ $tokens = AntiSpamGate::generateFormTokens();
           </select>
         </div>
         <div>
-          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Level 2: Specialty *</label>
+          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Specialty *</label>
           <select id="specialty_id" name="specialty_id" class="select-control" required></select>
         </div>
       </div>
