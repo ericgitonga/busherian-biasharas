@@ -221,6 +221,7 @@ foreach ($rows as $r) {
     window.INITIAL_BUSINESSES = <?= json_encode($initialBusinesses, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
   </script>
   <script src="/assets/vendor/leaflet/leaflet.js"></script>
+  <script src="/assets/js/consent-metrics.js"></script>
   <script src="/assets/js/directory.js"></script>
 </body>
 </html>

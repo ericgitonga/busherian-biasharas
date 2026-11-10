@@ -874,5 +874,6 @@ $aghsHouses = Houses::AGHS_HOUSES;
       }
     })();
   </script>
+  <script src="/assets/js/consent-metrics.js"></script>
 </body>
 </html>

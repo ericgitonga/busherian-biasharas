@@ -338,6 +338,7 @@
           data: json.route,
         };
         trackClick(biz.id, 'map_pin');
+        if (window.BBizMetrics) window.BBizMetrics.track('route_request', { business_id: biz.id, meta_label: biz.name });
         renderRouteDrawerAndModalBox();
         renderInteractiveMap();
       }
@@ -468,6 +469,7 @@
   }
 
   function trackClick(businessId, eventType) {
+    if (!window.BBizMetrics || !window.BBizMetrics.hasConsent()) return;
     try {
       fetch('/api/track-click.php', {
         method: 'POST',
@@ -482,6 +484,7 @@
     if (!biz || !els.modalBackdrop || !els.modalContent) return;
     state.activeBusiness = biz;
     state.focusedBusinessId = biz.id;
+    if (window.BBizMetrics) window.BBizMetrics.track('modal_open', { business_id: biz.id, meta_label: biz.name });
     renderMapFocusBar();
 
     const hours = biz.hours_status || { state: 'CLOSED', badge_text: 'Closed', today_key: 'mon', schedule_table: {} };
@@ -652,7 +655,7 @@
       syncClearBtn();
       state.searchQuery = e.target.value.trim();
       clearTimeout(timer);
-      timer = setTimeout(fetchBusinesses, 220);
+      timer = setTimeout(() => { if (state.searchQuery.length >= 2 && window.BBizMetrics) window.BBizMetrics.track('search', { meta_label: state.searchQuery }); fetchBusinesses(); }, 220);
     });
     if (els.searchClearBtn) {
       els.searchClearBtn.addEventListener('click', () => {
@@ -743,6 +746,7 @@
           b.classList.toggle('active', b.getAttribute('data-quick-filter') === state.selectedSchool);
         });
       }
+      if (window.BBizMetrics) window.BBizMetrics.track('filter', { meta_label: f });
       fetchBusinesses();
     });
   });

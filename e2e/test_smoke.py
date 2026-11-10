@@ -168,6 +168,48 @@ def test_school_filters_and_route_directions_api():
     assert len(rt["steps"]) >= 1
 
 
+def test_dpa_cookie_consent_and_usage_metrics():
+    # 1. Verify consent-metrics.js is served and strictly defines 'Reject All' and 'Accept' buttons
+    st_js, js_body, _ = _request("/assets/js/consent-metrics.js")
+    assert st_js == 200
+    assert "Reject All" in js_body
+    assert "Accept" in js_body
+    assert "bbiz_cookie_consent" in js_body
+
+    # 2. Verify /api/track-metric.php ignores requests when consent cookie is absent or 'rejected'
+    st_no, body_no, _ = _request(
+        "/api/track-metric.php",
+        method="POST",
+        data=json.dumps({"event_type": "page_view", "page_path": "/"}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert st_no == 200
+    assert json.loads(body_no)["status"] == "ignored_no_consent"
+
+    st_rej, body_rej, _ = _request(
+        "/api/track-metric.php",
+        method="POST",
+        data=json.dumps({"event_type": "page_view", "page_path": "/"}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Cookie": "bbiz_consent=rejected"},
+    )
+    assert st_rej == 200
+    assert json.loads(body_rej)["status"] == "ignored_no_consent"
+
+    # 3. Verify /api/track-metric.php records metric when consent cookie is 'accepted'
+    st_acc, body_acc, _ = _request(
+        "/api/track-metric.php",
+        method="POST",
+        data=json.dumps({"event_type": "page_view", "page_path": "/"}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Cookie": "bbiz_consent=accepted; bbiz_vid=e2econsentedvisitor1234"},
+    )
+    assert st_acc == 200, f"Expected 200 from consented track-metric, got {st_acc}: {body_acc}"
+    assert json.loads(body_acc)["status"] == "ok"
+
+    # 4. Verify /admin/metrics.php enforces 401 when unauthenticated
+    st_m, _, _ = _request("/admin/metrics.php")
+    assert st_m == 401
+
+
 TESTS = [
     test_health_endpoint,
     test_directory_homepage_and_zero_vetting_exposure,
@@ -175,4 +217,5 @@ TESTS = [
     test_website_autofill_api_and_ssrf_protection,
     test_privacy_and_dpa_takedown_pages,
     test_school_filters_and_route_directions_api,
+    test_dpa_cookie_consent_and_usage_metrics,
 ]

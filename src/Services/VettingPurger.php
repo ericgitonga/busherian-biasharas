@@ -172,6 +172,8 @@ final class VettingPurger
         // 3. Purge expired nonces and >24h rate-limit hashes
         $pdo->prepare("DELETE FROM used_nonces WHERE expires_at < :now")->execute([':now' => time()]);
         $pdo->prepare("DELETE FROM rate_limits WHERE created_at < :cut")->execute([':cut' => time() - 86400]);
+        $metricsCutoff = gmdate('Y-m-d H:i:s', time() - (180 * 86400));
+        $pdo->prepare("DELETE FROM usage_metrics WHERE created_at < :mcut")->execute([':mcut' => $metricsCutoff]);
 
         return [
             'vetting_rows_purged' => $vettingPurged,
@@ -192,6 +194,7 @@ final class VettingPurger
         try {
             $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")->execute([':id' => $businessId]);
             $pdo->prepare("DELETE FROM click_events WHERE business_id = :id")->execute([':id' => $businessId]);
+            $pdo->prepare("DELETE FROM usage_metrics WHERE business_id = :id")->execute([':id' => $businessId]);
             $del = $pdo->prepare("DELETE FROM businesses WHERE id = :id");
             $del->execute([':id' => $businessId]);
             $deleted = $del->rowCount() > 0;

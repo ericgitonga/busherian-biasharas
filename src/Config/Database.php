@@ -299,11 +299,21 @@ final class Database
                     event_type TEXT NOT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS usage_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    visitor_hash TEXT NOT NULL,
+                    page_path TEXT NULL,
+                    business_id INTEGER NULL,
+                    meta_label TEXT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
             ");
         }
 
         // Ensure business_id and business_number columns exist on pre-existing databases
         self::ensureBusinessIdentityAndNumberColumns($pdo, $driver);
+        self::ensureUsageMetricsTable($pdo, $driver);
 
         // Seed categories and initial verified listings if empty
         $count = (int)$pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
@@ -345,6 +355,38 @@ final class Database
 
         if (!$hasBizId || !$hasBizNum) {
             \BusherianBiasharas\Services\VettingPurger::renumberBusinesses($pdo);
+        }
+    }
+
+    private static function ensureUsageMetricsTable(PDO $pdo, string $driver): void
+    {
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS usage_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    visitor_hash TEXT NOT NULL,
+                    page_path TEXT NULL,
+                    business_id INTEGER NULL,
+                    meta_label TEXT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS usage_metrics (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    event_type VARCHAR(40) NOT NULL,
+                    visitor_hash CHAR(64) NOT NULL,
+                    page_path VARCHAR(160) NULL,
+                    business_id INT UNSIGNED NULL,
+                    meta_label VARCHAR(120) NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_metric_type_time (event_type, created_at),
+                    INDEX idx_metric_visitor (visitor_hash, created_at),
+                    INDEX idx_metric_biz (business_id, event_type)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
         }
     }
 }
