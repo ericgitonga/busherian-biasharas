@@ -434,7 +434,7 @@ final class VettingPurger
         );
 
         $status = in_array($data['status'] ?? 'approved', ['approved', 'quarantined_dpa', 'pending', 'rejected'], true)
-            ? (string)$data['status']
+            ? (string)($data['status'] ?? 'approved')
             : 'approved';
 
         $stmt = $pdo->prepare("

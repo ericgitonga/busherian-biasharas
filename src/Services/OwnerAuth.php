@@ -9,6 +9,18 @@ use PDO;
 final class OwnerAuth
 {
     private const COOKIE_NAME = 'bbiz_owner_session';
+    private const PREPROD_COOKIE_NAME = 'bbiz_preprod_owner_session';
+
+    private static function cookieName(): string
+    {
+        return PreprodSandbox::isPreprod() ? self::PREPROD_COOKIE_NAME : self::COOKIE_NAME;
+    }
+
+    private static function cookiePath(): string
+    {
+        $bp = PreprodSandbox::basePath();
+        return $bp !== '' ? $bp : '/';
+    }
     private const SESSION_TTL_SECONDS = 2592000; // 30 days persistent login
     private const MAGIC_LINK_TTL_SECONDS = 1800; // 30 minutes
     private const CLAIM_LINK_TTL_SECONDS = 2592000; // 30 days for DM claim links
@@ -395,18 +407,19 @@ final class OwnerAuth
         $sig = hash_hmac('sha256', $payload, $secret);
         $cookieVal = base64_encode("{$payload}|{$sig}");
 
+        $cName = self::cookieName();
         if (!headers_sent()) {
             $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
                 || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
-            setcookie(self::COOKIE_NAME, $cookieVal, [
+            setcookie($cName, $cookieVal, [
                 'expires' => $exp,
-                'path' => '/',
+                'path' => self::cookiePath(),
                 'secure' => $isHttps,
                 'httponly' => true,
                 'samesite' => 'Lax',
             ]);
         }
-        $_COOKIE[self::COOKIE_NAME] = $cookieVal;
+        $_COOKIE[$cName] = $cookieVal;
     }
 
     /**
@@ -418,10 +431,11 @@ final class OwnerAuth
             session_start();
         }
 
+        $cName = self::cookieName();
         $ownerId = (int)($_SESSION['bbiz_owner_id'] ?? 0);
         $shouldExtendRollingCookie = false;
-        if ($ownerId <= 0 && !empty($_COOKIE[self::COOKIE_NAME])) {
-            $decoded = base64_decode((string)$_COOKIE[self::COOKIE_NAME], true);
+        if ($ownerId <= 0 && !empty($_COOKIE[$cName])) {
+            $decoded = base64_decode((string)$_COOKIE[$cName], true);
             if (is_string($decoded) && substr_count($decoded, '|') === 3) {
                 [$cid, $cem, $cexp, $csig] = explode('|', $decoded, 4);
                 $expInt = (int)$cexp;
@@ -480,18 +494,19 @@ final class OwnerAuth
             session_start();
         }
         unset($_SESSION['bbiz_owner_id'], $_SESSION['bbiz_owner_email'], $_SESSION['bbiz_pending_claim_biz_id']);
+        $cName = self::cookieName();
         if (!headers_sent()) {
             $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
                 || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
-            setcookie(self::COOKIE_NAME, '', [
+            setcookie($cName, '', [
                 'expires' => time() - 3600,
-                'path' => '/',
+                'path' => self::cookiePath(),
                 'secure' => $isHttps,
                 'httponly' => true,
                 'samesite' => 'Lax',
             ]);
         }
-        unset($_COOKIE[self::COOKIE_NAME]);
+        unset($_COOKIE[$cName]);
     }
 
     /**

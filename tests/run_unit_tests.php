@@ -780,6 +780,60 @@ assertTrue(
     'public/index.php and directory.js paginate cards to 10/25/50/100 defaulting to 10 (#144)'
 );
 
+// 34. Verify Tickets #147, #148, #149, #150: Pre-Prod Preview Sandbox (/admin/preprod) isolation, URL rewriter, dummy seeder & self-tests
+putenv('BBIZ_BASE_PATH=/admin/preprod');
+putenv('APP_ENV=preprod');
+$_ENV['BBIZ_BASE_PATH'] = '/admin/preprod';
+$_ENV['APP_ENV'] = 'preprod';
+assertTrue(
+    \BusherianBiasharas\Services\PreprodSandbox::isPreprod() === true &&
+    \BusherianBiasharas\Services\PreprodSandbox::basePath() === '/admin/preprod',
+    'PreprodSandbox::isPreprod() and basePath() activate cleanly for /admin/preprod (#148)'
+);
+$sampleHtml = '<!DOCTYPE html><html><head><link rel="stylesheet" href="/assets/css/app.css"></head><body><a href="/">Home</a><a href="/submit.php">Submit</a><a href="/admin/preprod/already.php">Already</a><a href="https://www.busherianbiasharas.com/">External</a></body></html>';
+$rewrittenHtml = \BusherianBiasharas\Services\PreprodSandbox::rewriteHtmlOutput($sampleHtml);
+assertTrue(
+    str_contains($rewrittenHtml, 'href="/admin/preprod/assets/css/app.css"') &&
+    str_contains($rewrittenHtml, 'href="/admin/preprod/"') &&
+    str_contains($rewrittenHtml, 'href="/admin/preprod/submit.php"') &&
+    str_contains($rewrittenHtml, 'href="/admin/preprod/already.php"') &&
+    !str_contains($rewrittenHtml, '/admin/preprod/admin/preprod/') &&
+    str_contains($rewrittenHtml, 'id="bbiz-preprod-banner"') &&
+    str_contains($rewrittenHtml, 'var BASE = "/admin/preprod";'),
+    'PreprodSandbox::rewriteHtmlOutput prefixes root-relative URLs without double-prefixing and injects sandbox banner + fetch wrapper (#148, #149)'
+);
+
+$handoffUrl = \BusherianBiasharas\Services\PreprodSandbox::generateProdToPreprodHandoffUrl('/admin/sandbox.php');
+parse_str((string)parse_url($handoffUrl, PHP_URL_QUERY), $handoffQp);
+assertTrue(
+    str_starts_with($handoffUrl, '/admin/preprod/admin/sandbox.php?preprod_handoff=') &&
+    \BusherianBiasharas\Services\PreprodSandbox::verifyProdHandoffToken((string)($handoffQp['preprod_handoff'] ?? '')) === true &&
+    \BusherianBiasharas\Services\PreprodSandbox::verifyProdHandoffToken('9999999999.forgedsig') === false,
+    'PreprodSandbox signs and verifies 1-click Prod -> Pre-Prod handoff tokens and blocks forged signatures (#148)'
+);
+
+$dummyRes = \BusherianBiasharas\Services\PreprodSandbox::seedDummyListings($pdo);
+assertTrue(
+    $dummyRes['approved_added'] === 3 && $dummyRes['pending_added'] === 2,
+    'PreprodSandbox::seedDummyListings seeds 3 approved + 2 pending dummy test businesses into SQLite (#149)'
+);
+$selfTests = \BusherianBiasharas\Services\PreprodSandbox::runSelfTests($pdo);
+$allSelfPassed = count($selfTests) === 8 && count(array_filter($selfTests, static fn(array $r): bool => $r['passed'])) === 8;
+assertTrue(
+    $allSelfPassed,
+    'PreprodSandbox::runSelfTests passes all 8 Pre-Prod verification assertions (#149)'
+);
+$resetRes = \BusherianBiasharas\Services\PreprodSandbox::resetDatabaseToCleanSeed();
+$pdo = Database::getConnection();
+assertTrue(
+    $resetRes['approved_count'] === 12,
+    'PreprodSandbox::resetDatabaseToCleanSeed restores pristine 12-business seed database (#149)'
+);
+putenv('BBIZ_BASE_PATH');
+putenv('APP_ENV=testing');
+unset($_ENV['BBIZ_BASE_PATH']);
+$_ENV['APP_ENV'] = 'testing';
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 

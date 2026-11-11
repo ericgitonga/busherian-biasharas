@@ -15,6 +15,8 @@ spl_autoload_register(static function (string $class): void {
     }
 });
 
+\BusherianBiasharas\Services\PreprodSandbox::boot();
+
 if (!function_exists('bbiz_send_security_headers')) {
     function bbiz_send_security_headers(bool $isJson = false): void
     {

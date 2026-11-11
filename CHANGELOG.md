@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.12.0] - 2026-11-11
+
+### Added
+- **Isolated Pre-Prod Preview & Sandbox Environment (`/admin/preprod`) (`#147`, `#148`, `#149`, `#150`)**:
+  - Added `PreprodSandbox` (`src/Services/PreprodSandbox.php`) and subpath runtime hooks (`src/bootstrap.php`, `AdminAuth.php`, `OwnerAuth.php`, `PhotoUploader.php`) enabling the full application to run under `/admin/preprod` with isolated SQLite persistence (`preprod.sqlite`), isolated session/owner cookies, simulated outbound emails (`SIMULATE_EMAILS=yes`), `X-Robots-Tag: noindex`, and Admin credential gating with 1-click signed handoff from `/admin/index.php` and `X-Preprod-Access` header support for CLI E2E suites (closes `#148`).
+  - Added `/admin/preprod/admin/sandbox.php` (`public/admin/sandbox.php`) and a sticky Pre-Prod Preview banner providing 1-click Dummy Listing Seeding (3 approved + 2 pending AHS/AGHS listings), Read-Only Live Prod Snapshot Cloning, Clean Seed DB Reset, Simulated Email Outbox inspection, and an 8-check In-Browser Self-Test Runner (closes `#149`).
+  - Added `.github/workflows/deploy-preprod.yml` for automated FTPS deployment from the `preprod` branch to `/busherianbiasharas.com/www/preprod_app/` and `/busherianbiasharas.com/www/html/admin/preprod/`, and updated `e2e/test_smoke.py` for subpath & `PREPROD_ACCESS_TOKEN` execution (closes `#150`, closes `#147`).
+  - tag: `v0.12.0`
+
 ## [0.11.0] - 2026-11-11
 
 ### Added

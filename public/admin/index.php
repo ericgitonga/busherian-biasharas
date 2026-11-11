@@ -154,6 +154,11 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
       </a>
       <nav class="header-actions">
         <a href="/admin/add-business.php" class="btn btn-gold">+ Direct Add Business</a>
+        <?php if (\BusherianBiasharas\Services\PreprodSandbox::isPreprod()): ?>
+          <a href="/admin/sandbox.php" class="btn btn-outline-light">🛠️ Sandbox &amp; Outbox</a>
+        <?php else: ?>
+          <a href="<?= htmlspecialchars(\BusherianBiasharas\Services\PreprodSandbox::generateProdToPreprodHandoffUrl('/'), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline-light">🧪 Pre-Prod Preview</a>
+        <?php endif; ?>
         <a href="/admin/metrics.php" class="btn btn-outline-light">📊 Usage Metrics</a>
         <a href="/admin/login.php?logout=1" class="btn btn-outline-light">Sign Out</a>
         <a href="/" class="btn btn-outline-light">&larr; Public Directory</a>
