@@ -235,11 +235,13 @@ final class VettingPurger
      */
     public static function updateBusiness(PDO $pdo, int $businessId, array $data): void
     {
-        $existingRowStmt = $pdo->prepare("SELECT operating_hours_json, photos_json FROM businesses WHERE id = :id LIMIT 1");
+        $existingRowStmt = $pdo->prepare("SELECT operating_hours_json, photos_json, latitude, longitude, plus_code, google_maps_url FROM businesses WHERE id = :id LIMIT 1");
         $existingRowStmt->execute([':id' => $businessId]);
         $existingRow = (array)($existingRowStmt->fetch() ?: []);
 
-        [$resolvedLat, $resolvedLng] = self::resolveCoordsFromAdminData($data);
+        $coordsMeta = self::resolveCoordsFromAdminData($data, $existingRow);
+        $resolvedLat = $coordsMeta['latitude'];
+        $resolvedLng = $coordsMeta['longitude'];
         $hoursJson = isset($data['operating_hours_json']) && trim((string)$data['operating_hours_json']) !== ''
             ? trim((string)$data['operating_hours_json'])
             : HoursEngine::buildScheduleJsonFromPost($data, (string)($existingRow['operating_hours_json'] ?? ''));
@@ -315,10 +317,10 @@ final class VettingPurger
             ':country' => LocationEngine::resolvePlaceFromPost($data)['country'],
             ':city_county' => LocationEngine::resolvePlaceFromPost($data)['city_county'],
             ':landmark_directions' => trim((string)($data['landmark_directions'] ?? '')) ?: null,
-            ':plus_code' => trim((string)($data['plus_code'] ?? '')) ?: null,
+            ':plus_code' => $coordsMeta['plus_code'],
             ':latitude' => $resolvedLat,
             ':longitude' => $resolvedLng,
-            ':google_maps_url' => trim((string)($data['google_maps_url'] ?? '')) ?: null,
+            ':google_maps_url' => $coordsMeta['google_maps_url'],
             ':operating_hours_json' => $hoursJson,
             ':photos_json' => $photosJson,
             ':phone_primary' => trim((string)$data['phone_primary']),
@@ -350,27 +352,14 @@ final class VettingPurger
     }
 
     /**
-     * Resolve coordinates automatically from explicit lat/lng, Google Maps URL, or Plus Code.
+     * Resolve coordinates automatically from explicit lat/lng, Maps links (including short links), Plus Codes, or free-text map URLs.
+     *
+     * @return array{latitude: ?float, longitude: ?float, plus_code: ?string, google_maps_url: ?string, inferred: bool, network_error: bool}
      */
-    private static function resolveCoordsFromAdminData(array $data): array
+    private static function resolveCoordsFromAdminData(array $data, ?array $existingRow = null): array
     {
-        $lat = (isset($data['latitude']) && trim((string)$data['latitude']) !== '') ? (float)$data['latitude'] : null;
-        $lng = (isset($data['longitude']) && trim((string)$data['longitude']) !== '') ? (float)$data['longitude'] : null;
-
-        if ($lat === null || $lng === null) {
-            foreach (['google_maps_url', 'plus_code'] as $field) {
-                $raw = trim((string)($data[$field] ?? ''));
-                if ($raw !== '') {
-                    $parsed = LocationEngine::parseCoordinatesFromInput($raw);
-                    if ($parsed !== null) {
-                        $lat = $parsed['latitude'];
-                        $lng = $parsed['longitude'];
-                        break;
-                    }
-                }
-            }
-        }
-        return [$lat, $lng];
+        $allowExternal = (getenv('BBIZ_OFFLINE_ROUTING') !== '1');
+        return LocationEngine::resolveCoordinatesFromListingData($data, $allowExternal, null, $existingRow);
     }
 
     /**
@@ -420,11 +409,10 @@ final class VettingPurger
         $slug = self::generateUniqueSlug($pdo, $name);
         $businessUid = self::generateUniqueBusinessUid($pdo);
         $nextNum = ((int)$pdo->query("SELECT COALESCE(MAX(business_number), 0) FROM businesses")->fetchColumn()) + 1;
-        [$lat, $lng] = self::resolveCoordsFromAdminData($data);
-        $plusCode = trim((string)($data['plus_code'] ?? '')) ?: null;
-        if ($plusCode === null && $lat !== null && $lng !== null) {
-            $plusCode = LocationEngine::encodePlusCode($lat, $lng);
-        }
+        $coordsMeta = self::resolveCoordsFromAdminData($data);
+        $lat = $coordsMeta['latitude'];
+        $lng = $coordsMeta['longitude'];
+        $plusCode = $coordsMeta['plus_code'];
 
         $defaultHours = json_encode([
             'mon' => [['08:00', '17:30']],
@@ -502,7 +490,7 @@ final class VettingPurger
             ':plus_code' => $plusCode,
             ':latitude' => $lat,
             ':longitude' => $lng,
-            ':google_maps_url' => trim((string)($data['google_maps_url'] ?? '')) ?: null,
+            ':google_maps_url' => $coordsMeta['google_maps_url'],
             ':operating_hours_json' => $hoursJson,
             ':photos_json' => $photosJson,
             ':phone_primary' => trim((string)($data['phone_primary'] ?? '')),
@@ -586,7 +574,9 @@ final class VettingPurger
             throw new RuntimeException('Business record not found.');
         }
 
-        [$resolvedLat, $resolvedLng] = self::resolveCoordsFromAdminData($data);
+        $coordsMeta = self::resolveCoordsFromAdminData($data, (array)$oldBiz);
+        $resolvedLat = $coordsMeta['latitude'];
+        $resolvedLng = $coordsMeta['longitude'];
         $hoursJson = isset($data['operating_hours_json']) && trim((string)$data['operating_hours_json']) !== ''
             ? trim((string)$data['operating_hours_json'])
             : HoursEngine::buildScheduleJsonFromPost($data, (string)$oldBiz['operating_hours_json']);
@@ -661,10 +651,10 @@ final class VettingPurger
             ':country' => LocationEngine::resolvePlaceFromPost($data)['country'],
             ':city_county' => LocationEngine::resolvePlaceFromPost($data)['city_county'],
             ':landmark_directions' => trim((string)($data['landmark_directions'] ?? '')) ?: null,
-            ':plus_code' => trim((string)($data['plus_code'] ?? '')) ?: null,
+            ':plus_code' => $coordsMeta['plus_code'],
             ':latitude' => $resolvedLat,
             ':longitude' => $resolvedLng,
-            ':google_maps_url' => trim((string)($data['google_maps_url'] ?? '')) ?: null,
+            ':google_maps_url' => $coordsMeta['google_maps_url'],
             ':operating_hours_json' => $hoursJson,
             ':photos_json' => $photosJson,
             ':phone_primary' => trim((string)($data['phone_primary'] ?? $oldBiz['phone_primary'])),
@@ -715,6 +705,105 @@ final class VettingPurger
             'business' => $newBiz,
             'critical_changes' => $criticalChanges,
             'admin_notified' => $adminNotified,
+        ];
+    }
+
+    /**
+     * Audit all businesses missing latitude or longitude and backfill coordinates from any listed
+     * Maps link (including short links like maps.app.goo.gl), Plus Code, or embedded free-text map URL.
+     *
+     * Isolates per-record failures so one failing row never aborts the batch.
+     *
+     * @return array{
+     *   scanned: int,
+     *   updated_count: int,
+     *   updated: array<int, array<string, mixed>>,
+     *   skipped_no_pin: array<int, array<string, mixed>>,
+     *   network_errors: int,
+     *   item_errors: array<int, string>
+     * }
+     */
+    public static function backfillMissingCoordinatesFromPins(
+        PDO $pdo,
+        bool $allowExternal = true,
+        ?callable $httpFetcher = null
+    ): array {
+        $stmt = $pdo->query("
+            SELECT
+                id, business_number, business_id, name, status,
+                city_county, building_name, street_road, area_neighborhood,
+                landmark_directions, description, website_url,
+                plus_code, google_maps_url, latitude, longitude
+            FROM businesses
+            WHERE latitude IS NULL OR longitude IS NULL
+            ORDER BY business_number ASC, id ASC
+        ");
+        $rows = $stmt->fetchAll();
+
+        $updStmt = $pdo->prepare("
+            UPDATE businesses SET
+                latitude = :lat,
+                longitude = :lng,
+                plus_code = :plus_code,
+                google_maps_url = :google_maps_url,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id
+        ");
+
+        $updated = [];
+        $skippedNoPin = [];
+        $networkErrors = 0;
+        $itemErrors = [];
+
+        foreach ($rows as $row) {
+            $id = (int)$row['id'];
+            try {
+                $res = LocationEngine::resolveCoordinatesFromListingData($row, $allowExternal, $httpFetcher);
+                if (!empty($res['network_error'])) {
+                    $networkErrors++;
+                }
+                if ($res['latitude'] !== null && $res['longitude'] !== null) {
+                    $updStmt->execute([
+                        ':lat' => $res['latitude'],
+                        ':lng' => $res['longitude'],
+                        ':plus_code' => $res['plus_code'],
+                        ':google_maps_url' => $res['google_maps_url'],
+                        ':id' => $id,
+                    ]);
+                    $updated[] = [
+                        'id' => $id,
+                        'business_number' => (int)($row['business_number'] ?? 0),
+                        'name' => (string)$row['name'],
+                        'status' => (string)$row['status'],
+                        'latitude' => $res['latitude'],
+                        'longitude' => $res['longitude'],
+                        'plus_code' => $res['plus_code'],
+                        'google_maps_url' => $res['google_maps_url'],
+                    ];
+                } else {
+                    $skippedNoPin[] = [
+                        'id' => $id,
+                        'business_number' => (int)($row['business_number'] ?? 0),
+                        'name' => (string)$row['name'],
+                        'status' => (string)$row['status'],
+                        'google_maps_url' => $row['google_maps_url'] ?: null,
+                        'plus_code' => $row['plus_code'] ?: null,
+                    ];
+                }
+            } catch (\Throwable $e) {
+                $msg = "Business #{$row['business_number']} ({$row['name']}, id={$id}): " . $e->getMessage();
+                $itemErrors[] = $msg;
+                error_log('[VettingPurger::backfillMissingCoordinatesFromPins] ' . $msg);
+            }
+        }
+
+        return [
+            'scanned' => count($rows),
+            'updated_count' => count($updated),
+            'updated' => $updated,
+            'skipped_no_pin' => $skippedNoPin,
+            'network_errors' => $networkErrors,
+            'item_errors' => $itemErrors,
         ];
     }
 }

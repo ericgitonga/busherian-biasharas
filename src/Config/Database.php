@@ -327,6 +327,25 @@ final class Database
         } else {
             \BusherianBiasharas\Services\CategoryMatcher::ensureTaxonomyUpToDate($pdo);
         }
+
+        // One-time idempotent backfill of missing latitude/longitude from listed map pins/links (#138, #141)
+        $backfillState = self::getSetting($pdo, 'coords_pin_backfill_v1');
+        if ($backfillState !== 'done') {
+            $attempts = ctype_digit($backfillState) ? (int)$backfillState : 0;
+            if ($attempts < 3) {
+                try {
+                    $allowExt = (getenv('BBIZ_OFFLINE_ROUTING') !== '1');
+                    $bf = \BusherianBiasharas\Services\VettingPurger::backfillMissingCoordinatesFromPins($pdo, $allowExt);
+                    if (($bf['network_errors'] ?? 0) === 0 && empty($bf['item_errors'])) {
+                        self::setSetting($pdo, 'coords_pin_backfill_v1', 'done');
+                    } else {
+                        self::setSetting($pdo, 'coords_pin_backfill_v1', (string)($attempts + 1));
+                    }
+                } catch (\Throwable $bfErr) {
+                    error_log('[Database::ensureInitialized] coords_pin_backfill_v1 failed: ' . $bfErr->getMessage());
+                }
+            }
+        }
     }
 
     private static function ensureBusinessIdentityAndNumberColumns(PDO $pdo, string $driver): void

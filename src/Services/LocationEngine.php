@@ -501,55 +501,748 @@ final class LocationEngine
     }
 
     /**
-     * Parse coordinates from a Google Maps URL or raw "lat, lng" string.
+     * Parse coordinates from a Maps URL (Google Maps, Apple Maps, Waze, OpenStreetMap, Plus.Codes),
+     * DMS string, Open Location Code (Plus Code), or raw "lat, lng" string without network I/O.
      */
-    public static function parseCoordinatesFromInput(string $input): ?array
+    public static function parseCoordinatesFromInput(string $input, ?string $fallbackLocality = null): ?array
     {
         $raw = trim($input);
         if ($raw === '') {
             return null;
         }
 
-        // Pattern 1: !3d-1.2647!4d36.8021 (exact pin in Google Maps URLs)
-        if (preg_match('/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/', $raw, $m)) {
-            return self::validateCoords((float)$m[1], (float)$m[2]);
+        $urlDecoded = rawurldecode($raw);
+
+        // Pattern 1: !3d-1.2647!4d36.8021 (exact entity/destination pin in Google Maps URLs — take last valid match
+        // so destination pin wins over zoomed-out @viewport or multi-stop origin)
+        if (preg_match_all('/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/', $urlDecoded, $mAll, PREG_SET_ORDER)) {
+            for ($i = count($mAll) - 1; $i >= 0; $i--) {
+                $valid = self::validateCoords((float)$mAll[$i][1], (float)$mAll[$i][2]);
+                if ($valid !== null) {
+                    return $valid;
+                }
+            }
         }
 
-        // Pattern 2: @-1.2647,36.8021 or ?q=-1.2647,36.8021 or ll=-1.2647,36.8021
-        if (preg_match('/(?:@|[?&](?:q|ll|center| destination)=)(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/i', urldecode($raw), $m)) {
-            return self::validateCoords((float)$m[1], (float)$m[2]);
+        // Pattern 2: !2d36.8021!3d-1.2647 (Google Maps pb= embed URLs where !2d = lng, !3d = lat without !4d)
+        if (preg_match_all('/!2d(-?\d+\.\d+)!3d(-?\d+\.\d+)(?!\!4d)/', $urlDecoded, $mEmbed, PREG_SET_ORDER)) {
+            for ($i = count($mEmbed) - 1; $i >= 0; $i--) {
+                $valid = self::validateCoords((float)$mEmbed[$i][2], (float)$mEmbed[$i][1]);
+                if ($valid !== null) {
+                    return $valid;
+                }
+            }
         }
 
-        // Pattern 3: Raw "lat, lng"
-        if (preg_match('/^\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*$/', $raw, $m)) {
-            return self::validateCoords((float)$m[1], (float)$m[2]);
+        // Pattern 3: OpenStreetMap mlat/mlon query params or #map=zoom/lat/lng hash
+        if (preg_match('/[?&]mlat=(-?\d+\.\d+)[^#]*?[?&]mlon=(-?\d+\.\d+)/i', $urlDecoded, $mOsm) ||
+            preg_match('/#map=\d+(?:\.\d+)?\/(-?\d+\.\d+)\/(-?\d+\.\d+)/i', $urlDecoded, $mOsm)) {
+            $valid = self::validateCoords((float)$mOsm[1], (float)$mOsm[2]);
+            if ($valid !== null) {
+                return $valid;
+            }
+        }
+        if (preg_match('/[?&]mlon=(-?\d+\.\d+)[^#]*?[?&]mlat=(-?\d+\.\d+)/i', $urlDecoded, $mOsmRev)) {
+            $valid = self::validateCoords((float)$mOsmRev[2], (float)$mOsmRev[1]);
+            if ($valid !== null) {
+                return $valid;
+            }
         }
 
-        // Pattern 4: Open Location Code / Plus Code (e.g. "6GCRPPP3+9M" or "PPP3+9M Nairobi")
-        return self::decodePlusCode($raw);
+        // Pattern 4: Explicit coordinate query/path params (?q=, ?ll=, ?sll=, ?query=, ?destination=, ?daddr=, ?coordinate=, ?viewpoint=, Waze to=ll., /maps/search/lat,lng)
+        $querySpaced = str_replace('+', ' ', $urlDecoded);
+        if (preg_match('/[?&](?:q|ll|sll|query|destination|daddr|coordinate|viewpoint)=(?:loc:)?\s*\+?(-?\d+\.\d+)\s*,\s*\+?(-?\d+\.\d+)/i', $urlDecoded, $mQp) ||
+            preg_match('/[?&](?:q|ll|sll|query|destination|daddr|coordinate|viewpoint)=(?:loc:)?\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/i', $querySpaced, $mQp) ||
+            preg_match('/[?&]to=ll\.(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/i', $urlDecoded, $mQp) ||
+            preg_match('#/maps/(?:search|place|dir/[^/]*)/\s*\+?(-?\d+\.\d+)\s*,\s*\+?(-?\d+\.\d+)#i', $urlDecoded, $mQp)) {
+            $valid = self::validateCoords((float)$mQp[1], (float)$mQp[2]);
+            if ($valid !== null) {
+                return $valid;
+            }
+        }
+
+        // Pattern 5: Degrees-Minutes-Seconds (DMS) pin coordinates, e.g. 1°15'52.9"S 36°48'07.6"E
+        if (preg_match('/(\d{1,2})\s*°\s*(\d{1,2})\s*[\x27′]\s*(\d{1,2}(?:\.\d+)?)\s*(?:["″]|\x27\x27)?\s*([NS])[\s,+]+(\d{1,3})\s*°\s*(\d{1,2})\s*[\x27′]\s*(\d{1,2}(?:\.\d+)?)\s*(?:["″]|\x27\x27)?\s*([EW])/iu', $querySpaced, $mDms)) {
+            $lat = ((int)$mDms[1]) + (((int)$mDms[2]) / 60.0) + (((float)$mDms[3]) / 3600.0);
+            if (strtoupper($mDms[4]) === 'S') {
+                $lat = -$lat;
+            }
+            $lng = ((int)$mDms[5]) + (((int)$mDms[6]) / 60.0) + (((float)$mDms[7]) / 3600.0);
+            if (strtoupper($mDms[8]) === 'W') {
+                $lng = -$lng;
+            }
+            $valid = self::validateCoords($lat, $lng);
+            if ($valid !== null) {
+                return $valid;
+            }
+        }
+
+        // Pattern 6: @-1.2647,36.8021 or center=-1.2647,36.8021
+        if (preg_match('/(?:@|[?&]center=)(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/i', $urlDecoded, $mAt)) {
+            $valid = self::validateCoords((float)$mAt[1], (float)$mAt[2]);
+            if ($valid !== null) {
+                return $valid;
+            }
+        }
+
+        // Pattern 7: Raw "lat, lng"
+        if (preg_match('/^\s*\+?(-?\d+\.\d+)\s*,\s*\+?(-?\d+\.\d+)\s*$/', $raw, $mRaw)) {
+            $valid = self::validateCoords((float)$mRaw[1], (float)$mRaw[2]);
+            if ($valid !== null) {
+                return $valid;
+            }
+        }
+
+        // Pattern 8: Open Location Code / Plus Code (e.g. "6GCRPPP3+9M", "PPP3+9M Nairobi", or "https://plus.codes/6GCRJWFH+86")
+        $isHttpUrl = (bool)preg_match('#^https?://#i', $raw);
+        $isPlusCodesDomain = $isHttpUrl && (bool)preg_match('#^https?://(?:www\.)?plus\.codes/#i', $raw);
+        return self::decodePlusCode($urlDecoded, $fallbackLocality, $isHttpUrl && !$isPlusCodesDomain);
     }
 
     /**
-     * Decode full (8+2) or short (4+2 with city name) Open Location Code (Plus Code).
+     * Check whether a URL points to a supported Maps / pin service.
      */
-    public static function decodePlusCode(string $input): ?array
+    public static function isMapsUrl(string $url): bool
+    {
+        $u = trim($url);
+        if ($u === '') {
+            return false;
+        }
+        return self::extractMapsUrlFromText($u) !== null && !preg_match('/\s/', $u);
+    }
+
+    /**
+     * Extract the first supported Maps share/pin URL from free-form text (or a URL string).
+     */
+    public static function extractMapsUrlFromText(string $text): ?string
+    {
+        if (trim($text) === '') {
+            return null;
+        }
+        $pattern = '#https?://(?:'
+            . 'maps\.app\.goo\.gl/[^\s"\'<>]+'
+            . '|goo\.gl/maps/[^\s"\'<>]+'
+            . '|g\.co/(?:kgs|maps)/[^\s"\'<>]+'
+            . '|(?:www\.|maps\.)?google\.(?:com|co\.[a-z]{2}|com\.[a-z]{2}|[a-z]{2,3})/maps[^\s"\'<>]*'
+            . '|maps\.google\.(?:com|co\.[a-z]{2}|com\.[a-z]{2}|[a-z]{2,3})/\?[^\s"\'<>]+'
+            . '|maps\.apple\.com/[^\s"\'<>]+'
+            . '|(?:www\.|ul\.)?waze\.com/(?:ul|live-map)[^\s"\'<>]*'
+            . '|(?:www\.)?openstreetmap\.org/[^\s"\'<>]+'
+            . '|osm\.org/[^\s"\'<>]+'
+            . '|(?:www\.)?plus\.codes/[^\s"\'<>]+'
+            . ')#i';
+
+        if (!preg_match($pattern, $text, $m)) {
+            return null;
+        }
+        return rtrim($m[0], ".,;)]}>\"'");
+    }
+
+    /**
+     * Strict domain allowlist for outbound redirect resolution of Maps short/place URLs.
+     */
+    public static function isAllowedMapRedirectHost(string $host): bool
+    {
+        $h = strtolower(trim($host, '.[]'));
+        if ($h === '') {
+            return false;
+        }
+        $exactHosts = [
+            'maps.app.goo.gl',
+            'goo.gl',
+            'g.co',
+            'plus.codes',
+            'www.plus.codes',
+            'maps.apple.com',
+            'waze.com',
+            'www.waze.com',
+            'ul.waze.com',
+            'openstreetmap.org',
+            'www.openstreetmap.org',
+            'osm.org',
+        ];
+        if (in_array($h, $exactHosts, true)) {
+            return true;
+        }
+        return (bool)preg_match('/^(?:www\.|maps\.)?google\.(?:com|co\.[a-z]{2}|com\.[a-z]{2}|[a-z]{2,3})$/', $h);
+    }
+
+    /**
+     * Resolve coordinates from inline coordinates/Plus Codes OR by safely unrolling short/place Maps URLs
+     * (e.g. maps.app.goo.gl, goo.gl/maps, g.co/kgs, google.com/maps/place/..., ?q=...&ftid=...).
+     *
+     * @param callable|null $httpFetcher Optional test seam `(string $url): array{status: int, headers: array<string,string>, body: string}`
+     */
+    public static function resolveCoordinatesFromUrlOrInput(
+        string $input,
+        bool $allowExternal = true,
+        ?string $fallbackLocality = null,
+        ?callable $httpFetcher = null,
+        ?bool &$networkError = null
+    ): ?array {
+        $networkError = false;
+        $raw = trim($input);
+        if ($raw === '') {
+            return null;
+        }
+
+        // 1. Fast synchronous parse when coordinates or Plus Code are directly present in the string
+        $inline = self::parseCoordinatesFromInput($raw, $fallbackLocality);
+        if ($inline !== null) {
+            return [
+                'latitude' => $inline['latitude'],
+                'longitude' => $inline['longitude'],
+                'source' => 'inline_coordinates',
+            ];
+        }
+
+        // 2. Check if the input contains a supported Maps URL requiring redirect / place resolution
+        $mapsUrl = self::extractMapsUrlFromText($raw);
+        if ($mapsUrl === null || !$allowExternal) {
+            return null;
+        }
+
+        try {
+            $hopResult = self::fetchMapUrlSafe($mapsUrl, 5, $httpFetcher);
+        } catch (\InvalidArgumentException $secEx) {
+            // Domain allowlist or SSRF validation rejection — log and fail closed without marking transient error
+            error_log('[LocationEngine] Blocked unsafe map URL (' . $mapsUrl . '): ' . $secEx->getMessage());
+            return null;
+        } catch (\RuntimeException $netEx) {
+            $networkError = true;
+            error_log('[LocationEngine] Transient error resolving map URL (' . $mapsUrl . '): ' . $netEx->getMessage());
+            return null;
+        }
+
+        // Check if any intermediate redirect or final URL resolved directly to coordinates
+        if ($hopResult['early_coords'] !== null) {
+            return [
+                'latitude' => $hopResult['early_coords']['latitude'],
+                'longitude' => $hopResult['early_coords']['longitude'],
+                'resolved_url' => $hopResult['final_url'],
+                'source' => 'maps_redirect_url',
+            ];
+        }
+
+        $finalUrl = $hopResult['final_url'];
+        $fromFinalUrl = self::parseCoordinatesFromInput($finalUrl, $fallbackLocality);
+        if ($fromFinalUrl !== null) {
+            return [
+                'latitude' => $fromFinalUrl['latitude'],
+                'longitude' => $fromFinalUrl['longitude'],
+                'resolved_url' => $finalUrl,
+                'source' => 'maps_final_url',
+            ];
+        }
+
+        // Check response body strictly for exact !3d!4d or !2d!3d pins (never generic IP-based <meta center=>)
+        $body = $hopResult['body'];
+        if ($body !== '') {
+            if (preg_match_all('/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/', $body, $mBody, PREG_SET_ORDER)) {
+                for ($i = count($mBody) - 1; $i >= 0; $i--) {
+                    $valid = self::validateCoords((float)$mBody[$i][1], (float)$mBody[$i][2]);
+                    if ($valid !== null) {
+                        return [
+                            'latitude' => $valid['latitude'],
+                            'longitude' => $valid['longitude'],
+                            'resolved_url' => $finalUrl,
+                            'source' => 'maps_html_pin',
+                        ];
+                    }
+                }
+            }
+            $embedDirect = self::parseCoordinatesFromGoogleEmbedHtml($body);
+            if ($embedDirect !== null) {
+                return [
+                    'latitude' => $embedDirect['latitude'],
+                    'longitude' => $embedDirect['longitude'],
+                    'resolved_url' => $finalUrl,
+                    'source' => 'maps_embed_payload',
+                ];
+            }
+        }
+
+        // 3. When Google Maps redirects a mobile share link to a query/place URL without @ or !3d!4d
+        // (e.g. https://maps.google.com?q=Ruaka+Shopping+Mall,...&ftid=0x...:0x...&entry=gps),
+        // resolve the exact entity pin via Google Maps' lightweight output=embed endpoint.
+        $embedTarget = self::buildGoogleMapsEmbedLookupUrl($finalUrl);
+        if ($embedTarget !== null) {
+            try {
+                $embedRes = self::fetchMapUrlSafe($embedTarget['embed_url'], 4, $httpFetcher, false);
+                $fromEmbed = self::parseCoordinatesFromGoogleEmbedHtml($embedRes['body'], $embedTarget['ftid']);
+                if ($fromEmbed !== null) {
+                    return [
+                        'latitude' => $fromEmbed['latitude'],
+                        'longitude' => $fromEmbed['longitude'],
+                        'resolved_url' => $finalUrl,
+                        'source' => 'maps_embed_entity',
+                    ];
+                }
+            } catch (\InvalidArgumentException $secEx) {
+                error_log('[LocationEngine] Blocked unsafe embed lookup URL: ' . $secEx->getMessage());
+            } catch (\RuntimeException $netEx) {
+                $networkError = true;
+                error_log('[LocationEngine] Transient error fetching Google Maps embed lookup: ' . $netEx->getMessage());
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Parse entity pin or camera target coordinates from a Google Maps `output=embed` HTML response (`initEmbed(...)`).
+     */
+    public static function parseCoordinatesFromGoogleEmbedHtml(string $html, ?string $ftid = null): ?array
+    {
+        if ($html === '' || !str_contains($html, 'initEmbed(')) {
+            return null;
+        }
+
+        // 1. Exact ftid match (0xHEX1:0xHEX2 -> ["DEC1","DEC2"],"/g/...",null,[latE7,lngE7])
+        if ($ftid !== null && preg_match('/^0x([0-9a-f]+):0x([0-9a-f]+)$/i', trim($ftid), $fm)) {
+            $dec1 = self::hexUint64ToDecimal($fm[1]);
+            $dec2 = self::hexUint64ToDecimal($fm[2]);
+            $ftPattern = '/\["' . preg_quote($dec1, '/') . '"\s*,\s*"' . preg_quote($dec2, '/') . '"\]\s*,\s*"\/g\/[^"]*"\s*,\s*null\s*,\s*\[(\d{7,10})\s*,\s*(\d{7,10})\]/i';
+            if (preg_match($ftPattern, $html, $em)) {
+                $coords = self::decodeUnsignedE7Pair($em[1], $em[2]);
+                if ($coords !== null) {
+                    return $coords;
+                }
+            }
+        }
+
+        // 2. Direct spotlight float entity pin: "0x...:0x...","Place Name",[-1.3766863,36.9280114]
+        if (preg_match('/"0x[0-9a-f]+:0x[0-9a-f]+"\s*,\s*"[^"]*"\s*,\s*\[(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\]/i', $html, $mSpot)) {
+            $coords = self::validateCoords((float)$mSpot[1], (float)$mSpot[2]);
+            if ($coords !== null && (abs($coords['latitude']) > 0.0001 || abs($coords['longitude']) > 0.0001)) {
+                return $coords;
+            }
+        }
+
+        // 3. Top-ranked Knowledge Graph entity E7 coordinates: "/g/11yz9f17zj",null,[4282871070,367885910]
+        if (preg_match('/"\/g\/[a-z0-9_]+"\s*,\s*null\s*,\s*\[(\d{7,10})\s*,\s*(\d{7,10})\]/i', $html, $mKg)) {
+            $coords = self::decodeUnsignedE7Pair($mKg[1], $mKg[2]);
+            if ($coords !== null) {
+                return $coords;
+            }
+        }
+
+        // 4. Embed camera target [[[distanceMeters, longitude, latitude],[0,0,0]]] when zoomed to an actual place (< 500 km)
+        if (preg_match('/\[\[\[(\d+(?:\.\d+)?)\s*,\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\]\s*,\s*\[0\s*,\s*0\s*,\s*0\]/', $html, $mCam)) {
+            $distMeters = (float)$mCam[1];
+            $lng = (float)$mCam[2];
+            $lat = (float)$mCam[3];
+            if ($distMeters > 0.0 && $distMeters < 500000.0 && (abs($lat) > 0.0001 || abs($lng) > 0.0001)) {
+                return self::validateCoords($lat, $lng);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Unified listing coordinate resolver used across public submission, Admin create/edit, Owner edit, and DB backfill.
+     *
+     * @return array{latitude: ?float, longitude: ?float, plus_code: ?string, google_maps_url: ?string, inferred: bool, network_error: bool}
+     */
+    public static function resolveCoordinatesFromListingData(
+        array $data,
+        bool $allowExternal = true,
+        ?callable $httpFetcher = null,
+        ?array $existingRow = null
+    ): array {
+        $rawLat = isset($data['latitude']) ? trim((string)$data['latitude']) : '';
+        $rawLng = isset($data['longitude']) ? trim((string)$data['longitude']) : '';
+        $lat = ($rawLat !== '' && is_numeric($rawLat)) ? (float)$rawLat : null;
+        $lng = ($rawLng !== '' && is_numeric($rawLng)) ? (float)$rawLng : null;
+        if ($lat !== null && $lng !== null) {
+            $checked = self::validateCoords($lat, $lng);
+            if ($checked === null) {
+                $lat = null;
+                $lng = null;
+            } else {
+                $lat = $checked['latitude'];
+                $lng = $checked['longitude'];
+            }
+        } else {
+            $lat = null;
+            $lng = null;
+        }
+
+        $googleMapsUrl = trim((string)($data['google_maps_url'] ?? ''));
+        $plusCode = trim((string)($data['plus_code'] ?? ''));
+        $cityCounty = trim((string)($data['city_county'] ?? ''));
+
+        // If a user pasted a Maps URL into the Plus Code box, move it cleanly to google_maps_url
+        if (self::isMapsUrl($plusCode)) {
+            if ($googleMapsUrl === '') {
+                $googleMapsUrl = $plusCode;
+            }
+            $plusCode = '';
+        }
+
+        // If google_maps_url is blank, check whether a Maps link was posted inside landmark_directions, website_url, street_road, building_name, or description
+        $freeTextMapsUrl = null;
+        foreach (['landmark_directions', 'website_url', 'building_name', 'street_road', 'description'] as $textField) {
+            $val = trim((string)($data[$textField] ?? ''));
+            if ($val === '') {
+                continue;
+            }
+            if ($textField === 'website_url' && !self::isMapsUrl($val)) {
+                continue;
+            }
+            $extracted = self::extractMapsUrlFromText($val);
+            if ($extracted !== null) {
+                $freeTextMapsUrl = $extracted;
+                break;
+            }
+        }
+        if ($googleMapsUrl === '' && $freeTextMapsUrl !== null) {
+            $googleMapsUrl = $freeTextMapsUrl;
+        }
+
+        // If editing an existing record where the user updated google_maps_url without manually changing old lat/lng, re-infer from the new link
+        $mapsUrlChangedWithoutManualCoordEdit = false;
+        if ($existingRow !== null && $lat !== null && $lng !== null && $googleMapsUrl !== '') {
+            $oldMapsUrl = trim((string)($existingRow['google_maps_url'] ?? ''));
+            $oldLat = isset($existingRow['latitude']) && $existingRow['latitude'] !== null && $existingRow['latitude'] !== '' ? round((float)$existingRow['latitude'], 6) : null;
+            $oldLng = isset($existingRow['longitude']) && $existingRow['longitude'] !== null && $existingRow['longitude'] !== '' ? round((float)$existingRow['longitude'], 6) : null;
+            if ($googleMapsUrl !== $oldMapsUrl && $oldLat !== null && $oldLng !== null && abs($lat - $oldLat) < 0.000001 && abs($lng - $oldLng) < 0.000001) {
+                $mapsUrlChangedWithoutManualCoordEdit = true;
+            }
+        }
+
+        $inferred = false;
+        $hadNetworkError = false;
+
+        if ($lat === null || $lng === null || $mapsUrlChangedWithoutManualCoordEdit) {
+            $candidates = [];
+            if ($googleMapsUrl !== '') {
+                $candidates[] = $googleMapsUrl;
+            }
+            if ($plusCode !== '' && !$mapsUrlChangedWithoutManualCoordEdit) {
+                $candidates[] = $plusCode;
+            }
+            if ($freeTextMapsUrl !== null && $freeTextMapsUrl !== $googleMapsUrl) {
+                $candidates[] = $freeTextMapsUrl;
+            }
+
+            foreach ($candidates as $candidate) {
+                $netErr = false;
+                $resolved = self::resolveCoordinatesFromUrlOrInput(
+                    $candidate,
+                    $allowExternal,
+                    $cityCounty !== '' ? $cityCounty : null,
+                    $httpFetcher,
+                    $netErr
+                );
+                if ($netErr) {
+                    $hadNetworkError = true;
+                }
+                if ($resolved !== null) {
+                    $lat = $resolved['latitude'];
+                    $lng = $resolved['longitude'];
+                    $inferred = true;
+                    break;
+                }
+            }
+        }
+
+        if ($lat !== null && $lng !== null && ($plusCode === '' || $mapsUrlChangedWithoutManualCoordEdit)) {
+            $plusCode = self::encodePlusCode($lat, $lng);
+        }
+
+        return [
+            'latitude' => $lat,
+            'longitude' => $lng,
+            'plus_code' => $plusCode !== '' ? $plusCode : null,
+            'google_maps_url' => $googleMapsUrl !== '' ? $googleMapsUrl : null,
+            'inferred' => $inferred,
+            'network_error' => $hadNetworkError,
+        ];
+    }
+
+    /**
+     * Follow up to $maxHops HTTP redirects across allowlisted map domains with SSRF IP pinning.
+     *
+     * @return array{final_url: string, body: string, early_coords: ?array}
+     */
+    private static function fetchMapUrlSafe(
+        string $startUrl,
+        int $maxHops = 5,
+        ?callable $httpFetcher = null,
+        bool $stopOnInlinePinRedirect = true
+    ): array {
+        $currentUrl = $startUrl;
+        $maxBytes = 98304; // 96 KB cap
+
+        for ($hop = 0; $hop <= $maxHops; $hop++) {
+            $parts = parse_url($currentUrl);
+            $host = strtolower(trim((string)($parts['host'] ?? ''), '[]'));
+            if (!self::isAllowedMapRedirectHost($host)) {
+                throw new \InvalidArgumentException("Host '{$host}' is not an allowlisted map provider.");
+            }
+
+            if ($httpFetcher !== null) {
+                // Still run scheme/port/private-IP literal checks when a test fetcher is supplied
+                WebsiteEnricher::validateSafeUrlAndResolveIp($currentUrl, static fn(string $_h): array => ['142.250.180.14']);
+                $resp = $httpFetcher($currentUrl);
+                $status = (int)($resp['status'] ?? 200);
+                $headers = (array)($resp['headers'] ?? []);
+                $body = substr((string)($resp['body'] ?? ''), 0, $maxBytes);
+                $location = null;
+                foreach ($headers as $hk => $hv) {
+                    if (strtolower((string)$hk) === 'location') {
+                        $location = trim((string)$hv);
+                        break;
+                    }
+                }
+            } else {
+                $validated = WebsiteEnricher::validateSafeUrlAndResolveIp($currentUrl);
+                $currentUrl = $validated['url'];
+                if (!function_exists('curl_init')) {
+                    throw new \RuntimeException('cURL extension is not available to resolve short map URLs.');
+                }
+                $ch = curl_init($validated['url']);
+                if ($ch === false) {
+                    throw new \RuntimeException('Failed to initialize HTTP client for map URL resolution.');
+                }
+                $rawHeaders = [];
+                $buffer = '';
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => false,
+                    CURLOPT_HEADER => false,
+                    CURLOPT_FOLLOWLOCATION => false,
+                    CURLOPT_TIMEOUT => 5,
+                    CURLOPT_CONNECTTIMEOUT => 4,
+                    CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; BusherianBiasharas/1.0; +https://www.busherianbiasharas.com)',
+                    CURLOPT_HTTPHEADER => [
+                        'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'Accept-Language: en-KE,en;q=0.9',
+                    ],
+                    CURLOPT_RESOLVE => ["{$validated['host']}:{$validated['port']}:{$validated['ip']}"],
+                    CURLOPT_HEADERFUNCTION => static function ($ch, string $headerLine) use (&$rawHeaders): int {
+                        $trimmed = trim($headerLine);
+                        if ($trimmed !== '' && str_contains($trimmed, ':')) {
+                            [$k, $v] = explode(':', $trimmed, 2);
+                            if (strtolower(trim($k)) === 'location') {
+                                $rawHeaders['location'] = trim($v);
+                            }
+                        }
+                        return strlen($headerLine);
+                    },
+                    CURLOPT_WRITEFUNCTION => static function ($ch, string $chunk) use (&$buffer, $maxBytes): int {
+                        $rem = $maxBytes - strlen($buffer);
+                        if ($rem > 0) {
+                            $buffer .= substr($chunk, 0, $rem);
+                        }
+                        return strlen($buffer) >= $maxBytes ? 0 : strlen($chunk);
+                    },
+                ]);
+                $ok = curl_exec($ch);
+                $errno = curl_errno($ch);
+                $errMsg = curl_error($ch);
+                $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+
+                if ($ok === false && $errno !== CURLE_WRITE_ERROR && $status === 0) {
+                    throw new \RuntimeException('HTTP request failed: ' . ($errMsg !== '' ? $errMsg : "cURL errno {$errno}"));
+                }
+                $location = $rawHeaders['location'] ?? null;
+                $body = $buffer;
+            }
+
+            if (in_array($status, [301, 302, 303, 307, 308], true) && $location !== null && $location !== '') {
+                if (str_starts_with($location, '//')) {
+                    $location = ($parts['scheme'] ?? 'https') . ':' . $location;
+                } elseif (str_starts_with($location, '/')) {
+                    $location = ($parts['scheme'] ?? 'https') . '://' . $host . $location;
+                }
+
+                // Fast-path: if redirect Location header already embeds an exact !3d!4d / !2d!3d / ?q=lat,lng pin, extract without extra network round-trips
+                if ($stopOnInlinePinRedirect && (
+                    str_contains($location, '!3d') ||
+                    preg_match('/[?&](?:q|ll|query|destination)=(?:loc:)?\s*\+?-?\d+\.\d+\s*,\s*\+?-?\d+\.\d+/i', rawurldecode($location))
+                )) {
+                    $early = self::parseCoordinatesFromInput($location);
+                    if ($early !== null) {
+                        return [
+                            'final_url' => $location,
+                            'body' => '',
+                            'early_coords' => $early,
+                        ];
+                    }
+                }
+
+                $currentUrl = $location;
+                continue;
+            }
+
+            if ($status >= 500 || $status === 429 || $status === 0) {
+                throw new \RuntimeException("Map provider returned HTTP {$status}.");
+            }
+
+            return [
+                'final_url' => $currentUrl,
+                'body' => $body,
+                'early_coords' => null,
+            ];
+        }
+
+        return [
+            'final_url' => $currentUrl,
+            'body' => '',
+            'early_coords' => self::parseCoordinatesFromInput($currentUrl),
+        ];
+    }
+
+    /**
+     * Build a Google Maps `output=embed` lookup URL when a redirected Google Maps URL identifies a place/query without inline coordinates.
+     *
+     * @return ?array{embed_url: string, ftid: ?string}
+     */
+    private static function buildGoogleMapsEmbedLookupUrl(string $url): ?array
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts) || empty($parts['host'])) {
+            return null;
+        }
+        $host = strtolower((string)$parts['host']);
+        if (!preg_match('/^(?:www\.|maps\.)?google\.(?:com|co\.[a-z]{2}|com\.[a-z]{2}|[a-z]{2,3})$/', $host)) {
+            return null;
+        }
+
+        $qs = [];
+        if (!empty($parts['query'])) {
+            parse_str($parts['query'], $qs);
+        }
+
+        $q = trim((string)($qs['q'] ?? $qs['query'] ?? ''));
+        $ftid = isset($qs['ftid']) ? trim((string)$qs['ftid']) : null;
+        $cid = isset($qs['cid']) ? trim((string)$qs['cid']) : null;
+
+        $path = (string)($parts['path'] ?? '');
+        if ($q === '' && preg_match('#/maps/place/([^/@?]+)#i', $path, $pm)) {
+            $q = trim(rawurldecode(str_replace('+', ' ', $pm[1])));
+        }
+        if ($ftid === null && preg_match('/!1s(0x[0-9a-f]+:0x[0-9a-f]+)/i', rawurldecode($url), $fm)) {
+            $ftid = $fm[1];
+        }
+
+        if ($q === '' && $ftid === null && $cid === null) {
+            return null;
+        }
+
+        $params = [];
+        if ($q !== '') {
+            $params['q'] = $q;
+        }
+        if ($ftid !== null && $ftid !== '') {
+            $params['ftid'] = $ftid;
+        }
+        if ($cid !== null && $cid !== '') {
+            $params['cid'] = $cid;
+        }
+        $params['output'] = 'embed';
+
+        return [
+            'embed_url' => 'https://www.google.com/maps?' . http_build_query($params),
+            'ftid' => $ftid,
+        ];
+    }
+
+    /**
+     * Convert two unsigned 32-bit E7 integers from Google Maps `initEmbed` into validated decimal degrees.
+     */
+    private static function decodeUnsignedE7Pair(string $rawLatE7, string $rawLngE7): ?array
+    {
+        $uLat = (int)$rawLatE7;
+        $uLng = (int)$rawLngE7;
+        if ($uLat > 2147483647) {
+            $uLat -= 4294967296;
+        }
+        if ($uLng > 2147483647) {
+            $uLng -= 4294967296;
+        }
+        $lat = $uLat / 10000000.0;
+        $lng = $uLng / 10000000.0;
+        if (abs($lat) < 0.0001 && abs($lng) < 0.0001) {
+            return null;
+        }
+        return self::validateCoords($lat, $lng);
+    }
+
+    /**
+     * Pure-PHP base-16 to unsigned base-10 string converter for 64-bit Google Maps feature IDs (no GMP/BCMath dependency).
+     */
+    private static function hexUint64ToDecimal(string $hex): string
+    {
+        $clean = strtolower(ltrim(trim($hex), '0'));
+        if ($clean === '') {
+            return '0';
+        }
+        $dec = '0';
+        $len = strlen($clean);
+        for ($i = 0; $i < $len; $i++) {
+            $digit = hexdec($clean[$i]);
+            $carry = $digit;
+            $out = '';
+            for ($j = strlen($dec) - 1; $j >= 0; $j--) {
+                $val = ((int)$dec[$j]) * 16 + $carry;
+                $out = (string)($val % 10) . $out;
+                $carry = intdiv($val, 10);
+            }
+            while ($carry > 0) {
+                $out = (string)($carry % 10) . $out;
+                $carry = intdiv($carry, 10);
+            }
+            $dec = $out;
+        }
+        return $dec;
+    }
+
+    /**
+     * Decode full (8+2) or short (4+2 with city/area name) Open Location Code (Plus Code).
+     */
+    public static function decodePlusCode(string $input, ?string $fallbackLocality = null, bool $requireFullPrefix = false): ?array
     {
         $clean = strtoupper(trim($input));
         if (!str_contains($clean, '+')) {
             return null;
         }
 
-        if (!preg_match('/([23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3})(?:\s+([A-Z]+))?/', $clean, $m)) {
+        $prefixQuantifier = $requireFullPrefix ? '{8}' : '{4,8}';
+        if (!preg_match('/(?:^|[\s,\/=])([23456789CFGHJMPQRVWX]' . $prefixQuantifier . '\+[23456789CFGHJMPQRVWX]{2,5})(?:[\s,]+([A-Z][A-Z\s\-]{1,30}))?(?=$|[\s,&#?])/', $clean, $m)) {
             return null;
         }
 
         $code = $m[1];
-        $locality = strtolower($m[2] ?? 'nairobi');
+        $localityRaw = strtolower(trim($m[2] ?? ($fallbackLocality ?? 'nairobi')));
         [$prefix, $suffix] = explode('+', $code, 2);
 
-        // If short code (4 or 6 chars before '+'), recover full 8-char prefix using reference city centroid
+        // If short code (4 or 6 chars before '+'), recover full 8-char prefix using reference city/area centroid
         if (strlen($prefix) < 8) {
-            $ref = self::KENYA_CITY_CENTROIDS[$locality] ?? self::KENYA_CITY_CENTROIDS['nairobi'];
+            if (strlen($prefix) % 2 !== 0) {
+                return null;
+            }
+            $ref = self::KENYA_CITY_CENTROIDS[$localityRaw] ?? null;
+            if ($ref === null) {
+                foreach (self::KENYA_CITY_CENTROIDS as $cKey => $cCoords) {
+                    if (str_contains($localityRaw, $cKey)) {
+                        $ref = $cCoords;
+                        break;
+                    }
+                }
+            }
+            if ($ref === null) {
+                foreach (self::KENYA_PLACE_INDEX as $pKey => $pInfo) {
+                    if (str_contains($localityRaw, $pKey)) {
+                        $ref = [$pInfo[0], $pInfo[1]];
+                        break;
+                    }
+                }
+            }
+            $ref = $ref ?? self::KENYA_CITY_CENTROIDS['nairobi'];
             $fullRef = self::encodePlusCode($ref[0], $ref[1]);
             $fullPrefix = substr($fullRef, 0, 8 - strlen($prefix)) . $prefix;
             $prefix = $fullPrefix;
@@ -898,15 +1591,19 @@ final class LocationEngine
             return null;
         }
 
-        // 1. Check if it is already coordinates, a Google Maps URL, or an Open Location Code (Plus Code)
-        $parsed = self::parseCoordinatesFromInput($q);
-        if ($parsed !== null) {
+        // 1. Check if it is coordinates, a Maps URL (including short links like maps.app.goo.gl), or a Plus Code
+        $resolvedPin = self::resolveCoordinatesFromUrlOrInput($q, $allowExternal);
+        if ($resolvedPin !== null) {
             return [
-                'latitude' => $parsed['latitude'],
-                'longitude' => $parsed['longitude'],
+                'latitude' => $resolvedPin['latitude'],
+                'longitude' => $resolvedPin['longitude'],
+                'plus_code' => self::encodePlusCode($resolvedPin['latitude'], $resolvedPin['longitude']),
                 'label' => $q,
-                'source' => 'coordinates_or_plus_code',
+                'source' => $resolvedPin['source'] ?? 'coordinates_or_plus_code',
             ];
+        }
+        if (preg_match('#^https?://#i', $q)) {
+            return null;
         }
 
         $lower = strtolower($q);

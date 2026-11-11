@@ -375,6 +375,20 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert body_sub.index('<option value="Afghanistan"') < body_sub.index('<option value="Kenya"') < body_sub.index('<option value="Zimbabwe"')
     assert body_sub.index('<option value="Baringo"') < body_sub.index('<option value="Nairobi"') < body_sub.index('<option value="West Pokot"')
 
+    # 19. Verify Tickets #138, #139, #140: Maps link -> latitude/longitude auto-inference in /api/geocode.php & form-enhancements.js
+    gmaps_place_url = (
+        "https://www.google.com/maps/place/Circular+Economy+Hub/@-2.7093033,36.9857735,8z/"
+        "data=!4m7!3m6!1s0x184073cc97d95e6f:0xd08f849ff152e4a2!8m2!3d-1.3766863!4d36.9280114"
+    )
+    st_gpin, body_gpin, _ = _request("/api/geocode.php?q=" + urllib.parse.quote(gmaps_place_url, safe=""))
+    assert st_gpin == 200, f"Expected 200 from /api/geocode.php for Google Maps place URL, got {st_gpin}: {body_gpin}"
+    gpin_loc = json.loads(body_gpin)["location"]
+    assert abs(gpin_loc["latitude"] - (-1.376686)) < 0.0001
+    assert abs(gpin_loc["longitude"] - 36.928011) < 0.0001
+    assert gpin_loc.get("plus_code")
+    assert "bindMapsPinAutoFill" in body_fe
+    assert 'id="google_maps_url"' in body_sub
+
 
 TESTS = [
     test_health_endpoint,

@@ -233,8 +233,12 @@ $tokens = AntiSpamGate::generateFormTokens();
           <input type="text" name="alumni_perk" class="input-control" value="<?= htmlspecialchars((string)($biz['alumni_perk'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. 10% off for fellow Busherians">
         </div>
         <div>
-          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Google Maps URL</label>
-          <input type="url" name="google_maps_url" class="input-control" value="<?= htmlspecialchars((string)($biz['google_maps_url'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+          <label for="google_maps_url" style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Google Maps URL (Auto-fills Latitude &amp; Longitude)</label>
+          <input type="url" id="google_maps_url" name="google_maps_url" class="input-control" value="<?= htmlspecialchars((string)($biz['google_maps_url'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="https://maps.app.goo.gl/... or https://www.google.com/maps?q=...">
+        </div>
+        <div>
+          <label for="plus_code" style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Google Plus Code (Optional)</label>
+          <input type="text" id="plus_code" name="plus_code" class="input-control" value="<?= htmlspecialchars((string)($biz['plus_code'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. 6GCRPPP3+9M">
         </div>
         <div>
           <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Landmark / Directions Cue</label>

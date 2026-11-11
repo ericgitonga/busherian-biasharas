@@ -339,11 +339,12 @@ final class WebsiteEnricher
                     }
                 } elseif (preg_match('#(?:wa\.me/|api\.whatsapp\.com/send\?[^"\']*phone=)([+0-9]+)#i', $href, $wm)) {
                     $data['whatsapp_number'] = self::normalizeKenyanPhone($wm[1]);
-                } elseif (str_contains($href, 'google.com/maps') || str_contains($href, 'maps.app.goo.gl')) {
+                } elseif (LocationEngine::isMapsUrl($href) || str_contains($href, 'google.com/maps') || str_contains($href, 'maps.app.goo.gl') || str_contains($href, 'goo.gl/maps')) {
                     if ($data['google_maps_url'] === '') {
                         $data['google_maps_url'] = $href;
                     }
-                    $coords = LocationEngine::parseCoordinatesFromInput($href);
+                    $allowExtMaps = (getenv('BBIZ_OFFLINE_ROUTING') !== '1');
+                    $coords = LocationEngine::resolveCoordinatesFromUrlOrInput($href, $allowExtMaps, $data['city_county'] !== '' ? $data['city_county'] : null);
                     if ($coords && $data['latitude'] === null) {
                         $data['latitude'] = $coords['latitude'];
                         $data['longitude'] = $coords['longitude'];

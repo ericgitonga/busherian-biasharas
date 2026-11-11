@@ -9,8 +9,8 @@ Verified Alumni Business Directory of **The Alliances** (**Alliance High School 
 - **One-Time Alumni Vetting with Immediate Data Disposal (`VettingPurger.php`)**:
   - Registration Step 1 collects **School** (`AHS` or `AGHS`), **House** (compulsory, using the confirmed AHS & AGHS house lists), **Year Left** (compulsory), and **School Number** (optional — strictly termed *School Number*, never *Admission Number*).
   - **Strict Privacy Guarantee**: `House`, `Year Left`, and `School Number` are stored exclusively in an isolated `business_vetting_queue` table, **never appear anywhere in the public directory**, and are **permanently hard-deleted (`DELETE FROM business_vetting_queue`)** the instant the listing is approved or rejected.
-- **Interactive Split-Screen Map, Plus Code Resolver & `Africa/Nairobi` HoursEngine**:
-  - Real-time Haversine + bounding-box distance (`km away`), Open Location Code (Plus Code) & Google Maps share-link coordinate extraction, and deterministic `Africa/Nairobi` (EAT) operating status (`OPEN_NOW`, `CLOSING_SOON`, `CLOSED`).
+- **Interactive Split-Screen Map, Maps Share-Link Pin Unroller, Plus Code Resolver & `Africa/Nairobi` HoursEngine**:
+  - Real-time Haversine + bounding-box distance (`km away`), automatic `latitude`/`longitude` inference from Google Maps (including `maps.app.goo.gl` / `goo.gl/maps` short links, `!3d!4d` place pins, and `ftid` embed pins), Apple Maps, OpenStreetMap, Waze, DMS coordinates, and Open Location Codes (Plus Codes) — activating the **🧭 Directions** button even when `latitude`/`longitude` are left blank — plus deterministic `Africa/Nairobi` (EAT) operating status (`OPEN_NOW`, `CLOSING_SOON`, `CLOSED`).
 - **Minimalist Directory Cards → Rich Business Detail Modal & B2B Shortlist Builder**:
   - Cards stay clean and scannable; clicking opens a full modal with Website, Call, Click-to-WhatsApp, Email, 6 social platforms, 7-day EAT hours, and 1-tap launch into Google Maps or Waze.
 - **7-Layer Public Form Anti-Spam Gate (`AntiSpamGate.php`) & Kenya DPA 2019 (`L2`) Compliance**:

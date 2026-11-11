@@ -636,6 +636,127 @@ assertTrue(
     'public/admin/edit-business.php displays submitter Name, Email, and Phone when reviewing a pending listing (#136)'
 );
 
+// 32. Verify Tickets #138, #139, #140, #141: Maps Link -> Latitude/Longitude Inference & Existing Listing Pin Backfill
+$tagPlaceUrl = 'https://www.google.com/maps/place/Circular+Economy+Hub+by+Close+the+Gap/@-2.7093033,36.9857735,8z/data=!4m7!3m6!1s0x184073cc97d95e6f:0xd08f849ff152e4a2!8m2!3d-1.3766863!4d36.9280114!16s%2Fg%2F11r_t7v34t';
+$parsedTag = LocationEngine::parseCoordinatesFromInput($tagPlaceUrl);
+assertTrue(
+    $parsedTag !== null &&
+    abs($parsedTag['latitude'] - (-1.376686)) < 0.00001 &&
+    abs($parsedTag['longitude'] - 36.928011) < 0.00001,
+    'LocationEngine prioritizes exact !3d!4d entity pin over zoomed-out @viewport in Google Maps place URLs (#139)'
+);
+
+$parsedEmbedPb = LocationEngine::parseCoordinatesFromInput('https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3988.8!2d36.802100!3d-1.264700!2m3!1f0');
+$parsedApple = LocationEngine::parseCoordinatesFromInput('https://maps.apple.com/?ll=-1.292100,36.787900&q=Kilimani');
+$parsedOsm = LocationEngine::parseCoordinatesFromInput('https://www.openstreetmap.org/?mlat=-1.263500&mlon=36.803200#map=17/-1.263500/36.803200');
+$parsedDms = LocationEngine::parseCoordinatesFromInput("https://www.google.com/maps/place/1%C2%B015'52.9%22S+36%C2%B048'07.6%22E");
+assertTrue(
+    $parsedEmbedPb !== null && abs($parsedEmbedPb['latitude'] - (-1.2647)) < 0.0001 && abs($parsedEmbedPb['longitude'] - 36.8021) < 0.0001 &&
+    $parsedApple !== null && abs($parsedApple['latitude'] - (-1.2921)) < 0.0001 &&
+    $parsedOsm !== null && abs($parsedOsm['latitude'] - (-1.2635)) < 0.0001 &&
+    $parsedDms !== null && abs($parsedDms['latitude'] - (-1.264694)) < 0.001 && abs($parsedDms['longitude'] - 36.802111) < 0.001,
+    'LocationEngine parses Google pb= embed, Apple Maps, OpenStreetMap, and DMS pin URLs (#139)'
+);
+
+// Mock HTTP fetcher testing both Shape A (!3d!4d redirect) and Shape B (?q=...&ftid=... -> output=embed initEmbed)
+$mockFetcher = static function (string $url) use ($tagPlaceUrl): array {
+    if ($url === 'https://maps.app.goo.gl/RqXEruB3uZiAcpF86') {
+        return [
+            'status' => 302,
+            'headers' => ['Location' => $tagPlaceUrl],
+            'body' => '',
+        ];
+    }
+    if ($url === 'https://maps.app.goo.gl/kxrzpmqJRrZvVR848?') {
+        return [
+            'status' => 302,
+            'headers' => ['Location' => 'https://maps.google.com?q=Ruaka+Shopping+Mall,+Limuru+Rd,+Nairobi&ftid=0x182f1793e5630a8b:0x2f329114a4696e16&entry=gps'],
+            'body' => '',
+        ];
+    }
+    if (str_starts_with($url, 'https://maps.google.com?q=Ruaka')) {
+        return [
+            'status' => 200,
+            'headers' => [],
+            'body' => '<html><head><meta content="center=-33.8688,151.2093"></head><body></body></html>',
+        ];
+    }
+    if (str_contains($url, 'output=embed')) {
+        return [
+            'status' => 200,
+            'headers' => [],
+            'body' => '<script>function onEmbedLoad(){initEmbed([null,null,[[null,"Ruaka Shopping Mall",null,null,[[["1742637504791775883","3400940186461892118"],"/g/11yz9f17zj",null,[4282871070,367885910]]]]]],null,[[[3988.93,36.7869866,-1.2072517],[0,0,0],null,13.1]]]);}</script>',
+        ];
+    }
+    return ['status' => 404, 'headers' => [], 'body' => ''];
+};
+
+$resolvedShortA = LocationEngine::resolveCoordinatesFromUrlOrInput('https://maps.app.goo.gl/RqXEruB3uZiAcpF86', true, null, $mockFetcher);
+$resolvedShortB = LocationEngine::resolveCoordinatesFromUrlOrInput('https://maps.app.goo.gl/kxrzpmqJRrZvVR848?', true, null, $mockFetcher);
+$blockedUnsafeMap = LocationEngine::resolveCoordinatesFromUrlOrInput('https://evil.example.com/maps?q=Nairobi', true, null, $mockFetcher);
+assertTrue(
+    $resolvedShortA !== null && abs($resolvedShortA['latitude'] - (-1.376686)) < 0.00001 && abs($resolvedShortA['longitude'] - 36.928011) < 0.00001 &&
+    $resolvedShortB !== null && abs($resolvedShortB['latitude'] - (-1.209623)) < 0.00001 && abs($resolvedShortB['longitude'] - 36.788591) < 0.00001 &&
+    $blockedUnsafeMap === null,
+    'LocationEngine safely unrolls maps.app.goo.gl redirects & ftid output=embed pins while ignoring IP meta center and blocking non-map domains (#139)'
+);
+
+$freeTextResolved = LocationEngine::resolveCoordinatesFromListingData([
+    'latitude' => '',
+    'longitude' => '',
+    'google_maps_url' => '',
+    'plus_code' => '',
+    'landmark_directions' => 'Gate B — pin: https://www.google.com/maps?q=-1.263984,36.781410',
+], false);
+assertTrue(
+    $freeTextResolved['inferred'] === true &&
+    abs((float)$freeTextResolved['latitude'] - (-1.263984)) < 0.00001 &&
+    abs((float)$freeTextResolved['longitude'] - 36.781410) < 0.00001 &&
+    $freeTextResolved['google_maps_url'] === 'https://www.google.com/maps?q=-1.263984,36.781410' &&
+    !empty($freeTextResolved['plus_code']),
+    'LocationEngine::resolveCoordinatesFromListingData infers lat/lng, plus_code, and google_maps_url even from landmark_directions (#140)'
+);
+
+// Verify VettingPurger::createBusinessDirectly & backfillMissingCoordinatesFromPins
+$directMapsBizId = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Syokimau Pin Auto Test Ltd',
+    'tagline' => 'Testing auto pin inference',
+    'description' => 'Created without typing latitude or longitude.',
+    'school_badge' => 'AHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Machakos',
+    'google_maps_url' => $tagPlaceUrl,
+    'latitude' => '',
+    'longitude' => '',
+    'phone_primary' => '+254711223344',
+]);
+$savedDirectRow = $pdo->query("SELECT latitude, longitude, plus_code FROM businesses WHERE id = {$directMapsBizId}")->fetch();
+assertTrue(
+    $savedDirectRow &&
+    abs((float)$savedDirectRow['latitude'] - (-1.376686)) < 0.00001 &&
+    abs((float)$savedDirectRow['longitude'] - 36.928011) < 0.00001 &&
+    !empty($savedDirectRow['plus_code']),
+    'VettingPurger::createBusinessDirectly populates latitude, longitude & plus_code when only google_maps_url is supplied (#140)'
+);
+
+// Clear lat/lng on that row, set short link, and run backfillMissingCoordinatesFromPins with mockFetcher
+$pdo->prepare("UPDATE businesses SET latitude = NULL, longitude = NULL, plus_code = NULL, google_maps_url = :u WHERE id = :id")
+    ->execute([':u' => 'https://maps.app.goo.gl/RqXEruB3uZiAcpF86', ':id' => $directMapsBizId]);
+$backfillRes = VettingPurger::backfillMissingCoordinatesFromPins($pdo, true, $mockFetcher);
+$afterBackfillRow = $pdo->query("SELECT latitude, longitude, plus_code FROM businesses WHERE id = {$directMapsBizId}")->fetch();
+assertTrue(
+    $backfillRes['updated_count'] >= 1 &&
+    $afterBackfillRow &&
+    abs((float)$afterBackfillRow['latitude'] - (-1.376686)) < 0.00001 &&
+    abs((float)$afterBackfillRow['longitude'] - 36.928011) < 0.00001 &&
+    !empty($afterBackfillRow['plus_code']),
+    'VettingPurger::backfillMissingCoordinatesFromPins resolves short maps.app.goo.gl pins and updates missing lat/lng (#141)'
+);
+VettingPurger::deleteBusiness($pdo, $directMapsBizId);
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 
