@@ -176,6 +176,10 @@ final class PhotoUploader
 
     private static function resolvePublicWebRoot(): string
     {
+        $explicitRoot = \BusherianBiasharas\Config\Database::env('BBIZ_PUBLIC_WEB_ROOT', '');
+        if ($explicitRoot !== '' && is_dir($explicitRoot)) {
+            return rtrim($explicitRoot, '/');
+        }
         $projectRoot = dirname(__DIR__, 2);
         if (is_dir($projectRoot . '/html')) {
             return $projectRoot . '/html';

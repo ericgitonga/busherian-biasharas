@@ -11,9 +11,13 @@ final class AdminAuth
     public static function startSecureSession(): void
     {
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            $basePath = PreprodSandbox::basePath();
+            if ($basePath !== '') {
+                session_name('BBIZ_PREPROD_SESS');
+            }
             session_set_cookie_params([
                 'lifetime' => 7200,
-                'path' => '/',
+                'path' => $basePath !== '' ? $basePath : '/',
                 'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
                 'httponly' => true,
                 'samesite' => 'Strict',
@@ -104,10 +108,15 @@ final class AdminAuth
         if (!headers_sent()) {
             http_response_code(401);
         }
-        $base = dirname(__DIR__, 2);
-        $loginFile = is_file($base . '/public/admin/login.php')
-            ? $base . '/public/admin/login.php'
-            : $base . '/html/admin/login.php';
+        $pubRoot = Database::env('BBIZ_PUBLIC_WEB_ROOT', '');
+        if ($pubRoot !== '' && is_file($pubRoot . '/admin/login.php')) {
+            $loginFile = $pubRoot . '/admin/login.php';
+        } else {
+            $base = dirname(__DIR__, 2);
+            $loginFile = is_file($base . '/public/admin/login.php')
+                ? $base . '/public/admin/login.php'
+                : $base . '/html/admin/login.php';
+        }
         require $loginFile;
         exit;
     }

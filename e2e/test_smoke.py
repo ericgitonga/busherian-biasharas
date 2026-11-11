@@ -7,11 +7,18 @@ import urllib.parse
 import urllib.request
 
 BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8080").rstrip("/")
+BASE_PATH = urllib.parse.urlparse(BASE_URL).path.rstrip("/")
+PREPROD_ACCESS_TOKEN = os.environ.get("PREPROD_ACCESS_TOKEN", "").strip()
 
 
 def _request(path: str, method: str = "GET", data: bytes | None = None, headers: dict | None = None):
     url = f"{BASE_URL}{path}"
-    req = urllib.request.Request(url, data=data, method=method, headers=headers or {})
+    req_headers = {"User-Agent": "BusherianE2E/1.0"}
+    if PREPROD_ACCESS_TOKEN:
+        req_headers["X-Preprod-Access"] = PREPROD_ACCESS_TOKEN
+    if headers:
+        req_headers.update(headers)
+    req = urllib.request.Request(url, data=data, method=method, headers=req_headers)
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return resp.status, resp.read().decode("utf-8", errors="replace"), dict(resp.headers)
@@ -33,8 +40,8 @@ def test_directory_homepage_and_zero_vetting_exposure():
     assert status == 200
     assert "Busherian Biasharas" in html
     # Verify Ticket #34: Favicon & WhatsApp/Search OpenGraph preview tags present in <head>
-    assert 'href="/favicon.svg"' in html
-    assert 'href="/apple-touch-icon.png"' in html
+    assert f'href="{BASE_PATH}/favicon.svg"' in html
+    assert f'href="{BASE_PATH}/apple-touch-icon.png"' in html
     assert '/assets/img/og-preview.png' in html
     assert '/assets/img/bb-icon-512.png' in html
     assert 'application/ld+json' in html
