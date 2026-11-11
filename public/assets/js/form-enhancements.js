@@ -490,4 +490,103 @@
       });
     }
   }
+
+  // =========================================================================
+  // Live Maps Link & Plus Code -> Latitude / Longitude Auto-Fill (#138, #140)
+  // =========================================================================
+  function bindMapsPinAutoFill() {
+    const mapsInput = document.getElementById('google_maps_url') || document.querySelector('input[name="google_maps_url"]');
+    const plusInput = document.getElementById('plus_code') || document.querySelector('input[name="plus_code"]');
+    const latInput = document.getElementById('latitude') || document.querySelector('input[name="latitude"]');
+    const lngInput = document.getElementById('longitude') || document.querySelector('input[name="longitude"]');
+    if (!latInput || !lngInput || (!mapsInput && !plusInput)) return;
+
+    let statusEl = document.getElementById('maps-pin-autofill-status');
+    const anchor = mapsInput || plusInput;
+    if (!statusEl && anchor && anchor.parentElement) {
+      statusEl = document.createElement('div');
+      statusEl.id = 'maps-pin-autofill-status';
+      statusEl.style.cssText = 'font-size:0.75rem;margin-top:0.28rem;font-weight:600;display:none;';
+      anchor.parentElement.appendChild(statusEl);
+    }
+
+    let debounceTimer = null;
+    let lastResolvedValue = '';
+
+    async function resolvePinInput(rawValue, forceUpdateCoords) {
+      const val = (rawValue || '').trim();
+      if (!val || val.length < 4 || val === lastResolvedValue) return;
+
+      const coordsEmpty = !latInput.value.trim() || !lngInput.value.trim();
+      const wasAutoFilled = latInput.dataset.autofilled === '1' || lngInput.dataset.autofilled === '1';
+      if (!coordsEmpty && !wasAutoFilled && !forceUpdateCoords) {
+        return;
+      }
+
+      lastResolvedValue = val;
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#114B3E';
+        statusEl.textContent = '⏳ Extracting map pin coordinates...';
+      }
+
+      try {
+        const res = await fetch('/api/geocode.php?q=' + encodeURIComponent(val));
+        const payload = await res.json();
+        if (!res.ok || !payload || payload.status !== 'ok' || !payload.location) {
+          if (statusEl) {
+            statusEl.style.color = '#6B7280';
+            statusEl.textContent = 'Coordinate preview unavailable right now — server will check on save.';
+          }
+          return;
+        }
+        const loc = payload.location;
+        if (loc.latitude !== undefined && loc.longitude !== undefined) {
+          latInput.value = String(loc.latitude);
+          lngInput.value = String(loc.longitude);
+          latInput.dataset.autofilled = '1';
+          lngInput.dataset.autofilled = '1';
+          latInput.style.borderColor = '#059669';
+          lngInput.style.borderColor = '#059669';
+          if (plusInput && !plusInput.value.trim() && loc.plus_code) {
+            plusInput.value = String(loc.plus_code);
+          }
+          if (statusEl) {
+            statusEl.style.display = 'block';
+            statusEl.style.color = '#065F46';
+            statusEl.textContent = '✓ Coordinates (' + loc.latitude + ', ' + loc.longitude + ') filled automatically — Directions button will be active!';
+          }
+          latInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      } catch (_) {
+        if (statusEl) {
+          statusEl.style.display = 'none';
+        }
+      }
+    }
+
+    [mapsInput, plusInput].forEach(inp => {
+      if (!inp) return;
+      inp.addEventListener('paste', () => {
+        setTimeout(() => resolvePinInput(inp.value, inp === mapsInput), 60);
+      });
+      inp.addEventListener('change', () => {
+        resolvePinInput(inp.value, inp === mapsInput);
+      });
+      inp.addEventListener('input', () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => resolvePinInput(inp.value, false), 500);
+      });
+    });
+
+    // If a listing already has a Maps link or Plus Code loaded in the editor with blank lat/lng, auto-fill immediately
+    if ((!latInput.value.trim() || !lngInput.value.trim())) {
+      const initialPin = (mapsInput && mapsInput.value.trim()) || (plusInput && plusInput.value.trim()) || '';
+      if (initialPin) {
+        resolvePinInput(initialPin, false);
+      }
+    }
+  }
+
+  bindMapsPinAutoFill();
 })();

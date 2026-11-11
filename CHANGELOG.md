@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.10.0] - 2026-11-11
+
+### Added
+- **Automatic Maps Link -> `latitude` / `longitude` Coordinate Inference & Existing Listing Pin Backfill (`#138`, `#139`, `#140`, `#141`)**:
+  - Enhanced `LocationEngine::parseCoordinatesFromInput()` (`src/Services/LocationEngine.php`) to deterministically extract exact coordinates from Google Maps (`!3d!4d` entity pin prioritized over `@viewport`, `!2d!3d` iframe embeds, `?q=`/`?ll=`/`?query=`/`?destination=`, `/maps/search/<lat>,<lng>`, and DMS pins), Apple Maps, Waze, OpenStreetMap (`mlat`/`mlon` and `#map=`), and Open Location Codes (Plus Codes) (closes `#139`).
+  - Added SSRF-safe short/place Maps URL unrolling (`LocationEngine::resolveCoordinatesFromUrlOrInput()` + `LocationEngine::parseCoordinatesFromGoogleEmbedHtml()`) with map-domain allowlisting and `CURLOPT_RESOLVE` IP pinning to resolve `maps.app.goo.gl`, `goo.gl/maps`, `g.co`, and Google Maps `?q=...&ftid=...` place links into exact `latitude`/`longitude` coordinates (closes `#139`).
+  - Unified listing coordinate inference in `LocationEngine::resolveCoordinatesFromListingData()` across `public/submit.php`, `VettingPurger::createBusinessDirectly()`, `VettingPurger::updateBusiness()`, `VettingPurger::updateBusinessByOwner()`, and `WebsiteEnricher::extractFromHtml()`, plus live browser auto-fill in `public/assets/js/form-enhancements.js` via `/api/geocode.php` so the **🧭 Directions** button activates automatically even when `latitude`/`longitude` are left blank (closes `#140`).
+  - Added `VettingPurger::backfillMissingCoordinatesFromPins()`, CLI script `bin/backfill-map-pins.php`, and idempotent startup migration (`coords_pin_backfill_v1` in `Database::ensureInitialized()`) to automatically populate missing `latitude`/`longitude` for existing listings with listed map pins (such as `#13 TAG Creative`) (closes `#141`, closes `#138`).
+  - tag: `v0.10.0`
+
 ## [0.9.0] - 2026-11-11
 
 ### Added

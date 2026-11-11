@@ -154,18 +154,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Please enter a primary business phone number.';
             }
 
-            $lat = isset($_POST['latitude']) && $_POST['latitude'] !== '' ? (float)$_POST['latitude'] : null;
-            $lng = isset($_POST['longitude']) && $_POST['longitude'] !== '' ? (float)$_POST['longitude'] : null;
-            $plusCode = trim((string)($_POST['plus_code'] ?? ''));
-            $gmapsUrl = trim((string)($_POST['google_maps_url'] ?? ''));
-
-            if (($lat === null || $lng === null) && ($gmapsUrl !== '' || $plusCode !== '')) {
-                $parsed = LocationEngine::parseCoordinatesFromInput($gmapsUrl ?: $plusCode);
-                if ($parsed) {
-                    $lat = $parsed['latitude'];
-                    $lng = $parsed['longitude'];
-                }
-            }
+            $resolvedCoords = LocationEngine::resolveCoordinatesFromListingData(
+                $_POST,
+                getenv('BBIZ_OFFLINE_ROUTING') !== '1'
+            );
+            $lat = $resolvedCoords['latitude'];
+            $lng = $resolvedCoords['longitude'];
+            $plusCode = (string)($resolvedCoords['plus_code'] ?? '');
+            $gmapsUrl = (string)($resolvedCoords['google_maps_url'] ?? '');
 
             if (empty($errors)) {
                 $pdo->beginTransaction();

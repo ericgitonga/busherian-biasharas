@@ -285,12 +285,12 @@ $tokens = AntiSpamGate::generateFormTokens();
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.9rem;margin-top:0.9rem;">
         <div>
-          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Google Maps URL (Auto-extracts Pin)</label>
-          <input type="url" name="google_maps_url" class="input-control" value="<?= htmlspecialchars((string)$form['google_maps_url'], ENT_QUOTES, 'UTF-8') ?>" placeholder="https://maps.google.com/?q=...">
+          <label for="google_maps_url" style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Google Maps URL (Auto-extracts Pin)</label>
+          <input type="url" id="google_maps_url" name="google_maps_url" class="input-control" value="<?= htmlspecialchars((string)$form['google_maps_url'], ENT_QUOTES, 'UTF-8') ?>" placeholder="https://maps.app.goo.gl/... or https://maps.google.com/?q=...">
         </div>
         <div>
-          <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Plus Code (Optional)</label>
-          <input type="text" name="plus_code" class="input-control" value="<?= htmlspecialchars((string)$form['plus_code'], ENT_QUOTES, 'UTF-8') ?>" placeholder="6GCRPPP3+M6">
+          <label for="plus_code" style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Plus Code (Optional)</label>
+          <input type="text" id="plus_code" name="plus_code" class="input-control" value="<?= htmlspecialchars((string)$form['plus_code'], ENT_QUOTES, 'UTF-8') ?>" placeholder="6GCRPPP3+M6">
         </div>
         <div>
           <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Latitude</label>
