@@ -389,6 +389,15 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert "bindMapsPinAutoFill" in body_fe
     assert 'id="google_maps_url"' in body_sub
 
+    # 20. Verify Tickets #142, #143, #144: 10 / 25 / 50 / 100 pagination (default 10) on Main Public Directory & directory.js
+    assert 'id="per-page-select"' in body_home
+    assert '<option value="10" selected>10 per page</option>' in body_home
+    for opt_sz in (25, 50, 100):
+        assert f'<option value="{opt_sz}">{opt_sz} per page</option>' in body_home
+    assert 'id="directory-pagination"' in body_home
+    assert "ALLOWED_PAGE_SIZES = [10, 25, 50, 100]" in body_js
+    assert "renderPaginationControls" in body_js
+
 
 TESTS = [
     test_health_endpoint,

@@ -209,15 +209,27 @@ foreach ($rows as $r) {
     <!-- Left Pane: Minimalist Scannable Cards -->
     <section id="pane-results" class="results-pane" aria-label="Business Results">
       <div class="results-header">
-        <strong id="results-count" style="font-size:0.95rem;color:#114B3E;">
-          <?= count($initialBusinesses) ?> Verified Busherian Biasharas
-        </strong>
-        <span style="font-size:0.78rem;color:#6B7280;">
-          Click any card or map pin for Website, WhatsApp, Call, Hours &amp; Exact Pin
-        </span>
+        <div>
+          <strong id="results-count" style="font-size:0.95rem;color:#114B3E;display:block;">
+            <?= count($initialBusinesses) ?> Verified Busherian Biasharas
+          </strong>
+          <span style="font-size:0.76rem;color:#6B7280;">
+            Click any card or map pin for Website, WhatsApp, Call, Hours &amp; Exact Pin
+          </span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.4rem;">
+          <label for="per-page-select" style="font-size:0.78rem;font-weight:700;color:#374151;">Show:</label>
+          <select id="per-page-select" class="select-control" aria-label="Listings per page" style="width:auto;padding:0.32rem 0.6rem;font-size:0.8rem;">
+            <option value="10" selected>10 per page</option>
+            <option value="25">25 per page</option>
+            <option value="50">50 per page</option>
+            <option value="100">100 per page</option>
+          </select>
+        </div>
       </div>
 
       <div id="cards-grid" class="cards-grid"></div>
+      <nav id="directory-pagination" aria-label="Directory Pagination" style="margin-top:1rem;"></nav>
     </section>
 
     <!-- Right Pane: Sticky Interactive Map -->
