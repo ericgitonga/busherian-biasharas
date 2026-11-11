@@ -57,6 +57,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $submitterName = trim((string)($_POST['submitter_name'] ?? ''));
             $submitterEmail = strtolower(trim((string)($_POST['submitter_email'] ?? '')));
             $submitterPhone = WebsiteEnricher::normalizeKenyanPhone((string)($_POST['submitter_phone'] ?? ''));
+            $ownerPassword = (string)($_POST['owner_password'] ?? '');
+            $ownerPasswordConfirm = (string)($_POST['owner_password_confirm'] ?? '');
+            $existingSubOwner = OwnerAuth::getCurrentOwner($pdo) ?? OwnerAuth::findOwnerByEmail($pdo, $submitterEmail);
+            $alreadyHasPassword = ($existingSubOwner !== null && !empty($existingSubOwner['password_hash']));
 
             if (!in_array($schoolCode, ['AHS', 'AGHS'], true)) {
                 $errors[] = 'Please select your School (AHS or AGHS).';
@@ -76,6 +80,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($submitterPhone === '') {
                 $errors[] = 'Please provide your contact phone number for vetting.';
+            }
+            if (!$alreadyHasPassword || $ownerPassword !== '') {
+                if (mb_strlen($ownerPassword) < 8) {
+                    $errors[] = 'Please create an Owner Password of at least 8 characters so you can sign in and edit your listing anytime.';
+                } elseif ($ownerPasswordConfirm !== '' && $ownerPassword !== $ownerPasswordConfirm) {
+                    $errors[] = 'Your Owner Password and Confirm Password entries do not match.';
+                }
             }
 
             // Validate Kenya DPA 2019 s.33 Age Gate & s.29 Unbundled Consent
@@ -270,6 +281,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
 
                     $submittedBusinessId = (int)$pdo->lastInsertId();
+                    $pdo->prepare("UPDATE businesses SET owner_email = :oem WHERE id = :id")
+                        ->execute([':oem' => $submitterEmail, ':id' => $submittedBusinessId]);
+
+                    // Create/link persistent Owner Account + Password immediately so owner stays signed in (#151, #153)
+                    $subOwner = OwnerAuth::upsertOwner($pdo, $submitterEmail, $submitterName, $submitterPhone);
+                    if ($ownerPassword !== '' && mb_strlen($ownerPassword) >= 8) {
+                        OwnerAuth::setOwnerPassword($pdo, (int)$subOwner['id'], $ownerPassword);
+                    }
+                    OwnerAuth::linkOwnerToBusiness($pdo, (int)$subOwner['id'], $submittedBusinessId, 'submitter_registration');
 
                     // Insert ephemeral vetting record into `business_vetting_queue` (hard-deleted upon review)
                     $insVet = $pdo->prepare("
@@ -308,7 +328,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
 
                     $pdo->commit();
-                    $successMessage = 'Your business has been submitted for one-time alumni vetting! Once verified by the admin team, your listing will go live and your House, Year Left, and School Number will be permanently deleted.';
+                    OwnerAuth::establishOwnerSession($subOwner);
+                    $successMessage = 'Your business has been submitted for one-time alumni vetting and linked to your Owner Account! Once verified by the admin team, your listing will go live, your House, Year Left, and School Number will be permanently deleted, and the Edit My Business button will appear directly on your listing card whenever you sign in with your email and password.';
                 } catch (\Throwable $e) {
                     if ($pdo->inTransaction()) {
                         $pdo->rollBack();
@@ -471,15 +492,41 @@ $aghsHouses = Houses::AGHS_HOUSES;
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.9rem;margin-top:0.9rem;">
           <div>
             <label for="submitter_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your Full Name *</label>
-            <input type="text" id="submitter_name" name="submitter_name" class="input-control" placeholder="e.g. Eng. Jane Wanjiku" required>
+            <input type="text" id="submitter_name" name="submitter_name" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['full_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. Eng. Jane Wanjiku" required>
           </div>
           <div>
-            <label for="submitter_email" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your Email (For Approval Notification) *</label>
-            <input type="email" id="submitter_email" name="submitter_email" class="input-control" placeholder="you@company.co.ke" required>
+            <label for="submitter_email" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your Owner Login Email (For Approval &amp; Editing) *</label>
+            <input type="email" id="submitter_email" name="submitter_email" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="you@company.co.ke" required>
           </div>
           <div>
             <label for="submitter_phone" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your Direct Phone *</label>
-            <input type="tel" id="submitter_phone" name="submitter_phone" class="input-control" placeholder="+254722000000" required>
+            <input type="tel" id="submitter_phone" name="submitter_phone" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['phone'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="+254722000000" required>
+          </div>
+        </div>
+
+        <?php $loggedHasPw = ($loggedOwner !== null && !empty($loggedOwner['password_hash'])); ?>
+        <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:0.95rem 1.05rem;margin-top:0.95rem;">
+          <div style="font-weight:800;font-size:0.86rem;color:#1E40AF;margin-bottom:0.2rem;">
+            🔑 <?= $loggedHasPw ? 'Your Owner Account Password is Already Active' : 'Create Your Owner Account Password *' ?>
+          </div>
+          <p style="margin:0 0 0.7rem 0;font-size:0.8rem;color:#1E3A8A;">
+            <?= $loggedHasPw
+                ? 'This listing will be linked to your signed-in Owner Account automatically. Leave the fields below blank to keep your current password, or enter a new one to update it.'
+                : 'Choose a password now so you can sign in from any phone or computer with your email and password to edit your hours, photos, contacts, or map pin anytime.' ?>
+          </p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
+            <div>
+              <label for="owner_password" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">
+                <?= $loggedHasPw ? 'Update Password (Optional)' : 'Create Password (At least 8 characters) *' ?>
+              </label>
+              <input type="password" id="owner_password" name="owner_password" class="input-control" minlength="8" autocomplete="new-password" placeholder="At least 8 characters..." <?= $loggedHasPw ? '' : 'required' ?>>
+            </div>
+            <div>
+              <label for="owner_password_confirm" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">
+                <?= $loggedHasPw ? 'Confirm Updated Password' : 'Confirm Password *' ?>
+              </label>
+              <input type="password" id="owner_password_confirm" name="owner_password_confirm" class="input-control" minlength="8" autocomplete="new-password" placeholder="Re-enter your password..." <?= $loggedHasPw ? '' : 'required' ?>>
+            </div>
           </div>
         </div>
       </fieldset>

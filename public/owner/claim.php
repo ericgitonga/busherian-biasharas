@@ -31,7 +31,7 @@ if (!$biz) {
 }
 
 $currentOwner = OwnerAuth::getCurrentOwner($pdo);
-if ($currentOwner !== null) {
+if ($currentOwner !== null && !empty($currentOwner['password_hash'])) {
     OwnerAuth::linkOwnerToBusiness($pdo, (int)$currentOwner['id'], $bizId, 'claim_invite_link');
     header("Location: /owner/edit-business.php?id={$bizId}&claimed=1");
     exit;
@@ -43,19 +43,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = strtolower(trim((string)($_POST['owner_email'] ?? '')));
     $fullName = trim((string)($_POST['full_name'] ?? ''));
     $phone = trim((string)($_POST['phone'] ?? ''));
+    $newPw = (string)($_POST['new_password'] ?? '');
+    $confirmPw = (string)($_POST['confirm_password'] ?? '');
 
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
         $errorMsg = 'Invalid security token. Please try again.';
     } elseif ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $errorMsg = 'Please enter a valid email address for your Owner Account.';
     } else {
-        $newPw = (string)($_POST['new_password'] ?? '');
-        if ($newPw !== '' && mb_strlen($newPw) < 8) {
-            $errorMsg = 'If you choose to set a password, it must be at least 8 characters long.';
+        $existingOwner = OwnerAuth::findOwnerByEmail($pdo, $email);
+        $hasExistingPw = ($existingOwner !== null && !empty($existingOwner['password_hash']));
+        if (!$hasExistingPw && mb_strlen($newPw) < 8) {
+            $errorMsg = 'Please choose an Owner Password of at least 8 characters so you can sign in anytime on any browser.';
+        } elseif ($newPw !== '' && mb_strlen($newPw) < 8) {
+            $errorMsg = 'Your Owner Password must be at least 8 characters long.';
+        } elseif ($newPw !== '' && $confirmPw !== '' && !hash_equals($newPw, $confirmPw)) {
+            $errorMsg = 'The two password fields do not match. Please re-enter them.';
         } else {
             $owner = OwnerAuth::upsertOwner($pdo, $email, $fullName ?: null, $phone ?: null);
             if ($newPw !== '') {
                 OwnerAuth::setOwnerPassword($pdo, (int)$owner['id'], $newPw);
+                $owner = OwnerAuth::getOwnerById($pdo, (int)$owner['id']) ?? $owner;
             }
             OwnerAuth::linkOwnerToBusiness($pdo, (int)$owner['id'], $bizId, 'claim_invite_link');
             OwnerAuth::establishOwnerSession($owner);
@@ -67,8 +75,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $_SESSION['bbiz_pending_claim_biz_id'] = $bizId;
 $tokens = AntiSpamGate::generateFormTokens();
-$suggestedEmail = (string)($biz['owner_email'] ?: ($biz['email_public'] ?? ''));
-$suggestedPhone = (string)($biz['phone_primary'] ?? '');
+$linkedForClaim = OwnerAuth::getOwnersForBusiness($pdo, $bizId);
+$primaryLinkedEmail = !empty($linkedForClaim[0]['email']) ? (string)$linkedForClaim[0]['email'] : '';
+$suggestedEmail = (string)($_POST['owner_email'] ?? ($currentOwner['email'] ?? ($primaryLinkedEmail ?: ($biz['owner_email'] ?: ($biz['email_public'] ?? '')))));
+$suggestedPhone = (string)($_POST['phone'] ?? ($currentOwner['phone'] ?? ($biz['phone_primary'] ?? '')));
+$existingSuggestedOwner = $suggestedEmail !== '' ? OwnerAuth::findOwnerByEmail($pdo, $suggestedEmail) : null;
+$requireNewPassword = ($existingSuggestedOwner === null || empty($existingSuggestedOwner['password_hash']));
 $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
 ?>
 <!DOCTYPE html>
@@ -140,15 +152,21 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
           </div>
         </div>
 
-        <div style="margin-bottom:1.1rem;">
-          <label for="claim_new_password" style="display:block;font-weight:700;font-size:0.82rem;margin-bottom:0.25rem;">
-            Create a Password (Optional — to sign in from any computer or phone later)
+        <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:0.9rem;margin-bottom:1.1rem;">
+          <label for="claim_new_password" style="display:block;font-weight:800;font-size:0.84rem;color:#1E40AF;margin-bottom:0.25rem;">
+            🔑 <?= $requireNewPassword ? 'Set Your Owner Password (At least 8 characters) *' : 'Set / Update Your Owner Password (Optional)' ?>
           </label>
-          <input type="password" id="claim_new_password" name="new_password" class="input-control" minlength="8" autocomplete="new-password" placeholder="At least 8 characters (or leave blank to use email links)">
+          <p style="margin:0 0 0.6rem 0;font-size:0.78rem;color:#1E3A8A;">
+            Once set, you can sign in anytime on Safari, Chrome, or your laptop with your email and password to see the <strong>Edit My Business</strong> button directly on your card.
+          </p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.7rem;">
+            <input type="password" id="claim_new_password" name="new_password" class="input-control" minlength="8" autocomplete="new-password" placeholder="Choose password (8+ characters)" <?= $requireNewPassword ? 'required' : '' ?>>
+            <input type="password" id="claim_confirm_password" name="confirm_password" class="input-control" minlength="8" autocomplete="new-password" placeholder="Confirm password" <?= $requireNewPassword ? 'required' : '' ?>>
+          </div>
         </div>
 
         <button type="submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.94rem;">
-          ✓ Activate My Owner Account &amp; Edit Listing
+          ✓ Save Password &amp; Edit <?= htmlspecialchars((string)$biz['name'], ENT_QUOTES, 'UTF-8') ?>
         </button>
       </form>
     </section>

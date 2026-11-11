@@ -526,6 +526,216 @@ final class OwnerAuth
     }
 
     /**
+     * Privacy-safe email masker (e.g. justinake@yahoo.com -> j•••••••e@yahoo.com) (#152, #154).
+     */
+    public static function maskEmailAddress(string $email): string
+    {
+        $clean = strtolower(trim($email));
+        if ($clean === '' || !str_contains($clean, '@')) {
+            return '';
+        }
+        [$local, $domain] = explode('@', $clean, 2);
+        $len = mb_strlen($local);
+        if ($len <= 1) {
+            $maskedLocal = $local . '••';
+        } elseif ($len === 2) {
+            $maskedLocal = mb_substr($local, 0, 1) . '••';
+        } else {
+            $dots = str_repeat('•', min(8, max(3, $len - 2)));
+            $maskedLocal = mb_substr($local, 0, 1) . $dots . mb_substr($local, -1);
+        }
+        return $maskedLocal . '@' . $domain;
+    }
+
+    /**
+     * Return deduplicated, privacy-masked email/domain hints that can manage a business (#152, #154).
+     *
+     * @return list<string>
+     */
+    public static function getMaskedOwnerEmailHintsForBusiness(PDO $pdo, int $businessId): array
+    {
+        if ($businessId <= 0) {
+            return [];
+        }
+        $rawEmails = [];
+        foreach (self::getOwnersForBusiness($pdo, $businessId) as $o) {
+            if (!empty($o['email'])) {
+                $rawEmails[] = strtolower(trim((string)$o['email']));
+            }
+        }
+
+        $bStmt = $pdo->prepare("SELECT owner_email, email_public, website_url FROM businesses WHERE id = :id LIMIT 1");
+        $bStmt->execute([':id' => $businessId]);
+        $bRow = $bStmt->fetch();
+        if ($bRow) {
+            foreach (['owner_email', 'email_public'] as $col) {
+                $val = strtolower(trim((string)($bRow[$col] ?? '')));
+                if ($val !== '' && filter_var($val, FILTER_VALIDATE_EMAIL)) {
+                    $rawEmails[] = $val;
+                }
+            }
+        }
+
+        $seen = [];
+        $hints = [];
+        foreach ($rawEmails as $em) {
+            if (isset($seen[$em])) {
+                continue;
+            }
+            $seen[$em] = true;
+            $masked = self::maskEmailAddress($em);
+            if ($masked !== '') {
+                $hints[] = $masked;
+            }
+        }
+
+        if ($bRow && empty($hints)) {
+            $webDomain = self::extractWebsiteDomain($bRow['website_url'] ?? null);
+            if ($webDomain !== null && !self::isFreemailDomain($webDomain)) {
+                $hints[] = '*@' . $webDomain;
+            }
+        }
+
+        return $hints;
+    }
+
+    /**
+     * Look up an existing business_owners record by email (#152).
+     */
+    public static function findOwnerByEmail(PDO $pdo, string $email): ?array
+    {
+        $norm = strtolower(trim($email));
+        if ($norm === '' || !filter_var($norm, FILTER_VALIDATE_EMAIL)) {
+            return null;
+        }
+        $stmt = $pdo->prepare("SELECT * FROM business_owners WHERE LOWER(email) = :em LIMIT 1");
+        $stmt->execute([':em' => $norm]);
+        $row = $stmt->fetch();
+        return $row ? (array)$row : null;
+    }
+
+    /**
+     * Check if an email belongs to an existing owner OR matches any business's owner_email, email_public, or corporate website domain (#152).
+     */
+    public static function isRecognizedOwnerEmail(PDO $pdo, string $email): bool
+    {
+        $norm = strtolower(trim($email));
+        if ($norm === '' || !filter_var($norm, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+        if (self::findOwnerByEmail($pdo, $norm) !== null) {
+            return true;
+        }
+        $emailDomain = self::extractEmailDomain($norm);
+        $isCorp = ($emailDomain !== null && !self::isFreemailDomain($emailDomain));
+
+        $rows = $pdo->query("SELECT email_public, owner_email, website_url FROM businesses WHERE status IN ('approved', 'pending')")->fetchAll();
+        foreach ($rows as $r) {
+            $pub = strtolower(trim((string)($r['email_public'] ?? '')));
+            $own = strtolower(trim((string)($r['owner_email'] ?? '')));
+            if (($own !== '' && $own === $norm) || ($pub !== '' && $pub === $norm)) {
+                return true;
+            }
+            if ($isCorp) {
+                $webDom = self::extractWebsiteDomain($r['website_url'] ?? null);
+                $pubDom = $pub !== '' ? self::extractEmailDomain($pub) : null;
+                if (($webDom !== null && $webDom === $emailDomain) || ($pubDom !== null && $pubDom === $emailDomain)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Issue a single-use 6-digit numeric verification code (15-minute TTL) for setting or resetting an owner password (#152).
+     * Works directly inside the owner's active browser tab without email-client webview cookie loss.
+     *
+     * @return array{code:string,expires_at:int,email:string}
+     */
+    public static function issuePasswordOtp(PDO $pdo, string $email, ?int $claimBusinessId = null): array
+    {
+        $normEmail = strtolower(trim($email));
+        if ($normEmail === '' || !filter_var($normEmail, FILTER_VALIDATE_EMAIL)) {
+            throw new \InvalidArgumentException('Please enter a valid email address.');
+        }
+
+        $code = sprintf('%06d', random_int(100000, 999999));
+        $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
+        $tokenHash = hash_hmac('sha256', "otp6|{$normEmail}|{$code}", $secret);
+        $expiresAt = time() + 900; // 15 minutes
+
+        // Invalidate any prior unused tokens for this email so only the newest code is active
+        $pdo->prepare("UPDATE owner_auth_tokens SET used_at = :now WHERE LOWER(email) = :em AND used_at IS NULL")
+            ->execute([':now' => time(), ':em' => $normEmail]);
+
+        $pdo->prepare("
+            INSERT INTO owner_auth_tokens (email, token_hash, claim_business_id, expires_at, created_at)
+            VALUES (:em, :th, :cbid, :exp, CURRENT_TIMESTAMP)
+        ")->execute([
+            ':em' => $normEmail,
+            ':th' => $tokenHash,
+            ':cbid' => ($claimBusinessId !== null && $claimBusinessId > 0) ? $claimBusinessId : null,
+            ':exp' => $expiresAt,
+        ]);
+
+        return [
+            'code' => $code,
+            'expires_at' => $expiresAt,
+            'email' => $normEmail,
+        ];
+    }
+
+    /**
+     * Verify a 6-digit verification code and set the owner's password in one atomic flow (#152).
+     */
+    public static function verifyOtpAndSetPassword(PDO $pdo, string $email, string $submittedCode, string $newPassword): ?array
+    {
+        $normEmail = strtolower(trim($email));
+        $digits = preg_replace('/\D+/', '', $submittedCode) ?? '';
+        if ($normEmail === '' || strlen($digits) !== 6) {
+            return null;
+        }
+        if (mb_strlen($newPassword) < 8) {
+            throw new \InvalidArgumentException('Password must be at least 8 characters long.');
+        }
+
+        $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
+        $expectedHash = hash_hmac('sha256', "otp6|{$normEmail}|{$digits}", $secret);
+
+        $stmt = $pdo->prepare("
+            SELECT * FROM owner_auth_tokens
+            WHERE LOWER(email) = :em
+              AND token_hash = :th
+              AND used_at IS NULL
+              AND expires_at >= :now
+            LIMIT 1
+        ");
+        $stmt->execute([
+            ':em' => $normEmail,
+            ':th' => $expectedHash,
+            ':now' => time(),
+        ]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            return null;
+        }
+
+        $pdo->prepare("UPDATE owner_auth_tokens SET used_at = :now WHERE id = :id")
+            ->execute([':now' => time(), ':id' => (int)$row['id']]);
+
+        $owner = self::upsertOwner($pdo, $normEmail);
+        self::setOwnerPassword($pdo, (int)$owner['id'], $newPassword);
+
+        $claimBizId = !empty($row['claim_business_id']) ? (int)$row['claim_business_id'] : 0;
+        if ($claimBizId > 0) {
+            self::linkOwnerToBusiness($pdo, (int)$owner['id'], $claimBizId, 'otp_password_setup');
+        }
+
+        return self::findOwnerByEmail($pdo, $normEmail);
+    }
+
+    /**
      * Authenticate an owner using email and password from any device (#119).
      */
     public static function authenticateWithPassword(PDO $pdo, string $email, string $plainPassword): ?array

@@ -55,6 +55,7 @@ foreach ($rows as $r) {
         'id' => $bizId,
         'can_edit' => $canEdit,
         'edit_url' => $editUrl,
+        'owner_email_hints' => OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $bizId),
         'business_id' => $r['business_id'],
         'business_number' => (int)$r['business_number'],
         'name' => $r['name'],
@@ -129,7 +130,7 @@ foreach ($rows as $r) {
         <button type="button" id="btn-export-shortlist" class="btn btn-outline-light" title="Export selected B2B vendors as CSV">
           🏢 B2B Shortlist (<span id="shortlist-count">0</span>/5)
         </button>
-        <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light">👤 <?= $currentOwner ? 'My Biasharas' : 'Owner Login' ?></a>
+        <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light" style="border-color:#FCD34D;font-weight:700;">✏️ <?= $currentOwner ? 'My Biasharas (Edit)' : 'Owner Sign In / Edit Listing' ?></a>
         <a href="/privacy.php" class="btn btn-outline-light">🔒 Privacy Notice</a>
         <a href="/submit.php" class="btn btn-gold">+ List Your Biashara</a>
       </nav>

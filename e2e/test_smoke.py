@@ -260,11 +260,11 @@ def test_dpa_cookie_consent_and_usage_metrics():
     st_m, _, _ = _request("/admin/metrics.php")
     assert st_m == 401
 
-    # 5. Verify Tickets #42 & #44: Owner login portal never renders broken unconfigured Google error & serves Email Sign-In Link
+    # 5. Verify Tickets #42, #44 & #151-#154: Owner login portal never renders broken unconfigured Google error & serves Email + Password Sign-In
     st_ol, body_ol, _ = _request("/owner/login.php")
     assert st_ol == 200
     assert "google_unconfigured" not in body_ol
-    assert "Send 1-Click Sign-In Link" in body_ol
+    assert "Sign In with Email &amp; Password" in body_ol
 
     st_home, body_home, _ = _request("/")
     assert st_home == 200
@@ -359,10 +359,13 @@ def test_dpa_cookie_consent_and_usage_metrics():
         assert f'<option value="{c_name}"' in body_home, f"Missing country {c_name} in homepage filter"
         assert f'<option value="{c_name}"' in body_sub, f"Missing country {c_name} in submit.php dropdown"
 
-    # 16. Verify Tickets #118, #119, #120: Multi-device Email + Password option alongside 1-Click Email Link on /owner/login.php
+    # 16. Verify Tickets #118, #119, #120 & #151-#155: Password-First Owner Sign-In, 6-Digit Reset Code & Masked Email Hints
     assert 'id="owner-password"' in body_ol
-    assert 'Sign In Immediately with Password' in body_ol
-    assert 'Send 1-Click Sign-In Link' in body_ol
+    assert 'Sign In with Email &amp; Password' in body_ol
+    assert 'Set or Reset Password with a 6-Digit Email Code' in body_ol
+    assert 'owner_email_hints' in first_biz
+    assert 'Owner Sign In / Edit Listing' in body_home
+    assert 'id="owner_password"' in body_sub
 
     # 17. Verify Ticket #122: AHS solid green & AGHS green-maroon blend map markers
     assert "bbiz-pin-ahs" in body_js

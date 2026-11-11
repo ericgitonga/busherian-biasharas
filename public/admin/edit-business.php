@@ -172,9 +172,17 @@ $vettingRow = $vetStmt->fetch() ?: null;
           <?php endif; ?>
         </div>
       </div>
+      <?php
+        $editWaDigits = preg_replace('/\D+/', '', (string)($biz['whatsapp_number'] ?: ($biz['phone_primary'] ?? ''))) ?? '';
+        $editWaMsg = "Hi! Use this verified Owner Access Link to set your password and edit {$biz['name']} on Busherian Biasharas anytime: {$claimInviteUrl}";
+        $editWaHref = $editWaDigits !== ''
+            ? ('https://wa.me/' . $editWaDigits . '?text=' . rawurlencode($editWaMsg))
+            : ('https://wa.me/?text=' . rawurlencode($editWaMsg));
+      ?>
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.6rem;">
         <input type="text" id="admin-claim-link-input" class="input-control" style="flex:1;font-size:0.78rem;background:#fff;" readonly value="<?= htmlspecialchars($claimInviteUrl, ENT_QUOTES, 'UTF-8') ?>">
         <button type="button" id="btn-copy-claim-link" class="btn btn-green" style="font-size:0.8rem;">🔗 Copy Owner Claim Link</button>
+        <a href="<?= htmlspecialchars($editWaHref, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline" style="font-size:0.8rem;background:#fff;border-color:#059669;color:#065F46;">💬 Send via WhatsApp</a>
       </div>
     </section>
 

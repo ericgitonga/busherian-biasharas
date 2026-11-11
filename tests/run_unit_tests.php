@@ -834,6 +834,69 @@ putenv('APP_ENV=testing');
 unset($_ENV['BBIZ_BASE_PATH']);
 $_ENV['APP_ENV'] = 'testing';
 
+// 35. Verify Tickets #151, #152, #153, #154, #155: Password-First Owner Sign-In, 6-Digit OTP Setup/Reset, Masked Email Hints & WhatsApp Access Link
+assertTrue(
+    OwnerAuth::maskEmailAddress('justinake@yahoo.com') === 'j•••••••e@yahoo.com' &&
+    str_starts_with(OwnerAuth::maskEmailAddress('thepalmhousevipingo@gmail.com'), 't•••') &&
+    str_ends_with(OwnerAuth::maskEmailAddress('thepalmhousevipingo@gmail.com'), 'o@gmail.com'),
+    'OwnerAuth::maskEmailAddress masks local-part characters while preserving recognizable first/last characters & domain (#152, #154)'
+);
+
+$palmBizId = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Palm Ridge Test Stay',
+    'tagline' => 'Coastal holiday home',
+    'description' => 'Test listing with separate submitter and public emails',
+    'school_badge' => 'AGHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Kilifi',
+    'area_neighborhood' => 'Vipingo',
+    'phone_primary' => '+254721563203',
+    'whatsapp_number' => '+254721563203',
+    'email_public' => 'palmstaytest@gmail.com',
+]);
+$palmOwner = OwnerAuth::upsertOwner($pdo, 'justina.test@yahoo.com', 'Justina Test', '+254721563203');
+OwnerAuth::linkOwnerToBusiness($pdo, (int)$palmOwner['id'], $palmBizId, 'approved_submission');
+
+$hints = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $palmBizId);
+assertTrue(
+    count($hints) === 2 &&
+    str_contains($hints[0], '@yahoo.com') &&
+    str_contains($hints[1], '@gmail.com') &&
+    !in_array('justina.test@yahoo.com', $hints, true),
+    'OwnerAuth::getMaskedOwnerEmailHintsForBusiness returns masked submitter and public emails without leaking raw PII (#152, #154)'
+);
+
+$otpIssued = OwnerAuth::issuePasswordOtp($pdo, 'justina.test@yahoo.com', $palmBizId);
+assertTrue(
+    strlen($otpIssued['code']) === 6 && ctype_digit($otpIssued['code']),
+    'OwnerAuth::issuePasswordOtp generates a 6-digit numeric verification code (#152)'
+);
+assertTrue(
+    OwnerAuth::verifyOtpAndSetPassword($pdo, 'justina.test@yahoo.com', '000000', 'StrongPass#2026') === null ||
+    $otpIssued['code'] === '000000',
+    'OwnerAuth::verifyOtpAndSetPassword rejects wrong 6-digit code (#152)'
+);
+$verifiedOwner = OwnerAuth::verifyOtpAndSetPassword($pdo, 'justina.test@yahoo.com', $otpIssued['code'], 'StrongPass#2026');
+assertTrue(
+    is_array($verifiedOwner) &&
+    !empty($verifiedOwner['password_hash']) &&
+    OwnerAuth::authenticateWithPassword($pdo, 'justina.test@yahoo.com', 'StrongPass#2026') !== null &&
+    OwnerAuth::verifyOtpAndSetPassword($pdo, 'justina.test@yahoo.com', $otpIssued['code'], 'AnotherPass#2026') === null,
+    'OwnerAuth::verifyOtpAndSetPassword sets password atomically and enforces single-use OTP consumption (#152)'
+);
+VettingPurger::deleteBusiness($pdo, $palmBizId);
+
+$claimPhpSrc = (string)file_get_contents(dirname(__DIR__) . '/public/owner/claim.php');
+$adminIdxSrc = (string)file_get_contents(dirname(__DIR__) . '/public/admin/index.php');
+assertTrue(
+    str_contains($claimPhpSrc, 'Set Your Owner Password') &&
+    str_contains($adminIdxSrc, 'WhatsApp Link'),
+    'claim.php requires password setup and admin/index.php renders 1-click WhatsApp Access Link (#153, #155)'
+);
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 
