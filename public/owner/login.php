@@ -32,11 +32,14 @@ if ($targetBizId > 0) {
 
 $currentOwner = OwnerAuth::getCurrentOwner($pdo);
 if ($currentOwner !== null) {
-    $pendingClaimId = (int)($_SESSION['bbiz_pending_claim_biz_id'] ?? 0);
-    if ($pendingClaimId > 0) {
-        OwnerAuth::linkOwnerToBusiness($pdo, (int)$currentOwner['id'], $pendingClaimId, 'claim_invite_link');
-        unset($_SESSION['bbiz_pending_claim_biz_id']);
-        header("Location: /owner/edit-business.php?id={$pendingClaimId}&claimed=1");
+    OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$currentOwner['id'], (string)($currentOwner['email'] ?? ''));
+    $redeemedClaimId = OwnerAuth::redeemVerifiedClaimFromSession(
+        $pdo,
+        (int)$currentOwner['id'],
+        (string)($currentOwner['email'] ?? '')
+    );
+    if ($redeemedClaimId !== null && $redeemedClaimId > 0) {
+        header("Location: /owner/edit-business.php?id={$redeemedClaimId}&claimed=1");
         exit;
     }
     if ($targetBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$currentOwner['id'], $targetBizId)) {
@@ -48,7 +51,11 @@ if ($currentOwner !== null) {
     exit;
 }
 
-$claimBizId = (int)($_REQUEST['claim'] ?? ($_SESSION['bbiz_pending_claim_biz_id'] ?? 0));
+// Security Boundary (#163): Never accept unsigned claim query/body parameters on login.
+// Only honor a cryptographically verified, unconsumed claim invitation placed in session by /owner/claim.php.
+$verifiedClaim = OwnerAuth::getVerifiedClaimFromSession($pdo);
+$claimBizId = $verifiedClaim !== null ? (int)$verifiedClaim['biz_id'] : 0;
+$claimInvitedEmail = $verifiedClaim !== null ? (string)($verifiedClaim['em'] ?? '') : '';
 $claimBizName = null;
 if ($claimBizId > 0) {
     $bStmt = $pdo->prepare("SELECT name FROM businesses WHERE id = :id LIMIT 1");
@@ -95,14 +102,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flashError = 'Please enter a valid email address.';
     } elseif ($formStep === 'send_otp') {
         $rate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'owner_otp_send', 6, 15);
+        $pendingSubBizId = OwnerAuth::findPendingSubmissionBusinessIdForEmail($pdo, $email);
+        $hasEligibleVerifiedClaim = (
+            $claimBizId > 0 &&
+            OwnerAuth::isEmailEligibleForClaim($pdo, $claimBizId, $email, $claimInvitedEmail)
+        );
         if (!$rate['allowed']) {
             $flashError = 'Too many verification code requests. Please wait a few minutes and try again.';
             $viewStep = 'reset';
-        } elseif (!OwnerAuth::isRecognizedOwnerEmail($pdo, $email) && $claimBizId <= 0) {
+        } elseif (!OwnerAuth::isRecognizedOwnerEmail($pdo, $email) && $pendingSubBizId === null && !$hasEligibleVerifiedClaim) {
             $flashError = 'We could not find a business listing matching that email address. Please check the masked email hint on your listing card, or ask the directory admin for your Owner Access Link.';
             $viewStep = 'reset';
         } else {
-            $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, $claimBizId > 0 ? $claimBizId : null);
+            $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, $pendingSubBizId);
             $ctxName = $claimBizName ?: $targetBizName;
             Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
             $viewStep = 'verify_otp';
@@ -130,13 +142,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($verifiedOwner === null) {
                     $flashError = 'Invalid or expired 6-digit code. Please double-check the code in your email or request a new one.';
                 } else {
-                    if ($claimBizId > 0) {
-                        OwnerAuth::linkOwnerToBusiness($pdo, (int)$verifiedOwner['id'], $claimBizId, 'claim_invite_link');
-                        unset($_SESSION['bbiz_pending_claim_biz_id']);
-                    }
+                    OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$verifiedOwner['id'], $email);
+                    $redeemedClaimId = OwnerAuth::redeemVerifiedClaimFromSession($pdo, (int)$verifiedOwner['id'], $email);
                     OwnerAuth::establishOwnerSession($verifiedOwner);
-                    if ($claimBizId > 0) {
-                        header("Location: /owner/edit-business.php?id={$claimBizId}&claimed=1");
+                    if ($redeemedClaimId !== null && $redeemedClaimId > 0) {
+                        header("Location: /owner/edit-business.php?id={$redeemedClaimId}&claimed=1");
                         exit;
                     }
                     if ($targetBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$verifiedOwner['id'], $targetBizId)) {
@@ -161,7 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $existingOwner = OwnerAuth::findOwnerByEmail($pdo, $email);
             if ($existingOwner !== null && empty($existingOwner['password_hash'])) {
                 // Existing pre-password owner (e.g. justinake@yahoo.com): seamlessly send 6-digit setup code!
-                $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, $claimBizId > 0 ? $claimBizId : null);
+                $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, null);
                 $ctxName = $claimBizName ?: $targetBizName;
                 Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
                 $viewStep = 'verify_otp';
@@ -171,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } elseif ($existingOwner === null && OwnerAuth::isRecognizedOwnerEmail($pdo, $email)) {
                 // Email matches public/owner email on a listing that hasn't created an owner row yet
-                $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, $claimBizId > 0 ? $claimBizId : null);
+                $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, null);
                 $ctxName = $claimBizName ?: $targetBizName;
                 Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
                 $viewStep = 'verify_otp';
@@ -182,13 +192,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $authOwner = OwnerAuth::authenticateWithPassword($pdo, $email, $password);
                 if ($authOwner !== null) {
-                    if ($claimBizId > 0) {
-                        OwnerAuth::linkOwnerToBusiness($pdo, (int)$authOwner['id'], $claimBizId, 'claim_invite_link');
-                        unset($_SESSION['bbiz_pending_claim_biz_id']);
-                    }
+                    OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$authOwner['id'], $email);
+                    $redeemedClaimId = OwnerAuth::redeemVerifiedClaimFromSession($pdo, (int)$authOwner['id'], $email);
                     OwnerAuth::establishOwnerSession($authOwner);
-                    if ($claimBizId > 0) {
-                        header("Location: /owner/edit-business.php?id={$claimBizId}&claimed=1");
+                    if ($redeemedClaimId !== null && $redeemedClaimId > 0) {
+                        header("Location: /owner/edit-business.php?id={$redeemedClaimId}&claimed=1");
                         exit;
                     }
                     if ($targetBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$authOwner['id'], $targetBizId)) {

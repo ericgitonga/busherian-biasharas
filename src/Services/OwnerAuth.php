@@ -287,30 +287,290 @@ final class OwnerAuth
      * The Admin can copy this link and send it in a WhatsApp/DM to the business owner;
      * when the owner clicks it and signs in via Google SSO or Email Magic Link, the business is linked to their account.
      */
-    public static function generateClaimInviteUrl(int $businessId, ?int $expiresAt = null): string
-    {
+    public static function generateClaimInviteUrl(
+        int $businessId,
+        ?int $expiresAt = null,
+        ?string $recipientEmail = null
+    ): string {
         $exp = $expiresAt ?? (time() + self::CLAIM_LINK_TTL_SECONDS);
+        $normRecipient = strtolower(trim((string)($recipientEmail ?? '')));
+        if ($normRecipient !== '' && !filter_var($normRecipient, FILTER_VALIDATE_EMAIL)) {
+            $normRecipient = '';
+        }
+
         $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
-        $payload = "claim_invite|{$businessId}|{$exp}";
+        $payload = $normRecipient !== ''
+            ? "claim_invite|{$businessId}|{$exp}|{$normRecipient}"
+            : "claim_invite|{$businessId}|{$exp}";
         $sig = hash_hmac('sha256', $payload, $secret);
 
-        $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
-        return "{$baseUrl}/owner/claim.php?" . http_build_query([
+        $params = [
             'biz_id' => $businessId,
             'exp' => $exp,
-            'sig' => $sig,
-        ]);
+        ];
+        if ($normRecipient !== '') {
+            $params['em'] = $normRecipient;
+        }
+        $params['sig'] = $sig;
+
+        $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
+        return "{$baseUrl}/owner/claim.php?" . http_build_query($params);
     }
 
-    public static function verifyClaimInviteSignature(int $businessId, int $expiresAt, string $signature): bool
-    {
+    public static function verifyClaimInviteSignature(
+        int $businessId,
+        int $expiresAt,
+        string $signature,
+        ?string $recipientEmail = null
+    ): bool {
         if ($businessId <= 0 || $expiresAt < time() || $signature === '') {
             return false;
         }
+        $normRecipient = strtolower(trim((string)($recipientEmail ?? '')));
         $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
-        $payload = "claim_invite|{$businessId}|{$expiresAt}";
+        $payload = $normRecipient !== ''
+            ? "claim_invite|{$businessId}|{$expiresAt}|{$normRecipient}"
+            : "claim_invite|{$businessId}|{$expiresAt}";
         $expected = hash_hmac('sha256', $payload, $secret);
         return hash_equals($expected, $signature);
+    }
+
+    private static function claimInviteNonceHash(
+        int $businessId,
+        int $expiresAt,
+        string $signature,
+        string $recipientEmail = ''
+    ): string {
+        $normRecipient = strtolower(trim($recipientEmail));
+        return hash('sha256', "claim_redeemed|{$businessId}|{$expiresAt}|{$normRecipient}|{$signature}");
+    }
+
+    public static function isClaimInviteConsumed(
+        PDO $pdo,
+        int $businessId,
+        int $expiresAt,
+        string $signature,
+        string $recipientEmail = ''
+    ): bool {
+        $nh = self::claimInviteNonceHash($businessId, $expiresAt, $signature, $recipientEmail);
+        $stmt = $pdo->prepare("SELECT 1 FROM used_nonces WHERE nonce_hash = :nh LIMIT 1");
+        $stmt->execute([':nh' => $nh]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    public static function consumeClaimInviteOnce(
+        PDO $pdo,
+        int $businessId,
+        int $expiresAt,
+        string $signature,
+        string $recipientEmail = ''
+    ): bool {
+        if (!self::verifyClaimInviteSignature($businessId, $expiresAt, $signature, $recipientEmail)) {
+            return false;
+        }
+        $nh = self::claimInviteNonceHash($businessId, $expiresAt, $signature, $recipientEmail);
+        $chk = $pdo->prepare("SELECT 1 FROM used_nonces WHERE nonce_hash = :nh LIMIT 1");
+        $chk->execute([':nh' => $nh]);
+        if ($chk->fetchColumn()) {
+            return false;
+        }
+        try {
+            $ins = $pdo->prepare("INSERT INTO used_nonces (nonce_hash, expires_at) VALUES (:nh, :exp)");
+            $ins->execute([':nh' => $nh, ':exp' => max($expiresAt, time() + 60)]);
+            return true;
+        } catch (\Throwable $e) {
+            error_log('[OwnerAuth::consumeClaimInviteOnce] Nonce lock skipped/failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Determine whether $email is authorized to redeem a verified claim invitation for $businessId (#162, #163).
+     * - If the signed invitation explicitly encodes $invitedEmail, $email must match it exactly.
+     * - If the business already has linked owner(s) or a designated owner_email, $email must match one of those
+     *   designated owner addresses (or the listing's email_public), preventing leaked claim links from hijacking
+     *   already-assigned businesses or unrelated accounts.
+     * - If the business is an unclaimed pre-populated listing with no designated owner yet, any email whose
+     *   mailbox possession is cryptographically proven (password / 6-digit OTP / OAuth / magic link) may claim it.
+     */
+    public static function isEmailEligibleForClaim(
+        PDO $pdo,
+        int $businessId,
+        string $email,
+        string $invitedEmail = ''
+    ): bool {
+        $normEmail = strtolower(trim($email));
+        if ($businessId <= 0 || $normEmail === '' || !filter_var($normEmail, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+        $normInvited = strtolower(trim($invitedEmail));
+        if ($normInvited !== '' && !hash_equals($normInvited, $normEmail)) {
+            return false;
+        }
+
+        $bStmt = $pdo->prepare("SELECT id, owner_email, email_public FROM businesses WHERE id = :id LIMIT 1");
+        $bStmt->execute([':id' => $businessId]);
+        $biz = $bStmt->fetch();
+        if (!$biz) {
+            return false;
+        }
+
+        $designated = [];
+        foreach (self::getOwnersForBusiness($pdo, $businessId) as $linked) {
+            $lem = strtolower(trim((string)($linked['email'] ?? '')));
+            if ($lem !== '' && filter_var($lem, FILTER_VALIDATE_EMAIL)) {
+                $designated[$lem] = true;
+            }
+        }
+        $ownEm = strtolower(trim((string)($biz['owner_email'] ?? '')));
+        if ($ownEm !== '' && filter_var($ownEm, FILTER_VALIDATE_EMAIL)) {
+            $designated[$ownEm] = true;
+        }
+
+        if (!empty($designated)) {
+            $pubEm = strtolower(trim((string)($biz['email_public'] ?? '')));
+            if ($pubEm !== '' && filter_var($pubEm, FILTER_VALIDATE_EMAIL)) {
+                $designated[$pubEm] = true;
+            }
+            return isset($designated[$normEmail]);
+        }
+
+        return true;
+    }
+
+    public static function storeVerifiedClaimInSession(
+        int $businessId,
+        int $expiresAt,
+        string $signature,
+        string $invitedEmail = ''
+    ): void {
+        if (!self::verifyClaimInviteSignature($businessId, $expiresAt, $signature, $invitedEmail)) {
+            return;
+        }
+        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            session_start();
+        }
+        unset($_SESSION['bbiz_pending_claim_biz_id']);
+        $_SESSION['bbiz_verified_claim'] = [
+            'biz_id' => $businessId,
+            'exp' => $expiresAt,
+            'sig' => $signature,
+            'em' => strtolower(trim($invitedEmail)),
+        ];
+    }
+
+    public static function clearVerifiedClaimSession(): void
+    {
+        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            session_start();
+        }
+        unset($_SESSION['bbiz_verified_claim'], $_SESSION['bbiz_pending_claim_biz_id']);
+    }
+
+    /**
+     * Retrieve and re-verify a signed, unconsumed claim invitation stored in the PHP session (#163).
+     *
+     * @return array{biz_id:int,exp:int,sig:string,em:string}|null
+     */
+    public static function getVerifiedClaimFromSession(PDO $pdo): ?array
+    {
+        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            session_start();
+        }
+        unset($_SESSION['bbiz_pending_claim_biz_id']);
+        $raw = $_SESSION['bbiz_verified_claim'] ?? null;
+        if (!is_array($raw)) {
+            return null;
+        }
+        $bizId = (int)($raw['biz_id'] ?? 0);
+        $exp = (int)($raw['exp'] ?? 0);
+        $sig = trim((string)($raw['sig'] ?? ''));
+        $em = strtolower(trim((string)($raw['em'] ?? '')));
+
+        if (!self::verifyClaimInviteSignature($bizId, $exp, $sig, $em) ||
+            self::isClaimInviteConsumed($pdo, $bizId, $exp, $sig, $em)) {
+            self::clearVerifiedClaimSession();
+            return null;
+        }
+
+        $bStmt = $pdo->prepare("SELECT id FROM businesses WHERE id = :id LIMIT 1");
+        $bStmt->execute([':id' => $bizId]);
+        if (!$bStmt->fetchColumn()) {
+            self::clearVerifiedClaimSession();
+            return null;
+        }
+
+        return [
+            'biz_id' => $bizId,
+            'exp' => $exp,
+            'sig' => $sig,
+            'em' => $em,
+        ];
+    }
+
+    /**
+     * Atomically verify, consume single-use nonce, and link a claimed business to a verified owner (#162, #163, #172).
+     */
+    public static function redeemVerifiedClaimInvite(
+        PDO $pdo,
+        int $ownerId,
+        string $ownerEmail,
+        int $businessId,
+        int $expiresAt,
+        string $signature,
+        string $invitedEmail = ''
+    ): bool {
+        if ($ownerId <= 0 ||
+            !self::verifyClaimInviteSignature($businessId, $expiresAt, $signature, $invitedEmail) ||
+            !self::isEmailEligibleForClaim($pdo, $businessId, $ownerEmail, $invitedEmail)) {
+            return false;
+        }
+
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            if (!self::consumeClaimInviteOnce($pdo, $businessId, $expiresAt, $signature, $invitedEmail)) {
+                if ($ownTx && $pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                return false;
+            }
+            self::linkOwnerToBusiness($pdo, $ownerId, $businessId, 'claim_invite_link');
+            if ($ownTx) {
+                $pdo->commit();
+            }
+            self::clearVerifiedClaimSession();
+            return true;
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    public static function redeemVerifiedClaimFromSession(PDO $pdo, int $ownerId, string $ownerEmail): ?int
+    {
+        $claim = self::getVerifiedClaimFromSession($pdo);
+        if ($claim === null) {
+            return null;
+        }
+        $ok = self::redeemVerifiedClaimInvite(
+            $pdo,
+            $ownerId,
+            $ownerEmail,
+            $claim['biz_id'],
+            $claim['exp'],
+            $claim['sig'],
+            $claim['em']
+        );
+        if (!$ok) {
+            self::clearVerifiedClaimSession();
+            return null;
+        }
+        return $claim['biz_id'];
     }
 
     /**
@@ -375,10 +635,13 @@ final class OwnerAuth
         $pdo->prepare("UPDATE owner_auth_tokens SET used_at = :now WHERE id = :id")
             ->execute([':now' => time(), ':id' => (int)$row['id']]);
 
-        $owner = self::upsertOwner($pdo, (string)$row['email']);
+        $normTokenEmail = strtolower(trim((string)$row['email']));
+        $owner = self::upsertOwner($pdo, $normTokenEmail);
         $claimBizId = !empty($row['claim_business_id']) ? (int)$row['claim_business_id'] : 0;
-        if ($claimBizId > 0) {
+        if ($claimBizId > 0 && self::isEmailEligibleForClaim($pdo, $claimBizId, $normTokenEmail)) {
             self::linkOwnerToBusiness($pdo, (int)$owner['id'], $claimBizId, 'claim_invite_link');
+        } else {
+            $claimBizId = 0;
         }
 
         return [
@@ -390,10 +653,13 @@ final class OwnerAuth
     /**
      * Start a persistent 30-day signed session cookie + PHP session for the authenticated owner.
      */
-    public static function establishOwnerSession(array $owner): void
+    public static function establishOwnerSession(array $owner, bool $regenerateSessionId = true): void
     {
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
             session_start();
+        }
+        if ($regenerateSessionId && session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+            @session_regenerate_id(true);
         }
         $ownerId = (int)$owner['id'];
         $email = strtolower(trim((string)$owner['email']));
@@ -465,7 +731,7 @@ final class OwnerAuth
 
         // Rolling 30-day session renewal so active owners stay signed in continuously (#119)
         if ($shouldExtendRollingCookie) {
-            self::establishOwnerSession($owner);
+            self::establishOwnerSession($owner, false);
         }
 
         // Ensure any newly matching businesses are auto-linked
@@ -493,7 +759,13 @@ final class OwnerAuth
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
             session_start();
         }
-        unset($_SESSION['bbiz_owner_id'], $_SESSION['bbiz_owner_email'], $_SESSION['bbiz_pending_claim_biz_id']);
+        unset(
+            $_SESSION['bbiz_owner_id'],
+            $_SESSION['bbiz_owner_email'],
+            $_SESSION['bbiz_pending_claim_biz_id'],
+            $_SESSION['bbiz_verified_claim'],
+            $_SESSION['bbiz_self_submitted_pending']
+        );
         $cName = self::cookieName();
         if (!headers_sent()) {
             $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
@@ -602,6 +874,17 @@ final class OwnerAuth
     /**
      * Look up an existing business_owners record by email (#152).
      */
+    public static function getOwnerById(PDO $pdo, int $ownerId): ?array
+    {
+        if ($ownerId <= 0) {
+            return null;
+        }
+        $stmt = $pdo->prepare("SELECT * FROM business_owners WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $ownerId]);
+        $row = $stmt->fetch();
+        return $row ? (array)$row : null;
+    }
+
     public static function findOwnerByEmail(PDO $pdo, string $email): ?array
     {
         $norm = strtolower(trim($email));
@@ -612,6 +895,121 @@ final class OwnerAuth
         $stmt->execute([':em' => $norm]);
         $row = $stmt->fetch();
         return $row ? (array)$row : null;
+    }
+
+    /**
+     * Find the newest pending business_id submitted with $email in business_vetting_queue, if any (#162).
+     */
+    /**
+     * Record a pending listing submitted in the current browser session so that if a signed-out existing owner
+     * subsequently authenticates as $submitterEmail, their own pending listing links immediately without allowing
+     * third-party unauthenticated submissions to pollute an unrelated owner's dashboard (#162).
+     */
+    public static function recordSelfSubmittedPendingInSession(int $businessId, string $submitterEmail): void
+    {
+        $norm = strtolower(trim($submitterEmail));
+        if ($businessId <= 0 || $norm === '' || !filter_var($norm, FILTER_VALIDATE_EMAIL)) {
+            return;
+        }
+        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            session_start();
+        }
+        $items = is_array($_SESSION['bbiz_self_submitted_pending'] ?? null)
+            ? $_SESSION['bbiz_self_submitted_pending']
+            : [];
+        $items[(string)$businessId] = [
+            'biz_id' => $businessId,
+            'email' => $norm,
+            'recorded_at' => time(),
+        ];
+        $_SESSION['bbiz_self_submitted_pending'] = $items;
+    }
+
+    /**
+     * Link any pending submissions initiated in this exact browser session once $ownerEmail is authenticated (#162).
+     *
+     * @return list<int>
+     */
+    public static function linkSessionSubmittedPendingBusinesses(PDO $pdo, int $ownerId, string $ownerEmail): array
+    {
+        $normOwner = strtolower(trim($ownerEmail));
+        if ($ownerId <= 0 || $normOwner === '' || !filter_var($normOwner, FILTER_VALIDATE_EMAIL)) {
+            return [];
+        }
+        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            session_start();
+        }
+        $items = $_SESSION['bbiz_self_submitted_pending'] ?? null;
+        if (!is_array($items) || empty($items)) {
+            return [];
+        }
+
+        $linked = [];
+        $remaining = [];
+        $chkStmt = $pdo->prepare("
+            SELECT b.id
+            FROM business_vetting_queue v
+            INNER JOIN businesses b ON b.id = v.business_id
+            WHERE v.business_id = :bid
+              AND LOWER(v.submitter_email) = :em
+              AND b.status = 'pending'
+            LIMIT 1
+        ");
+        $updEmail = $pdo->prepare("
+            UPDATE businesses
+            SET owner_email = CASE WHEN owner_email IS NULL OR owner_email = '' THEN :em ELSE owner_email END
+            WHERE id = :bid
+        ");
+
+        foreach ($items as $key => $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $bid = (int)($entry['biz_id'] ?? 0);
+            $recEm = strtolower(trim((string)($entry['email'] ?? '')));
+            $recAt = (int)($entry['recorded_at'] ?? 0);
+            if ($bid <= 0 || $recEm === '' || ($recAt > 0 && (time() - $recAt) > 86400)) {
+                continue;
+            }
+            if (!hash_equals($normOwner, $recEm)) {
+                $remaining[(string)$key] = $entry;
+                continue;
+            }
+            $chkStmt->execute([':bid' => $bid, ':em' => $normOwner]);
+            if ($chkStmt->fetchColumn()) {
+                $updEmail->execute([':em' => $normOwner, ':bid' => $bid]);
+                self::linkOwnerToBusiness($pdo, $ownerId, $bid, 'verified_submitter_signin');
+                $linked[] = $bid;
+            }
+        }
+
+        if (empty($remaining)) {
+            unset($_SESSION['bbiz_self_submitted_pending']);
+        } else {
+            $_SESSION['bbiz_self_submitted_pending'] = $remaining;
+        }
+
+        return $linked;
+    }
+
+    public static function findPendingSubmissionBusinessIdForEmail(PDO $pdo, string $email): ?int
+    {
+        $norm = strtolower(trim($email));
+        if ($norm === '' || !filter_var($norm, FILTER_VALIDATE_EMAIL)) {
+            return null;
+        }
+        $stmt = $pdo->prepare("
+            SELECT v.business_id
+            FROM business_vetting_queue v
+            INNER JOIN businesses b ON b.id = v.business_id
+            WHERE LOWER(v.submitter_email) = :em
+              AND b.status = 'pending'
+            ORDER BY v.business_id DESC
+            LIMIT 1
+        ");
+        $stmt->execute([':em' => $norm]);
+        $bid = (int)($stmt->fetchColumn() ?: 0);
+        return $bid > 0 ? $bid : null;
     }
 
     /**
@@ -721,18 +1119,44 @@ final class OwnerAuth
             return null;
         }
 
-        $pdo->prepare("UPDATE owner_auth_tokens SET used_at = :now WHERE id = :id")
-            ->execute([':now' => time(), ':id' => (int)$row['id']]);
-
-        $owner = self::upsertOwner($pdo, $normEmail);
-        self::setOwnerPassword($pdo, (int)$owner['id'], $newPassword);
-
-        $claimBizId = !empty($row['claim_business_id']) ? (int)$row['claim_business_id'] : 0;
-        if ($claimBizId > 0) {
-            self::linkOwnerToBusiness($pdo, (int)$owner['id'], $claimBizId, 'otp_password_setup');
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
         }
+        try {
+            $consume = $pdo->prepare("UPDATE owner_auth_tokens SET used_at = :now WHERE id = :id AND used_at IS NULL");
+            $consume->execute([':now' => time(), ':id' => (int)$row['id']]);
+            if ($consume->rowCount() < 1) {
+                if ($ownTx && $pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                return null;
+            }
 
-        return self::findOwnerByEmail($pdo, $normEmail);
+            $owner = self::upsertOwner($pdo, $normEmail);
+            self::setOwnerPassword($pdo, (int)$owner['id'], $newPassword);
+
+            $claimBizId = !empty($row['claim_business_id']) ? (int)$row['claim_business_id'] : 0;
+            if ($claimBizId > 0) {
+                $vStmt = $pdo->prepare("SELECT 1 FROM business_vetting_queue WHERE business_id = :bid AND LOWER(submitter_email) = :em LIMIT 1");
+                $vStmt->execute([':bid' => $claimBizId, ':em' => $normEmail]);
+                $matchesPendingSubmission = (bool)$vStmt->fetchColumn();
+
+                if ($matchesPendingSubmission || self::isEmailEligibleForClaim($pdo, $claimBizId, $normEmail)) {
+                    self::linkOwnerToBusiness($pdo, (int)$owner['id'], $claimBizId, 'otp_password_setup');
+                }
+            }
+
+            if ($ownTx) {
+                $pdo->commit();
+            }
+            return self::getOwnerById($pdo, (int)$owner['id']);
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**
