@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.13.0] - 2026-11-11
+
+### Added
+- **Password-First Owner Sign-In & 6-Digit Email Verification Code (`OTP`)**: Standardized owner authentication around **Email + Password** (`🔑 Sign In with Email & Password`) on `/owner/login.php`, paired with a 6-digit numeric email verification code (`OwnerAuth::issuePasswordOtp()`, `OwnerAuth::verifyOtpAndSetPassword()`, `Mailer::sendOwnerPasswordOtp()`) for setting or resetting a password directly inside the owner's active Safari/Chrome browser tab — eliminating mobile email-app webview cookie isolation (#151, #152, #154; tag: `v0.13.0`).
+- **Required Owner Password & Immediate Session Cookie on Submission & Claim**: Required every business submitter (`/submit.php`) and invitation claimant (`/owner/claim.php`) to choose an `8+` character Owner Password up front and immediately established their 30-day `bbiz_owner_session` cookie so `✏️ Edit My Business` appears on their directory card without friction (#151, #153).
+- **Privacy-Masked Linked Email Hints & Prominent Sign-In Entry Points**: Added `OwnerAuth::maskEmailAddress()` and `OwnerAuth::getMaskedOwnerEmailHintsForBusiness()` (e.g. `j•••••••e@yahoo.com`) surfaced inside the Business Detail Modal callout (`👤 Own this business? Sign in to edit`) and on `/owner/login.php?biz=<id>`, alongside a clearer `✏️ Owner Sign In / Edit Listing` header button (#151, #152, #154).
+- **1-Click Admin WhatsApp Owner Access Link & Approval Email Notification**: Added `💬 WhatsApp Link` / `💬 Send via WhatsApp` buttons in `/admin/index.php` and `/admin/edit-business.php` pre-addressed to the listing's WhatsApp/primary phone with a signed 30-day `/owner/claim.php` password-setup URL, plus authenticated SMTP / `-f` envelope alignment and `Mailer::notifyOwnerListingApproved()` on vetting approval (#151, #152, #155).
+
 ## [0.12.0] - 2026-11-11
 
 ### Added

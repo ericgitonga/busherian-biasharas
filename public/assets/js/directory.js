@@ -1016,13 +1016,17 @@
           </div>
         </div>
 
-        <div style="margin-top:1.15rem;padding-top:0.85rem;border-top:1px solid #F3F4F6;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.65rem;font-size:0.76rem;color:#6B7280;">
-          <span>Verified Busherian Biashara</span>
-          <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
+        <div style="margin-top:1.15rem;padding:0.8rem 0.95rem;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.65rem;">
+          <div style="font-size:0.8rem;color:#065F46;">
             ${biz.can_edit && biz.edit_url
-              ? `<a href="${escapeHtml(biz.edit_url)}" style="color:#114B3E;font-weight:800;">✏️ Edit My Business Listing</a>`
-              : `<a href="/owner/login.php?biz=${biz.id}" style="color:#114B3E;font-weight:700;">👤 Own this business? Sign in to edit</a>`}
-            <a href="/takedown.php?business_id=${biz.id}" style="color:#7B1113;font-weight:600;">Report or Remove Listing</a>
+              ? `<strong>✓ You manage this listing.</strong> Update hours, photos, contacts, or map pin anytime.`
+              : `<strong>👤 Own this business? Sign in to edit</strong>${Array.isArray(biz.owner_email_hints) && biz.owner_email_hints.length > 0 ? ` <span style="color:#047857;">(Linked email: <strong>${escapeHtml(biz.owner_email_hints.join(' or '))}</strong>)</span>` : ''}`}
+          </div>
+          <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+            ${biz.can_edit && biz.edit_url
+              ? `<a href="${escapeHtml(biz.edit_url)}" class="btn btn-green" style="font-size:0.78rem;padding:0.38rem 0.8rem;">✏️ Edit My Business Listing</a>`
+              : `<a href="/owner/login.php?biz=${biz.id}" class="btn btn-green" style="font-size:0.78rem;padding:0.38rem 0.8rem;">🔑 Owner Sign In to Edit</a>`}
+            <a href="/takedown.php?business_id=${biz.id}" style="color:#7B1113;font-weight:600;font-size:0.76rem;">Report or Remove Listing</a>
           </div>
         </div>
       </div>

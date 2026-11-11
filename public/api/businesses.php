@@ -151,6 +151,7 @@ try {
             'id' => $bizId,
             'can_edit' => $canEdit,
             'edit_url' => $editUrl,
+            'owner_email_hints' => OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $bizId),
             'business_id' => $row['business_id'],
             'business_number' => (int)$row['business_number'],
             'name' => $row['name'],

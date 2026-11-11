@@ -98,7 +98,7 @@ $statusFilter = trim((string)($_GET['status'] ?? ''));
 $allSql = "
     SELECT
         b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.school_badge, b.status,
-        b.city_county, b.area_neighborhood, b.phone_primary, b.email_public, b.owner_email, b.website_url,
+        b.city_county, b.area_neighborhood, b.phone_primary, b.whatsapp_number, b.email_public, b.owner_email, b.website_url,
         sec.name AS sector_name, spec.name AS specialty_name, b.updated_at
     FROM businesses b
     INNER JOIN categories sec ON sec.id = b.sector_id
@@ -454,7 +454,17 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
                   </span>
                 </td>
                 <td style="padding:0.75rem 1rem;text-align:right;white-space:nowrap;">
-                  <button type="button" data-copy-claim="<?= htmlspecialchars($claimUrl, ENT_QUOTES, 'UTF-8') ?>" data-biz-name="<?= htmlspecialchars((string)$b['name'], ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="padding:0.35rem 0.65rem;font-size:0.75rem;color:#114B3E;border-color:#114B3E;" title="Copy 1-Click Owner Claim Link to send in DM">
+                  <?php
+                    $waPhoneDigits = preg_replace('/\D+/', '', (string)($b['whatsapp_number'] ?: ($b['phone_primary'] ?? ''))) ?? '';
+                    $waAccessMsg = "Hi! Use this verified Owner Access Link to set your password and edit {$b['name']} on Busherian Biasharas anytime: {$claimUrl}";
+                    $waShareHref = $waPhoneDigits !== ''
+                        ? ('https://wa.me/' . $waPhoneDigits . '?text=' . rawurlencode($waAccessMsg))
+                        : ('https://wa.me/?text=' . rawurlencode($waAccessMsg));
+                  ?>
+                  <a href="<?= htmlspecialchars($waShareHref, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline" style="padding:0.35rem 0.6rem;font-size:0.75rem;color:#065F46;border-color:#059669;background:#ECFDF5;" title="Send 1-Click Set-Password &amp; Edit Link via WhatsApp">
+                    💬 WhatsApp Link
+                  </a>
+                  <button type="button" data-copy-claim="<?= htmlspecialchars($claimUrl, ENT_QUOTES, 'UTF-8') ?>" data-biz-name="<?= htmlspecialchars((string)$b['name'], ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="padding:0.35rem 0.65rem;font-size:0.75rem;color:#114B3E;border-color:#114B3E;" title="Copy 1-Click Owner Claim &amp; Password Setup Link">
                     🔗 Claim Link
                   </button>
                   <a href="/admin/edit-business.php?id=<?= $bid ?>" class="btn btn-outline" style="padding:0.35rem 0.65rem;font-size:0.78rem;">

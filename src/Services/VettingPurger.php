@@ -74,6 +74,7 @@ final class VettingPurger
                     (string)($vetRow['submitter_phone'] ?? '')
                 );
                 OwnerAuth::linkOwnerToBusiness($pdo, (int)$ownerRec['id'], $businessId, 'approved_submission');
+                Mailer::notifyOwnerListingApproved($pdo, ['id' => $businessId, 'name' => (string)$biz['name']], $subEmail);
             }
 
             // STRICT PRIVACY GUARANTEE: Permanently hard-delete House, Year Left & School Number
