@@ -757,6 +757,29 @@ assertTrue(
 );
 VettingPurger::deleteBusiness($pdo, $directMapsBizId);
 
+// 33. Verify Tickets #142, #143, #144: 10 / 25 / 50 / 100 Pagination (default 10) on Admin Console & Main Public Directory
+$adminIndexPaginated = (string)file_get_contents(dirname(__DIR__) . '/public/admin/index.php');
+$publicIndexPaginated = (string)file_get_contents(dirname(__DIR__) . '/public/index.php');
+$directoryJsPaginated = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+assertTrue(
+    str_contains($adminIndexPaginated, '$allowedPerPage = [10, 25, 50, 100]') &&
+    str_contains($adminIndexPaginated, 'id="admin-per-page"') &&
+    str_contains($adminIndexPaginated, 'id="admin-pagination"') &&
+    str_contains($adminIndexPaginated, '$pagedBusinesses = array_slice($allBusinesses, $pageOffset, $perPage)'),
+    'public/admin/index.php paginates business records to 10/25/50/100 defaulting to 10 (#143)'
+);
+assertTrue(
+    str_contains($publicIndexPaginated, 'id="per-page-select"') &&
+    str_contains($publicIndexPaginated, '<option value="10" selected>10 per page</option>') &&
+    str_contains($publicIndexPaginated, '<option value="25">25 per page</option>') &&
+    str_contains($publicIndexPaginated, '<option value="50">50 per page</option>') &&
+    str_contains($publicIndexPaginated, '<option value="100">100 per page</option>') &&
+    str_contains($publicIndexPaginated, 'id="directory-pagination"') &&
+    str_contains($directoryJsPaginated, 'ALLOWED_PAGE_SIZES = [10, 25, 50, 100]') &&
+    str_contains($directoryJsPaginated, 'state.perPage = 10'),
+    'public/index.php and directory.js paginate cards to 10/25/50/100 defaulting to 10 (#144)'
+);
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 

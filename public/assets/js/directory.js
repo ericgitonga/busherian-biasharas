@@ -179,6 +179,7 @@
     const data = await res.json();
     if (data && data.status === 'ok') {
       state.businesses = data.businesses || [];
+      state.currentPage = 1;
       if (state.activeRoute && !state.businesses.some(b => Number(b.id) === Number(state.activeRoute.biz.id))) {
         state.activeRoute = null;
       }
@@ -187,23 +188,108 @@
     }
   }
 
-  function renderCards() {
-    if (!els.cardsGrid) return;
-    if (els.resultsCount) {
-      els.resultsCount.textContent = `${state.businesses.length} Verified Busherian ${state.businesses.length === 1 ? 'Biashara' : 'Biasharas'}`;
+  const ALLOWED_PAGE_SIZES = [10, 25, 50, 100];
+  state.currentPage = 1;
+  state.perPage = 10;
+
+  function renderPaginationControls(totalItems, currentPage, totalPages, startIdx, endIdx) {
+    const navEl = document.getElementById('directory-pagination');
+    if (!navEl) return;
+    if (totalItems === 0) {
+      navEl.innerHTML = '';
+      return;
     }
 
-    if (state.businesses.length === 0) {
+    const pageBtns = [];
+    for (let p = 1; p <= totalPages; p++) {
+      if (totalPages > 7 && p !== 1 && p !== totalPages && Math.abs(p - currentPage) > 2) {
+        if (p === 2 || p === totalPages - 1) {
+          pageBtns.push('<span style="padding:0 0.25rem;color:#9CA3AF;">&hellip;</span>');
+        }
+        continue;
+      }
+      if (p === currentPage) {
+        pageBtns.push(`<button type="button" aria-current="page" class="btn btn-green" style="padding:0.28rem 0.62rem;font-size:0.78rem;">${p}</button>`);
+      } else {
+        pageBtns.push(`<button type="button" data-goto-page="${p}" class="btn btn-outline" style="padding:0.28rem 0.62rem;font-size:0.78rem;">${p}</button>`);
+      }
+    }
+
+    navEl.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.65rem;background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:0.6rem 0.9rem;">
+        <div style="font-size:0.8rem;color:#4B5563;">
+          Page <strong>${currentPage}</strong> of <strong>${totalPages}</strong>
+          <span style="color:#9CA3AF;">•</span>
+          Showing <strong>${startIdx + 1}&ndash;${endIdx}</strong> of <strong>${totalItems}</strong>
+        </div>
+        <div style="display:flex;gap:0.32rem;align-items:center;flex-wrap:wrap;">
+          <button type="button" ${currentPage > 1 ? `data-goto-page="${currentPage - 1}"` : 'disabled'} class="btn btn-outline" style="padding:0.28rem 0.62rem;font-size:0.78rem;${currentPage > 1 ? '' : 'opacity:0.45;cursor:not-allowed;'}">&larr; Prev</button>
+          ${pageBtns.join('')}
+          <button type="button" ${currentPage < totalPages ? `data-goto-page="${currentPage + 1}"` : 'disabled'} class="btn btn-outline" style="padding:0.28rem 0.62rem;font-size:0.78rem;${currentPage < totalPages ? '' : 'opacity:0.45;cursor:not-allowed;'}">Next &rarr;</button>
+        </div>
+      </div>
+    `;
+  }
+
+  const perPageSelectEl = document.getElementById('per-page-select');
+  if (perPageSelectEl) {
+    perPageSelectEl.addEventListener('change', (e) => {
+      const nextSize = Number(e.target.value);
+      state.perPage = ALLOWED_PAGE_SIZES.includes(nextSize) ? nextSize : 10;
+      state.currentPage = 1;
+      renderCards();
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    const pageBtn = e.target.closest('[data-goto-page]');
+    if (pageBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      const targetPage = Number(pageBtn.getAttribute('data-goto-page'));
+      if (Number.isFinite(targetPage) && targetPage >= 1) {
+        state.currentPage = targetPage;
+        renderCards();
+        const pane = document.getElementById('pane-results');
+        if (pane && typeof pane.scrollIntoView === 'function') {
+          pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    }
+  });
+
+  function renderCards() {
+    if (!els.cardsGrid) return;
+    const perPage = ALLOWED_PAGE_SIZES.includes(Number(state.perPage)) ? Number(state.perPage) : 10;
+    const totalItems = state.businesses.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
+    if (!state.currentPage || state.currentPage < 1) state.currentPage = 1;
+    if (state.currentPage > totalPages) state.currentPage = totalPages;
+
+    const startIdx = (state.currentPage - 1) * perPage;
+    const pagedBusinesses = state.businesses.slice(startIdx, startIdx + perPage);
+    const endIdx = startIdx + pagedBusinesses.length;
+
+    if (els.resultsCount) {
+      if (totalItems === 0) {
+        els.resultsCount.textContent = '0 Verified Busherian Biasharas';
+      } else {
+        els.resultsCount.textContent = `Showing ${startIdx + 1}–${endIdx} of ${totalItems} Verified Busherian ${totalItems === 1 ? 'Biashara' : 'Biasharas'}`;
+      }
+    }
+
+    if (totalItems === 0) {
       els.cardsGrid.innerHTML = `
         <div style="grid-column:1/-1;background:#fff;padding:2rem;border-radius:12px;text-align:center;border:1px dashed #D1D5DB;">
           <h3 style="margin:0 0 0.5rem 0;color:#7B1113;">No matching businesses found</h3>
           <p style="margin:0;color:#6B7280;font-size:0.9rem;">Try clearing filters or searching another Kenyan/Swahili keyword (e.g., wakili, daktari, solar, coffee).</p>
         </div>
       `;
+      renderPaginationControls(0, 1, 1, 0, 0);
       return;
     }
 
-    els.cardsGrid.innerHTML = state.businesses.map(biz => {
+    els.cardsGrid.innerHTML = pagedBusinesses.map(biz => {
       const distBadge = (biz.distance_km !== null && biz.distance_km !== undefined)
         ? `<span class="badge-distance">📍 ${Number(biz.distance_km).toFixed(1)} km away</span>`
         : `<span style="font-size:0.75rem;color:#6B7280;">📍 ${escapeHtml(biz.area_neighborhood || biz.city_county)}</span>`;
@@ -257,6 +343,8 @@
         </article>
       `;
     }).join('');
+
+    renderPaginationControls(totalItems, state.currentPage, totalPages, startIdx, endIdx);
   }
 
   let leafletMap = null;

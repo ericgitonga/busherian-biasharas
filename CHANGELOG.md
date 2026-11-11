@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.11.0] - 2026-11-11
+
+### Added
+- **Admin Console & Main Public Directory Pagination (`10 / 25 / 50 / 100`, Default `10`) (`#142`, `#143`, `#144`)**:
+  - Paginated **Manage Existing Business Records** on the Admin Console (`public/admin/index.php`) with a `Show: 10 / 25 / 50 / 100 per page` selector defaulting to `10`, live `Showing X–Y of Z business records` counter, and page navigation controls (`#admin-pagination`) preserving active search (`q`) and status (`status`) filters (closes `#143`).
+  - Paginated the Main Public Directory (`public/index.php`, `public/assets/js/directory.js`) with an identical `Show: 10 / 25 / 50 / 100 per page` selector (`#per-page-select`) defaulting to `10`, automatic reset to page `1` on filter/search changes, `Showing X–Y of Z Verified Busherian Biasharas` header summary, and accessible `#directory-pagination` controls while keeping all filtered pins visible on the interactive map (closes `#144`, closes `#142`).
+  - tag: `v0.11.0`
+
 ## [0.10.0] - 2026-11-11
 
 ### Added

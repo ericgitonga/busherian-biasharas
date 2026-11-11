@@ -337,17 +337,52 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
     </section>
 
     <!-- SECTION 2: MANAGE EXISTING / PUBLISHED BUSINESSES (EDIT, UNPUBLISH, DELETE) -->
-    <section>
+    <?php
+      $allowedPerPage = [10, 25, 50, 100];
+      $perPage = isset($_GET['per_page']) && in_array((int)$_GET['per_page'], $allowedPerPage, true)
+          ? (int)$_GET['per_page']
+          : 10;
+      $totalMatchingBusinesses = count($allBusinesses);
+      $totalPages = max(1, (int)ceil($totalMatchingBusinesses / $perPage));
+      $currentPage = isset($_GET['page']) ? max(1, min($totalPages, (int)$_GET['page'])) : 1;
+      $pageOffset = ($currentPage - 1) * $perPage;
+      $pagedBusinesses = array_slice($allBusinesses, $pageOffset, $perPage);
+      $showingFrom = $totalMatchingBusinesses === 0 ? 0 : ($pageOffset + 1);
+      $showingTo = min($totalMatchingBusinesses, $pageOffset + count($pagedBusinesses));
+
+      $buildAdminPageUrl = static function (int $targetPage) use ($searchQ, $statusFilter, $perPage): string {
+          $qp = ['per_page' => $perPage, 'page' => $targetPage];
+          if ($searchQ !== '') {
+              $qp['q'] = $searchQ;
+          }
+          if ($statusFilter !== '') {
+              $qp['status'] = $statusFilter;
+          }
+          return '/admin/index.php?' . http_build_query($qp) . '#manage-businesses';
+      };
+    ?>
+    <section id="manage-businesses">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:0.85rem;">
-        <h2 style="color:#114B3E;margin:0;">2. Manage Existing Business Records (<?= count($allBusinesses) ?>)</h2>
-        <form method="GET" action="/admin/index.php" style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-          <input type="search" name="q" value="<?= htmlspecialchars($searchQ, ENT_QUOTES, 'UTF-8') ?>" class="input-control" style="width:240px;" placeholder="Filter by name, URL, or city...">
+        <div>
+          <h2 style="color:#114B3E;margin:0;">2. Manage Existing Business Records (<?= $totalMatchingBusinesses ?>)</h2>
+          <div style="font-size:0.8rem;color:#6B7280;margin-top:0.2rem;">
+            Showing <strong><?= $showingFrom ?>&ndash;<?= $showingTo ?></strong> of <strong><?= $totalMatchingBusinesses ?></strong> business <?= $totalMatchingBusinesses === 1 ? 'record' : 'records' ?>
+          </div>
+        </div>
+        <form method="GET" action="/admin/index.php#manage-businesses" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+          <input type="search" name="q" value="<?= htmlspecialchars($searchQ, ENT_QUOTES, 'UTF-8') ?>" class="input-control" style="width:230px;" placeholder="Filter by name, URL, or city...">
           <select name="status" class="select-control" style="width:auto;">
             <option value="">All Statuses</option>
             <option value="approved" <?= $statusFilter === 'approved' ? 'selected' : '' ?>>Approved (Live)</option>
             <option value="quarantined_dpa" <?= $statusFilter === 'quarantined_dpa' ? 'selected' : '' ?>>Unpublished / Quarantined</option>
             <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Pending</option>
             <option value="rejected" <?= $statusFilter === 'rejected' ? 'selected' : '' ?>>Rejected</option>
+          </select>
+          <label for="admin-per-page" style="font-size:0.8rem;font-weight:700;color:#374151;">Show:</label>
+          <select id="admin-per-page" name="per_page" class="select-control" style="width:auto;" aria-label="Records per page" onchange="this.form.submit()">
+            <?php foreach ($allowedPerPage as $sizeOpt): ?>
+              <option value="<?= $sizeOpt ?>" <?= $perPage === $sizeOpt ? 'selected' : '' ?>><?= $sizeOpt ?> per page</option>
+            <?php endforeach; ?>
           </select>
           <button type="submit" class="btn btn-outline">Filter</button>
         </form>
@@ -366,7 +401,12 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
             </tr>
           </thead>
           <tbody>
-            <?php foreach ($allBusinesses as $b):
+            <?php if (empty($pagedBusinesses)): ?>
+              <tr>
+                <td colspan="6" style="padding:1.5rem;text-align:center;color:#6B7280;">No matching business records found.</td>
+              </tr>
+            <?php endif; ?>
+            <?php foreach ($pagedBusinesses as $b):
                 $bid = (int)$b['id'];
                 $st = (string)$b['status'];
             ?>
@@ -448,6 +488,42 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
           </tbody>
         </table>
       </div>
+
+      <nav id="admin-pagination" aria-label="Admin Business Records Pagination" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-top:0.95rem;background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:0.65rem 1rem;">
+        <div style="font-size:0.82rem;color:#4B5563;">
+          Page <strong><?= $currentPage ?></strong> of <strong><?= $totalPages ?></strong>
+          <span style="color:#9CA3AF;">•</span>
+          Showing <strong><?= $showingFrom ?>&ndash;<?= $showingTo ?></strong> of <strong><?= $totalMatchingBusinesses ?></strong>
+        </div>
+        <div style="display:flex;gap:0.35rem;align-items:center;flex-wrap:wrap;">
+          <?php if ($currentPage > 1): ?>
+            <a href="<?= htmlspecialchars($buildAdminPageUrl($currentPage - 1), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;">&larr; Prev</a>
+          <?php else: ?>
+            <span class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;opacity:0.45;pointer-events:none;">&larr; Prev</span>
+          <?php endif; ?>
+
+          <?php for ($p = 1; $p <= $totalPages; $p++):
+              if ($totalPages > 7 && $p !== 1 && $p !== $totalPages && abs($p - $currentPage) > 2) {
+                  if ($p === 2 || $p === $totalPages - 1) {
+                      echo '<span style="padding:0 0.25rem;color:#9CA3AF;">&hellip;</span>';
+                  }
+                  continue;
+              }
+          ?>
+            <?php if ($p === $currentPage): ?>
+              <span aria-current="page" class="btn btn-green" style="padding:0.3rem 0.65rem;font-size:0.8rem;"><?= $p ?></span>
+            <?php else: ?>
+              <a href="<?= htmlspecialchars($buildAdminPageUrl($p), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;"><?= $p ?></a>
+            <?php endif; ?>
+          <?php endfor; ?>
+
+          <?php if ($currentPage < $totalPages): ?>
+            <a href="<?= htmlspecialchars($buildAdminPageUrl($currentPage + 1), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;">Next &rarr;</a>
+          <?php else: ?>
+            <span class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;opacity:0.45;pointer-events:none;">Next &rarr;</span>
+          <?php endif; ?>
+        </div>
+      </nav>
     </section>
     <?= bbiz_render_github_delete_modal($tokens['csrf_token'], '/admin/index.php', 0, '', 'admin_action', 'delete') ?>
   </main>
