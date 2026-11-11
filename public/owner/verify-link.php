@@ -21,10 +21,13 @@ if ($result === null) {
 }
 
 $owner = $result['owner'];
-$claimedBizId = (int)($result['claimed_business_id'] ?? ($_SESSION['bbiz_pending_claim_biz_id'] ?? 0));
-if ($claimedBizId > 0) {
-    OwnerAuth::linkOwnerToBusiness($pdo, (int)$owner['id'], $claimedBizId, 'claim_invite_link');
-    unset($_SESSION['bbiz_pending_claim_biz_id']);
+OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$owner['id'], (string)($owner['email'] ?? ''));
+$claimedBizId = (int)($result['claimed_business_id'] ?? 0);
+if ($claimedBizId <= 0) {
+    $sessionClaimId = OwnerAuth::redeemVerifiedClaimFromSession($pdo, (int)$owner['id'], (string)($owner['email'] ?? ''));
+    if ($sessionClaimId !== null && $sessionClaimId > 0) {
+        $claimedBizId = $sessionClaimId;
+    }
 }
 
 OwnerAuth::establishOwnerSession($owner);

@@ -897,6 +897,154 @@ assertTrue(
     'claim.php requires password setup and admin/index.php renders 1-click WhatsApp Access Link (#153, #155)'
 );
 
+// 36. Verify Tickets #162 (CRIT-01) & #163 (CRIT-02): Strict Owner Identity Boundary, Recipient-Bound Single-Use Claim Invites & Unsigned Claim Removal
+$critVictimBizId = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Crit01 Victim Architects',
+    'tagline' => 'Protected victim listing',
+    'description' => 'Must never be hijacked via submit.php, claim.php, or login.php?claim=',
+    'school_badge' => 'AHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254722111222',
+]);
+$critUnclaimedBizId = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Crit02 Unclaimed Roasters',
+    'tagline' => 'Pre-populated unclaimed listing',
+    'description' => 'Claimable once via verified signed invite + verified mailbox.',
+    'school_badge' => 'AGHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254733444555',
+]);
+
+$victimOwner = OwnerAuth::upsertOwner($pdo, 'victim.crit01@busherian-test.co.ke', 'Victim Owner', '+254722111222');
+OwnerAuth::setOwnerPassword($pdo, (int)$victimOwner['id'], 'VictimOriginal#2026');
+OwnerAuth::linkOwnerToBusiness($pdo, (int)$victimOwner['id'], $critVictimBizId, 'approved_submission');
+
+$fetchedVictim = OwnerAuth::getOwnerById($pdo, (int)$victimOwner['id']);
+assertTrue(
+    is_array($fetchedVictim) &&
+    (int)$fetchedVictim['id'] === (int)$victimOwner['id'] &&
+    $fetchedVictim['email'] === 'victim.crit01@busherian-test.co.ke' &&
+    OwnerAuth::getOwnerById($pdo, 99999999) === null,
+    'OwnerAuth::getOwnerById resolves existing owners by ID and returns null for nonexistent IDs (#162, #172)'
+);
+
+// Recipient-bound signed claim URL cannot have `em` stripped or altered
+$boundClaimUrl = OwnerAuth::generateClaimInviteUrl($critVictimBizId, null, 'victim.crit01@busherian-test.co.ke');
+$boundQp = [];
+parse_str((string)parse_url($boundClaimUrl, PHP_URL_QUERY), $boundQp);
+assertTrue(
+    ($boundQp['em'] ?? '') === 'victim.crit01@busherian-test.co.ke' &&
+    OwnerAuth::verifyClaimInviteSignature((int)$boundQp['biz_id'], (int)$boundQp['exp'], (string)$boundQp['sig'], 'victim.crit01@busherian-test.co.ke') === true &&
+    OwnerAuth::verifyClaimInviteSignature((int)$boundQp['biz_id'], (int)$boundQp['exp'], (string)$boundQp['sig'], '') === false &&
+    OwnerAuth::verifyClaimInviteSignature((int)$boundQp['biz_id'], (int)$boundQp['exp'], (string)$boundQp['sig'], 'attacker@evil.example') === false,
+    'Recipient-bound claim invite HMAC rejects parameter stripping or email substitution (#162, #163)'
+);
+
+// Eligibility check blocks unrelated accounts from claiming an already-assigned business
+assertTrue(
+    OwnerAuth::isEmailEligibleForClaim($pdo, $critVictimBizId, 'victim.crit01@busherian-test.co.ke') === true &&
+    OwnerAuth::isEmailEligibleForClaim($pdo, $critVictimBizId, 'attacker@evil.example') === false &&
+    OwnerAuth::isEmailEligibleForClaim($pdo, $critUnclaimedBizId, 'legit.claimant@gmail.com') === true,
+    'OwnerAuth::isEmailEligibleForClaim blocks unrelated emails on owned listings while permitting verified claimants on unclaimed listings (#162, #163)'
+);
+
+// Single-use claim redemption consumes invite atomically and blocks second replay
+$unclaimedUrl = OwnerAuth::generateClaimInviteUrl($critUnclaimedBizId);
+$unclaimedQp = [];
+parse_str((string)parse_url($unclaimedUrl, PHP_URL_QUERY), $unclaimedQp);
+$legitClaimant = OwnerAuth::upsertOwner($pdo, 'legit.claimant@gmail.com', 'Legit Claimant');
+$redeemFirst = OwnerAuth::redeemVerifiedClaimInvite(
+    $pdo,
+    (int)$legitClaimant['id'],
+    'legit.claimant@gmail.com',
+    (int)$unclaimedQp['biz_id'],
+    (int)$unclaimedQp['exp'],
+    (string)$unclaimedQp['sig']
+);
+$attackerOwner = OwnerAuth::upsertOwner($pdo, 'attacker@evil.example', 'Attacker');
+$redeemReplay = OwnerAuth::redeemVerifiedClaimInvite(
+    $pdo,
+    (int)$attackerOwner['id'],
+    'attacker@evil.example',
+    (int)$unclaimedQp['biz_id'],
+    (int)$unclaimedQp['exp'],
+    (string)$unclaimedQp['sig']
+);
+assertTrue(
+    $redeemFirst === true &&
+    $redeemReplay === false &&
+    OwnerAuth::isClaimInviteConsumed($pdo, (int)$unclaimedQp['biz_id'], (int)$unclaimedQp['exp'], (string)$unclaimedQp['sig']) === true &&
+    OwnerAuth::canOwnerEditBusiness($pdo, (int)$legitClaimant['id'], $critUnclaimedBizId) === true &&
+    OwnerAuth::canOwnerEditBusiness($pdo, (int)$attackerOwner['id'], $critUnclaimedBizId) === false,
+    'OwnerAuth::redeemVerifiedClaimInvite enforces single-use nonce lock and prevents replay (#163)'
+);
+
+// Defense-in-depth: verifyOtpAndSetPassword refuses to link an unauthorized claim_business_id
+$rogueOtp = OwnerAuth::issuePasswordOtp($pdo, 'attacker@evil.example', $critVictimBizId);
+$attackerVerified = OwnerAuth::verifyOtpAndSetPassword($pdo, 'attacker@evil.example', $rogueOtp['code'], 'AttackerPass#2026');
+assertTrue(
+    is_array($attackerVerified) &&
+    OwnerAuth::canOwnerEditBusiness($pdo, (int)$attackerOwner['id'], $critVictimBizId) === false &&
+    OwnerAuth::authenticateWithPassword($pdo, 'victim.crit01@busherian-test.co.ke', 'VictimOriginal#2026') !== null,
+    'OwnerAuth::verifyOtpAndSetPassword refuses to link victim business to attacker even if claim_business_id is present (#163)'
+);
+
+$loginPhpSrc = (string)file_get_contents(dirname(__DIR__) . '/public/owner/login.php');
+$submitPhpSrc = (string)file_get_contents(dirname(__DIR__) . '/public/submit.php');
+assertTrue(
+    !str_contains($loginPhpSrc, "\$_REQUEST['claim']") &&
+    !str_contains($loginPhpSrc, "\$_GET['claim']") &&
+    !str_contains($loginPhpSrc, "\$_POST['claim']") &&
+    !str_contains($loginPhpSrc, 'bbiz_pending_claim_biz_id') &&
+    !str_contains($submitPhpSrc, 'setOwnerPassword') &&
+    !str_contains($submitPhpSrc, 'establishOwnerSession'),
+    'login.php eliminates unsigned claim parameters and submit.php eliminates unauthenticated password/session writes (#162, #163)'
+);
+
+// Verify signed-out existing owner's self-submitted pending listing links on login in same session, never for wrong account
+$pendingSelfBizId = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Self Submitted Pending Tea Room',
+    'tagline' => 'Pending listing submitted before login',
+    'description' => 'Should link only when the same browser session authenticates as submitter_email.',
+    'school_badge' => 'AGHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254799888777',
+    'status' => 'pending',
+]);
+$pdo->prepare("UPDATE businesses SET status = 'pending', owner_email = NULL WHERE id = :id")->execute([':id' => $pendingSelfBizId]);
+$pdo->prepare("
+    INSERT INTO business_vetting_queue (business_id, school_code, house_name, year_left, submitter_name, submitter_email, submitter_phone)
+    VALUES (:bid, 'AGHS', 'Watson', 2010, 'Victim Owner', 'victim.crit01@busherian-test.co.ke', '+254722111222')
+")->execute([':bid' => $pendingSelfBizId]);
+
+OwnerAuth::recordSelfSubmittedPendingInSession($pendingSelfBizId, 'victim.crit01@busherian-test.co.ke');
+$wrongLinks = OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$attackerOwner['id'], 'attacker@evil.example');
+assertTrue(
+    empty($wrongLinks) && !OwnerAuth::canOwnerEditBusiness($pdo, (int)$attackerOwner['id'], $pendingSelfBizId),
+    'OwnerAuth::linkSessionSubmittedPendingBusinesses refuses to link pending submission to a different authenticated email (#162)'
+);
+$rightLinks = OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$victimOwner['id'], 'victim.crit01@busherian-test.co.ke');
+assertTrue(
+    $rightLinks === [$pendingSelfBizId] && OwnerAuth::canOwnerEditBusiness($pdo, (int)$victimOwner['id'], $pendingSelfBizId),
+    'OwnerAuth::linkSessionSubmittedPendingBusinesses links pending submission once matching existing owner authenticates (#162)'
+);
+VettingPurger::deleteBusiness($pdo, $pendingSelfBizId);
+
+VettingPurger::deleteBusiness($pdo, $critVictimBizId);
+VettingPurger::deleteBusiness($pdo, $critUnclaimedBizId);
+
 @unlink(getenv('DB_SQLITE_PATH'));
 
 

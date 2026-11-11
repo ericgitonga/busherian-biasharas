@@ -19,10 +19,13 @@ bbiz_send_security_headers(false);
 
 $pdo = Database::getConnection();
 $taxonomyTree = CategoryMatcher::getTaxonomyTree($pdo, false);
+$loggedOwner = OwnerAuth::getCurrentOwner($pdo);
 
 $errors = [];
 $successMessage = '';
 $submittedBusinessId = null;
+$postSubmitVerifyUrl = '';
+$postSubmitVerifyLabel = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrfToken = trim((string)($_POST['csrf_token'] ?? ''));
@@ -57,10 +60,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $submitterName = trim((string)($_POST['submitter_name'] ?? ''));
             $submitterEmail = strtolower(trim((string)($_POST['submitter_email'] ?? '')));
             $submitterPhone = WebsiteEnricher::normalizeKenyanPhone((string)($_POST['submitter_phone'] ?? ''));
-            $ownerPassword = (string)($_POST['owner_password'] ?? '');
-            $ownerPasswordConfirm = (string)($_POST['owner_password_confirm'] ?? '');
-            $existingSubOwner = OwnerAuth::getCurrentOwner($pdo) ?? OwnerAuth::findOwnerByEmail($pdo, $submitterEmail);
-            $alreadyHasPassword = ($existingSubOwner !== null && !empty($existingSubOwner['password_hash']));
 
             if (!in_array($schoolCode, ['AHS', 'AGHS'], true)) {
                 $errors[] = 'Please select your School (AHS or AGHS).';
@@ -80,13 +79,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($submitterPhone === '') {
                 $errors[] = 'Please provide your contact phone number for vetting.';
-            }
-            if (!$alreadyHasPassword || $ownerPassword !== '') {
-                if (mb_strlen($ownerPassword) < 8) {
-                    $errors[] = 'Please create an Owner Password of at least 8 characters so you can sign in and edit your listing anytime.';
-                } elseif ($ownerPasswordConfirm !== '' && $ownerPassword !== $ownerPasswordConfirm) {
-                    $errors[] = 'Your Owner Password and Confirm Password entries do not match.';
-                }
             }
 
             // Validate Kenya DPA 2019 s.33 Age Gate & s.29 Unbundled Consent
@@ -281,15 +273,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
 
                     $submittedBusinessId = (int)$pdo->lastInsertId();
-                    $pdo->prepare("UPDATE businesses SET owner_email = :oem WHERE id = :id")
-                        ->execute([':oem' => $submitterEmail, ':id' => $submittedBusinessId]);
-
-                    // Create/link persistent Owner Account + Password immediately so owner stays signed in (#151, #153)
-                    $subOwner = OwnerAuth::upsertOwner($pdo, $submitterEmail, $submitterName, $submitterPhone);
-                    if ($ownerPassword !== '' && mb_strlen($ownerPassword) >= 8) {
-                        OwnerAuth::setOwnerPassword($pdo, (int)$subOwner['id'], $ownerPassword);
-                    }
-                    OwnerAuth::linkOwnerToBusiness($pdo, (int)$subOwner['id'], $submittedBusinessId, 'submitter_registration');
+                    $isAuthenticatedSameEmail = (
+                        $loggedOwner !== null &&
+                        strtolower(trim((string)($loggedOwner['email'] ?? ''))) === $submitterEmail
+                    );
 
                     // Insert ephemeral vetting record into `business_vetting_queue` (hard-deleted upon review)
                     $insVet = $pdo->prepare("
@@ -312,6 +299,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':sphone' => $submitterPhone,
                     ]);
 
+                    // Security Boundary (#162): Only link immediately when the requester is ALREADY authenticated as $submitterEmail.
+                    // Never mutate an existing owner record, write a password, or issue a session from unauthenticated input.
+                    $existingTargetOwner = null;
+                    if ($isAuthenticatedSameEmail) {
+                        $pdo->prepare("UPDATE businesses SET owner_email = :oem WHERE id = :id")
+                            ->execute([':oem' => $submitterEmail, ':id' => $submittedBusinessId]);
+                        OwnerAuth::linkOwnerToBusiness($pdo, (int)$loggedOwner['id'], $submittedBusinessId, 'submitter_registration');
+                    } else {
+                        $existingTargetOwner = OwnerAuth::findOwnerByEmail($pdo, $submitterEmail);
+                        if ($existingTargetOwner === null && !OwnerAuth::isRecognizedOwnerEmail($pdo, $submitterEmail)) {
+                            $otpRate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'submit_owner_otp', 2, 5, 15);
+                            if ($otpRate['allowed']) {
+                                $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $submitterEmail, $submittedBusinessId);
+                                Mailer::sendOwnerPasswordOtp($pdo, $submitterEmail, $otpInfo['code'], $bizName);
+                            }
+                        }
+                    }
+
                     // Notify admin@busherianbiasharas.com via durable outbox + signed 1-click links
                     Mailer::notifyAdminNewSubmission(
                         $pdo,
@@ -328,12 +333,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
 
                     $pdo->commit();
-                    OwnerAuth::establishOwnerSession($subOwner);
-                    $successMessage = 'Your business has been submitted for one-time alumni vetting and linked to your Owner Account! Once verified by the admin team, your listing will go live, your House, Year Left, and School Number will be permanently deleted, and the Edit My Business button will appear directly on your listing card whenever you sign in with your email and password.';
+                    if (!$isAuthenticatedSameEmail) {
+                        OwnerAuth::recordSelfSubmittedPendingInSession($submittedBusinessId, $submitterEmail);
+                    }
+                    if ($isAuthenticatedSameEmail) {
+                        $postSubmitVerifyUrl = '/owner/index.php';
+                        $postSubmitVerifyLabel = 'Manage My Biasharas';
+                        $successMessage = 'Your business has been submitted for one-time alumni vetting and linked to your signed-in Owner Account! Once verified by the admin team, your listing will go live and your House, Year Left, and School Number will be permanently deleted.';
+                    } elseif ($existingTargetOwner !== null || OwnerAuth::isRecognizedOwnerEmail($pdo, $submitterEmail)) {
+                        $postSubmitVerifyUrl = '/owner/login.php?email=' . rawurlencode($submitterEmail);
+                        $postSubmitVerifyLabel = 'Sign In to Your Owner Account';
+                        $successMessage = "Your business has been submitted for one-time alumni vetting! For your security, existing Owner Accounts are never modified without signing in. Sign in with your email and password (or verify a 6-digit email code on Owner Sign In) to manage your listings.";
+                    } else {
+                        $postSubmitVerifyUrl = '/owner/login.php?mode=verify_otp&email=' . rawurlencode($submitterEmail);
+                        $postSubmitVerifyLabel = 'Verify Email & Set Owner Password';
+                        $successMessage = "Your business has been submitted for one-time alumni vetting! We sent a 6-digit verification code to {$submitterEmail} — verify your email now to set your Owner Password, or sign in anytime after admin approval.";
+                    }
                 } catch (\Throwable $e) {
                     if ($pdo->inTransaction()) {
                         $pdo->rollBack();
                     }
+                    error_log('[submit.php] Submission save failed: ' . $e->getMessage());
                     $errors[] = 'Could not save submission due to a temporary server error. Please verify your entries and try again.';
                 }
             }
@@ -342,7 +362,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $tokens = AntiSpamGate::generateFormTokens();
-$loggedOwner = OwnerAuth::getCurrentOwner($pdo);
 $ahsHouses = Houses::AHS_HOUSES;
 $aghsHouses = Houses::AGHS_HOUSES;
 ?>
@@ -382,7 +401,10 @@ $aghsHouses = Houses::AGHS_HOUSES;
         <h2 style="margin:0 0 0.5rem 0;color:#065F46;">✓ Submission Received for One-Time Alumni Vetting</h2>
         <p style="margin:0 0 1rem 0;color:#047857;"><?= htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8') ?></p>
         <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
-          <a href="/" class="btn btn-green">Return to Public Directory</a>
+          <?php if ($postSubmitVerifyUrl !== ''): ?>
+            <a href="<?= htmlspecialchars($postSubmitVerifyUrl, ENT_QUOTES, 'UTF-8') ?>" class="btn btn-green">🔑 <?= htmlspecialchars($postSubmitVerifyLabel, ENT_QUOTES, 'UTF-8') ?></a>
+          <?php endif; ?>
+          <a href="/" class="btn <?= $postSubmitVerifyUrl !== '' ? 'btn-outline' : 'btn-green' ?>">Return to Public Directory</a>
           <a href="/submit.php" class="btn btn-outline">Register Another Business</a>
         </div>
       </div>
@@ -504,30 +526,17 @@ $aghsHouses = Houses::AGHS_HOUSES;
           </div>
         </div>
 
-        <?php $loggedHasPw = ($loggedOwner !== null && !empty($loggedOwner['password_hash'])); ?>
         <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:0.95rem 1.05rem;margin-top:0.95rem;">
           <div style="font-weight:800;font-size:0.86rem;color:#1E40AF;margin-bottom:0.2rem;">
-            🔑 <?= $loggedHasPw ? 'Your Owner Account Password is Already Active' : 'Create Your Owner Account Password *' ?>
+            🔑 <?= $loggedOwner !== null ? 'Signed In as Verified Business Owner' : 'Verified Owner Account &amp; Password Setup' ?>
           </div>
-          <p style="margin:0 0 0.7rem 0;font-size:0.8rem;color:#1E3A8A;">
-            <?= $loggedHasPw
-                ? 'This listing will be linked to your signed-in Owner Account automatically. Leave the fields below blank to keep your current password, or enter a new one to update it.'
-                : 'Choose a password now so you can sign in from any phone or computer with your email and password to edit your hours, photos, contacts, or map pin anytime.' ?>
+          <p style="margin:0;font-size:0.8rem;color:#1E3A8A;">
+            <?php if ($loggedOwner !== null): ?>
+              Submitting under <strong><?= htmlspecialchars((string)$loggedOwner['email'], ENT_QUOTES, 'UTF-8') ?></strong> links this listing directly to your active Owner Account. You can update your password anytime from <a href="/owner/index.php" style="color:#1E40AF;font-weight:700;text-decoration:underline;">My Biasharas</a>.
+            <?php else: ?>
+              To protect business owners from impersonation, passwords are set only after verifying your email inbox with a 6-digit code right after submission (or by <a href="/owner/login.php" style="color:#1E40AF;font-weight:700;text-decoration:underline;">signing in first</a> if you already have an Owner Account).
+            <?php endif; ?>
           </p>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
-            <div>
-              <label for="owner_password" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">
-                <?= $loggedHasPw ? 'Update Password (Optional)' : 'Create Password (At least 8 characters) *' ?>
-              </label>
-              <input type="password" id="owner_password" name="owner_password" class="input-control" minlength="8" autocomplete="new-password" placeholder="At least 8 characters..." <?= $loggedHasPw ? '' : 'required' ?>>
-            </div>
-            <div>
-              <label for="owner_password_confirm" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">
-                <?= $loggedHasPw ? 'Confirm Updated Password' : 'Confirm Password *' ?>
-              </label>
-              <input type="password" id="owner_password_confirm" name="owner_password_confirm" class="input-control" minlength="8" autocomplete="new-password" placeholder="Re-enter your password..." <?= $loggedHasPw ? '' : 'required' ?>>
-            </div>
-          </div>
         </div>
       </fieldset>
 
@@ -1013,7 +1022,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
   <script>
     window.BBIZ_SUBMIT_SUCCESS = <?= $successMessage !== '' ? 'true' : 'false' ?>;
     window.BBIZ_SUBMIT_POST_DRAFT = <?= ($_SERVER['REQUEST_METHOD'] === 'POST' && $successMessage === '')
-      ? json_encode(array_diff_key($_POST, array_flip(['csrf_token', 'form_ts', 'form_nonce', 'form_sig', 'js_interaction_token', 'website'])), JSON_UNESCAPED_UNICODE)
+      ? json_encode(array_diff_key($_POST, array_flip(['csrf_token', 'form_ts', 'form_nonce', 'form_sig', 'js_interaction_token', 'website', 'owner_password', 'owner_password_confirm'])), JSON_UNESCAPED_UNICODE)
       : 'null' ?>;
   </script>
   <script src="/assets/js/form-enhancements.js"></script>

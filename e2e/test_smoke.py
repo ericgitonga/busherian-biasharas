@@ -184,7 +184,7 @@ def test_school_filters_and_route_directions_api():
     nums = sorted([b["business_number"] for b in all_biz])
     uids = {b["business_id"] for b in all_biz}
     assert nums == list(range(1, 13)), f"Expected gapless 1..12 business_number, got {nums}"
-    assert len(uids) == 12 and all(u.startswith("BBIZ-") for u in uids), f"Expected 12 unique BBIZ-* IDs, got {uids}" 
+    assert len(uids) == 12 and all(u.startswith("BBIZ-") for u in uids), f"Expected 12 unique BBIZ-* IDs, got {uids}"
 
     # Verify /api/route-directions.php returns distance, duration, polyline & steps
     st_rt, body_rt, _ = _request("/api/route-directions.php?from_lat=-1.286389&from_lng=36.817223&to_lat=-1.278800&to_lng=36.771200")
@@ -365,7 +365,8 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert 'Set or Reset Password with a 6-Digit Email Code' in body_ol
     assert 'owner_email_hints' in first_biz
     assert 'Owner Sign In / Edit Listing' in body_home
-    assert 'id="owner_password"' in body_sub
+    assert 'id="owner_password"' not in body_sub
+    assert "Verified Owner Account &amp; Password Setup" in body_sub
 
     # 17. Verify Ticket #122: AHS solid green & AGHS green-maroon blend map markers
     assert "bbiz-pin-ahs" in body_js
@@ -409,6 +410,377 @@ def test_dpa_cookie_consent_and_usage_metrics():
     assert "renderPaginationControls" in body_js
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _http_raw(path: str, method: str = "GET", form: dict | None = None, cookie_jar: dict | None = None):
+    url = f"{BASE_URL}{path}"
+    headers = {"User-Agent": "BusherianSecurityE2E/1.0"}
+    if PREPROD_ACCESS_TOKEN:
+        headers["X-Preprod-Access"] = PREPROD_ACCESS_TOKEN
+    if cookie_jar:
+        headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookie_jar.items())
+    body_bytes = None
+    if form is not None:
+        body_bytes = urllib.parse.urlencode(form).encode("utf-8")
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+    req = urllib.request.Request(url, data=body_bytes, method=method, headers=headers)
+    opener = urllib.request.build_opener(_NoRedirect())
+    try:
+        resp = opener.open(req, timeout=10)
+        status = resp.status
+        raw_body = resp.read().decode("utf-8", errors="replace")
+        hdrs = resp.headers
+    except urllib.error.HTTPError as e:
+        status = e.code
+        raw_body = e.read().decode("utf-8", errors="replace")
+        hdrs = e.headers
+
+    set_cookies = hdrs.get_all("Set-Cookie") or [] if hasattr(hdrs, "get_all") else []
+    if cookie_jar is not None:
+        for sc in set_cookies:
+            first_pair = sc.split(";", 1)[0].strip()
+            if "=" in first_pair:
+                ck, cv = first_pair.split("=", 1)
+                if cv == "" or "Max-Age=0" in sc:
+                    cookie_jar.pop(ck.strip(), None)
+                else:
+                    cookie_jar[ck.strip()] = cv.strip()
+    return status, raw_body, hdrs, set_cookies
+
+
+def _extract_hidden(html: str, name: str) -> str:
+    m = re.search(rf'name="{re.escape(name)}"[^>]*value="([^"]*)"', html)
+    if not m:
+        m = re.search(rf'value="([^"]*)"[^>]*name="{re.escape(name)}"', html)
+    assert m, f"Missing hidden field {name}"
+    return m.group(1)
+
+
+def test_adversarial_crit_01_and_crit_02_regressions():
+    if os.environ.get("SIMULATE_EMAILS", "yes").lower() != "yes":
+        return
+
+    # Dynamically select two distinct listings with public contact emails from /api/businesses.php
+    _, api_body, _ = _request("/api/businesses.php")
+    all_biz = json.loads(api_body)["businesses"]
+    biz_with_email = [b for b in all_biz if (b.get("email_public") or "").strip()]
+    assert len(biz_with_email) >= 2, "Expected at least 2 businesses with email_public in test DB"
+    victim_biz = biz_with_email[0]
+    victim_biz_id = int(victim_biz["id"])
+    victim_email = victim_biz["email_public"].strip().lower()
+    attacker_seed_biz = next(
+        b for b in biz_with_email if int(b["id"]) != victim_biz_id and b["email_public"].strip().lower() != victim_email
+    )
+    attacker_seed_email = attacker_seed_biz["email_public"].strip().lower()
+    other_biz = next(
+        b for b in all_biz
+        if int(b["id"]) not in (victim_biz_id, int(attacker_seed_biz["id"]))
+    )
+    other_biz_id = int(other_biz["id"])
+
+    # 1. Establish a real password-protected Victim Owner via verified 6-digit OTP
+    victim_cookies: dict[str, str] = {}
+    victim_pw = "VictimSafe#Pass2026"
+
+    st, login_html, _, _ = _http_raw("/owner/login.php?mode=reset", cookie_jar=victim_cookies)
+    assert st == 200
+    csrf_v = _extract_hidden(login_html, "csrf_token")
+    st_otp, otp_html, _, _ = _http_raw(
+        "/owner/login.php",
+        method="POST",
+        form={"csrf_token": csrf_v, "form_step": "send_otp", "email": victim_email, "biz": "0"},
+        cookie_jar=victim_cookies,
+    )
+    assert st_otp == 200
+    otp_match = re.search(r"Preview Verification Code:.*?<strong[^>]*>(\d{6})</strong>", otp_html, re.S)
+    assert otp_match, "Expected simulated 6-digit OTP preview in testing mode"
+    otp_code = otp_match.group(1)
+    csrf_v2 = _extract_hidden(otp_html, "csrf_token")
+
+    st_ver, _, ver_hdrs, _ = _http_raw(
+        "/owner/login.php",
+        method="POST",
+        form={
+            "csrf_token": csrf_v2,
+            "form_step": "verify_otp",
+            "email": victim_email,
+            "otp_code": otp_code,
+            "new_password": victim_pw,
+            "confirm_password": victim_pw,
+            "biz": "0",
+        },
+        cookie_jar=victim_cookies,
+    )
+    assert st_ver == 302, f"Expected 302 after verified OTP setup, got {st_ver}"
+    assert any("owner_session" in k for k in victim_cookies), "Expected victim session cookie after OTP verification"
+
+    # 2. CRIT-01 Negative Test: Unauthenticated attacker submits /submit.php with Victim's email + attacker password
+    attacker_sub_cookies: dict[str, str] = {}
+    st_sf, sub_html, _, _ = _http_raw("/submit.php", cookie_jar=attacker_sub_cookies)
+    assert st_sf == 200
+    sub_csrf = _extract_hidden(sub_html, "csrf_token")
+    sub_ts = _extract_hidden(sub_html, "form_ts")
+    sub_nonce = _extract_hidden(sub_html, "form_nonce")
+    sub_sig = _extract_hidden(sub_html, "form_sig")
+
+    # Pick an unregulated (sector_id, specialty_id) directly from /api/categories.php
+    _, cat_body, _ = _request("/api/categories.php")
+    sectors = json.loads(cat_body)["sectors"]
+    chosen_sec_id, chosen_spec_id = "1", "2"
+    for sec in sectors:
+        for sp in sec.get("specialties", []):
+            if not sp.get("is_regulated"):
+                chosen_sec_id = str(sec["id"])
+                chosen_spec_id = str(sp["id"])
+                break
+        if chosen_spec_id != "2":
+            break
+
+    # Wait >= 4.1s so AntiSpamGate Layer 2 time-trap passes genuinely
+    time.sleep(4.2)
+    st_attack_sub, attack_sub_body, _, attack_sub_set_cookies = _http_raw(
+        "/submit.php",
+        method="POST",
+        form={
+            "csrf_token": sub_csrf,
+            "form_ts": sub_ts,
+            "form_nonce": sub_nonce,
+            "form_sig": sub_sig,
+            "js_interaction_token": "human_verified_1700000000000",
+            "website": "",
+            "school_code": "AHS",
+            "house_name": "Livingstone",
+            "year_left": "2008",
+            "school_number": "",
+            "submitter_name": "Impersonator Name",
+            "submitter_email": victim_email,
+            "submitter_phone": "+254711999888",
+            "owner_password": "HackedPassword#999",
+            "owner_password_confirm": "HackedPassword#999",
+            "name": "Impersonation Attempt Bistro",
+            "service_mode": "physical",
+            "tagline": "Testing unauthenticated owner impersonation block",
+            "description": "Negative security regression submission ensuring victim account and session stay untouched.",
+            "sector_id": chosen_sec_id,
+            "specialty_id": chosen_spec_id,
+            "country": "Kenya",
+            "city_county": "Nairobi",
+            "phone_primary": "+254711999888",
+            "age_attestation_18": "1",
+            "dpa_consent_directory": "1",
+        },
+        cookie_jar=attacker_sub_cookies,
+    )
+    assert st_attack_sub == 200
+    assert "Submission Received" in attack_sub_body, f"Unexpected submit.php response: {attack_sub_body[:1200]}"
+    # Attacker MUST NOT receive an owner session cookie or dashboard access!
+    assert not any("owner_session" in k for k in attacker_sub_cookies), (
+        f"CRIT-01 regression: unauthenticated submit.php issued owner session cookie: {attack_sub_set_cookies}"
+    )
+    st_idx_chk, _, idx_hdrs, _ = _http_raw("/owner/index.php", cookie_jar=attacker_sub_cookies)
+    assert st_idx_chk == 302 and "/owner/login.php" in (idx_hdrs.get("Location") or "")
+
+    # Victim's password MUST NOT have been overwritten by 'HackedPassword#999'
+    pw_probe_cookies: dict[str, str] = {}
+    _, lp_html, _, _ = _http_raw("/owner/login.php", cookie_jar=pw_probe_cookies)
+    lp_csrf = _extract_hidden(lp_html, "csrf_token")
+    st_bad_pw, bad_pw_html, _, _ = _http_raw(
+        "/owner/login.php",
+        method="POST",
+        form={
+            "csrf_token": lp_csrf,
+            "form_step": "password_login",
+            "email": victim_email,
+            "password": "HackedPassword#999",
+            "biz": "0",
+        },
+        cookie_jar=pw_probe_cookies,
+    )
+    assert st_bad_pw == 200 and "Incorrect email or password" in bad_pw_html
+    assert not any("owner_session" in k for k in pw_probe_cookies)
+
+    # Victim's real password STILL works!
+    lp_csrf2 = _extract_hidden(bad_pw_html, "csrf_token")
+    st_good_pw, _, _, _ = _http_raw(
+        "/owner/login.php",
+        method="POST",
+        form={
+            "csrf_token": lp_csrf2,
+            "form_step": "password_login",
+            "email": victim_email,
+            "password": victim_pw,
+            "biz": "0",
+        },
+        cookie_jar=pw_probe_cookies,
+    )
+    assert st_good_pw == 302 and any("owner_session" in k for k in pw_probe_cookies)
+
+    # 3. CRIT-02 Negative Test: Attacker logs into their own account via /owner/login.php?claim=<victim_biz_id>
+    # First create a distinct Attacker Owner account via verified OTP on a separate pre-populated listing (director@branfoot.com)
+    attacker_cookies: dict[str, str] = {}
+    attacker_email = attacker_seed_email
+    attacker_pw = "AttackerOwn#Pass2026"
+
+    _, al_html, _, _ = _http_raw(f"/owner/login.php?mode=reset&claim={victim_biz_id}", cookie_jar=attacker_cookies)
+    al_csrf = _extract_hidden(al_html, "csrf_token")
+    st_aotp, aotp_html, _, _ = _http_raw(
+        f"/owner/login.php?claim={victim_biz_id}",
+        method="POST",
+        form={
+            "csrf_token": al_csrf,
+            "form_step": "send_otp",
+            "email": attacker_email,
+            "claim": str(victim_biz_id),
+            "biz": "0",
+        },
+        cookie_jar=attacker_cookies,
+    )
+    assert st_aotp == 200
+    aotp_code = re.search(r"Preview Verification Code:.*?<strong[^>]*>(\d{6})</strong>", aotp_html, re.S).group(1)
+    al_csrf2 = _extract_hidden(aotp_html, "csrf_token")
+    st_aver, _, aver_hdrs, _ = _http_raw(
+        f"/owner/login.php?claim={victim_biz_id}",
+        method="POST",
+        form={
+            "csrf_token": al_csrf2,
+            "form_step": "verify_otp",
+            "email": attacker_email,
+            "otp_code": aotp_code,
+            "new_password": attacker_pw,
+            "confirm_password": attacker_pw,
+            "claim": str(victim_biz_id),
+            "biz": "0",
+        },
+        cookie_jar=attacker_cookies,
+    )
+    assert st_aver == 302
+    assert f"id={victim_biz_id}" not in (aver_hdrs.get("Location") or ""), (
+        f"CRIT-02 regression: OTP login honored unsigned claim parameter! Redirected to {aver_hdrs.get('Location')}"
+    )
+
+    # Also test password_login with ?claim=<victim_biz_id>
+    attacker_pw_cookies: dict[str, str] = {}
+    _, apl_html, _, _ = _http_raw(f"/owner/login.php?claim={victim_biz_id}", cookie_jar=attacker_pw_cookies)
+    apl_csrf = _extract_hidden(apl_html, "csrf_token")
+    st_apw, _, apw_hdrs, _ = _http_raw(
+        f"/owner/login.php?claim={victim_biz_id}",
+        method="POST",
+        form={
+            "csrf_token": apl_csrf,
+            "form_step": "password_login",
+            "email": attacker_email,
+            "password": attacker_pw,
+            "claim": str(victim_biz_id),
+            "biz": "0",
+        },
+        cookie_jar=attacker_pw_cookies,
+    )
+    assert st_apw == 302
+    assert f"id={victim_biz_id}" not in (apw_hdrs.get("Location") or "")
+
+    # Verify Attacker cannot edit Victim's business via /owner/edit-business.php or /api/businesses.php
+    st_edit_v, _, edit_v_hdrs, _ = _http_raw(
+        f"/owner/edit-business.php?id={victim_biz_id}",
+        cookie_jar=attacker_pw_cookies,
+    )
+    assert st_edit_v == 302 and "/owner/index.php" in (edit_v_hdrs.get("Location") or "")
+
+    # 4. Also verify /owner/claim.php impersonation block + legitimate OTP claim + single-use replay lock when APP_HMAC_SECRET is set
+    hmac_secret = os.environ.get("APP_HMAC_SECRET", "").strip()
+    if hmac_secret:
+        import hashlib
+        import hmac
+
+        exp = int(time.time()) + 1800
+        sig = hmac.new(
+            hmac_secret.encode("utf-8"),
+            f"claim_invite|{other_biz_id}|{exp}".encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        claim_path = f"/owner/claim.php?biz_id={other_biz_id}&exp={exp}&sig={sig}"
+
+        # Attempt cross-account impersonation of victim_email without victim's password/OTP
+        imp_cookies: dict[str, str] = {}
+        st_cl, cl_html, _, _ = _http_raw(claim_path, cookie_jar=imp_cookies)
+        assert st_cl == 200
+        cl_csrf = _extract_hidden(cl_html, "csrf_token")
+        st_imp, imp_html, _, _ = _http_raw(
+            "/owner/claim.php",
+            method="POST",
+            form={
+                "csrf_token": cl_csrf,
+                "claim_step": "password_claim",
+                "biz_id": str(other_biz_id),
+                "exp": str(exp),
+                "sig": sig,
+                "owner_email": victim_email,
+                "current_password": "",
+            },
+            cookie_jar=imp_cookies,
+        )
+        assert st_imp == 200
+        assert not any("owner_session" in k for k in imp_cookies)
+
+        # Legitimate 2-step OTP claim on claim.php + single-use consumption check
+        legit_cookies: dict[str, str] = {}
+        legit_claim_email = "verified.claimant.e2e@gmail.com"
+        _, lcl_html, _, _ = _http_raw(claim_path, cookie_jar=legit_cookies)
+        lcl_csrf = _extract_hidden(lcl_html, "csrf_token")
+        lcl_ts = _extract_hidden(lcl_html, "form_ts")
+        lcl_nonce = _extract_hidden(lcl_html, "form_nonce")
+        lcl_sig = _extract_hidden(lcl_html, "form_sig")
+        time.sleep(4.2)
+        st_lotp, lotp_html, _, _ = _http_raw(
+            "/owner/claim.php",
+            method="POST",
+            form={
+                "csrf_token": lcl_csrf,
+                "form_ts": lcl_ts,
+                "form_nonce": lcl_nonce,
+                "form_sig": lcl_sig,
+                "js_interaction_token": "human_verified_1700000000001",
+                "website": "",
+                "claim_step": "send_otp",
+                "biz_id": str(other_biz_id),
+                "exp": str(exp),
+                "sig": sig,
+                "owner_email": legit_claim_email,
+            },
+            cookie_jar=legit_cookies,
+        )
+        assert st_lotp == 200 and "Set Your Owner Password" in lotp_html
+        lotp_code = re.search(r"Preview Verification Code:.*?<strong[^>]*>(\d{6})</strong>", lotp_html, re.S).group(1)
+        lcl_csrf2 = _extract_hidden(lotp_html, "csrf_token")
+        st_lver, _, lver_hdrs, _ = _http_raw(
+            "/owner/claim.php",
+            method="POST",
+            form={
+                "csrf_token": lcl_csrf2,
+                "claim_step": "verify_otp",
+                "biz_id": str(other_biz_id),
+                "exp": str(exp),
+                "sig": sig,
+                "owner_email": legit_claim_email,
+                "otp_code": lotp_code,
+                "full_name": "Verified Claimant",
+                "phone": "+254700112233",
+                "new_password": "ClaimantSafe#Pass2026",
+                "confirm_password": "ClaimantSafe#Pass2026",
+            },
+            cookie_jar=legit_cookies,
+        )
+        assert st_lver == 302 and f"/owner/edit-business.php?id={other_biz_id}&claimed=1" in (lver_hdrs.get("Location") or "")
+        assert any("owner_session" in k for k in legit_cookies)
+
+        # Replaying the exact same signed claim URL in a new session MUST now be rejected!
+        replay_cookies: dict[str, str] = {}
+        st_rep, _, rep_hdrs, _ = _http_raw(claim_path, cookie_jar=replay_cookies)
+        assert st_rep == 302 and "err=invalid_link" in (rep_hdrs.get("Location") or "")
+
+
 TESTS = [
     test_health_endpoint,
     test_directory_homepage_and_zero_vetting_exposure,
@@ -417,4 +789,5 @@ TESTS = [
     test_privacy_and_dpa_takedown_pages,
     test_school_filters_and_route_directions_api,
     test_dpa_cookie_consent_and_usage_metrics,
+    test_adversarial_crit_01_and_crit_02_regressions,
 ]

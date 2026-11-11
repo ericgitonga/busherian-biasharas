@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.13.1] - 2026-11-11
+
+### Security
+- **Verified-Mailbox Owner Identity Boundary on Registration & Claim Setup (`[Adversarial CRIT-01]`)**: Eliminated unauthenticated `OwnerAuth::upsertOwner()`, `setOwnerPassword()`, `linkOwnerToBusiness()`, and `establishOwnerSession()` writes from `public/submit.php` and `public/owner/claim.php` so submitting or claiming with an existing owner's email can never overwrite `password_hash`, mutate profile metadata, or issue an unauthorized `bbiz_owner_session` cookie; separated public registration from password setup (issuing a 6-digit mailbox verification OTP only for brand-new emails) and required current-password authentication or 6-digit email OTP verification on `/owner/claim.php` inside an atomic database transaction with `OwnerAuth::getOwnerById()` and session ID regeneration on login (closes #162).
+- **Eliminated Unsigned `claim` Request Parameter & Enforced Single-Use Signed Claim Invitations (`[Adversarial CRIT-02]`)**: Removed all unsigned `$_REQUEST['claim']` / `bbiz_pending_claim_biz_id` ownership-linking paths across `public/owner/login.php`, `public/owner/google-callback.php`, `public/owner/verify-link.php`, and `public/owner/claim.php`; replaced them with session-bound HMAC-verified claim tokens (`OwnerAuth::storeVerifiedClaimInSession()`, `OwnerAuth::redeemVerifiedClaimFromSession()`), recipient-bound admin claim URLs (`em` parameter signed into `claim_invite|...`), designated-owner eligibility checks (`OwnerAuth::isEmailEligibleForClaim()`), defense-in-depth authorization checks inside `OwnerAuth::verifyOtpAndSetPassword()`, and atomic single-use `used_nonces` consumption (`OwnerAuth::consumeClaimInviteOnce()`), backed by unit and live HTTP negative regression tests (closes #163).
+- tag: `v0.13.1`
+
 ## [0.13.0] - 2026-11-11
 
 ### Added

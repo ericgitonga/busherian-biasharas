@@ -73,8 +73,11 @@ if (!$biz) {
 }
 
 $tokens = AntiSpamGate::generateFormTokens();
-$claimInviteUrl = OwnerAuth::generateClaimInviteUrl((int)$biz['id']);
 $linkedOwners = OwnerAuth::getOwnersForBusiness($pdo, (int)$biz['id']);
+$boundEditOwnerEmail = !empty($linkedOwners[0]['email'])
+    ? (string)$linkedOwners[0]['email']
+    : (string)($biz['owner_email'] ?? '');
+$claimInviteUrl = OwnerAuth::generateClaimInviteUrl((int)$biz['id'], null, $boundEditOwnerEmail ?: null);
 $vetStmt = $pdo->prepare("SELECT * FROM business_vetting_queue WHERE business_id = :id LIMIT 1");
 $vetStmt->execute([':id' => (int)$biz['id']]);
 $vettingRow = $vetStmt->fetch() ?: null;

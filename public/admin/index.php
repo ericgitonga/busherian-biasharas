@@ -429,7 +429,10 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
                   <?php endif; ?>
                   <?php
                     $linkedOwners = OwnerAuth::getOwnersForBusiness($pdo, $bid);
-                    $claimUrl = OwnerAuth::generateClaimInviteUrl($bid);
+                    $boundOwnerEmail = !empty($linkedOwners[0]['email'])
+                        ? (string)$linkedOwners[0]['email']
+                        : (string)($b['owner_email'] ?? '');
+                    $claimUrl = OwnerAuth::generateClaimInviteUrl($bid, null, $boundOwnerEmail ?: null);
                   ?>
                   <div style="margin-top:0.25rem;font-size:0.74rem;color:#065F46;">
                     <?php if (!empty($linkedOwners)): ?>

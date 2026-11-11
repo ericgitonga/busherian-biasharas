@@ -30,15 +30,12 @@ if ($profile === null) {
 $pdo = Database::getConnection();
 $owner = OwnerAuth::upsertOwner($pdo, $profile['email'], $profile['name'], null, $profile['sub']);
 
-$pendingClaimId = (int)($_SESSION['bbiz_pending_claim_biz_id'] ?? 0);
-if ($pendingClaimId > 0) {
-    OwnerAuth::linkOwnerToBusiness($pdo, (int)$owner['id'], $pendingClaimId, 'claim_invite_link');
-    unset($_SESSION['bbiz_pending_claim_biz_id']);
-}
+OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$owner['id'], (string)$profile['email']);
+$redeemedClaimId = OwnerAuth::redeemVerifiedClaimFromSession($pdo, (int)$owner['id'], (string)$profile['email']);
 
 OwnerAuth::establishOwnerSession($owner);
-if ($pendingClaimId > 0) {
-    header("Location: /owner/edit-business.php?id={$pendingClaimId}&claimed=1");
+if ($redeemedClaimId !== null && $redeemedClaimId > 0) {
+    header("Location: /owner/edit-business.php?id={$redeemedClaimId}&claimed=1");
 } else {
     header('Location: /owner/index.php');
 }
