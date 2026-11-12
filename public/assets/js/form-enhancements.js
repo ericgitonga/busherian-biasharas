@@ -147,7 +147,9 @@
   bindSameAsDirectPhone(sameWhatsappChk, whatsappPhoneInput);
 
   // =========================================================================
-  // Instant Type-Ahead Specialty Finder Across All Sectors & Synonyms (#274)
+  // Natural-Language & Type-Ahead Specialty Finder (#274, #276)
+  // Understands first-person sentences ("I am an arthropod macro photographer"),
+  // occupational stems, 116-specialty domain concepts, Swahili terms & typos.
   // =========================================================================
   function bindSpecialtyQuickFinder() {
     const finderWrap = document.querySelector('[data-specialty-finder]');
@@ -161,27 +163,123 @@
     if (!finderWrap || !finderInput || !resultsBox || !sectorSel || !specSel) return;
 
     let taxonomy = [];
-    let synonyms = {};
+    let nlPayload = {};
     try {
       taxonomy = JSON.parse(finderWrap.getAttribute('data-taxonomy-json') || '[]');
     } catch (_) {}
     try {
-      synonyms = JSON.parse(finderWrap.getAttribute('data-synonyms-json') || '{}');
+      nlPayload = JSON.parse(finderWrap.getAttribute('data-synonyms-json') || '{}');
     } catch (_) {}
+
+    const synonyms = (nlPayload && nlPayload.synonyms && typeof nlPayload.synonyms === 'object')
+      ? nlPayload.synonyms
+      : (nlPayload || {});
+    const stemMap = (nlPayload && nlPayload.stems && typeof nlPayload.stems === 'object')
+      ? nlPayload.stems
+      : {};
+    const stopSet = new Set(Array.isArray(nlPayload && nlPayload.stopwords) ? nlPayload.stopwords : []);
+
+    const SUFFIX_RULES = [
+      ['ographer', 'ograph'], ['ographers', 'ograph'], ['ography', 'ograph'], ['ographic', 'ograph'],
+      ['ologist', 'olog'], ['ologists', 'olog'], ['ology', 'olog'],
+      ['iatrician', 'iatr'], ['iatrics', 'iatr'],
+      ['ications', 'ic'], ['ication', 'ic'], ['ations', 'at'], ['ation', 'at'],
+      ['ments', ''], ['ment', ''], ['nesses', ''], ['ness', ''],
+      ['ings', ''], ['ing', ''], ['ists', ''], ['ist', ''],
+      ['ers', ''], ['er', ''], ['ors', ''], ['or', ''],
+      ['ies', 'y'], ['es', ''], ['s', '']
+    ];
+
+    function stemWord(raw) {
+      const w = String(raw || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!w) return '';
+      if (stemMap[w]) return stemMap[w];
+      if (w.length <= 4) return w;
+      for (let i = 0; i < SUFFIX_RULES.length; i++) {
+        const suf = SUFFIX_RULES[i][0];
+        const rep = SUFFIX_RULES[i][1];
+        if (w.length - suf.length >= 4 && w.endsWith(suf)) {
+          return w.slice(0, w.length - suf.length) + rep;
+        }
+      }
+      return w;
+    }
+
+    function diceBigram(a, b) {
+      if (a === b) return a ? 1 : 0;
+      if (a.length < 2 || b.length < 2) return 0;
+      const bg = Object.create(null);
+      for (let i = 0; i < a.length - 1; i++) {
+        const k = a.slice(i, i + 2);
+        bg[k] = (bg[k] || 0) + 1;
+      }
+      let inter = 0;
+      for (let j = 0; j < b.length - 1; j++) {
+        const k = b.slice(j, j + 2);
+        if (bg[k] > 0) {
+          inter++;
+          bg[k]--;
+        }
+      }
+      return (2 * inter) / ((a.length - 1) + (b.length - 1));
+    }
+
+    function extractMeaningfulTokens(rawQuery) {
+      const clean = String(rawQuery || '').toLowerCase().slice(0, 180).trim();
+      if (!clean) return [];
+      const rawTokens = clean.split(/[^a-z0-9]+/i).filter(t => t.length >= 2);
+      const kept = [];
+      rawTokens.forEach(t => {
+        if (!stopSet.has(t) && !kept.includes(t)) {
+          kept.push(t);
+        }
+      });
+      if (kept.length === 0) {
+        rawTokens.forEach(t => {
+          if (!kept.includes(t)) kept.push(t);
+        });
+      }
+      return kept;
+    }
 
     const flatSpecs = [];
     if (Array.isArray(taxonomy)) {
       taxonomy.forEach(sec => {
         if (!sec || !Array.isArray(sec.specialties)) return;
+        const secName = String(sec.name || '');
+        const secLower = secName.toLowerCase();
+        const secWords = secLower.split(/[^a-z0-9]+/i).filter(Boolean);
+        const secStems = new Set(secWords.map(stemWord).filter(Boolean));
+
         sec.specialties.forEach(sp => {
           if (!sp || !sp.id || !sp.name) return;
+          const specName = String(sp.name);
+          const specLower = specName.toLowerCase();
+          const specWords = specLower.split(/[^a-z0-9]+/i).filter(Boolean);
+          const specWordSet = new Set(specWords);
+          const specStems = new Set(specWords.map(stemWord).filter(Boolean));
+
+          const conceptLower = String(sp.concepts || '').toLowerCase();
+          const conceptWords = conceptLower.split(/[^a-z0-9]+/i).filter(Boolean);
+          const conceptWordSet = new Set(conceptWords);
+          const conceptStems = new Set(conceptWords.map(stemWord).filter(Boolean));
+
           flatSpecs.push({
             specialtyId: Number(sp.id),
-            specialtyName: String(sp.name),
-            specialtyLower: String(sp.name).toLowerCase(),
+            specialtyName: specName,
+            specialtyLower: specLower,
+            specWords,
+            specWordSet,
+            specStems,
+            conceptLower,
+            conceptWords,
+            conceptWordSet,
+            conceptStems,
             sectorId: Number(sec.id),
-            sectorName: String(sec.name || ''),
-            sectorLower: String(sec.name || '').toLowerCase(),
+            sectorName: secName,
+            sectorLower: secLower,
+            secWordSet: new Set(secWords),
+            secStems,
             isRegulated: Boolean(sp.is_regulated)
           });
         });
@@ -191,15 +289,16 @@
     let currentMatches = [];
     let activeIndex = -1;
 
-    function expandTokens(tokens) {
+    function expandSynonyms(tokens) {
       const phrases = new Set();
       tokens.forEach(tok => {
+        const st = stemWord(tok);
         if (Array.isArray(synonyms[tok])) {
           synonyms[tok].forEach(m => phrases.add(String(m).toLowerCase()));
         }
         if (tok.length >= 4) {
           Object.keys(synonyms).forEach(lexKey => {
-            if (lexKey.startsWith(tok) && Array.isArray(synonyms[lexKey])) {
+            if ((lexKey.startsWith(tok) || stemWord(lexKey) === st) && Array.isArray(synonyms[lexKey])) {
               synonyms[lexKey].forEach(m => phrases.add(String(m).toLowerCase()));
             }
           });
@@ -209,46 +308,101 @@
     }
 
     function rankSpecialties(rawQuery) {
-      const clean = String(rawQuery || '').trim().toLowerCase();
+      const clean = String(rawQuery || '').trim().toLowerCase().slice(0, 180);
       if (!clean) return [];
-      const tokens = clean.split(/[^a-z0-9]+/i).filter(Boolean);
+      const tokens = extractMeaningfulTokens(clean);
       if (tokens.length === 0) return [];
-      const synPhrases = expandTokens(tokens);
 
+      const meaningfulPhrase = tokens.join(' ');
+      const synPhrases = expandSynonyms(tokens);
       const scored = [];
+
       flatSpecs.forEach(item => {
         let score = 0;
-        const combined = item.specialtyLower + ' ' + item.sectorLower;
+        const matchedSignals = [];
 
-        if (item.specialtyLower === clean) {
-          score += 30;
-        } else if (item.specialtyLower.startsWith(clean)) {
-          score += 18;
-        } else if (item.specialtyLower.includes(clean)) {
-          score += 14;
-        } else if (item.sectorLower.includes(clean)) {
-          score += 6;
+        if (item.specialtyLower === clean || (meaningfulPhrase && item.specialtyLower === meaningfulPhrase)) {
+          score += 36;
+        } else if (meaningfulPhrase.length >= 3 && item.specialtyLower.startsWith(meaningfulPhrase)) {
+          score += 20;
+        } else if (meaningfulPhrase.length >= 3 && item.specialtyLower.includes(meaningfulPhrase)) {
+          score += 15;
+        } else if (meaningfulPhrase.length >= 4 && item.conceptLower && item.conceptLower.includes(meaningfulPhrase)) {
+          score += 13;
         }
 
         tokens.forEach(tok => {
-          if (tok.length < 2) return;
-          const wordBoundary = new RegExp('\\b' + tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-          if (wordBoundary.test(item.specialtyName)) {
-            score += 7;
-          } else if (item.specialtyLower.includes(tok)) {
-            score += 4.5;
-          } else if (wordBoundary.test(item.sectorName)) {
-            score += 2.5;
+          const st = stemWord(tok);
+          let tokMatched = false;
+          const escTok = tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const wbRe = tok.length >= 3 ? new RegExp('\\b' + escTok, 'i') : null;
+
+          // 1. Direct word / prefix / morphological stem match on specialty title
+          if (item.specWordSet.has(tok)) {
+            score += 14;
+            tokMatched = true;
+          } else if (wbRe && wbRe.test(item.specialtyName)) {
+            score += 11;
+            tokMatched = true;
+          } else if (st.length >= 3 && item.specStems.has(st)) {
+            score += 12.5;
+            tokMatched = true;
+          }
+
+          // 2. Domain concept vocabulary match ("macro", "arthropod", "root canal", "mombasa", etc.)
+          if (item.conceptWordSet.has(tok)) {
+            score += 9.5;
+            tokMatched = true;
+          } else if (tok.length >= 5 && wbRe && item.conceptLower && wbRe.test(item.conceptLower)) {
+            score += 7.5;
+            tokMatched = true;
+          } else if (st.length >= 4 && item.conceptStems.has(st)) {
+            score += 8;
+            tokMatched = true;
+          }
+
+          // 3. Parent sector word / stem match
+          if (!tokMatched && (item.secWordSet.has(tok) || (st.length >= 4 && item.secStems.has(st)))) {
+            score += 3;
+            tokMatched = true;
+          }
+
+          // 4. Typo-tolerant character-bigram fallback ("photografer", "ortodontist")
+          if (!tokMatched && tok.length >= 5) {
+            let bestDice = 0;
+            const pool = item.specWords.concat(item.conceptWords);
+            for (let k = 0; k < pool.length; k++) {
+              const cw = pool[k];
+              if (cw.length < 4 || Math.abs(cw.length - tok.length) > 3) continue;
+              const d = diceBigram(tok, cw);
+              if (d > bestDice) bestDice = d;
+            }
+            if (bestDice >= 0.76) {
+              score += Math.round(bestDice * 750) / 100;
+              tokMatched = true;
+            }
+          }
+
+          if (tokMatched && !matchedSignals.includes(tok)) {
+            matchedSignals.push(tok);
           }
         });
 
         synPhrases.forEach(syn => {
-          if (syn && item.specialtyLower.includes(syn)) {
-            score += 5.5;
-          } else if (syn && combined.includes(syn)) {
+          if (!syn) return;
+          const synStem = stemWord(syn);
+          if (item.specialtyLower.includes(syn) || (synStem && item.specStems.has(synStem))) {
+            score += 6.5;
+          } else if (item.conceptLower && item.conceptLower.includes(syn)) {
+            score += 4;
+          } else if (item.sectorLower.includes(syn)) {
             score += 2;
           }
         });
+
+        if (matchedSignals.length >= 2) {
+          score += (matchedSignals.length - 1) * 4;
+        }
 
         if (score > 0) {
           scored.push({ item, score });
@@ -332,7 +486,7 @@
           || Boolean(document.getElementById('custom-specialty-wrap'));
         emptyDiv.textContent = supportsCustom
           ? 'No exact match yet — choose the closest Industry Sector below and select "+ Add New Specialty" to propose yours.'
-          : 'No matching specialty found — try another keyword or select from Industry Sector below.';
+          : 'No matching specialty found — try describing your main product/service or select from Industry Sector below.';
         resultsBox.appendChild(emptyDiv);
         resultsBox.hidden = false;
         finderInput.setAttribute('aria-expanded', 'true');
@@ -361,7 +515,6 @@
         btn.appendChild(secSpan);
 
         btn.addEventListener('mousedown', e => {
-          // Prevent input blur before selection fires
           e.preventDefault();
         });
         btn.addEventListener('click', () => chooseMatch(m));

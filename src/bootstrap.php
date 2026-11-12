@@ -338,17 +338,21 @@ HTML;
 
 if (!function_exists('bbiz_render_specialty_finder')) {
     /**
-     * Render instant zero-latency Type-Ahead Specialty Finder across all Level 2 specialties & synonyms (#274).
+     * Render natural-language-powered Type-Ahead Specialty Finder across all 116 specialties,
+     * morphological stems, domain concepts & English/Swahili synonyms (#274, #276).
      */
     function bbiz_render_specialty_finder(array $taxonomyTree): string
     {
+        $conceptsMap = \BusherianBiasharas\Services\CategoryMatcher::SPECIALTY_CONCEPT_KEYWORDS;
         $compactTree = [];
         foreach ($taxonomyTree as $sec) {
             $specs = [];
             foreach (($sec['specialties'] ?? []) as $sp) {
+                $sName = (string)($sp['name'] ?? '');
                 $specs[] = [
                     'id' => (int)($sp['id'] ?? 0),
-                    'name' => (string)($sp['name'] ?? ''),
+                    'name' => $sName,
+                    'concepts' => (string)($conceptsMap[$sName] ?? ''),
                     'is_regulated' => !empty($sp['is_regulated']),
                 ];
             }
@@ -358,21 +362,26 @@ if (!function_exists('bbiz_render_specialty_finder')) {
                 'specialties' => $specs,
             ];
         }
+        $nlConfig = [
+            'synonyms' => \BusherianBiasharas\Services\CategoryMatcher::SYNONYM_LEXICON,
+            'stems' => \BusherianBiasharas\Services\CategoryMatcher::OCCUPATION_STEM_MAP,
+            'stopwords' => \BusherianBiasharas\Services\CategoryMatcher::NL_STOPWORDS,
+        ];
         $taxJson = htmlspecialchars(
             (string)json_encode($compactTree, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             ENT_QUOTES,
             'UTF-8'
         );
-        $synJson = htmlspecialchars(
-            (string)json_encode(\BusherianBiasharas\Services\CategoryMatcher::SYNONYM_LEXICON, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        $nlJson = htmlspecialchars(
+            (string)json_encode($nlConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             ENT_QUOTES,
             'UTF-8'
         );
 
         return <<<HTML
-        <div class="specialty-finder-box" data-specialty-finder="1" data-testid="specialty-finder-box" data-taxonomy-json="{$taxJson}" data-synonyms-json="{$synJson}">
+        <div class="specialty-finder-box" data-specialty-finder="1" data-testid="specialty-finder-box" data-taxonomy-json="{$taxJson}" data-synonyms-json="{$nlJson}">
           <label for="specialty-quick-finder" class="specialty-finder-label">
-            🔍 Not sure which sector fits? Type your service to find the right Sector &amp; Specialty
+            ✨ Not sure which sector fits? Describe what you do in plain language (or type a keyword)
           </label>
           <div class="specialty-finder-input-wrap">
             <input
@@ -386,7 +395,7 @@ if (!function_exists('bbiz_render_specialty_finder')) {
               aria-autocomplete="list"
               aria-expanded="false"
               aria-controls="specialty-finder-results"
-              placeholder="Try e.g. publishing, author coaching, proofreading, app dev, wakili, mchapishaji...">
+              placeholder="e.g. I am an arthropod macro photographer, We help authors edit &amp; publish books, wakili...">
             <button type="button" id="specialty-finder-clear" class="specialty-finder-clear" aria-label="Clear specialty search" hidden>&times;</button>
             <div id="specialty-finder-results" data-testid="specialty-finder-results" class="specialty-finder-results" role="listbox" aria-label="Matching specialties" hidden></div>
           </div>

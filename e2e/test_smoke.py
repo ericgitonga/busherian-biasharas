@@ -1782,6 +1782,21 @@ def test_playwright_ch1_chunk1_publishing_specialty_finder():
         assert "Creative, Media, Marketing & Events" in page.locator("#sector_id option:checked").inner_text()
         assert "Book, Academic & Digital Publishing" in page.locator("#specialty_id option:checked").inner_text()
 
+        # Natural-language first-person sentence (#276): 'I am an arthropod macro photographer'
+        finder.fill("I am an arthropod macro photographer")
+        results.wait_for(state="visible", timeout=5000)
+        nl_res_text = results.inner_text()
+        assert "Commercial Photography & Videography" in nl_res_text, nl_res_text
+        assert "Visual Arts, Fine Art & Galleries" in nl_res_text, nl_res_text
+        results.locator("button", has_text="Commercial Photography & Videography").click()
+        assert "Creative, Media, Marketing & Events" in page.locator("#sector_id option:checked").inner_text()
+        assert "Commercial Photography & Videography" in page.locator("#specialty_id option:checked").inner_text()
+
+        # Typo-tolerant natural-language query (#276): 'I fix broken refrigerators and washing machines'
+        finder.fill("I fix broken refrigerators and washing machines")
+        results.wait_for(state="visible", timeout=5000)
+        assert "Appliance Repair & Handyman" in results.inner_text()
+
         # Regulated specialty ('wakili' -> Advocates & Law Firm) must also auto-reveal #regulated-fields-wrap
         finder.fill("wakili")
         results.wait_for(state="visible", timeout=5000)

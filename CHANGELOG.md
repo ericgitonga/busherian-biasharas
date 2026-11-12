@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.20.1] - 2026-11-12
+
+### Enhanced
+- **Natural-Language Specialty Finder, Morphological Stemming & 116-Specialty Concept Graph (`#276`, Parent `#272`)**: Upgraded `CategoryMatcher` (`src/Services/CategoryMatcher.php`), `bbiz_render_specialty_finder()` (`src/bootstrap.php`), and `bindSpecialtyQuickFinder()` (`public/assets/js/form-enhancements.js`) with English/Swahili conversational stopword stripping (`NL_STOPWORDS`), occupational & morphological root stemming (`OCCUPATION_STEM_MAP` + `stemWord()`), Sørensen–Dice character-bigram typo tolerance, and a rich domain concept vocabulary (`SPECIALTY_CONCEPT_KEYWORDS`) across all `116` Level 2 specialties so first-person sentences (e.g. `"I am an arthropod macro photographer"`, `"We help first-time authors edit and publish their memoirs"`, `"I fix broken refrigerators and washing machines"`) resolve instantaneously in `< 3ms` with zero external API latency or PII sharing.
+
 ## [0.20.0] - 2026-11-12
 
 ### Added

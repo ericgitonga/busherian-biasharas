@@ -3885,6 +3885,27 @@ assertTrue(
     'Type-Ahead Specialty Finder renders cleanly across submit, owner edit, admin add, and admin edit forms (#274)'
 );
 
+
+// 46b. Natural-Language Specialty Finder (#276): first-person sentences, morphological stems, 116-specialty concepts & typo tolerance
+$nlMacro276 = CategoryMatcher::searchSpecialties($pdo, 'I am an arthropod macro photographer', 5);
+$nlMacroTypo276 = CategoryMatcher::searchSpecialties($pdo, 'I am an arthropod macro photografer', 5);
+$nlMemoir276 = CategoryMatcher::searchSpecialties($pdo, 'We help first-time authors edit and publish their memoirs', 5);
+$nlDentist276 = CategoryMatcher::searchSpecialties($pdo, 'I am a paediatric dentist and orthodontist in Nairobi', 5);
+$nlPort276 = CategoryMatcher::searchSpecialties($pdo, 'We clear cargo containers at Mombasa port', 5);
+$nlFridge276 = CategoryMatcher::searchSpecialties($pdo, 'I fix broken refrigerators and washing machines', 5);
+assertTrue(
+    count(CategoryMatcher::SPECIALTY_CONCEPT_KEYWORDS) >= 116 &&
+    ($nlMacro276[0]['specialty_name'] ?? '') === 'Commercial Photography & Videography' &&
+    in_array('Visual Arts, Fine Art & Galleries', array_column($nlMacro276, 'specialty_name'), true) &&
+    ($nlMacroTypo276[0]['specialty_name'] ?? '') === 'Commercial Photography & Videography' &&
+    in_array('Editorial, Ghostwriting & Author Services', array_column($nlMemoir276, 'specialty_name'), true) &&
+    in_array('Author Coaching & Manuscript Advisory', array_column($nlMemoir276, 'specialty_name'), true) &&
+    ($nlDentist276[0]['specialty_name'] ?? '') === 'Dental Clinic & Orthodontics' &&
+    ($nlPort276[0]['specialty_name'] ?? '') === 'Clearing, Forwarding & Customs' &&
+    ($nlFridge276[0]['specialty_name'] ?? '') === 'Appliance Repair & Handyman',
+    'Natural-language Specialty Finder resolves conversational first-person descriptions, agent-noun stems, domain concepts & typos across all 116 specialties (#276)'
+);
+
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);
 }
