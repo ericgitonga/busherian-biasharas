@@ -7,9 +7,7 @@ use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\OwnerAuth;
 
 bbiz_send_security_headers(false);
-if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-    session_start();
-}
+OwnerAuth::startSecureSession();
 
 $token = trim((string)($_GET['token'] ?? ''));
 $pdo = Database::getConnection();
@@ -30,7 +28,7 @@ if ($claimedBizId <= 0) {
     }
 }
 
-OwnerAuth::establishOwnerSession($owner);
+OwnerAuth::establishOwnerSession($owner, true, $pdo);
 $targetEditBizId = (int)($_SESSION['bbiz_target_edit_biz_id'] ?? 0);
 unset($_SESSION['bbiz_target_edit_biz_id']);
 

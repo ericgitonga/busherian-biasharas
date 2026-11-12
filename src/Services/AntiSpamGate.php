@@ -45,9 +45,7 @@ final class AntiSpamGate
         $sig = hash_hmac('sha256', "{$ts}|{$nonce}", $secret);
 
         $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
-        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-            @session_start();
-        }
+        OwnerAuth::startSecureSession();
         $sessionId = session_id() ?: 'stateless';
         $csrfToken = hash_hmac('sha256', $sessionId, $csrfSecret);
 
@@ -65,9 +63,7 @@ final class AntiSpamGate
             return false;
         }
         $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
-        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-            @session_start();
-        }
+        OwnerAuth::startSecureSession();
         $sessionId = session_id() ?: 'stateless';
         $expected = hash_hmac('sha256', $sessionId, $csrfSecret);
         $expectedStateless = hash_hmac('sha256', 'stateless', $csrfSecret);

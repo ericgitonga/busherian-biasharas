@@ -1020,7 +1020,7 @@ final class LocationEngine
                         'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                         'Accept-Language: en-KE,en;q=0.9',
                     ],
-                    CURLOPT_RESOLVE => ["{$validated['host']}:{$validated['port']}:{$validated['ip']}"],
+                    CURLOPT_RESOLVE => [WebsiteEnricher::formatCurlResolveEntry($validated['host'], $validated['port'], $validated['ip'])],
                     CURLOPT_HEADERFUNCTION => static function ($ch, string $headerLine) use (&$rawHeaders): int {
                         $trimmed = trim($headerLine);
                         if ($trimmed !== '' && str_contains($trimmed, ':')) {

@@ -16,6 +16,7 @@ use BusherianBiasharas\Services\VettingPurger;
 use BusherianBiasharas\Services\WebsiteEnricher;
 
 bbiz_send_security_headers(false);
+OwnerAuth::startSecureSession();
 
 $pdo = Database::getConnection();
 $taxonomyTree = CategoryMatcher::getTaxonomyTree($pdo, false);
@@ -397,7 +398,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
   <main style="max-width:920px;margin:1.75rem auto;padding:0 1.25rem;">
 
     <?php if ($successMessage !== ''): ?>
-      <div style="background:#ECFDF5;border:2px solid #059669;border-radius:14px;padding:1.5rem;margin-bottom:1.5rem;">
+      <div data-testid="submit-success-banner" style="background:#ECFDF5;border:2px solid #059669;border-radius:14px;padding:1.5rem;margin-bottom:1.5rem;">
         <h2 style="margin:0 0 0.5rem 0;color:#065F46;">✓ Submission Received for One-Time Alumni Vetting</h2>
         <p style="margin:0 0 1rem 0;color:#047857;"><?= htmlspecialchars($successMessage, ENT_QUOTES, 'UTF-8') ?></p>
         <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
@@ -411,7 +412,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
     <?php endif; ?>
 
     <?php if (!empty($errors)): ?>
-      <div style="background:#FEF2F2;border:2px solid #DC2626;border-radius:14px;padding:1.25rem;margin-bottom:1.5rem;">
+      <div data-testid="submit-error-banner" style="background:#FEF2F2;border:2px solid #DC2626;border-radius:14px;padding:1.25rem;margin-bottom:1.5rem;">
         <h3 style="margin:0 0 0.5rem 0;color:#991B1B;">Please correct the following:</h3>
         <ul style="margin:0;padding-left:1.25rem;color:#B91C1C;">
           <?php foreach ($errors as $err): ?>

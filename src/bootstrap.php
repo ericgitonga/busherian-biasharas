@@ -17,6 +17,76 @@ spl_autoload_register(static function (string $class): void {
 
 \BusherianBiasharas\Services\PreprodSandbox::boot();
 
+if (!function_exists('bbiz_render_maintenance_503')) {
+    /**
+     * Render a clean fail-closed HTTP 503 Maintenance response without leaking credentials or stack traces (#169).
+     */
+    function bbiz_render_maintenance_503(?string $requestUri = null): string
+    {
+        $uri = $requestUri ?? (string)($_SERVER['REQUEST_URI'] ?? '/');
+        $path = (string)(parse_url($uri, PHP_URL_PATH) ?? '/');
+        $isApi = str_contains($path, '/api/')
+            || str_contains(strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? '')), 'application/json');
+
+        if (!headers_sent()) {
+            http_response_code(503);
+            header('Retry-After: 60');
+            header('Cache-Control: no-store, no-cache, must-revalidate');
+            header('X-Content-Type-Options: nosniff');
+            header('Content-Type: ' . ($isApi ? 'application/json; charset=UTF-8' : 'text/html; charset=UTF-8'));
+        }
+
+        if ($isApi) {
+            return (string)json_encode([
+                'status' => 'error',
+                'error' => 'Service temporarily unavailable. Please try again shortly.',
+            ]);
+        }
+
+        return <<<'HTML'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Service Temporarily Unavailable — Busherian Biasharas</title>
+  <style>
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:#F9FAFB; color:#111827; display:flex; min-height:100vh; align-items:center; justify-content:center; padding:1.5rem; box-sizing:border-box; }
+    .card { max-width:520px; width:100%; background:#fff; border:2px solid #114B3E; border-radius:14px; padding:2rem; box-shadow:0 8px 24px rgba(0,0,0,0.08); text-align:center; }
+    .crest { display:inline-flex; width:48px; height:48px; border-radius:12px; background:linear-gradient(135deg,#114B3E,#7B1113); color:#fff; font-weight:800; align-items:center; justify-content:center; margin-bottom:0.85rem; }
+    h1 { margin:0 0 0.5rem 0; font-size:1.3rem; color:#114B3E; }
+    p { margin:0; font-size:0.92rem; color:#4B5563; line-height:1.55; }
+  </style>
+</head>
+<body>
+  <main class="card" data-testid="maintenance-503">
+    <div class="crest" aria-hidden="true">BB</div>
+    <h1>Directory Temporarily Unavailable</h1>
+    <p>Busherian Biasharas is undergoing brief database maintenance and will be back online shortly. Please refresh this page in a minute.</p>
+  </main>
+</body>
+</html>
+HTML;
+    }
+}
+
+if (PHP_SAPI !== 'cli') {
+    set_exception_handler(static function (\Throwable $e): void {
+        error_log('[Uncaught Web Exception] ' . get_class($e) . ': ' . $e->getMessage());
+        if ($e instanceof \BusherianBiasharas\Config\DatabaseUnavailableException) {
+            echo bbiz_render_maintenance_503();
+            exit;
+        }
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: text/plain; charset=UTF-8');
+        }
+        echo 'An unexpected server error occurred. Please try again shortly.';
+        exit;
+    });
+}
+
 if (!function_exists('bbiz_send_security_headers')) {
     function bbiz_send_security_headers(bool $isJson = false): void
     {

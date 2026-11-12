@@ -45,6 +45,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flashMsg = $gClientId !== ''
             ? 'Google SSO (OAuth 2.0) credentials saved! The "Continue with Google (SSO)" button is now active on /owner/login.php.'
             : 'Google SSO credentials cleared.';
+    } elseif ($adminAction === 'resolve_takedown') {
+        $reqId = (int)($_POST['request_id'] ?? 0);
+        $decision = trim((string)($_POST['decision'] ?? ''));
+        if ($reqId > 0 && VettingPurger::resolveTakedownRequestByAdmin($pdo, $reqId, $decision)) {
+            $flashMsg = $decision === 'quarantine'
+                ? "Takedown request #{$reqId} approved — listing moved to quarantined state."
+                : "Takedown request #{$reqId} dismissed — listing remains unchanged.";
+        } else {
+            $flashErr = 'Could not resolve takedown request.';
+        }
     } elseif ($targetId > 0) {
         if ($adminAction === 'delete') {
             $bizNameStmt = $pdo->prepare("SELECT name, business_number, business_id FROM businesses WHERE id = :id");
@@ -60,7 +70,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } elseif ($adminAction === 'unpublish') {
             VettingPurger::quarantineBusinessDpa($pdo, $targetId);
-            $flashMsg = "Business #{$targetId} has been unpublished (moved to quarantined/taken-down state).";
+            $flashMsg = "Business #{$targetId} has been unpublished (moved to reversible quarantine).";
+        } elseif ($adminAction === 'restore_quarantined') {
+            $restoredStatus = VettingPurger::restoreQuarantinedBusiness($pdo, $targetId);
+            $flashMsg = "Business #{$targetId} restored from quarantine back to '{$restoredStatus}' status.";
         } elseif ($adminAction === 'approve') {
             VettingPurger::approveBusiness($pdo, $targetId);
             $flashMsg = "Business #{$targetId} approved and published (vetting credentials purged).";
@@ -72,6 +85,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $tokens = AntiSpamGate::generateFormTokens();
+
+// Open takedown / privacy review requests (#168)
+$takedownQueueStmt = $pdo->query("
+    SELECT
+        tr.id, tr.business_id, tr.requester_name, tr.requester_email, tr.reason,
+        tr.status, tr.created_at,
+        b.business_number, b.name AS business_name, b.status AS business_status
+    FROM takedown_requests tr
+    INNER JOIN businesses b ON b.id = tr.business_id
+    WHERE tr.status IN ('pending_review', 'awaiting_owner_email_confirm')
+    ORDER BY tr.id DESC
+");
+$takedownQueueRows = $takedownQueueStmt->fetchAll();
 
 // Pending businesses with temporary vetting records
 $pendingStmt = $pdo->query("
@@ -169,13 +195,13 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
   <main style="max-width:1320px;margin:1.75rem auto;padding:0 1.25rem;">
 
     <?php if ($flashMsg !== ''): ?>
-      <div style="background:#ECFDF5;border:2px solid #059669;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;color:#065F46;font-weight:600;">
+      <div data-testid="admin-flash-msg" style="background:#ECFDF5;border:2px solid #059669;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;color:#065F46;font-weight:600;">
         ✓ <?= htmlspecialchars($flashMsg, ENT_QUOTES, 'UTF-8') ?>
       </div>
     <?php endif; ?>
 
     <?php if ($flashErr !== ''): ?>
-      <div style="background:#FEF2F2;border:2px solid #DC2626;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;color:#991B1B;font-weight:600;">
+      <div data-testid="admin-flash-err" style="background:#FEF2F2;border:2px solid #DC2626;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;color:#991B1B;font-weight:600;">
         ⚠️ <?= htmlspecialchars($flashErr, ENT_QUOTES, 'UTF-8') ?>
       </div>
     <?php endif; ?>
@@ -183,8 +209,8 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
     <div class="vetting-privacy-banner" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
       <div>
         <strong style="color:#114B3E;">🔒 Vetting Data Disposal Audit Status:</strong>
-        <span>Published Businesses: <strong><?= $approvedCount ?></strong></span> •
-        <span>Retained Vetting Rows for Reviewed Businesses: <strong><?= $leakedVettingCount ?> (Always 0)</strong></span>
+        <span>Published Businesses: <strong data-testid="admin-approved-count"><?= $approvedCount ?></strong></span> •
+        <span>Retained Vetting Rows for Reviewed Businesses: <strong data-testid="admin-leaked-vetting-count"><?= $leakedVettingCount ?> (Always 0)</strong></span>
       </div>
       <span class="badge-verified">DPA Storage Limitation Enforced</span>
     </div>
@@ -196,7 +222,7 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
       $callbackUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/') . '/owner/google-callback.php';
     ?>
     <section id="google-sso-config" style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.5rem;">
-      <details <?= $savedGoogleClientId === '' ? '' : '' ?>>
+      <details>
         <summary style="cursor:pointer;font-weight:800;color:#114B3E;font-size:0.92rem;">
           🌐 Owner Google SSO Configuration <?= $savedGoogleClientId !== '' ? '<span class="badge-verified" style="margin-left:0.5rem;">✓ Active</span>' : '<span style="font-size:0.78rem;color:#6B7280;font-weight:600;margin-left:0.5rem;">(Optional — Click to configure Google OAuth Client ID &amp; Secret)</span>' ?>
         </summary>
@@ -246,8 +272,60 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
       </form>
     </section>
 
+    <!-- SECTION 0: TAKEDOWN / PRIVACY REVIEW QUEUE (#168) -->
+    <section id="takedown-queue" data-testid="admin-takedown-queue" style="margin-bottom:2rem;">
+      <h2 style="color:#991B1B;margin-bottom:0.75rem;">Takedown &amp; Privacy Review Queue (<?= count($takedownQueueRows) ?>)</h2>
+      <?php if (empty($takedownQueueRows)): ?>
+        <div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1rem 1.25rem;color:#6B7280;font-size:0.88rem;">
+          No unverified takedown or privacy review requests awaiting triage.
+        </div>
+      <?php else: ?>
+        <div style="display:grid;gap:0.85rem;">
+          <?php foreach ($takedownQueueRows as $tr):
+              $reqId = (int)$tr['id'];
+          ?>
+            <div data-testid="admin-takedown-row" data-request-id="<?= $reqId ?>" style="background:#FFFBEB;border:1px solid #F59E0B;border-radius:12px;padding:1.1rem 1.25rem;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
+                <div>
+                  <div style="font-weight:800;color:#7B1113;font-size:0.98rem;">
+                    Request #<?= $reqId ?> — #<?= (int)$tr['business_number'] ?> <?= htmlspecialchars((string)$tr['business_name'], ENT_QUOTES, 'UTF-8') ?>
+                    <span style="font-size:0.75rem;background:#FEF3C7;color:#92400E;padding:0.15rem 0.5rem;border-radius:999px;margin-left:0.35rem;">
+                      <?= htmlspecialchars((string)$tr['status'], ENT_QUOTES, 'UTF-8') ?>
+                    </span>
+                  </div>
+                  <div style="font-size:0.83rem;color:#374151;margin-top:0.25rem;">
+                    Requester: <strong><?= htmlspecialchars((string)$tr['requester_name'], ENT_QUOTES, 'UTF-8') ?></strong>
+                    (<?= htmlspecialchars((string)$tr['requester_email'], ENT_QUOTES, 'UTF-8') ?>) • Submitted <?= htmlspecialchars((string)$tr['created_at'], ENT_QUOTES, 'UTF-8') ?>
+                  </div>
+                  <p style="margin:0.45rem 0 0 0;font-size:0.86rem;color:#111827;background:#fff;border:1px solid #FDE68A;border-radius:8px;padding:0.55rem 0.75rem;">
+                    <?= nl2br(htmlspecialchars((string)$tr['reason'], ENT_QUOTES, 'UTF-8')) ?>
+                  </p>
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                  <form method="POST" action="/admin/index.php" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                    <input type="hidden" name="admin_action" value="resolve_takedown">
+                    <input type="hidden" name="request_id" value="<?= $reqId ?>">
+                    <input type="hidden" name="decision" value="quarantine">
+                    <button type="submit" data-testid="admin-takedown-quarantine-btn" class="btn btn-crimson" style="font-size:0.8rem;">⏸️ Quarantine Listing</button>
+                  </form>
+                  <form method="POST" action="/admin/index.php" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                    <input type="hidden" name="admin_action" value="resolve_takedown">
+                    <input type="hidden" name="request_id" value="<?= $reqId ?>">
+                    <input type="hidden" name="decision" value="dismiss">
+                    <button type="submit" data-testid="admin-takedown-dismiss-btn" class="btn btn-outline" style="font-size:0.8rem;">✕ Dismiss Request</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
+    </section>
+
     <!-- SECTION 1: PENDING VETTING QUEUE -->
-    <section style="margin-bottom:2.25rem;">
+    <section data-testid="admin-pending-queue" style="margin-bottom:2.25rem;">
       <h2 style="color:#7B1113;margin-bottom:0.75rem;">1. Pending Vetting Queue (<?= count($pendingRows) ?>)</h2>
       <?php if (empty($pendingRows)): ?>
         <div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1.25rem;color:#6B7280;font-size:0.9rem;">
@@ -258,7 +336,7 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
           <?php foreach ($pendingRows as $row):
               $bizId = (int)$row['id'];
           ?>
-            <div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1.25rem;box-shadow:0 2px 6px rgba(0,0,0,0.04);">
+            <div data-testid="admin-pending-card" data-business-id="<?= $bizId ?>" style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1.25rem;box-shadow:0 2px 6px rgba(0,0,0,0.04);">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
                 <div>
                   <h3 style="margin:0 0 0.25rem 0;"><?= htmlspecialchars((string)$row['name'], ENT_QUOTES, 'UTF-8') ?></h3>
@@ -274,13 +352,13 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="business_id" value="<?= $bizId ?>">
                     <input type="hidden" name="admin_action" value="approve">
-                    <button type="submit" class="btn btn-green">✓ Approve &amp; Purge Vetting</button>
+                    <button type="submit" data-testid="admin-approve-btn" class="btn btn-green">✓ Approve &amp; Purge Vetting</button>
                   </form>
                   <form method="POST" action="/admin/index.php" style="display:inline;" onsubmit="return confirm('Reject this submission and purge its vetting record?');">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="business_id" value="<?= $bizId ?>">
                     <input type="hidden" name="admin_action" value="reject">
-                    <button type="submit" class="btn btn-crimson">✕ Reject &amp; Purge</button>
+                    <button type="submit" data-testid="admin-reject-btn" class="btn btn-crimson">✕ Reject &amp; Purge</button>
                   </form>
                 </div>
               </div>
@@ -415,7 +493,7 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
                 $bid = (int)$b['id'];
                 $st = (string)$b['status'];
             ?>
-              <tr style="border-bottom:1px solid #F3F4F6;">
+              <tr data-testid="admin-business-row" data-business-id="<?= $bid ?>" style="border-bottom:1px solid #F3F4F6;">
                 <td style="padding:0.75rem 1rem;">
                   <div style="font-weight:800;color:#114B3E;font-size:0.92rem;">#<?= (int)$b['business_number'] ?></div>
                   <div style="font-family:monospace;font-size:0.72rem;color:#6B7280;" title="Immutable unique business_id"><?= htmlspecialchars((string)($b['business_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?></div>
@@ -440,7 +518,7 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
                     <?php elseif (!empty($b['owner_email'])): ?>
                       👤 Pre-Assigned Owner: <strong><?= htmlspecialchars((string)$b['owner_email'], ENT_QUOTES, 'UTF-8') ?></strong>
                     <?php else: ?>
-                      <span style="color:#6B7280;">👤 Auto-links on domain/email login or via DM Claim Link</span>
+                      <span style="color:#6B7280;">👤 Auto-links on exact listed email login or via DM Claim Link</span>
                     <?php endif; ?>
                   </div>
                 </td>
@@ -482,6 +560,15 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
                         ⏸️ Take Down
                       </button>
                     </form>
+                  <?php elseif ($st === 'quarantined_dpa'): ?>
+                    <form method="POST" action="/admin/index.php" style="display:inline;">
+                      <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                      <input type="hidden" name="business_id" value="<?= $bid ?>">
+                      <input type="hidden" name="admin_action" value="restore_quarantined">
+                      <button type="submit" data-testid="admin-restore-quarantined-btn" class="btn btn-green" style="padding:0.35rem 0.65rem;font-size:0.78rem;">
+                        ✓ Restore
+                      </button>
+                    </form>
                   <?php else: ?>
                     <form method="POST" action="/admin/index.php" style="display:inline;">
                       <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
@@ -517,7 +604,7 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
           <?php if ($currentPage > 1): ?>
             <a href="<?= htmlspecialchars($buildAdminPageUrl($currentPage - 1), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;">&larr; Prev</a>
           <?php else: ?>
-            <span class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;opacity:0.45;pointer-events:none;">&larr; Prev</span>
+            <span class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;opacity:0.45;pointer-events:none;">&larr; Prev</a>
           <?php endif; ?>
 
           <?php for ($p = 1; $p <= $totalPages; $p++):

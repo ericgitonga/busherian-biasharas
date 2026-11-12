@@ -143,13 +143,13 @@ foreach ($rows as $r) {
       <div class="search-grid">
         <div class="search-input-wrap">
           <label for="search-q" style="display:none;">Search by keyword, service, or neighborhood</label>
-          <input type="text" id="search-q" class="input-control search-input-with-clear"
+          <input type="text" id="search-q" data-testid="search-input" class="input-control search-input-with-clear"
             placeholder="Search businesses, services, or Swahili terms (e.g., wakili, daktari, solar, coffee, Westlands)...">
-          <button type="button" id="btn-clear-search" class="search-clear-btn" aria-label="Clear search" title="Clear search" style="display:none;">✕</button>
+          <button type="button" id="btn-clear-search" data-testid="search-clear-btn" class="search-clear-btn" aria-label="Clear search" title="Clear search" style="display:none;">✕</button>
         </div>
         <div>
           <label for="filter-sector" style="display:none;">Industry Sector</label>
-          <select id="filter-sector" class="select-control">
+          <select id="filter-sector" data-testid="filter-sector" class="select-control">
             <option value="">All Industry Sectors</option>
             <?php foreach ($taxonomyTree as $sector): ?>
               <option value="<?= (int)$sector['id'] ?>"><?= htmlspecialchars((string)$sector['name'], ENT_QUOTES, 'UTF-8') ?></option>
@@ -158,13 +158,13 @@ foreach ($rows as $r) {
         </div>
         <div>
           <label for="filter-specialty" style="display:none;">Specialty</label>
-          <select id="filter-specialty" class="select-control">
+          <select id="filter-specialty" data-testid="filter-specialty" class="select-control">
             <option value="">All Specialties</option>
           </select>
         </div>
         <div>
           <label for="filter-country" style="display:none;">Country</label>
-          <select id="filter-country" class="select-control" aria-label="Filter by Country">
+          <select id="filter-country" data-testid="filter-country" class="select-control" aria-label="Filter by Country">
             <option value="">🌍 All Countries</option>
             <?php foreach (array_keys($placeHierarchy) as $cName): ?>
               <option value="<?= htmlspecialchars($cName, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($cName, ENT_QUOTES, 'UTF-8') ?></option>
@@ -173,7 +173,7 @@ foreach ($rows as $r) {
         </div>
         <div>
           <label for="filter-city" style="display:none;">City / County / State</label>
-          <select id="filter-city" class="select-control" aria-label="Filter by City, County, or State">
+          <select id="filter-city" data-testid="filter-city" class="select-control" aria-label="Filter by City, County, or State">
             <option value="">📍 All Cities / Counties / States</option>
           </select>
         </div>
@@ -189,13 +189,13 @@ foreach ($rows as $r) {
         </div>
       </div>
 
-      <div class="quick-pills">
-        <button type="button" class="pill active" data-quick-filter="all">All Verified</button>
-        <button type="button" class="pill" data-quick-filter="open_now">🟢 Open Now (EAT)</button>
-        <button type="button" class="pill" data-quick-filter="has_perk">🎁 Busherian Alumni Perks</button>
-        <button type="button" class="pill" data-quick-filter="b2b_ready">🏢 B2B &amp; LPO Ready</button>
-        <button type="button" class="pill" data-quick-filter="AHS">🦅 AHS</button>
-        <button type="button" class="pill" data-quick-filter="AGHS">🔦 AGHS</button>
+      <div class="quick-pills" data-testid="quick-pills">
+        <button type="button" class="pill active" data-quick-filter="all" data-testid="quick-filter-all">All Verified</button>
+        <button type="button" class="pill" data-quick-filter="open_now" data-testid="quick-filter-open-now">🟢 Open Now (EAT)</button>
+        <button type="button" class="pill" data-quick-filter="has_perk" data-testid="quick-filter-has-perk">🎁 Busherian Alumni Perks</button>
+        <button type="button" class="pill" data-quick-filter="b2b_ready" data-testid="quick-filter-b2b">🏢 B2B &amp; LPO Ready</button>
+        <button type="button" class="pill" data-quick-filter="AHS" data-testid="quick-filter-AHS">🦅 AHS</button>
+        <button type="button" class="pill" data-quick-filter="AGHS" data-testid="quick-filter-AGHS">🔦 AGHS</button>
       </div>
     </div>
   </section>
@@ -211,7 +211,7 @@ foreach ($rows as $r) {
     <section id="pane-results" class="results-pane" aria-label="Business Results">
       <div class="results-header">
         <div>
-          <strong id="results-count" style="font-size:0.95rem;color:#114B3E;display:block;">
+          <strong id="results-count" data-testid="results-count" style="font-size:0.95rem;color:#114B3E;display:block;">
             <?= count($initialBusinesses) ?> Verified Busherian Biasharas
           </strong>
           <span style="font-size:0.76rem;color:#6B7280;">
@@ -220,7 +220,7 @@ foreach ($rows as $r) {
         </div>
         <div style="display:flex;align-items:center;gap:0.4rem;">
           <label for="per-page-select" style="font-size:0.78rem;font-weight:700;color:#374151;">Show:</label>
-          <select id="per-page-select" class="select-control" aria-label="Listings per page" style="width:auto;padding:0.32rem 0.6rem;font-size:0.8rem;">
+          <select id="per-page-select" data-testid="per-page-select" class="select-control" aria-label="Listings per page" style="width:auto;padding:0.32rem 0.6rem;font-size:0.8rem;">
             <option value="10" selected>10 per page</option>
             <option value="25">25 per page</option>
             <option value="50">50 per page</option>
@@ -229,8 +229,8 @@ foreach ($rows as $r) {
         </div>
       </div>
 
-      <div id="cards-grid" class="cards-grid"></div>
-      <nav id="directory-pagination" aria-label="Directory Pagination" style="margin-top:1rem;"></nav>
+      <div id="cards-grid" data-testid="cards-grid" class="cards-grid"></div>
+      <nav id="directory-pagination" data-testid="directory-pagination" aria-label="Directory Pagination" style="margin-top:1rem;"></nav>
     </section>
 
     <!-- Right Pane: Sticky Interactive Map -->
@@ -247,13 +247,13 @@ foreach ($rows as $r) {
         <div id="map-focus-actions" style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;"></div>
       </div>
       <div id="map-route-drawer" class="map-route-drawer" style="display:none;"></div>
-      <div id="map-canvas" class="map-canvas"></div>
+      <div id="map-canvas" data-testid="map-canvas" class="map-canvas"></div>
     </aside>
   </main>
 
   <!-- Rich Business Detail Modal -->
-  <div id="biz-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-label="Business Details">
-    <div id="biz-modal-content" class="modal-dialog"></div>
+  <div id="biz-modal-backdrop" data-testid="biz-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-label="Business Details">
+    <div id="biz-modal-content" data-testid="biz-modal-content" class="modal-dialog"></div>
   </div>
 
   <!-- Footer -->

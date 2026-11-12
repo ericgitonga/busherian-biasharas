@@ -26,6 +26,7 @@ storage/*.log
 # Uploaded user files (keep directory structure)
 public/assets/uploads/logos/*
 !public/assets/uploads/logos/.gitkeep
+public/uploads/businesses/*
 
 # OS
 .DS_Store

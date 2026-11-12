@@ -92,7 +92,7 @@ final class Database
         self::validateProductionSecrets();
 
         $driver = strtolower(self::env('DB_DRIVER', 'mysql'));
-        $fallback = strtolower(self::env('DB_DRIVER_FALLBACK', 'sqlite'));
+        $fallback = strtolower(self::env('DB_DRIVER_FALLBACK', 'none'));
         $appEnv = strtolower(self::env('APP_ENV', 'development'));
 
         if ($driver === 'mysql') {
@@ -131,10 +131,18 @@ final class Database
                 self::ensureInitialized(self::$pdo, 'mysql');
                 return self::$pdo;
             } catch (PDOException $e) {
-                if ($appEnv === 'production' && $fallback !== 'sqlite') {
-                    throw new RuntimeException('Database connection failed.');
+                error_log(sprintf(
+                    '[Database] MySQL connection failure (env=%s, host=%s, db=%s): %s',
+                    $appEnv,
+                    $host,
+                    $db,
+                    $e->getMessage()
+                ));
+                // Fail closed in production (never fall back to local SQLite regardless of DB_DRIVER_FALLBACK) (#169)
+                if ($appEnv === 'production' || $fallback !== 'sqlite') {
+                    throw new DatabaseUnavailableException('Service temporarily unavailable due to database maintenance.');
                 }
-                // Fall back to SQLite for local dev / CI testing when remote cPanel MySQL is unreachable
+                // Explicit non-production fallback (only when APP_ENV != production and DB_DRIVER_FALLBACK=sqlite)
             }
         }
 
@@ -318,14 +326,36 @@ final class Database
         self::ensureBusinessIdentityAndNumberColumns($pdo, $driver);
         self::ensureUsageMetricsTable($pdo, $driver);
         self::ensureOwnerTables($pdo, $driver);
+        self::ensureOutboxAndTakedownTables($pdo, $driver);
 
-        // Seed categories and initial verified listings if empty
+        // Seed default taxonomy if empty; NEVER seed sample businesses in production (#169)
+        $appEnv = strtolower(self::env('APP_ENV', 'development'));
         $count = (int)$pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
         if ($count === 0) {
             \BusherianBiasharas\Services\CategoryMatcher::seedDefaultTaxonomy($pdo);
-            \BusherianBiasharas\Services\CategoryMatcher::seedSampleBusinesses($pdo);
+            if ($appEnv !== 'production' && self::env('BBIZ_SKIP_SAMPLE_SEED', '0') !== '1') {
+                \BusherianBiasharas\Services\CategoryMatcher::seedSampleBusinesses($pdo);
+            }
         } else {
             \BusherianBiasharas\Services\CategoryMatcher::ensureTaxonomyUpToDate($pdo);
+        }
+
+        // One-time idempotent security & privacy migrations (#164 corporate domain link audit, #167 outbox PII scrub)
+        if (self::getSetting($pdo, 'purged_corp_domain_links_v1') !== 'done') {
+            try {
+                \BusherianBiasharas\Services\OwnerAuth::revokeUnverifiedCorporateDomainLinks($pdo);
+                self::setSetting($pdo, 'purged_corp_domain_links_v1', 'done');
+            } catch (\Throwable $migErr) {
+                error_log('[Database::ensureInitialized] purged_corp_domain_links_v1 failed: ' . $migErr->getMessage());
+            }
+        }
+        if (self::getSetting($pdo, 'scrubbed_outbox_vetting_pii_v1') !== 'done') {
+            try {
+                \BusherianBiasharas\Services\Mailer::scrubLegacyVettingPiiFromOutbox($pdo);
+                self::setSetting($pdo, 'scrubbed_outbox_vetting_pii_v1', 'done');
+            } catch (\Throwable $migErr) {
+                error_log('[Database::ensureInitialized] scrubbed_outbox_vetting_pii_v1 failed: ' . $migErr->getMessage());
+            }
         }
 
         // One-time idempotent backfill of missing latitude/longitude from listed map pins/links (#138, #141)
@@ -510,14 +540,38 @@ final class Database
             ");
             $ownerCols = $pdo->query("PRAGMA table_info(business_owners)")->fetchAll();
             $hasPwHash = false;
+            $hasAuthVer = false;
             foreach ($ownerCols as $oc) {
                 if (($oc['name'] ?? '') === 'password_hash') {
                     $hasPwHash = true;
+                }
+                if (($oc['name'] ?? '') === 'auth_version') {
+                    $hasAuthVer = true;
                 }
             }
             if (!$hasPwHash) {
                 $pdo->exec("ALTER TABLE business_owners ADD COLUMN password_hash TEXT NULL");
             }
+            if (!$hasAuthVer) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 1");
+            }
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS owner_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    owner_id INTEGER NOT NULL REFERENCES business_owners(id) ON DELETE CASCADE,
+                    selector TEXT NOT NULL UNIQUE,
+                    validator_hash TEXT NOT NULL,
+                    auth_version INTEGER NOT NULL DEFAULT 1,
+                    ip_hmac TEXT NULL,
+                    user_agent_summary TEXT NULL,
+                    expires_at TEXT NOT NULL,
+                    revoked_at TEXT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS idx_owner_sess_owner ON owner_sessions (owner_id, revoked_at);
+                CREATE INDEX IF NOT EXISTS idx_owner_sess_exp ON owner_sessions (expires_at);
+            ");
         } else {
             $cols = $pdo->query("SHOW COLUMNS FROM businesses")->fetchAll();
             foreach ($cols as $col) {
@@ -545,6 +599,7 @@ final class Database
                     phone VARCHAR(40) NULL,
                     google_sub VARCHAR(120) NULL,
                     password_hash VARCHAR(255) NULL,
+                    auth_version INT UNSIGNED NOT NULL DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     INDEX idx_owner_google (google_sub)
@@ -552,14 +607,38 @@ final class Database
             ");
             $ownerColsMysql = $pdo->query("SHOW COLUMNS FROM business_owners")->fetchAll();
             $hasPwHashMysql = false;
+            $hasAuthVerMysql = false;
             foreach ($ownerColsMysql as $ocm) {
                 if (($ocm['Field'] ?? '') === 'password_hash') {
                     $hasPwHashMysql = true;
+                }
+                if (($ocm['Field'] ?? '') === 'auth_version') {
+                    $hasAuthVerMysql = true;
                 }
             }
             if (!$hasPwHashMysql) {
                 $pdo->exec("ALTER TABLE business_owners ADD COLUMN password_hash VARCHAR(255) NULL AFTER google_sub");
             }
+            if (!$hasAuthVerMysql) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN auth_version INT UNSIGNED NOT NULL DEFAULT 1 AFTER password_hash");
+            }
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS owner_sessions (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    owner_id INT UNSIGNED NOT NULL,
+                    selector VARCHAR(32) NOT NULL UNIQUE,
+                    validator_hash CHAR(64) NOT NULL,
+                    auth_version INT UNSIGNED NOT NULL DEFAULT 1,
+                    ip_hmac CHAR(64) NULL,
+                    user_agent_summary VARCHAR(255) NULL,
+                    expires_at DATETIME NOT NULL,
+                    revoked_at DATETIME NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_owner_sess_owner (owner_id, revoked_at),
+                    INDEX idx_owner_sess_exp (expires_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS business_owner_links (
                     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -588,6 +667,94 @@ final class Database
                     used_at INT UNSIGNED NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_token_expires (expires_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        }
+    }
+
+    private static function ensureOutboxAndTakedownTables(PDO $pdo, string $driver): void
+    {
+        if ($driver === 'sqlite') {
+            $bizCols = $pdo->query("PRAGMA table_info(businesses)")->fetchAll();
+            $hasPrevStatus = false;
+            foreach ($bizCols as $c) {
+                if (($c['name'] ?? '') === 'quarantine_prev_status') {
+                    $hasPrevStatus = true;
+                }
+            }
+            if (!$hasPrevStatus) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN quarantine_prev_status TEXT NULL");
+            }
+
+            $outboxCols = $pdo->query("PRAGMA table_info(email_outbox)")->fetchAll();
+            $hasOutboxBizId = false;
+            foreach ($outboxCols as $oc) {
+                if (($oc['name'] ?? '') === 'business_id') {
+                    $hasOutboxBizId = true;
+                }
+            }
+            if (!$hasOutboxBizId) {
+                $pdo->exec("ALTER TABLE email_outbox ADD COLUMN business_id INTEGER NULL");
+            }
+            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_outbox_business ON email_outbox (business_id)");
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS takedown_requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+                    requester_name TEXT NOT NULL,
+                    requester_email TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    verification_token_hash TEXT NULL,
+                    token_expires_at TEXT NULL,
+                    verified_at TEXT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending_review',
+                    ip_hmac TEXT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TEXT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_takedown_biz_status ON takedown_requests (business_id, status);
+                CREATE INDEX IF NOT EXISTS idx_takedown_token ON takedown_requests (verification_token_hash);
+            ");
+        } else {
+            $bizCols = $pdo->query("SHOW COLUMNS FROM businesses")->fetchAll();
+            $hasPrevStatus = false;
+            foreach ($bizCols as $c) {
+                if (($c['Field'] ?? '') === 'quarantine_prev_status') {
+                    $hasPrevStatus = true;
+                }
+            }
+            if (!$hasPrevStatus) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN quarantine_prev_status VARCHAR(24) NULL AFTER status");
+            }
+
+            $outboxCols = $pdo->query("SHOW COLUMNS FROM email_outbox")->fetchAll();
+            $hasOutboxBizId = false;
+            foreach ($outboxCols as $oc) {
+                if (($oc['Field'] ?? '') === 'business_id') {
+                    $hasOutboxBizId = true;
+                }
+            }
+            if (!$hasOutboxBizId) {
+                $pdo->exec("ALTER TABLE email_outbox ADD COLUMN business_id INT UNSIGNED NULL AFTER id, ADD INDEX idx_outbox_business (business_id)");
+            }
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS takedown_requests (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    business_id INT UNSIGNED NOT NULL,
+                    requester_name VARCHAR(140) NOT NULL,
+                    requester_email VARCHAR(190) NOT NULL,
+                    reason TEXT NOT NULL,
+                    verification_token_hash CHAR(64) NULL,
+                    token_expires_at DATETIME NULL,
+                    verified_at DATETIME NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'pending_review',
+                    ip_hmac CHAR(64) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at DATETIME NULL,
+                    INDEX idx_takedown_biz_status (business_id, status),
+                    INDEX idx_takedown_token (verification_token_hash)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
         }

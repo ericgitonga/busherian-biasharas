@@ -11,14 +11,18 @@ final class AdminAuth
     public static function startSecureSession(): void
     {
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            @ini_set('session.use_strict_mode', '1');
+            @ini_set('session.use_only_cookies', '1');
             $basePath = PreprodSandbox::basePath();
             if ($basePath !== '') {
                 session_name('BBIZ_PREPROD_SESS');
             }
+            $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
             session_set_cookie_params([
                 'lifetime' => 7200,
                 'path' => $basePath !== '' ? $basePath : '/',
-                'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+                'secure' => $isHttps,
                 'httponly' => true,
                 'samesite' => 'Strict',
             ]);

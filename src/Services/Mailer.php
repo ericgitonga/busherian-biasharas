@@ -46,6 +46,8 @@ final class Mailer
 
     /**
      * Enqueue and dispatch notification to admin@busherianbiasharas.com when a new business is submitted.
+     * STRICT DPA PRIVACY RULE (#167): NEVER include House, Year Left, or School Number in email bodies or email_outbox.
+     * Alumni vetting credentials remain exclusively in `business_vetting_queue` for authenticated Admin Console review.
      */
     public static function notifyAdminNewSubmission(PDO $pdo, array $business, array $vetting, ?array $customCategory = null): int
     {
@@ -53,14 +55,14 @@ final class Mailer
         $bizId = (int)$business['id'];
         $bizName = htmlspecialchars((string)$business['name'], ENT_QUOTES, 'UTF-8');
         $school = htmlspecialchars((string)$vetting['school_code'], ENT_QUOTES, 'UTF-8');
-        $house = htmlspecialchars((string)$vetting['house_name'], ENT_QUOTES, 'UTF-8');
-        $yearLeft = (int)$vetting['year_left'];
-        $schoolNum = htmlspecialchars((string)($vetting['school_number'] ?: 'Not provided (Optional)'), ENT_QUOTES, 'UTF-8');
         $submitterName = htmlspecialchars(AntiSpamGate::sanitizeHeaderValue((string)$vetting['submitter_name']), ENT_QUOTES, 'UTF-8');
         $submitterEmail = htmlspecialchars(AntiSpamGate::sanitizeHeaderValue((string)$vetting['submitter_email']), ENT_QUOTES, 'UTF-8');
 
-        $approveUrl = self::generateSignedAdminActionUrl($bizId, 'approve');
-        $rejectUrl  = self::generateSignedAdminActionUrl($bizId, 'reject');
+        $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
+        $adminConsoleUrl = htmlspecialchars("{$baseUrl}/admin/index.php", ENT_QUOTES, 'UTF-8');
+        $adminEditUrl = htmlspecialchars("{$baseUrl}/admin/edit-business.php?id={$bizId}", ENT_QUOTES, 'UTF-8');
+        $approveUrl = htmlspecialchars(self::generateSignedAdminActionUrl($bizId, 'approve'), ENT_QUOTES, 'UTF-8');
+        $rejectUrl  = htmlspecialchars(self::generateSignedAdminActionUrl($bizId, 'reject'), ENT_QUOTES, 'UTF-8');
 
         $catNotice = '';
         if ($customCategory !== null) {
@@ -68,41 +70,52 @@ final class Mailer
             $catNotice = "<p style='background:#FFFBEB;border-left:4px solid #D4AF37;padding:10px;'><strong>Custom Specialty Requested:</strong> {$customCatName} (Pending Admin Approval)</p>";
         }
 
-        $subject = "[Busherian Biasharas] Vetting & Review Required: {$business['name']} ({$vetting['school_code']})";
+        $subject = "[Busherian Biasharas] Review Required: {$business['name']} ({$vetting['school_code']})";
         $bodyHtml = "
             <div style='font-family:sans-serif;max-width:620px;color:#111827;'>
                 <h2 style='color:#7B1113;margin-bottom:4px;'>New Busherian Biashara Submission</h2>
                 <p style='color:#4B5563;margin-top:0;'>Submitted by <strong>{$submitterName}</strong> ({$submitterEmail})</p>
                 <div style='background:#F0FDF4;border:1px solid #114B3E;border-radius:8px;padding:14px;margin:16px 0;'>
-                    <h3 style='margin:0 0 8px 0;color:#114B3E;'>One-Time Alumni Vetting Credentials (Auto-Purged on Review)</h3>
-                    <p style='margin:4px 0;'><strong>School:</strong> {$school}</p>
-                    <p style='margin:4px 0;'><strong>House:</strong> {$house}</p>
-                    <p style='margin:4px 0;'><strong>Year Left:</strong> {$yearLeft}</p>
-                    <p style='margin:4px 0;'><strong>School Number:</strong> {$schoolNum}</p>
+                    <h3 style='margin:0 0 8px 0;color:#114B3E;'>Submission Summary (Alumni Vetting Protected)</h3>
+                    <p style='margin:4px 0;'><strong>Business Name:</strong> {$bizName} (#{$bizId})</p>
+                    <p style='margin:4px 0;'><strong>School Affiliation:</strong> {$school}</p>
+                    <p style='margin:8px 0 0 0;font-size:13px;color:#065F46;'>
+                        🔒 To protect alumni privacy under the Kenya Data Protection Act, one-time verification details are never transmitted by email and can only be viewed inside the authenticated Admin Console before approval or rejection.
+                    </p>
                 </div>
                 {$catNotice}
-                <p><strong>Business Name:</strong> {$bizName}</p>
                 <p style='margin-top:20px;'>
-                    <a href='{$approveUrl}' style='background:#114B3E;color:#ffffff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:bold;margin-right:10px;'>Approve &amp; Purge Vetting Data</a>
-                    <a href='{$rejectUrl}' style='background:#991B1B;color:#ffffff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:bold;'>Reject &amp; Purge Vetting Data</a>
+                    <a href='{$adminConsoleUrl}' style='background:#1F2937;color:#ffffff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:bold;margin-right:8px;'>Open Admin Review Queue</a>
+                    <a href='{$adminEditUrl}' style='background:#D97706;color:#ffffff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:bold;'>Inspect Submission #{$bizId}</a>
+                </p>
+                <p style='margin-top:14px;'>
+                    <a href='{$approveUrl}' style='background:#114B3E;color:#ffffff;padding:9px 15px;border-radius:6px;text-decoration:none;font-weight:bold;margin-right:8px;'>Quick Approve &amp; Purge Vetting</a>
+                    <a href='{$rejectUrl}' style='background:#991B1B;color:#ffffff;padding:9px 15px;border-radius:6px;text-decoration:none;font-weight:bold;'>Quick Reject &amp; Purge Vetting</a>
                 </p>
             </div>
         ";
 
-        return self::enqueueAndSend($pdo, $adminEmail, $subject, $bodyHtml, $submitterEmail);
+        return self::enqueueAndSend($pdo, $adminEmail, $subject, $bodyHtml, $submitterEmail, $bizId);
     }
 
-    public static function enqueueAndSend(PDO $pdo, string $recipient, string $subject, string $bodyHtml, ?string $replyTo = null): int
-    {
+    public static function enqueueAndSend(
+        PDO $pdo,
+        string $recipient,
+        string $subject,
+        string $bodyHtml,
+        ?string $replyTo = null,
+        ?int $businessId = null
+    ): int {
         $simulate = strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes'
                  || strtolower(Database::env('APP_ENV', 'development')) !== 'production';
 
         $status = $simulate ? 'simulated' : 'queued';
         $stmt = $pdo->prepare("
-            INSERT INTO email_outbox (recipient_email, subject, body_html, status, attempts, sent_at)
-            VALUES (:to, :subj, :body, :status, 1, CURRENT_TIMESTAMP)
+            INSERT INTO email_outbox (business_id, recipient_email, subject, body_html, status, attempts, sent_at)
+            VALUES (:bid, :to, :subj, :body, :status, 1, CURRENT_TIMESTAMP)
         ");
         $stmt->execute([
+            ':bid' => ($businessId !== null && $businessId > 0) ? $businessId : null,
             ':to' => $recipient,
             ':subj' => AntiSpamGate::sanitizeHeaderValue($subject),
             ':body' => $bodyHtml,
@@ -366,6 +379,115 @@ final class Mailer
             </div>
         ";
 
-        return self::enqueueAndSend($pdo, $adminEmail, $subject, $bodyHtml, (string)($owner['email'] ?? null));
+        return self::enqueueAndSend($pdo, $adminEmail, $subject, $bodyHtml, (string)($owner['email'] ?? null), $bizId);
+    }
+
+    /**
+     * Immediately redact any historical `email_outbox` rows that contained legacy alumni vetting fields (#167).
+     */
+    public static function scrubLegacyVettingPiiFromOutbox(PDO $pdo, ?int $businessId = null): int
+    {
+        $redactedMarker = '[REDACTED PER KENYA DPA 2019 VETTING DATA MINIMIZATION POLICY]';
+        if ($businessId !== null && $businessId > 0) {
+            $stmt = $pdo->prepare("
+                UPDATE email_outbox
+                SET body_html = :marker
+                WHERE business_id = :bid
+                  AND (
+                      body_html LIKE '%House:%'
+                      OR body_html LIKE '%Year Left:%'
+                      OR body_html LIKE '%School Number:%'
+                      OR body_html LIKE '%One-Time Alumni Vetting Credentials%'
+                  )
+            ");
+            $stmt->execute([':marker' => $redactedMarker, ':bid' => $businessId]);
+            return $stmt->rowCount();
+        }
+
+        $stmt = $pdo->prepare("
+            UPDATE email_outbox
+            SET body_html = :marker
+            WHERE body_html LIKE '%House:%'
+               OR body_html LIKE '%Year Left:%'
+               OR body_html LIKE '%School Number:%'
+               OR body_html LIKE '%One-Time Alumni Vetting Credentials%'
+        ");
+        $stmt->execute([':marker' => $redactedMarker]);
+        return $stmt->rowCount();
+    }
+
+    /**
+     * Send a single-use mailbox confirmation link when a designated owner requests immediate self-quarantine (#168).
+     */
+    public static function sendOwnerTakedownConfirmationLink(PDO $pdo, array $business, string $ownerEmail, string $confirmUrl): int
+    {
+        $bizId = (int)($business['id'] ?? 0);
+        $bizName = htmlspecialchars((string)($business['name'] ?? 'Your Listing'), ENT_QUOTES, 'UTF-8');
+        $safeUrl = htmlspecialchars($confirmUrl, ENT_QUOTES, 'UTF-8');
+        $subject = "[Busherian Biasharas] Confirm Removal Request for {$business['name']}";
+        $bodyHtml = "
+            <div style='font-family:sans-serif;max-width:580px;color:#111827;'>
+                <h2 style='color:#7B1113;margin-bottom:6px;'>Confirm Listing Removal / Pause</h2>
+                <p style='color:#374151;'>We received a request to hide <strong>{$bizName}</strong> from the Busherian Biasharas public directory.</p>
+                <p style='color:#374151;'>Click the button below within 2 hours to confirm you control this email address and immediately pause the listing:</p>
+                <p style='margin:20px 0;'>
+                    <a href='{$safeUrl}' style='background:#991B1B;color:#ffffff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:bold;'>Confirm &amp; Hide {$bizName}</a>
+                </p>
+                <p style='font-size:12px;color:#6B7280;'>If you did not submit this request, ignore this email and your listing will remain unchanged.</p>
+            </div>
+        ";
+        return self::enqueueAndSend($pdo, $ownerEmail, $subject, $bodyHtml, null, $bizId);
+    }
+
+    /**
+     * Notify Admin of a takedown / DPA objection event (#168).
+     */
+    public static function notifyAdminTakedownRequest(PDO $pdo, array $business, array $requestInfo, string $mode): int
+    {
+        $adminEmail = Database::env('ADMIN_EMAIL', 'admin@busherianbiasharas.com');
+        $bizId = (int)($business['id'] ?? 0);
+        $bizName = htmlspecialchars((string)($business['name'] ?? "Business #{$bizId}"), ENT_QUOTES, 'UTF-8');
+        $reqName = htmlspecialchars(AntiSpamGate::sanitizeHeaderValue((string)($requestInfo['requester_name'] ?? '')), ENT_QUOTES, 'UTF-8');
+        $reqEmail = htmlspecialchars(AntiSpamGate::sanitizeHeaderValue((string)($requestInfo['requester_email'] ?? '')), ENT_QUOTES, 'UTF-8');
+        $reason = nl2br(htmlspecialchars((string)($requestInfo['reason'] ?? ''), ENT_QUOTES, 'UTF-8'));
+        $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
+        $adminUrl = htmlspecialchars("{$baseUrl}/admin/index.php#takedown-queue", ENT_QUOTES, 'UTF-8');
+
+        $modeLabel = $mode === 'owner_quarantined'
+            ? 'Verified Owner Self-Quarantined Immediately'
+            : 'Queued for Rapid Admin Review (Live Listing Preserved Pending Verification)';
+
+        $subject = "[Busherian Biasharas] Takedown / Privacy Request (#{$bizId} {$business['name']})";
+        $bodyHtml = "
+            <div style='font-family:sans-serif;max-width:620px;color:#111827;'>
+                <h2 style='color:#7B1113;margin-bottom:4px;'>Takedown / Privacy Request</h2>
+                <p><strong>Action Status:</strong> {$modeLabel}</p>
+                <p><strong>Listing:</strong> {$bizName} (#{$bizId})</p>
+                <p><strong>Requester:</strong> {$reqName} ({$reqEmail})</p>
+                <p><strong>Reason:</strong><br>{$reason}</p>
+                <p style='margin-top:18px;'><a href='{$adminUrl}' style='background:#114B3E;color:#ffffff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:bold;'>Review in Admin Console</a></p>
+            </div>
+        ";
+        return self::enqueueAndSend($pdo, $adminEmail, $subject, $bodyHtml, (string)($requestInfo['requester_email'] ?? null), $bizId);
+    }
+
+    /**
+     * Courtesy notice to a verified listing owner when an unauthenticated third party files a takedown review request (#168).
+     */
+    public static function notifyOwnerThirdPartyTakedownNotice(PDO $pdo, array $business, string $ownerEmail): int
+    {
+        $bizId = (int)($business['id'] ?? 0);
+        $bizName = htmlspecialchars((string)($business['name'] ?? 'Your Listing'), ENT_QUOTES, 'UTF-8');
+        $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
+        $portalUrl = htmlspecialchars("{$baseUrl}/owner/index.php", ENT_QUOTES, 'UTF-8');
+        $subject = "[Busherian Biasharas] Notice: Review Request Received for {$business['name']}";
+        $bodyHtml = "
+            <div style='font-family:sans-serif;max-width:580px;color:#111827;'>
+                <h2 style='color:#114B3E;margin-bottom:6px;'>Listing Review Notice</h2>
+                <p style='color:#374151;'>A third-party report or correction request was submitted regarding <strong>{$bizName}</strong>. Your listing remains published while our directory administrators review the report.</p>
+                <p style='margin:18px 0;'><a href='{$portalUrl}' style='background:#114B3E;color:#ffffff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold;'>Open Owner Portal</a></p>
+            </div>
+        ";
+        return self::enqueueAndSend($pdo, $ownerEmail, $subject, $bodyHtml, null, $bizId);
     }
 }

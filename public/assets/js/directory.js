@@ -309,14 +309,14 @@
 
       // STRICT PRIVACY GUARANTEE: Zero House, Year Left, or School Number ever rendered
       return `
-        <article class="biz-card" data-biz-id="${biz.id}">
+        <article class="biz-card" data-testid="biz-card" data-biz-id="${biz.id}">
           <div>
             ${cardPhotosHtml}
             <div class="card-top-badges" style="justify-content:space-between;">
               ${biz.can_edit ? `<span style="background:#ECFDF5;color:#065F46;border:1px solid #059669;border-radius:999px;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:800;">✓ Your Linked Business</span>` : '<span></span>'}
               ${distBadge}
             </div>
-            <h3 class="card-title">${escapeHtml(biz.name)}</h3>
+            <h3 class="card-title" data-testid="biz-card-title">${escapeHtml(biz.name)}</h3>
             <div class="card-taxonomy">${escapeHtml(biz.sector_name)} &rarr; ${escapeHtml(biz.specialty_name)}</div>
             <p class="card-tagline">${escapeHtml(biz.tagline)}</p>
             ${perkHtml}

@@ -1,18 +1,30 @@
 <?php
 declare(strict_types=1);
 
+$initialDriver = strtolower((string)(getenv('DB_DRIVER') ?: 'sqlite'));
+$unitTempSqlite = sys_get_temp_dir() . '/bbiz_unit_' . getmypid() . '.sqlite';
+$unitTempUploadsRoot = sys_get_temp_dir() . '/bbiz_unit_uploads_' . getmypid();
+
 putenv('APP_ENV=testing');
-putenv('DB_DRIVER=sqlite');
-putenv('DB_SQLITE_PATH=' . sys_get_temp_dir() . '/bbiz_unit_' . getmypid() . '.sqlite');
+putenv('DB_DRIVER=' . $initialDriver);
+if ($initialDriver === 'sqlite') {
+    putenv('DB_SQLITE_PATH=' . $unitTempSqlite);
+}
+putenv('BBIZ_PUBLIC_WEB_ROOT=' . $unitTempUploadsRoot);
 putenv('APP_HMAC_SECRET=9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e');
 putenv('IP_HASH_SECRET=1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b');
 putenv('CSRF_SECRET=5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e');
 putenv('SIMULATE_EMAILS=yes');
 putenv('ADMIN_ACCESS_TOKEN=test_admin_token_secret_12345');
 
+if (!is_dir($unitTempUploadsRoot . '/uploads/businesses')) {
+    @mkdir($unitTempUploadsRoot . '/uploads/businesses', 0775, true);
+}
+
 require_once dirname(__DIR__) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
+use BusherianBiasharas\Config\DatabaseUnavailableException;
 use BusherianBiasharas\Config\Houses;
 use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\CategoryMatcher;
@@ -33,12 +45,10 @@ function assertTrue(bool $cond, string $label): void
     global $passed, $failed;
     if ($cond) {
         $passed++;
-        echo "PASS: {$label}
-";
+        echo "PASS: {$label}\n";
     } else {
         $failed++;
-        fwrite(STDERR, "FAIL: {$label}
-");
+        fwrite(STDERR, "FAIL: {$label}\n");
     }
 }
 
@@ -172,8 +182,13 @@ assertTrue(!$resCc['passed'] && $resCc['reason'] === 'layer4_camelcase_bot_name'
 assertTrue(AntiSpamGate::sanitizeForCsv("=CMD|'/C calc'!A0") === "'=CMD|'/C calc'!A0", 'AntiSpam Layer 6 prefixes leading = formula for CSV safety');
 
 // 7. Verify VettingPurger Immediate Hard-Delete & Zero Vetting Columns on `businesses`
-$cols = $pdo->query("PRAGMA table_info(businesses)")->fetchAll();
-$colNames = array_column($cols, 'name');
+if (Database::getActiveDriver() === 'mysql') {
+    $cols = $pdo->query("SHOW COLUMNS FROM businesses")->fetchAll();
+    $colNames = array_column($cols, 'Field');
+} else {
+    $cols = $pdo->query("PRAGMA table_info(businesses)")->fetchAll();
+    $colNames = array_column($cols, 'name');
+}
 assertTrue(!in_array('house_name', $colNames, true) && !in_array('year_left', $colNames, true) && !in_array('school_number', $colNames, true), 'businesses table has ZERO columns for house_name, year_left, or school_number');
 
 $pdo->exec("
@@ -213,6 +228,7 @@ $pdo->prepare("
 $purgeSummary = VettingPurger::enforceRetentionCeilings($pdo, 30);
 $staleRemaining = (int)$pdo->query("SELECT COUNT(*) FROM business_vetting_queue WHERE business_id = {$staleBizId}")->fetchColumn();
 assertTrue($staleRemaining === 0 && $purgeSummary['vetting_rows_purged'] >= 1, 'VettingPurger::enforceRetentionCeilings purges >30-day abandoned vetting rows');
+VettingPurger::deleteBusiness($pdo, $staleBizId);
 
 // 10. Verify Ticket #14: WebsiteEnricher field_provenance tagging
 assertTrue(!empty($enriched['field_provenance']['name']) && !empty($enriched['field_provenance']['suggested_category']), 'WebsiteEnricher attaches INDRA field_provenance tags to auto-filled fields');
@@ -274,12 +290,16 @@ assertTrue(
     'LocationEngine::geocodeKenyanLocation resolves Marist Lane, Karen accurately'
 );
 
-// 15. Verify Ticket #42: Owner SSO / Magic-Link Auth, Post-Registration Corporate Domain & Claim Linking, and Self-Service Edits
+// 15. Verify Tickets #42 & #164 (HIGH-01): Corporate Domain Never Auto-Grants Ownership; Public Contact Email & Signed Claim Invites Do
 $branfootOwner = OwnerAuth::upsertOwner($pdo, 'director@branfoot.com', 'Branfoot Director');
 $branfootBizId = (int)$pdo->query("SELECT id FROM businesses WHERE slug = 'branfoot-enterprises' LIMIT 1")->fetchColumn();
+$branfootSuggestions = OwnerAuth::getCorporateDomainClaimSuggestions($pdo, 'director@branfoot.com', (int)$branfootOwner['id']);
 assertTrue(
-    $branfootBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$branfootOwner['id'], $branfootBizId),
-    'Owner signing in with @branfoot.com is automatically linked to pre-populated Branfoot Enterprises Limited'
+    $branfootBizId > 0 &&
+    !OwnerAuth::canOwnerEditBusiness($pdo, (int)$branfootOwner['id'], $branfootBizId) &&
+    !empty($branfootSuggestions) &&
+    (int)$branfootSuggestions[0]['id'] === $branfootBizId,
+    'Owner signing in with @branfoot.com is NOT automatically granted edit access (#164), and receives informational claim guidance instead'
 );
 
 $bustaniOwner = OwnerAuth::upsertOwner($pdo, 'bustanibistro@gmail.com', 'Bustani Owner');
@@ -359,7 +379,7 @@ assertTrue(
     'HoursEngine::evaluateStatus reports OPEN_NOW on Sunday when Sunday hours are configured'
 );
 
-// 18. Verify Tickets #90, #91, #92, #93: PhotoUploader GD re-encoding, EXIF stripping, 5-photo cap & removal
+// 18. Verify Tickets #90, #91, #92, #93 & #171: PhotoUploader GD re-encoding, EXIF stripping, 5-photo cap, pixel check & corrupt file rejection
 $testDataUrls = [];
 for ($i = 0; $i < 6; $i++) {
     $im = imagecreatetruecolor(40, 30);
@@ -373,9 +393,15 @@ for ($i = 0; $i < 6; $i++) {
 }
 $savedPhotosJson = PhotoUploader::processBusinessPhotos(null, [], null, json_encode($testDataUrls));
 $decodedPhotos = PhotoUploader::decodePhotosJson($savedPhotosJson);
+$firstSavedDiskPath = $unitTempUploadsRoot . ($decodedPhotos[0] ?? '');
+$savedImgInfo = is_file($firstSavedDiskPath) ? @getimagesize($firstSavedDiskPath) : false;
 assertTrue(
-    count($decodedPhotos) === 5 && str_starts_with($decodedPhotos[0], '/uploads/businesses/bbiz_'),
-    'PhotoUploader::processBusinessPhotos sanitizes images via GD and enforces a strict cap of 5 photos'
+    count($decodedPhotos) === 5 &&
+    str_starts_with($decodedPhotos[0], '/uploads/businesses/bbiz_') &&
+    is_array($savedImgInfo) &&
+    (int)$savedImgInfo[0] === 40 &&
+    (int)$savedImgInfo[1] === 30,
+    'PhotoUploader::processBusinessPhotos sanitizes images via GD with verified decoded pixel dimensions and enforces a strict cap of 5 photos'
 );
 $afterRemoveJson = PhotoUploader::processBusinessPhotos($savedPhotosJson, [$decodedPhotos[0]], null, null);
 $afterRemoveList = PhotoUploader::decodePhotosJson($afterRemoveJson);
@@ -383,8 +409,35 @@ assertTrue(
     count($afterRemoveList) === 4 && !in_array($decodedPhotos[0], $afterRemoveList, true),
     'PhotoUploader::processBusinessPhotos removes checked photos accurately'
 );
+
+// Negative image upload tests (#171): corrupt bytes, tiny <10px image, and oversized >8MB payload must all be rejected cleanly
+$corruptTempFile = sys_get_temp_dir() . '/bbiz_corrupt_' . getmypid() . '.jpg';
+file_put_contents($corruptTempFile, "NOT_A_VALID_JPEG_BINARY_HEADER_PAYLOAD_1234567890");
+$tinyIm = imagecreatetruecolor(4, 4);
+ob_start();
+imagepng($tinyIm);
+$tinyPngBytes = (string)ob_get_clean();
+imagedestroy($tinyIm);
+
+$rejectedCorruptJson = PhotoUploader::processBusinessPhotos(
+    null,
+    [],
+    [
+        'tmp_name' => [$corruptTempFile, $corruptTempFile],
+        'error' => [UPLOAD_ERR_OK, UPLOAD_ERR_OK],
+        'size' => [filesize($corruptTempFile), PhotoUploader::MAX_FILE_BYTES + 1024],
+    ],
+    null
+);
+assertTrue(
+    PhotoUploader::decodePhotosJson($rejectedCorruptJson) === [] &&
+    PhotoUploader::sanitizeAndSaveImageBytes("corrupt_non_image_bytes") === null &&
+    PhotoUploader::sanitizeAndSaveImageBytes($tinyPngBytes) === null,
+    'PhotoUploader rejects corrupt non-image bytes, <10px images, and >8MB oversized uploads (#171)'
+);
+@unlink($corruptTempFile);
 foreach ($decodedPhotos as $relUrl) {
-    $fPath = dirname(__DIR__) . '/public' . $relUrl;
+    $fPath = $unitTempUploadsRoot . $relUrl;
     if (is_file($fPath)) {
         @unlink($fPath);
     }
@@ -445,7 +498,7 @@ assertTrue(
     'privacy.php contains zero <code> tags, SQL commands, or cryptographic jargon (#111)'
 );
 assertTrue(
-    !str_contains($takedownHtml, '<code>') && !str_contains($takedownHtml, 'quarantined_dpa</code>'),
+    !str_contains($takedownHtml, '<code>') && !str_contains($takedownHtml, 'quarantined_dpa'),
     'takedown.php contains zero <code> tags or internal status identifiers (#111)'
 );
 
@@ -781,10 +834,18 @@ assertTrue(
 );
 
 // 34. Verify Tickets #147, #148, #149, #150: Pre-Prod Preview Sandbox (/admin/preprod) isolation, URL rewriter, dummy seeder & self-tests
+$preprodSandboxSqlite = sys_get_temp_dir() . '/bbiz_preprod_sbx_' . getmypid() . '.sqlite';
 putenv('BBIZ_BASE_PATH=/admin/preprod');
 putenv('APP_ENV=preprod');
+putenv('DB_DRIVER=sqlite');
+putenv('DB_SQLITE_PATH=' . $preprodSandboxSqlite);
 $_ENV['BBIZ_BASE_PATH'] = '/admin/preprod';
 $_ENV['APP_ENV'] = 'preprod';
+$_ENV['DB_DRIVER'] = 'sqlite';
+$_ENV['DB_SQLITE_PATH'] = $preprodSandboxSqlite;
+Database::resetConnection();
+$preprodPdo = Database::getConnection();
+
 assertTrue(
     \BusherianBiasharas\Services\PreprodSandbox::isPreprod() === true &&
     \BusherianBiasharas\Services\PreprodSandbox::basePath() === '/admin/preprod',
@@ -812,27 +873,40 @@ assertTrue(
     'PreprodSandbox signs and verifies 1-click Prod -> Pre-Prod handoff tokens and blocks forged signatures (#148)'
 );
 
-$dummyRes = \BusherianBiasharas\Services\PreprodSandbox::seedDummyListings($pdo);
+$dummyRes = \BusherianBiasharas\Services\PreprodSandbox::seedDummyListings($preprodPdo);
 assertTrue(
     $dummyRes['approved_added'] === 3 && $dummyRes['pending_added'] === 2,
     'PreprodSandbox::seedDummyListings seeds 3 approved + 2 pending dummy test businesses into SQLite (#149)'
 );
-$selfTests = \BusherianBiasharas\Services\PreprodSandbox::runSelfTests($pdo);
+$selfTests = \BusherianBiasharas\Services\PreprodSandbox::runSelfTests($preprodPdo);
 $allSelfPassed = count($selfTests) === 8 && count(array_filter($selfTests, static fn(array $r): bool => $r['passed'])) === 8;
 assertTrue(
     $allSelfPassed,
     'PreprodSandbox::runSelfTests passes all 8 Pre-Prod verification assertions (#149)'
 );
 $resetRes = \BusherianBiasharas\Services\PreprodSandbox::resetDatabaseToCleanSeed();
-$pdo = Database::getConnection();
 assertTrue(
     $resetRes['approved_count'] === 12,
     'PreprodSandbox::resetDatabaseToCleanSeed restores pristine 12-business seed database (#149)'
 );
+@unlink($preprodSandboxSqlite);
+
+// Restore primary test driver (SQLite or MySQL 8.0) cleanly
 putenv('BBIZ_BASE_PATH');
 putenv('APP_ENV=testing');
+putenv('DB_DRIVER=' . $initialDriver);
 unset($_ENV['BBIZ_BASE_PATH']);
 $_ENV['APP_ENV'] = 'testing';
+$_ENV['DB_DRIVER'] = $initialDriver;
+if ($initialDriver === 'sqlite') {
+    putenv('DB_SQLITE_PATH=' . $unitTempSqlite);
+    $_ENV['DB_SQLITE_PATH'] = $unitTempSqlite;
+} else {
+    putenv('DB_SQLITE_PATH');
+    unset($_ENV['DB_SQLITE_PATH']);
+}
+Database::resetConnection();
+$pdo = Database::getConnection();
 
 // 35. Verify Tickets #151, #152, #153, #154, #155: Password-First Owner Sign-In, 6-Digit OTP Setup/Reset, Masked Email Hints & WhatsApp Access Link
 assertTrue(
@@ -1045,13 +1119,460 @@ VettingPurger::deleteBusiness($pdo, $pendingSelfBizId);
 VettingPurger::deleteBusiness($pdo, $critVictimBizId);
 VettingPurger::deleteBusiness($pdo, $critUnclaimedBizId);
 
-@unlink(getenv('DB_SQLITE_PATH'));
+// 37. Verify Adversarial HIGH-01..HIGH-06 (#164, #165, #166, #167, #168, #169)
 
+// 37a. HIGH-01 (#164): Legacy 'corporate_domain_match' links are revoked unless exact public email matches
+$corpTestBizId = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'High01 Corp Domain Audit Ltd',
+    'tagline' => 'Corporate domain link audit test',
+    'description' => 'Only exact public email or verified claim should retain ownership.',
+    'school_badge' => 'AHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254711000164',
+    'email_public' => 'founder@high01corp.co.ke',
+    'website_url' => 'https://www.high01corp.co.ke',
+]);
+$colleagueOwner = OwnerAuth::upsertOwner($pdo, 'random.intern@high01corp.co.ke', 'Random Intern');
+$exactPubOwner = OwnerAuth::upsertOwner($pdo, 'founder@high01corp.co.ke', 'Exact Founder');
+// Simulate legacy pre-#164 rows with linked_via = 'corporate_domain_match'
+OwnerAuth::linkOwnerToBusiness($pdo, (int)$colleagueOwner['id'], $corpTestBizId, 'corporate_domain_match');
+$pdo->prepare("UPDATE business_owner_links SET linked_via = 'corporate_domain_match' WHERE owner_id = :oid AND business_id = :bid")
+    ->execute([':oid' => (int)$exactPubOwner['id'], ':bid' => $corpTestBizId]);
 
+$revokedLegacyCount = OwnerAuth::revokeUnverifiedCorporateDomainLinks($pdo);
+$upgradedVia = (string)$pdo->query(
+    "SELECT linked_via FROM business_owner_links WHERE owner_id = " . (int)$exactPubOwner['id'] . " AND business_id = {$corpTestBizId}"
+)->fetchColumn();
+assertTrue(
+    $revokedLegacyCount >= 1 &&
+    !OwnerAuth::canOwnerEditBusiness($pdo, (int)$colleagueOwner['id'], $corpTestBizId) &&
+    OwnerAuth::canOwnerEditBusiness($pdo, (int)$exactPubOwner['id'], $corpTestBizId) &&
+    $upgradedVia === 'public_email_match',
+    'OwnerAuth::revokeUnverifiedCorporateDomainLinks revokes unverified corporate-domain links while preserving exact public_email_match (#164)'
+);
+VettingPurger::deleteBusiness($pdo, $corpTestBizId);
+
+// 37b. HIGH-02 (#165): Server-side revocable persistent sessions (`owner_sessions` + `auth_version`) & legacy cookie rejection
+$sessOwner = OwnerAuth::upsertOwner($pdo, 'sessions.high02@busherian-test.co.ke', 'Session Test Owner');
+OwnerAuth::setOwnerPassword($pdo, (int)$sessOwner['id'], 'InitialPass#165');
+
+// Establish Device A persistent cookie
+$_SESSION = [];
+$_COOKIE = [];
+OwnerAuth::establishOwnerSession($sessOwner, false, $pdo);
+$cookieDeviceA = (string)($_COOKIE['bbiz_owner_session'] ?? '');
+
+// Establish Device B persistent cookie
+$_SESSION = [];
+$_COOKIE = [];
+OwnerAuth::establishOwnerSession($sessOwner, false, $pdo);
+$cookieDeviceB = (string)($_COOKIE['bbiz_owner_session'] ?? '');
+
+assertTrue(
+    str_starts_with($cookieDeviceA, 'v2.') &&
+    str_starts_with($cookieDeviceB, 'v2.') &&
+    $cookieDeviceA !== $cookieDeviceB,
+    'OwnerAuth::establishOwnerSession issues unique v2.<selector>.<validator> server-backed tokens per device (#165)'
+);
+
+// Legacy stateless base64 HMAC cookie MUST be rejected
+$legacyPayload = base64_encode((string)json_encode([
+    'oid' => (int)$sessOwner['id'],
+    'em' => 'sessions.high02@busherian-test.co.ke',
+    'exp' => time() + 86400,
+]));
+$legacySig = hash_hmac('sha256', "owner_sess|{$legacyPayload}", (string)getenv('APP_HMAC_SECRET'));
+$_SESSION = [];
+$_COOKIE = ['bbiz_owner_session' => "{$legacyPayload}.{$legacySig}"];
+assertTrue(
+    OwnerAuth::getCurrentOwner($pdo) === null,
+    'OwnerAuth::getCurrentOwner rejects stateless v1 HMAC cookies not backed by owner_sessions (#165)'
+);
+
+// Both Device A and Device B cookies resolve when PHP $_SESSION is empty (simulating browser restart)
+$_SESSION = [];
+$_COOKIE = ['bbiz_owner_session' => $cookieDeviceA];
+$resolvedA = OwnerAuth::getCurrentOwner($pdo);
+$_SESSION = [];
+$_COOKIE = ['bbiz_owner_session' => $cookieDeviceB];
+$resolvedB = OwnerAuth::getCurrentOwner($pdo);
+assertTrue(
+    is_array($resolvedA) && (int)$resolvedA['id'] === (int)$sessOwner['id'] &&
+    is_array($resolvedB) && (int)$resolvedB['id'] === (int)$sessOwner['id'],
+    'Both active device sessions authenticate via owner_sessions selector/validator lookup (#165)'
+);
+
+// Changing password bumps auth_version and immediately revokes BOTH Device A and Device B tokens!
+OwnerAuth::setOwnerPassword($pdo, (int)$sessOwner['id'], 'RotatedPass#165');
+$_SESSION = [];
+$_COOKIE = ['bbiz_owner_session' => $cookieDeviceA];
+$afterPwChangeA = OwnerAuth::getCurrentOwner($pdo);
+$_SESSION = [
+    'bbiz_owner_id' => (int)$sessOwner['id'],
+    'bbiz_owner_email' => 'sessions.high02@busherian-test.co.ke',
+    'bbiz_owner_auth_version' => 1, // stale pre-rotation auth_version
+];
+$_COOKIE = ['bbiz_owner_session' => $cookieDeviceB];
+$afterPwChangeB = OwnerAuth::getCurrentOwner($pdo);
+assertTrue(
+    $afterPwChangeA === null && $afterPwChangeB === null,
+    'OwnerAuth::setOwnerPassword bumps auth_version and invalidates all pre-existing persistent cookies and stale PHP sessions (#165)'
+);
+
+// Sign Out All Devices (`revokeAllOwnerSessions`) invalidates active device sessions immediately
+$refreshedSessOwner = OwnerAuth::getOwnerById($pdo, (int)$sessOwner['id']);
+$_SESSION = [];
+$_COOKIE = [];
+OwnerAuth::establishOwnerSession($refreshedSessOwner, false, $pdo);
+$cookieDeviceC = (string)($_COOKIE['bbiz_owner_session'] ?? '');
+OwnerAuth::revokeAllOwnerSessions($pdo, (int)$sessOwner['id']);
+$_SESSION = [];
+$_COOKIE = ['bbiz_owner_session' => $cookieDeviceC];
+assertTrue(
+    OwnerAuth::getCurrentOwner($pdo) === null,
+    'OwnerAuth::revokeAllOwnerSessions revokes all active devices immediately (#165)'
+);
+$_SESSION = [];
+$_COOKIE = [];
+
+// 37c. HIGH-03 (#166): IPv4-mapped IPv6, NAT64, 6to4, Teredo, CGNAT, 192.0.0.0/24, 198.18.0.0/15, ULA & non-canonical numeric literals
+$nonPublicIps = [
+    '0.0.0.0',
+    '10.255.0.1',
+    '100.64.0.1',
+    '100.127.255.254',
+    '127.0.0.1',
+    '169.254.169.254',
+    '172.16.0.1',
+    '192.0.0.1',
+    '192.0.2.1',
+    '192.168.1.1',
+    '198.18.0.1',
+    '198.19.255.254',
+    '198.51.100.1',
+    '203.0.113.1',
+    '224.0.0.1',
+    '255.255.255.255',
+    '::',
+    '::1',
+    '::ffff:127.0.0.1',
+    '::ffff:169.254.169.254',
+    '::ffff:10.0.0.1',
+    '::ffff:100.64.0.1',
+    '::ffff:0:127.0.0.1',
+    '::127.0.0.1',
+    '64:ff9b::7f00:1',
+    '64:ff9b::a9fe:a9fe',
+    '64:ff9b:1::1',
+    '2002:7f00:0001::1',
+    '2002:a9fe:a9fe::1',
+    '2001:0000:4136:e378:8000:63bf:3fff:fdd2',
+    '2001:db8::1',
+    'fc00::1',
+    'fd12:3456:789a::1',
+    'fe80::1',
+    'fe80::1%eth0',
+    'ff02::1',
+];
+foreach ($nonPublicIps as $badIp) {
+    assertTrue(!WebsiteEnricher::isPublicIp($badIp), "WebsiteEnricher::isPublicIp rejects non-public/transition IP {$badIp} (#166)");
+}
+assertTrue(
+    WebsiteEnricher::isPublicIp('93.184.216.34') &&
+    WebsiteEnricher::isPublicIp('2606:4700:4700::1111') &&
+    WebsiteEnricher::isPublicIp('64:ff9b::5db8:d822'), // NAT64 wrapping public 93.184.216.34
+    'WebsiteEnricher::isPublicIp allows genuine globally routable IPv4 & IPv6 addresses (#166)'
+);
+
+$ssrfHigh03Urls = [
+    'http://[::ffff:127.0.0.1]/admin',
+    'http://[::ffff:169.254.169.254]/latest/meta-data/',
+    'http://[64:ff9b::7f00:1]/internal',
+    'http://[2002:7f00:0001::1]/',
+    'http://[fc00::1]/',
+    'http://[fe80::1%25eth0]/',
+    'http://100.64.0.1/',
+    'http://192.0.0.1/',
+    'http://198.18.0.1/',
+    'http://2130706433/',
+    'http://0177.0.0.1/',
+    'http://0x7f000001/',
+    'http://127.1/',
+];
+foreach ($ssrfHigh03Urls as $u166) {
+    $blocked166 = false;
+    try {
+        WebsiteEnricher::validateSafeUrlAndResolveIp($u166, static fn(string $h): array => ['93.184.216.34']);
+    } catch (InvalidArgumentException $e) {
+        $blocked166 = true;
+    }
+    assertTrue($blocked166, "SSRF Guard blocks transition/numeric/reserved URL {$u166} (#166)");
+}
+
+// Verify DNS AAAA resolving to ::ffff:127.0.0.1 is ALSO blocked, and IPv6 CURLOPT_RESOLVE brackets colons
+$dnsMappedBlocked = false;
+try {
+    WebsiteEnricher::validateSafeUrlAndResolveIp('https://rebind.example.com/', static fn(string $h): array => ['::ffff:127.0.0.1']);
+} catch (InvalidArgumentException $e) {
+    $dnsMappedBlocked = true;
+}
+assertTrue(
+    $dnsMappedBlocked &&
+    WebsiteEnricher::formatCurlResolveEntry('example.com', 443, '2606:4700:4700::1111') === 'example.com:443:[2606:4700:4700::1111]' &&
+    WebsiteEnricher::formatCurlResolveEntry('example.com', 443, '93.184.216.34') === 'example.com:443:93.184.216.34',
+    'SSRF Guard blocks AAAA ::ffff:127.0.0.1 DNS rebinding and formats IPv6 CURLOPT_RESOLVE with brackets (#166)'
+);
+
+// 37d. HIGH-04 (#167): Zero alumni vetting PII in Mailer::notifyAdminNewSubmission & email_outbox + legacy scrubber
+$piiBizId = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'High04 Privacy Shield Clinic',
+    'tagline' => 'Testing zero vetting PII in email_outbox',
+    'description' => 'Email alerts must never include House, Year Left, or School Number.',
+    'school_badge' => 'AHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254711000167',
+    'status' => 'pending',
+]);
+$outboxAlertId = Mailer::notifyAdminNewSubmission(
+    $pdo,
+    ['id' => $piiBizId, 'name' => 'High04 Privacy Shield Clinic'],
+    [
+        'school_code' => 'AHS',
+        'house_name' => 'Livingstone',
+        'year_left' => 2005,
+        'school_number' => '7123',
+        'submitter_name' => 'Dr. Privacy Alumnus',
+        'submitter_email' => 'privacy.alumnus@test.co.ke',
+    ],
+    null
+);
+$outboxRow = $pdo->query("SELECT business_id, subject, body_html FROM email_outbox WHERE id = {$outboxAlertId}")->fetch();
+assertTrue(
+    is_array($outboxRow) &&
+    (int)$outboxRow['business_id'] === $piiBizId &&
+    !str_contains((string)$outboxRow['body_html'], 'Livingstone') &&
+    !str_contains((string)$outboxRow['body_html'], '2005') &&
+    !str_contains((string)$outboxRow['body_html'], '7123') &&
+    !str_contains((string)$outboxRow['body_html'], 'House:') &&
+    !str_contains((string)$outboxRow['body_html'], 'Year Left') &&
+    !str_contains((string)$outboxRow['body_html'], 'School Number'),
+    'Mailer::notifyAdminNewSubmission links business_id on email_outbox and omits House, Year Left & School Number (#167)'
+);
+
+// Simulate a legacy pre-#167 email_outbox row containing Temporary Vetting Credentials and scrub it
+$pdo->prepare("
+    INSERT INTO email_outbox (recipient_email, subject, body_html, status, attempts)
+    VALUES ('admin@test.co.ke', 'Legacy Alert', '<p>Temporary Vetting Credentials: House: Livingstone, Year Left: 2005, School Number: 7123</p>', 'simulated', 1)
+")->execute();
+$legacyOutboxId = (int)$pdo->lastInsertId();
+$scrubbedCount = Mailer::scrubLegacyVettingPiiFromOutbox($pdo);
+$scrubbedBody = (string)$pdo->query("SELECT body_html FROM email_outbox WHERE id = {$legacyOutboxId}")->fetchColumn();
+assertTrue(
+    $scrubbedCount >= 1 && !str_contains($scrubbedBody, 'Livingstone') && str_contains($scrubbedBody, 'REDACTED'),
+    'Mailer::scrubLegacyVettingPiiFromOutbox redacts historical vetting PII from email_outbox (#167)'
+);
+VettingPurger::deleteBusiness($pdo, $piiBizId);
+$afterDeleteOutboxCount = (int)$pdo->query("SELECT COUNT(*) FROM email_outbox WHERE id = {$outboxAlertId}")->fetchColumn();
+assertTrue(
+    $afterDeleteOutboxCount === 0,
+    'VettingPurger::deleteBusiness purges linked email_outbox rows for that business (#167)'
+);
+
+// 37e. HIGH-05 (#168): Authenticated takedown, single-use owner email token, third-party queue, vetting preservation & reversible quarantine
+$tdLiveBizId = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'High05 Resilient Logistics Ltd',
+    'tagline' => 'Protected against anonymous takedown abuse',
+    'description' => 'Live listing must stay online during unverified third-party takedown requests.',
+    'school_badge' => 'AHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254711000168',
+    'email_public' => 'owner@resilient168.co.ke',
+]);
+
+// 1) Unauthenticated third party submits takedown -> status stays 'approved', request queued as 'pending_review'
+$thirdPartyReq = VettingPurger::submitTakedownRequest(
+    $pdo,
+    $tdLiveBizId,
+    'Competitor Saboteur',
+    'saboteur@competitor.example',
+    'Take down my competitor before conference!',
+    '198.51.100.88',
+    false,
+    false
+);
+$liveStatusAfter3p = (string)$pdo->query("SELECT status FROM businesses WHERE id = {$tdLiveBizId}")->fetchColumn();
+assertTrue(
+    $thirdPartyReq['status'] === 'pending_review' &&
+    $thirdPartyReq['raw_token'] === null &&
+    $liveStatusAfter3p === 'approved',
+    'Unauthenticated third-party takedown queues pending_review without hiding live business (#168)'
+);
+assertTrue(
+    VettingPurger::resolveTakedownRequestByAdmin($pdo, $thirdPartyReq['request_id'], 'dismiss') === true,
+    'Admin can dismiss unverified third-party takedown request cleanly (#168)'
+);
+
+// 2) Unauthenticated request matching designated owner email -> issues single-use confirmation token; live until confirmed
+$ownerEmailReq = VettingPurger::submitTakedownRequest(
+    $pdo,
+    $tdLiveBizId,
+    'Designated Owner',
+    'owner@resilient168.co.ke',
+    'Temporarily pausing listing while updating phone line.',
+    '198.51.100.89',
+    false,
+    true
+);
+$statusBeforeConfirm = (string)$pdo->query("SELECT status FROM businesses WHERE id = {$tdLiveBizId}")->fetchColumn();
+assertTrue(
+    $ownerEmailReq['status'] === 'awaiting_owner_email_confirm' &&
+    is_string($ownerEmailReq['raw_token']) &&
+    strlen($ownerEmailReq['raw_token']) === 48 &&
+    $statusBeforeConfirm === 'approved',
+    'Unauthenticated designated-owner email takedown awaits email token confirmation before pausing live listing (#168)'
+);
+
+$confirmedReq = VettingPurger::confirmOwnerTakedownByToken($pdo, (string)$ownerEmailReq['raw_token']);
+$replayConfirm = VettingPurger::confirmOwnerTakedownByToken($pdo, (string)$ownerEmailReq['raw_token']);
+$statusAfterConfirm = (string)$pdo->query("SELECT status FROM businesses WHERE id = {$tdLiveBizId}")->fetchColumn();
+assertTrue(
+    is_array($confirmedReq) &&
+    $replayConfirm === null &&
+    $statusAfterConfirm === 'quarantined_dpa',
+    'VettingPurger::confirmOwnerTakedownByToken quarantines listing once and blocks token replay (#168)'
+);
+
+$restoredApproved = VettingPurger::restoreQuarantinedBusiness($pdo, $tdLiveBizId);
+$statusAfterRestore = (string)$pdo->query("SELECT status FROM businesses WHERE id = {$tdLiveBizId}")->fetchColumn();
+assertTrue(
+    $restoredApproved === 'approved' && $statusAfterRestore === 'approved',
+    'VettingPurger::restoreQuarantinedBusiness restores previously approved listing back to approved (#168)'
+);
+
+// 3) Quarantining a PENDING submission preserves business_vetting_queue and restores back to 'pending' (never skipping vetting!)
+$tdPendingBizId = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'High05 Pending Vetting Preserve Biz',
+    'tagline' => 'Pending vetting row must survive quarantine',
+    'description' => 'Never wipe business_vetting_queue during quarantine.',
+    'school_badge' => 'AGHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254722000168',
+    'status' => 'pending',
+]);
+$pdo->prepare("UPDATE businesses SET status = 'pending', verified_at = NULL WHERE id = :id")->execute([':id' => $tdPendingBizId]);
+$pdo->prepare("
+    INSERT INTO business_vetting_queue (business_id, school_code, house_name, year_left, school_number, submitter_name, submitter_email, submitter_phone)
+    VALUES (:bid, 'AGHS', 'Watson', 2012, '5501', 'Pending Submitter', 'pending168@test.co.ke', '+254722000168')
+")->execute([':bid' => $tdPendingBizId]);
+
+VettingPurger::quarantineBusinessDpa($pdo, $tdPendingBizId);
+VettingPurger::enforceRetentionCeilings($pdo, 30);
+$vettingPreservedCount = (int)$pdo->query("SELECT COUNT(*) FROM business_vetting_queue WHERE business_id = {$tdPendingBizId}")->fetchColumn();
+$restoredPending = VettingPurger::restoreQuarantinedBusiness($pdo, $tdPendingBizId);
+assertTrue(
+    $vettingPreservedCount === 1 && $restoredPending === 'pending',
+    'Quarantining a pending listing preserves business_vetting_queue across retention sweeps and restores to pending (#168)'
+);
+VettingPurger::deleteBusiness($pdo, $tdLiveBizId);
+VettingPurger::deleteBusiness($pdo, $tdPendingBizId);
+
+// 37f. HIGH-06 (#169): Production MySQL fail-closed (HTTP 503 + zero SQLite fallback) & zero sample seeding in production
+$forbiddenFallbackSqlite = sys_get_temp_dir() . '/bbiz_prod_forbidden_fallback_' . getmypid() . '.sqlite';
+@unlink($forbiddenFallbackSqlite);
+$prodFailClosedScript = <<<'PHP'
+<?php
+require_once $argv[1] . '/src/bootstrap.php';
+try {
+    \BusherianBiasharas\Config\Database::getConnection();
+    echo "UNEXPECTED_SUCCESS";
+    exit(2);
+} catch (\BusherianBiasharas\Config\DatabaseUnavailableException $e) {
+    echo "CAUGHT_DB_UNAVAILABLE:" . $e->getMessage();
+    exit(0);
+}
+PHP;
+$tmpScript169 = sys_get_temp_dir() . '/bbiz_test_169_' . getmypid() . '.php';
+file_put_contents($tmpScript169, $prodFailClosedScript);
+
+$cmd169 = sprintf(
+    'APP_ENV=production DB_DRIVER=mysql DB_DRIVER_FALLBACK=sqlite DB_HOST=127.0.0.1 DB_PORT=1 DB_NAME=nonexistent_169 DB_USER=nonexistent_u169 DB_PASS=invalid_p169 DB_SQLITE_PATH=%s APP_HMAC_SECRET=%s IP_HASH_SECRET=%s CSRF_SECRET=%s php %s %s 2>/dev/null',
+    escapeshellarg($forbiddenFallbackSqlite),
+    escapeshellarg((string)getenv('APP_HMAC_SECRET')),
+    escapeshellarg((string)getenv('IP_HASH_SECRET')),
+    escapeshellarg((string)getenv('CSRF_SECRET')),
+    escapeshellarg($tmpScript169),
+    escapeshellarg(dirname(__DIR__))
+);
+$out169 = [];
+$rc169 = 0;
+exec($cmd169, $out169, $rc169);
+$joined169 = implode("\n", $out169);
+assertTrue(
+    $rc169 === 0 &&
+    str_contains($joined169, 'CAUGHT_DB_UNAVAILABLE:') &&
+    !is_file($forbiddenFallbackSqlite),
+    'APP_ENV=production with unreachable MySQL throws DatabaseUnavailableException and NEVER creates a fallback SQLite DB even if DB_DRIVER_FALLBACK=sqlite (#169)'
+);
+
+// Also verify empty SQLite DB in APP_ENV=production seeds taxonomy categories (>=100) and ZERO sample businesses!
+$prodEmptySqlite = sys_get_temp_dir() . '/bbiz_prod_empty_seed_' . getmypid() . '.sqlite';
+@unlink($prodEmptySqlite);
+$prodSeedScript = <<<'PHP'
+<?php
+require_once $argv[1] . '/src/bootstrap.php';
+$pdo = \BusherianBiasharas\Config\Database::getConnection();
+$cats = (int)$pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
+$biz  = (int)$pdo->query("SELECT COUNT(*) FROM businesses")->fetchColumn();
+echo "CATS={$cats};BIZ={$biz}";
+PHP;
+file_put_contents($tmpScript169, $prodSeedScript);
+$cmdSeed169 = sprintf(
+    'APP_ENV=production DB_DRIVER=sqlite DB_SQLITE_PATH=%s APP_HMAC_SECRET=%s IP_HASH_SECRET=%s CSRF_SECRET=%s php %s %s 2>/dev/null',
+    escapeshellarg($prodEmptySqlite),
+    escapeshellarg((string)getenv('APP_HMAC_SECRET')),
+    escapeshellarg((string)getenv('IP_HASH_SECRET')),
+    escapeshellarg((string)getenv('CSRF_SECRET')),
+    escapeshellarg($tmpScript169),
+    escapeshellarg(dirname(__DIR__))
+);
+$outSeed169 = [];
+$rcSeed169 = 0;
+exec($cmdSeed169, $outSeed169, $rcSeed169);
+$joinedSeed169 = implode("\n", $outSeed169);
+assertTrue(
+    $rcSeed169 === 0 &&
+    str_contains($joinedSeed169, ';BIZ=0') &&
+    preg_match('/CATS=(\d+);BIZ=0/', $joinedSeed169, $mSeed) === 1 &&
+    (int)$mSeed[1] >= 100,
+    'Empty database in APP_ENV=production seeds taxonomy categories while seeding ZERO sample businesses (#169)'
+);
+@unlink($tmpScript169);
+@unlink($prodEmptySqlite);
+
+if ($initialDriver === 'sqlite') {
+    @unlink($unitTempSqlite);
+}
+@rmdir($unitTempUploadsRoot . '/uploads/businesses');
+@rmdir($unitTempUploadsRoot . '/uploads');
+@rmdir($unitTempUploadsRoot);
 
 if ($failed > 0) {
     exit(1);
 }
-echo "
-All {$passed} PHP unit assertions passed!
-";
+echo "\nAll {$passed} PHP unit assertions passed!\n";

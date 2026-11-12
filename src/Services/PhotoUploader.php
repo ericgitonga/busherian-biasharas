@@ -186,4 +186,25 @@ final class PhotoUploader
         }
         return $projectRoot . '/public';
     }
+
+    /**
+     * Delete sanitized photo files belonging to a deleted business listing.
+     */
+    public static function deleteBusinessPhotoFiles(?string $photosJson): void
+    {
+        $urls = self::decodePhotosJson($photosJson);
+        if (empty($urls)) {
+            return;
+        }
+        $targetDir = self::resolvePublicWebRoot() . '/uploads/businesses';
+        foreach ($urls as $relUrl) {
+            $base = basename($relUrl);
+            if (preg_match('/^bbiz_[A-Za-z0-9_]+\.(?:webp|jpg|jpeg|png)$/', $base)) {
+                $fullPath = $targetDir . '/' . $base;
+                if (is_file($fullPath)) {
+                    @unlink($fullPath);
+                }
+            }
+        }
+    }
 }

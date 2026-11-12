@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS businesses (
     logo_path VARCHAR(255) NULL,
     photos_json TEXT NULL,
     status ENUM('pending', 'approved', 'rejected', 'quarantined_dpa') NOT NULL DEFAULT 'pending',
+    quarantine_prev_status VARCHAR(24) NULL,
     verified_at TIMESTAMP NULL,
     last_confirmed_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -120,16 +121,18 @@ CREATE TABLE IF NOT EXISTS rate_limits (
     INDEX idx_ip_action_time (ip_hmac, action_type, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Durable Outbound Email Outbox
+-- Durable Outbound Email Outbox (Strictly zero alumni vetting PII; linked optionally to business_id)
 CREATE TABLE IF NOT EXISTS email_outbox (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    business_id INT UNSIGNED NULL,
     recipient_email VARCHAR(190) NOT NULL,
     subject VARCHAR(255) NOT NULL,
     body_html MEDIUMTEXT NOT NULL,
     status ENUM('queued', 'sent', 'simulated', 'failed') NOT NULL DEFAULT 'queued',
     attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    sent_at TIMESTAMP NULL
+    sent_at TIMESTAMP NULL,
+    INDEX idx_outbox_business (business_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Anonymous Click Attribution Counters
@@ -164,9 +167,47 @@ CREATE TABLE IF NOT EXISTS business_owners (
     phone VARCHAR(40) NULL,
     google_sub VARCHAR(120) NULL,
     password_hash VARCHAR(255) NULL,
+    auth_version INT UNSIGNED NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_owner_google (google_sub)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Server-Side Revocable Owner Persistent Sessions (#165)
+CREATE TABLE IF NOT EXISTS owner_sessions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    owner_id INT UNSIGNED NOT NULL,
+    selector VARCHAR(32) NOT NULL UNIQUE,
+    validator_hash CHAR(64) NOT NULL,
+    auth_version INT UNSIGNED NOT NULL DEFAULT 1,
+    ip_hmac CHAR(64) NULL,
+    user_agent_summary VARCHAR(255) NULL,
+    expires_at DATETIME NOT NULL,
+    revoked_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_owner_sess_owner (owner_id, revoked_at),
+    INDEX idx_owner_sess_exp (expires_at),
+    CONSTRAINT fk_owner_sess_owner FOREIGN KEY (owner_id) REFERENCES business_owners(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Auditable Takedown & Erasure Review Queue (#168)
+CREATE TABLE IF NOT EXISTS takedown_requests (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    business_id INT UNSIGNED NOT NULL,
+    requester_name VARCHAR(140) NOT NULL,
+    requester_email VARCHAR(190) NOT NULL,
+    reason TEXT NOT NULL,
+    verification_token_hash CHAR(64) NULL,
+    token_expires_at DATETIME NULL,
+    verified_at DATETIME NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending_review',
+    ip_hmac CHAR(64) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at DATETIME NULL,
+    INDEX idx_takedown_biz_status (business_id, status),
+    INDEX idx_takedown_token (verification_token_hash),
+    CONSTRAINT fk_takedown_biz FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Many-to-Many Owner <-> Business Links (Supports single owner with multiple businesses & co-owners)

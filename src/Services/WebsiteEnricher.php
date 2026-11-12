@@ -49,7 +49,11 @@ final class WebsiteEnricher
             throw new InvalidArgumentException('Only standard web ports (80 and 443) are permitted.');
         }
 
-        $host = strtolower(trim((string)$parts['host'], '[]'));
+        $rawHost = trim((string)$parts['host'], '[]');
+        if (str_contains($rawHost, '%')) {
+            throw new InvalidArgumentException('SSRF Guard: IPv6 zone identifiers are forbidden.');
+        }
+        $host = strtolower($rawHost);
         $blockedHosts = ['localhost', 'localhost.localdomain', 'ip6-localhost', 'ip6-loopback', 'metadata.google.internal', 'metadata'];
         if (in_array($host, $blockedHosts, true) ||
             str_ends_with($host, '.local') ||
@@ -59,12 +63,20 @@ final class WebsiteEnricher
             throw new InvalidArgumentException('SSRF Guard: Local or internal hostnames are forbidden.');
         }
 
-        // If host is already an IP literal, validate it directly
+        // Reject shorthand, decimal-integer, octal, or hex numeric IPv4 notations (e.g. 2130706433, 0177.0.0.1, 0x7f000001, 127.1)
+        if (!filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) &&
+            !str_contains($host, ':') &&
+            preg_match('/^(?:0x[0-9a-f]+|\d+)(?:\.(?:0x[0-9a-f]+|\d+)){0,3}$/i', $host)) {
+            throw new InvalidArgumentException('SSRF Guard: Non-canonical numeric IP literals are forbidden.');
+        }
+
+        // If host is already an IP literal, validate & canonicalize it directly
         if (filter_var($host, FILTER_VALIDATE_IP)) {
             if (!self::isPublicIp($host)) {
                 throw new InvalidArgumentException('SSRF Guard: Private, loopback, link-local, or reserved IP addresses are forbidden.');
             }
-            return ['url' => $url, 'host' => $host, 'port' => $port, 'ip' => $host];
+            $canonIp = self::canonicalizeIp($host) ?? $host;
+            return ['url' => $url, 'host' => $host, 'port' => $port, 'ip' => $canonIp];
         }
 
         // Resolve DNS records and verify EVERY resolved IP is globally routable
@@ -73,27 +85,195 @@ final class WebsiteEnricher
             throw new InvalidArgumentException('Could not resolve website domain DNS.');
         }
 
+        $verifiedIps = [];
         foreach ($ips as $ip) {
-            if (!self::isPublicIp($ip)) {
+            $ipStr = trim((string)$ip, '[]');
+            if (!self::isPublicIp($ipStr)) {
                 throw new InvalidArgumentException('SSRF Guard: Domain resolves to a private, loopback, or reserved IP address.');
             }
+            $verifiedIps[] = self::canonicalizeIp($ipStr) ?? $ipStr;
         }
 
         return [
             'url' => $url,
             'host' => $host,
             'port' => $port,
-            'ip' => (string)$ips[0],
+            'ip' => (string)$verifiedIps[0],
         ];
     }
 
+    /**
+     * Format host:port:ip entry for CURLOPT_RESOLVE, bracketing IPv6 addresses so libcurl parses colons safely (#166).
+     */
+    public static function formatCurlResolveEntry(string $host, int $port, string $ip): string
+    {
+        $cleanHost = trim($host, '[]');
+        $cleanIp = trim($ip, '[]');
+        $formattedHost = str_contains($cleanHost, ':') ? "[{$cleanHost}]" : $cleanHost;
+        $formattedIp = str_contains($cleanIp, ':') ? "[{$cleanIp}]" : $cleanIp;
+        return "{$formattedHost}:{$port}:{$formattedIp}";
+    }
+
+    /**
+     * Canonicalize an IP literal (unwrapping IPv4-mapped IPv6 ::ffff:0:0/96 to dotted IPv4 when applicable).
+     */
+    public static function canonicalizeIp(string $ip): ?string
+    {
+        $clean = trim($ip, '[]');
+        if ($clean === '' || str_contains($clean, '%')) {
+            return null;
+        }
+        $bin = @inet_pton($clean);
+        if ($bin === false) {
+            return null;
+        }
+        if (strlen($bin) === 16 && substr($bin, 0, 12) === "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff") {
+            $v4 = @inet_ntop(substr($bin, 12, 4));
+            return is_string($v4) ? $v4 : null;
+        }
+        $canon = @inet_ntop($bin);
+        return is_string($canon) ? $canon : null;
+    }
+
+    /**
+     * Strict IANA Special-Purpose Address Registry check (#166):
+     * Unwraps IPv4-mapped (::ffff:0:0/96), IPv4-translated (::ffff:0:0:0/96), IPv4-compatible (::/96),
+     * NAT64 (64:ff9b::/96, 64:ff9b:1::/48), 6to4 (2002::/16), and Teredo (2001::/32) addresses,
+     * and blocks all non-globally-routable IPv4 & IPv6 CIDR ranges including CGNAT (100.64.0.0/10),
+     * IETF protocol assignments (192.0.0.0/24), benchmarking (198.18.0.0/15), ULA (fc00::/7), link-local,
+     * loopback, unspecified, documentation, and multicast ranges.
+     */
     public static function isPublicIp(string $ip): bool
     {
-        return filter_var(
-            $ip,
-            FILTER_VALIDATE_IP,
-            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
-        ) !== false;
+        $clean = trim($ip, '[]');
+        if ($clean === '' || str_contains($clean, '%')) {
+            return false;
+        }
+        $bin = @inet_pton($clean);
+        if ($bin === false) {
+            return false;
+        }
+
+        if (strlen($bin) === 4) {
+            return self::isPublicIpv4Bin($bin);
+        }
+
+        if (strlen($bin) === 16) {
+            return self::isPublicIpv6Bin($bin);
+        }
+
+        return false;
+    }
+
+    private static function isPublicIpv4Bin(string $bin): bool
+    {
+        if (strlen($bin) !== 4) {
+            return false;
+        }
+        $blockedV4Cidrs = [
+            ['0.0.0.0', 8],          // "This network" / unspecified
+            ['10.0.0.0', 8],         // RFC 1918 Private-Use
+            ['100.64.0.0', 10],      // RFC 6598 Shared Address Space (CGNAT)
+            ['127.0.0.0', 8],        // Loopback
+            ['169.254.0.0', 16],     // Link-Local & Cloud Metadata (169.254.169.254)
+            ['172.16.0.0', 12],      // RFC 1918 Private-Use
+            ['192.0.0.0', 24],       // RFC 6890 IETF Protocol Assignments
+            ['192.0.2.0', 24],       // RFC 5737 TEST-NET-1
+            ['192.88.99.0', 24],     // Deprecated 6to4 Relay Anycast
+            ['192.168.0.0', 16],     // RFC 1918 Private-Use
+            ['198.18.0.0', 15],      // RFC 2544 Benchmarking
+            ['198.51.100.0', 24],    // RFC 5737 TEST-NET-2
+            ['203.0.113.0', 24],     // RFC 5737 TEST-NET-3
+            ['224.0.0.0', 4],        // Multicast
+            ['240.0.0.0', 4],        // Reserved for Future Use & Limited Broadcast (255.255.255.255)
+        ];
+        foreach ($blockedV4Cidrs as [$netStr, $prefixLen]) {
+            $netBin = @inet_pton($netStr);
+            if ($netBin !== false && self::binMatchesPrefix($bin, $netBin, $prefixLen)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static function isPublicIpv6Bin(string $bin): bool
+    {
+        if (strlen($bin) !== 16) {
+            return false;
+        }
+
+        // 1. IPv4-mapped IPv6 (::ffff:0:0/96) -> unwrap embedded IPv4 and reject non-public ranges
+        if (substr($bin, 0, 12) === "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff") {
+            return self::isPublicIpv4Bin(substr($bin, 12, 4));
+        }
+
+        // 2. IPv4-translated SIIT (::ffff:0:0:0/96) -> unwrap embedded IPv4
+        if (substr($bin, 0, 12) === "\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x00\x00") {
+            return self::isPublicIpv4Bin(substr($bin, 12, 4));
+        }
+
+        // 3. Deprecated IPv4-compatible IPv6 (::/96), including ::/128 (unspecified) and ::1/128 (loopback)
+        if (substr($bin, 0, 12) === "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00") {
+            return false;
+        }
+
+        // 4. Local-Use IPv4/IPv6 Translation (64:ff9b:1::/48, RFC 8215) -> always non-global
+        $nat64Local = @inet_pton('64:ff9b:1::');
+        if ($nat64Local !== false && self::binMatchesPrefix($bin, $nat64Local, 48)) {
+            return false;
+        }
+
+        // 5. Well-Known NAT64 Prefix (64:ff9b::/96, RFC 6052) -> unwrap embedded IPv4 in bytes 12..15
+        $nat64WellKnown = @inet_pton('64:ff9b::');
+        if ($nat64WellKnown !== false && self::binMatchesPrefix($bin, $nat64WellKnown, 96)) {
+            return self::isPublicIpv4Bin(substr($bin, 12, 4));
+        }
+
+        // 6. 6to4 Transition Prefix (2002::/16, deprecated anycast RFC 7526): reject outright (also embeds IPv4 in bytes 2..5)
+        if (substr($bin, 0, 2) === "\x20\x02") {
+            return false;
+        }
+
+        // 7. Teredo Tunneling (2001:0000::/32, RFC 4380) & IETF Protocol Assignments (2001::/23): reject outright
+        $ietf2001 = @inet_pton('2001::');
+        if ($ietf2001 !== false && self::binMatchesPrefix($bin, $ietf2001, 23)) {
+            return false;
+        }
+
+        // 8. Remaining IANA IPv6 Special-Purpose Ranges
+        $blockedV6Cidrs = [
+            ['100::', 64],           // Discard-Only (RFC 6666)
+            ['2001:db8::', 32],      // Documentation (RFC 3849)
+            ['fc00::', 7],           // Unique Local Addresses (ULA, fc00:: - fdff::)
+            ['fe80::', 10],          // Link-Local Unicast
+            ['fec0::', 10],          // Deprecated Site-Local
+            ['ff00::', 8],           // Multicast
+        ];
+        foreach ($blockedV6Cidrs as [$netStr, $prefixLen]) {
+            $netBin = @inet_pton($netStr);
+            if ($netBin !== false && self::binMatchesPrefix($bin, $netBin, $prefixLen)) {
+                return false;
+            }
+        }
+
+        // 9. Defense-in-depth: require Global Unicast allocation (2000::/3 -> top 3 bits 001)
+        return ((ord($bin[0]) & 0xE0) === 0x20);
+    }
+
+    private static function binMatchesPrefix(string $ipBin, string $netBin, int $prefixBits): bool
+    {
+        $fullBytes = intdiv($prefixBits, 8);
+        $remBits = $prefixBits % 8;
+        if ($fullBytes > 0 && substr($ipBin, 0, $fullBytes) !== substr($netBin, 0, $fullBytes)) {
+            return false;
+        }
+        if ($remBits > 0) {
+            $mask = (0xFF << (8 - $remBits)) & 0xFF;
+            if ((ord($ipBin[$fullBytes]) & $mask) !== (ord($netBin[$fullBytes]) & $mask)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static function resolveHostIps(string $host): array
@@ -150,7 +330,7 @@ final class WebsiteEnricher
                     'Accept-Language: en-KE,en;q=0.9',
                 ],
                 // Pin DNS resolution to the verified public IP to defeat DNS rebinding
-                CURLOPT_RESOLVE => ["{$validated['host']}:{$validated['port']}:{$validated['ip']}"],
+                CURLOPT_RESOLVE => [self::formatCurlResolveEntry($validated['host'], $validated['port'], $validated['ip'])],
                 CURLOPT_WRITEFUNCTION => static function ($ch, string $chunk) use (&$buffer): int {
                     if (strlen($buffer) + strlen($chunk) > self::MAX_BYTES) {
                         $remaining = self::MAX_BYTES - strlen($buffer);

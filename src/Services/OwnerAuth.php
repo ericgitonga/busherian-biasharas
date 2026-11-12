@@ -21,6 +21,38 @@ final class OwnerAuth
         $bp = PreprodSandbox::basePath();
         return $bp !== '' ? $bp : '/';
     }
+
+    private static function isHttpsRequest(): bool
+    {
+        return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    }
+
+    /**
+     * Centralized secure PHP session bootstrap (#165):
+     * Enforces session.use_strict_mode=1, session.use_only_cookies=1, HttpOnly, SameSite=Lax,
+     * Secure flag under HTTPS/reverse-proxy TLS, and isolated preprod session cookie name/path.
+     */
+    public static function startSecureSession(): void
+    {
+        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            @ini_set('session.use_strict_mode', '1');
+            @ini_set('session.use_only_cookies', '1');
+            $basePath = PreprodSandbox::basePath();
+            if ($basePath !== '') {
+                session_name('BBIZ_PREPROD_SESS');
+            }
+            session_set_cookie_params([
+                'lifetime' => 0,
+                'path' => $basePath !== '' ? $basePath : '/',
+                'secure' => self::isHttpsRequest(),
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
+            @session_start();
+        }
+    }
+
     private const SESSION_TTL_SECONDS = 2592000; // 30 days persistent login
     private const MAGIC_LINK_TTL_SECONDS = 1800; // 30 minutes
     private const CLAIM_LINK_TTL_SECONDS = 2592000; // 30 days for DM claim links
@@ -129,8 +161,8 @@ final class OwnerAuth
             ]);
         } else {
             $pdo->prepare("
-                INSERT INTO business_owners (email, full_name, phone, google_sub, created_at, last_login_at)
-                VALUES (:em, :nm, :ph, :sub, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                INSERT INTO business_owners (email, full_name, phone, google_sub, auth_version, created_at, last_login_at)
+                VALUES (:em, :nm, :ph, :sub, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ")->execute([
                 ':em' => $normEmail,
                 ':nm' => trim((string)($fullName ?? '')) ?: null,
@@ -140,7 +172,7 @@ final class OwnerAuth
             $ownerId = (int)$pdo->lastInsertId();
         }
 
-        // Automatically link any pre-populated or submitted businesses matching this owner's email or corporate domain
+        // Automatically link only exact-email-matched businesses (#164: never corporate domain alone)
         self::autoLinkMatchingBusinesses($pdo, $ownerId, $normEmail);
 
         $out = $pdo->prepare("SELECT * FROM business_owners WHERE id = :id");
@@ -185,21 +217,22 @@ final class OwnerAuth
     }
 
     /**
-     * Post-Registration Auto-Linker:
-     * Links any business where:
-     * 1. LOWER(businesses.owner_email) === LOWER($email) (Admin pre-assigned or submitter email)
-     * 2. LOWER(businesses.email_public) === LOWER($email) (e.g. bustanibistro@gmail.com)
-     * 3. The owner's email uses a custom corporate domain (not gmail/yahoo/etc.) that matches the
-     *    website_url or email_public domain of the business (e.g. @branfoot.com, @prescott.co.ke, @sasasignal.com).
+     * Post-Registration Auto-Linker (#164):
+     * Links a business ONLY when verified mailbox ownership matches an explicit full address on the listing:
+     * 1. LOWER(businesses.owner_email) === LOWER($email) (Admin pre-assigned or verified submitter email)
+     * 2. LOWER(businesses.email_public) === LOWER($email) (exact public contact email on the listing)
+     *
+     * Corporate website/email domain similarity alone NEVER grants write/delete privileges (#164).
      */
     public static function autoLinkMatchingBusinesses(PDO $pdo, int $ownerId, string $email): array
     {
         $normEmail = strtolower(trim($email));
-        $emailDomain = self::extractEmailDomain($normEmail);
-        $isCorporateDomain = ($emailDomain !== null && !self::isFreemailDomain($emailDomain));
+        if ($ownerId <= 0 || $normEmail === '' || !filter_var($normEmail, FILTER_VALIDATE_EMAIL)) {
+            return [];
+        }
 
         $rows = $pdo->query("
-            SELECT id, name, email_public, owner_email, website_url
+            SELECT id, email_public, owner_email
             FROM businesses
             WHERE status IN ('approved', 'pending')
         ")->fetchAll();
@@ -209,19 +242,12 @@ final class OwnerAuth
             $bid = (int)$row['id'];
             $pubEmail = strtolower(trim((string)($row['email_public'] ?? '')));
             $ownEmail = strtolower(trim((string)($row['owner_email'] ?? '')));
-            $webDomain = self::extractWebsiteDomain($row['website_url'] ?? null);
-            $pubEmailDomain = $pubEmail !== '' ? self::extractEmailDomain($pubEmail) : null;
 
             $via = null;
             if ($ownEmail !== '' && $ownEmail === $normEmail) {
                 $via = 'admin_or_submitter_email';
             } elseif ($pubEmail !== '' && $pubEmail === $normEmail) {
                 $via = 'public_email_match';
-            } elseif ($isCorporateDomain && (
-                ($webDomain !== null && $webDomain === $emailDomain) ||
-                ($pubEmailDomain !== null && !self::isFreemailDomain($pubEmailDomain) && $pubEmailDomain === $emailDomain)
-            )) {
-                $via = 'corporate_domain_match';
             }
 
             if ($via !== null) {
@@ -231,6 +257,115 @@ final class OwnerAuth
         }
 
         return $linkedIds;
+    }
+
+    /**
+     * Return non-authoritative claim suggestions where a corporate email domain matches a listing's
+     * website_url or non-freemail email_public domain, WITHOUT creating business_owner_links (#164).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public static function getCorporateDomainClaimSuggestions(PDO $pdo, string $email, int $excludeOwnerId = 0): array
+    {
+        $normEmail = strtolower(trim($email));
+        $emailDomain = self::extractEmailDomain($normEmail);
+        if ($emailDomain === null || self::isFreemailDomain($emailDomain)) {
+            return [];
+        }
+
+        $alreadyLinked = [];
+        if ($excludeOwnerId > 0) {
+            $lStmt = $pdo->prepare("SELECT business_id FROM business_owner_links WHERE owner_id = :oid");
+            $lStmt->execute([':oid' => $excludeOwnerId]);
+            foreach ($lStmt->fetchAll() as $lr) {
+                $alreadyLinked[(int)$lr['business_id']] = true;
+            }
+        }
+
+        $rows = $pdo->query("
+            SELECT id, business_number, name, slug, school_badge, email_public, owner_email, website_url
+            FROM businesses
+            WHERE status IN ('approved', 'pending')
+            ORDER BY business_number ASC, id ASC
+        ")->fetchAll();
+
+        $suggestions = [];
+        foreach ($rows as $row) {
+            $bid = (int)$row['id'];
+            if (isset($alreadyLinked[$bid])) {
+                continue;
+            }
+            $pubEmail = strtolower(trim((string)($row['email_public'] ?? '')));
+            $ownEmail = strtolower(trim((string)($row['owner_email'] ?? '')));
+            if (($ownEmail !== '' && $ownEmail === $normEmail) || ($pubEmail !== '' && $pubEmail === $normEmail)) {
+                continue;
+            }
+
+            $webDomain = self::extractWebsiteDomain($row['website_url'] ?? null);
+            $pubEmailDomain = $pubEmail !== '' ? self::extractEmailDomain($pubEmail) : null;
+            if (
+                ($webDomain !== null && $webDomain === $emailDomain) ||
+                ($pubEmailDomain !== null && !self::isFreemailDomain($pubEmailDomain) && $pubEmailDomain === $emailDomain)
+            ) {
+                $suggestions[] = [
+                    'id' => $bid,
+                    'business_number' => (int)($row['business_number'] ?? 0),
+                    'name' => (string)$row['name'],
+                    'slug' => (string)$row['slug'],
+                    'school_badge' => (string)($row['school_badge'] ?? 'AHS'),
+                    'matched_domain' => $emailDomain,
+                ];
+            }
+        }
+
+        return $suggestions;
+    }
+
+    /**
+     * Audit and revoke any pre-existing business_owner_links granted solely via 'corporate_domain_match' (#164).
+     * Preserves links where the owner email exactly matches businesses.email_public (upgrading linked_via).
+     */
+    public static function revokeUnverifiedCorporateDomainLinks(PDO $pdo): int
+    {
+        $rows = $pdo->query("
+            SELECT
+                l.id AS link_id,
+                l.owner_id,
+                l.business_id,
+                o.email AS owner_account_email,
+                b.email_public,
+                b.owner_email
+            FROM business_owner_links l
+            LEFT JOIN business_owners o ON o.id = l.owner_id
+            LEFT JOIN businesses b ON b.id = l.business_id
+            WHERE l.linked_via = 'corporate_domain_match'
+        ")->fetchAll();
+
+        $revoked = 0;
+        $upgStmt = $pdo->prepare("UPDATE business_owner_links SET linked_via = :via WHERE id = :id");
+        $delStmt = $pdo->prepare("DELETE FROM business_owner_links WHERE id = :id");
+        $clrOwnEmail = $pdo->prepare("UPDATE businesses SET owner_email = NULL WHERE id = :bid AND LOWER(owner_email) = :em");
+
+        foreach ($rows as $r) {
+            $linkId = (int)$r['link_id'];
+            $bid = (int)$r['business_id'];
+            $acctEmail = strtolower(trim((string)($r['owner_account_email'] ?? '')));
+            $pubEmail = strtolower(trim((string)($r['email_public'] ?? '')));
+
+            if ($acctEmail !== '' && $pubEmail !== '' && $acctEmail === $pubEmail) {
+                $upgStmt->execute([':via' => 'public_email_match', ':id' => $linkId]);
+                continue;
+            }
+
+            $delStmt->execute([':id' => $linkId]);
+            if ($acctEmail !== '' && $bid > 0) {
+                // Clear owner_email if it had been auto-populated by the legacy corporate_domain_match link
+                $clrOwnEmail->execute([':bid' => $bid, ':em' => $acctEmail]);
+            }
+            $revoked++;
+        }
+
+        return $revoked;
     }
 
     /**
@@ -284,8 +419,6 @@ final class OwnerAuth
 
     /**
      * Generate a signed 1-click DM Claim Link for a pre-populated business.
-     * The Admin can copy this link and send it in a WhatsApp/DM to the business owner;
-     * when the owner clicks it and signs in via Google SSO or Email Magic Link, the business is linked to their account.
      */
     public static function generateClaimInviteUrl(
         int $businessId,
@@ -386,12 +519,6 @@ final class OwnerAuth
 
     /**
      * Determine whether $email is authorized to redeem a verified claim invitation for $businessId (#162, #163).
-     * - If the signed invitation explicitly encodes $invitedEmail, $email must match it exactly.
-     * - If the business already has linked owner(s) or a designated owner_email, $email must match one of those
-     *   designated owner addresses (or the listing's email_public), preventing leaked claim links from hijacking
-     *   already-assigned businesses or unrelated accounts.
-     * - If the business is an unclaimed pre-populated listing with no designated owner yet, any email whose
-     *   mailbox possession is cryptographically proven (password / 6-digit OTP / OAuth / magic link) may claim it.
      */
     public static function isEmailEligibleForClaim(
         PDO $pdo,
@@ -447,9 +574,7 @@ final class OwnerAuth
         if (!self::verifyClaimInviteSignature($businessId, $expiresAt, $signature, $invitedEmail)) {
             return;
         }
-        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-            session_start();
-        }
+        self::startSecureSession();
         unset($_SESSION['bbiz_pending_claim_biz_id']);
         $_SESSION['bbiz_verified_claim'] = [
             'biz_id' => $businessId,
@@ -461,9 +586,7 @@ final class OwnerAuth
 
     public static function clearVerifiedClaimSession(): void
     {
-        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-            session_start();
-        }
+        self::startSecureSession();
         unset($_SESSION['bbiz_verified_claim'], $_SESSION['bbiz_pending_claim_biz_id']);
     }
 
@@ -474,9 +597,7 @@ final class OwnerAuth
      */
     public static function getVerifiedClaimFromSession(PDO $pdo): ?array
     {
-        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-            session_start();
-        }
+        self::startSecureSession();
         unset($_SESSION['bbiz_pending_claim_biz_id']);
         $raw = $_SESSION['bbiz_verified_claim'] ?? null;
         if (!is_array($raw)) {
@@ -509,7 +630,7 @@ final class OwnerAuth
     }
 
     /**
-     * Atomically verify, consume single-use nonce, and link a claimed business to a verified owner (#162, #163, #172).
+     * Atomically verify, consume single-use nonce, and link a claimed business to a verified owner (#162, #163).
      */
     public static function redeemVerifiedClaimInvite(
         PDO $pdo,
@@ -650,93 +771,232 @@ final class OwnerAuth
         ];
     }
 
-    /**
-     * Start a persistent 30-day signed session cookie + PHP session for the authenticated owner.
-     */
-    public static function establishOwnerSession(array $owner, bool $regenerateSessionId = true): void
+    private static function setOwnerCookieValue(string $cookieVal, int $expTs): void
     {
-        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-            session_start();
-        }
-        if ($regenerateSessionId && session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
-            @session_regenerate_id(true);
-        }
-        $ownerId = (int)$owner['id'];
-        $email = strtolower(trim((string)$owner['email']));
-        $exp = time() + self::SESSION_TTL_SECONDS;
-
-        $_SESSION['bbiz_owner_id'] = $ownerId;
-        $_SESSION['bbiz_owner_email'] = $email;
-
-        $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
-        $payload = "{$ownerId}|{$email}|{$exp}";
-        $sig = hash_hmac('sha256', $payload, $secret);
-        $cookieVal = base64_encode("{$payload}|{$sig}");
-
         $cName = self::cookieName();
         if (!headers_sent()) {
-            $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
             setcookie($cName, $cookieVal, [
-                'expires' => $exp,
+                'expires' => $expTs,
                 'path' => self::cookiePath(),
-                'secure' => $isHttps,
+                'secure' => self::isHttpsRequest(),
                 'httponly' => true,
                 'samesite' => 'Lax',
             ]);
         }
-        $_COOKIE[$cName] = $cookieVal;
+        if ($cookieVal === '' || $expTs < time()) {
+            unset($_COOKIE[$cName]);
+        } else {
+            $_COOKIE[$cName] = $cookieVal;
+        }
     }
 
     /**
-     * Retrieve the currently authenticated owner from session or 30-day persistent signed cookie.
+     * Start a server-side revocable 30-day persistent session (`owner_sessions`) + regenerated PHP session (#165).
+     */
+    public static function establishOwnerSession(array $owner, bool $regenerateSessionId = true, ?PDO $pdo = null): void
+    {
+        self::startSecureSession();
+        if ($regenerateSessionId && session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+            @session_regenerate_id(true);
+        }
+
+        $conn = $pdo ?? Database::getConnection();
+        $ownerId = (int)($owner['id'] ?? 0);
+        if ($ownerId <= 0) {
+            return;
+        }
+
+        $avStmt = $conn->prepare("SELECT email, auth_version FROM business_owners WHERE id = :id LIMIT 1");
+        $avStmt->execute([':id' => $ownerId]);
+        $dbOwner = $avStmt->fetch();
+        $email = strtolower(trim((string)($dbOwner['email'] ?? ($owner['email'] ?? ''))));
+        $authVersion = max(1, (int)($dbOwner['auth_version'] ?? ($owner['auth_version'] ?? 1)));
+
+        $nowSql = gmdate('Y-m-d H:i:s');
+        $prevSelector = trim((string)($_SESSION['bbiz_owner_session_selector'] ?? ''));
+        if ($prevSelector !== '') {
+            $conn->prepare("UPDATE owner_sessions SET revoked_at = :now WHERE selector = :sel AND revoked_at IS NULL")
+                ->execute([':now' => $nowSql, ':sel' => $prevSelector]);
+        }
+
+        $selector = bin2hex(random_bytes(12)); // 24 hex chars
+        $validator = bin2hex(random_bytes(32)); // 64 hex chars
+        $validatorHash = hash('sha256', $validator);
+        $expTs = time() + self::SESSION_TTL_SECONDS;
+        $expSql = gmdate('Y-m-d H:i:s', $expTs);
+
+        $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
+        $remoteIp = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+        $ipHmac = $remoteIp !== '' ? hash_hmac('sha256', 'owner_sess_ip|' . $remoteIp, $secret) : null;
+        $uaSummary = mb_substr(trim((string)($_SERVER['HTTP_USER_AGENT'] ?? '')), 0, 250) ?: null;
+
+        $conn->prepare("
+            INSERT INTO owner_sessions (
+                owner_id, selector, validator_hash, auth_version,
+                ip_hmac, user_agent_summary, expires_at, revoked_at, created_at, last_seen_at
+            ) VALUES (
+                :oid, :sel, :vh, :av,
+                :iph, :ua, :exp, NULL, :now, :now2
+            )
+        ")->execute([
+            ':oid' => $ownerId,
+            ':sel' => $selector,
+            ':vh' => $validatorHash,
+            ':av' => $authVersion,
+            ':iph' => $ipHmac,
+            ':ua' => $uaSummary,
+            ':exp' => $expSql,
+            ':now' => $nowSql,
+            ':now2' => $nowSql,
+        ]);
+
+        $_SESSION['bbiz_owner_id'] = $ownerId;
+        $_SESSION['bbiz_owner_email'] = $email;
+        $_SESSION['bbiz_owner_auth_version'] = $authVersion;
+        $_SESSION['bbiz_owner_session_selector'] = $selector;
+
+        $cookieVal = "v2.{$selector}.{$validator}";
+        self::setOwnerCookieValue($cookieVal, $expTs);
+    }
+
+    private static function clearLocalOwnerSessionState(): void
+    {
+        unset(
+            $_SESSION['bbiz_owner_id'],
+            $_SESSION['bbiz_owner_email'],
+            $_SESSION['bbiz_owner_auth_version'],
+            $_SESSION['bbiz_owner_session_selector']
+        );
+    }
+
+    /**
+     * Retrieve the currently authenticated owner, enforcing server-side `owner_sessions` + `auth_version` checks (#165).
      */
     public static function getCurrentOwner(PDO $pdo): ?array
     {
-        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-            session_start();
-        }
+        self::startSecureSession();
 
         $cName = self::cookieName();
-        $ownerId = (int)($_SESSION['bbiz_owner_id'] ?? 0);
-        $shouldExtendRollingCookie = false;
-        if ($ownerId <= 0 && !empty($_COOKIE[$cName])) {
-            $decoded = base64_decode((string)$_COOKIE[$cName], true);
-            if (is_string($decoded) && substr_count($decoded, '|') === 3) {
-                [$cid, $cem, $cexp, $csig] = explode('|', $decoded, 4);
-                $expInt = (int)$cexp;
-                if ($expInt >= time()) {
-                    $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
-                    $expected = hash_hmac('sha256', "{$cid}|{$cem}|{$expInt}", $secret);
-                    if (hash_equals($expected, $csig)) {
-                        $ownerId = (int)$cid;
-                        $_SESSION['bbiz_owner_id'] = $ownerId;
-                        $_SESSION['bbiz_owner_email'] = $cem;
-                        $shouldExtendRollingCookie = true;
-                    }
+        $nowSql = gmdate('Y-m-d H:i:s');
+
+        // 1. Validate active PHP session against server-side owner_sessions & auth_version
+        $sessOwnerId = (int)($_SESSION['bbiz_owner_id'] ?? 0);
+        $sessSelector = trim((string)($_SESSION['bbiz_owner_session_selector'] ?? ''));
+        $sessAuthVer = (int)($_SESSION['bbiz_owner_auth_version'] ?? 0);
+
+        if ($sessOwnerId > 0) {
+            if ($sessSelector === '' || $sessAuthVer <= 0) {
+                self::clearLocalOwnerSessionState();
+            } else {
+                $sStmt = $pdo->prepare("
+                    SELECT s.id AS sess_row_id, s.auth_version AS sess_av, o.*
+                    FROM owner_sessions s
+                    INNER JOIN business_owners o ON o.id = s.owner_id
+                    WHERE s.selector = :sel
+                      AND s.owner_id = :oid
+                      AND s.revoked_at IS NULL
+                      AND s.expires_at >= :now
+                    LIMIT 1
+                ");
+                $sStmt->execute([
+                    ':sel' => $sessSelector,
+                    ':oid' => $sessOwnerId,
+                    ':now' => $nowSql,
+                ]);
+                $joined = $sStmt->fetch();
+                $dbAuthVer = $joined ? max(1, (int)($joined['auth_version'] ?? 1)) : 0;
+
+                if ($joined && (int)$joined['sess_av'] === $dbAuthVer && $sessAuthVer === $dbAuthVer) {
+                    $pdo->prepare("UPDATE owner_sessions SET last_seen_at = :now WHERE id = :id")
+                        ->execute([':now' => $nowSql, ':id' => (int)$joined['sess_row_id']]);
+                    unset($joined['sess_row_id'], $joined['sess_av']);
+                    self::autoLinkMatchingBusinesses($pdo, (int)$joined['id'], (string)$joined['email']);
+                    return (array)$joined;
+                }
+
+                // Active PHP session was revoked or password/auth_version changed — purge local state & stale cookie
+                self::clearLocalOwnerSessionState();
+                if (!empty($_COOKIE[$cName]) && str_starts_with((string)$_COOKIE[$cName], 'v2.' . $sessSelector . '.')) {
+                    self::setOwnerCookieValue('', time() - 3600);
                 }
             }
         }
 
-        if ($ownerId <= 0) {
+        // 2. Validate persistent v2.<selector>.<validator> cookie against server-side owner_sessions
+        $rawCookie = trim((string)($_COOKIE[$cName] ?? ''));
+        if ($rawCookie === '') {
             return null;
         }
 
-        $stmt = $pdo->prepare("SELECT * FROM business_owners WHERE id = :id LIMIT 1");
-        $stmt->execute([':id' => $ownerId]);
-        $owner = $stmt->fetch();
+        if (!preg_match('/^v2\.([a-f0-9]{24})\.([a-f0-9]{64})$/', $rawCookie, $m)) {
+            // Reject legacy stateless cookies immediately (#165)
+            self::setOwnerCookieValue('', time() - 3600);
+            return null;
+        }
+
+        $selector = $m[1];
+        $validator = $m[2];
+
+        $cStmt = $pdo->prepare("
+            SELECT * FROM owner_sessions
+            WHERE selector = :sel
+              AND revoked_at IS NULL
+              AND expires_at >= :now
+            LIMIT 1
+        ");
+        $cStmt->execute([':sel' => $selector, ':now' => $nowSql]);
+        $sessRow = $cStmt->fetch();
+        if (!$sessRow) {
+            self::setOwnerCookieValue('', time() - 3600);
+            return null;
+        }
+
+        $calcHash = hash('sha256', $validator);
+        if (!hash_equals((string)$sessRow['validator_hash'], $calcHash)) {
+            // Possible validator tampering on a known selector — revoke server-side row immediately
+            $pdo->prepare("UPDATE owner_sessions SET revoked_at = :now WHERE id = :id")
+                ->execute([':now' => $nowSql, ':id' => (int)$sessRow['id']]);
+            self::setOwnerCookieValue('', time() - 3600);
+            return null;
+        }
+
+        $oStmt = $pdo->prepare("SELECT * FROM business_owners WHERE id = :id LIMIT 1");
+        $oStmt->execute([':id' => (int)$sessRow['owner_id']]);
+        $owner = $oStmt->fetch();
         if (!$owner) {
+            self::setOwnerCookieValue('', time() - 3600);
             return null;
         }
 
-        // Rolling 30-day session renewal so active owners stay signed in continuously (#119)
-        if ($shouldExtendRollingCookie) {
-            self::establishOwnerSession($owner, false);
+        $dbAuthVer = max(1, (int)($owner['auth_version'] ?? 1));
+        if ((int)($sessRow['auth_version'] ?? 0) !== $dbAuthVer) {
+            $pdo->prepare("UPDATE owner_sessions SET revoked_at = :now WHERE id = :id AND revoked_at IS NULL")
+                ->execute([':now' => $nowSql, ':id' => (int)$sessRow['id']]);
+            self::setOwnerCookieValue('', time() - 3600);
+            return null;
         }
 
-        // Ensure any newly matching businesses are auto-linked
+        // Valid persistent session — regenerate PHP session ID on cookie restore and extend rolling 30-day TTL
+        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+            @session_regenerate_id(true);
+        }
+        $newExpTs = time() + self::SESSION_TTL_SECONDS;
+        $newExpSql = gmdate('Y-m-d H:i:s', $newExpTs);
+        $pdo->prepare("UPDATE owner_sessions SET expires_at = :exp, last_seen_at = :now WHERE id = :id")
+            ->execute([
+                ':exp' => $newExpSql,
+                ':now' => $nowSql,
+                ':id' => (int)$sessRow['id'],
+            ]);
+
+        $_SESSION['bbiz_owner_id'] = (int)$owner['id'];
+        $_SESSION['bbiz_owner_email'] = strtolower(trim((string)$owner['email']));
+        $_SESSION['bbiz_owner_auth_version'] = $dbAuthVer;
+        $_SESSION['bbiz_owner_session_selector'] = $selector;
+        self::setOwnerCookieValue($rawCookie, $newExpTs);
+
         self::autoLinkMatchingBusinesses($pdo, (int)$owner['id'], (string)$owner['email']);
-        return $owner;
+        return (array)$owner;
     }
 
     /**
@@ -754,35 +1014,69 @@ final class OwnerAuth
         exit;
     }
 
-    public static function logoutOwner(): void
+    /**
+     * Revoke all active server-side sessions for an owner (and optionally bump auth_version) (#165).
+     */
+    public static function revokeAllOwnerSessions(PDO $pdo, int $ownerId, bool $bumpAuthVersion = true): int
     {
-        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-            session_start();
+        if ($ownerId <= 0) {
+            return 0;
         }
+        if ($bumpAuthVersion) {
+            $pdo->prepare("UPDATE business_owners SET auth_version = COALESCE(auth_version, 1) + 1 WHERE id = :id")
+                ->execute([':id' => $ownerId]);
+        }
+        $stmt = $pdo->prepare("UPDATE owner_sessions SET revoked_at = :now WHERE owner_id = :oid AND revoked_at IS NULL");
+        $stmt->execute([
+            ':now' => gmdate('Y-m-d H:i:s'),
+            ':oid' => $ownerId,
+        ]);
+        return $stmt->rowCount();
+    }
+
+    /**
+     * Sign out the current device session, revoking its server-side `owner_sessions` token and rotating PHP session ID (#165).
+     */
+    public static function logoutOwner(?PDO $pdo = null): void
+    {
+        self::startSecureSession();
+
+        $cName = self::cookieName();
+        $selector = trim((string)($_SESSION['bbiz_owner_session_selector'] ?? ''));
+        if ($selector === '' && !empty($_COOKIE[$cName])) {
+            if (preg_match('/^v2\.([a-f0-9]{24})\.[a-f0-9]{64}$/', (string)$_COOKIE[$cName], $m)) {
+                $selector = $m[1];
+            }
+        }
+
+        if ($selector !== '') {
+            try {
+                $conn = $pdo ?? Database::getConnection();
+                $conn->prepare("UPDATE owner_sessions SET revoked_at = :now WHERE selector = :sel AND revoked_at IS NULL")
+                    ->execute([':now' => gmdate('Y-m-d H:i:s'), ':sel' => $selector]);
+            } catch (\Throwable $e) {
+                error_log('[OwnerAuth::logoutOwner] Session revoke skipped: ' . $e->getMessage());
+            }
+        }
+
         unset(
             $_SESSION['bbiz_owner_id'],
             $_SESSION['bbiz_owner_email'],
+            $_SESSION['bbiz_owner_auth_version'],
+            $_SESSION['bbiz_owner_session_selector'],
             $_SESSION['bbiz_pending_claim_biz_id'],
             $_SESSION['bbiz_verified_claim'],
             $_SESSION['bbiz_self_submitted_pending']
         );
-        $cName = self::cookieName();
-        if (!headers_sent()) {
-            $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
-            setcookie($cName, '', [
-                'expires' => time() - 3600,
-                'path' => self::cookiePath(),
-                'secure' => $isHttps,
-                'httponly' => true,
-                'samesite' => 'Lax',
-            ]);
+
+        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+            @session_regenerate_id(true);
         }
-        unset($_COOKIE[$cName]);
+        self::setOwnerCookieValue('', time() - 3600);
     }
 
     /**
-     * Set or update an owner's password for instant multi-device sign-in (#119).
+     * Set or update an owner's password, bumping `auth_version` and revoking all prior persistent sessions (#119, #165).
      */
     public static function setOwnerPassword(PDO $pdo, int $ownerId, string $plainPassword): void
     {
@@ -793,8 +1087,15 @@ final class OwnerAuth
             throw new \InvalidArgumentException('Password must be at least 8 characters long.');
         }
         $hash = password_hash($plainPassword, PASSWORD_DEFAULT);
-        $pdo->prepare("UPDATE business_owners SET password_hash = :ph WHERE id = :id")
-            ->execute([':ph' => $hash, ':id' => $ownerId]);
+        $pdo->prepare("
+            UPDATE business_owners
+            SET password_hash = :ph,
+                auth_version = COALESCE(auth_version, 1) + 1
+            WHERE id = :id
+        ")->execute([':ph' => $hash, ':id' => $ownerId]);
+
+        $pdo->prepare("UPDATE owner_sessions SET revoked_at = :now WHERE owner_id = :oid AND revoked_at IS NULL")
+            ->execute([':now' => gmdate('Y-m-d H:i:s'), ':oid' => $ownerId]);
     }
 
     /**
@@ -820,7 +1121,8 @@ final class OwnerAuth
     }
 
     /**
-     * Return deduplicated, privacy-masked email/domain hints that can manage a business (#152, #154).
+     * Return deduplicated, privacy-masked email hints that can manage a business (#152, #154, #164).
+     * Never advertises wildcard corporate domain (*@domain) hints.
      *
      * @return list<string>
      */
@@ -836,7 +1138,7 @@ final class OwnerAuth
             }
         }
 
-        $bStmt = $pdo->prepare("SELECT owner_email, email_public, website_url FROM businesses WHERE id = :id LIMIT 1");
+        $bStmt = $pdo->prepare("SELECT owner_email, email_public FROM businesses WHERE id = :id LIMIT 1");
         $bStmt->execute([':id' => $businessId]);
         $bRow = $bStmt->fetch();
         if ($bRow) {
@@ -861,18 +1163,11 @@ final class OwnerAuth
             }
         }
 
-        if ($bRow && empty($hints)) {
-            $webDomain = self::extractWebsiteDomain($bRow['website_url'] ?? null);
-            if ($webDomain !== null && !self::isFreemailDomain($webDomain)) {
-                $hints[] = '*@' . $webDomain;
-            }
-        }
-
         return $hints;
     }
 
     /**
-     * Look up an existing business_owners record by email (#152).
+     * Look up an existing business_owners record by ID (#152).
      */
     public static function getOwnerById(PDO $pdo, int $ownerId): ?array
     {
@@ -898,12 +1193,7 @@ final class OwnerAuth
     }
 
     /**
-     * Find the newest pending business_id submitted with $email in business_vetting_queue, if any (#162).
-     */
-    /**
-     * Record a pending listing submitted in the current browser session so that if a signed-out existing owner
-     * subsequently authenticates as $submitterEmail, their own pending listing links immediately without allowing
-     * third-party unauthenticated submissions to pollute an unrelated owner's dashboard (#162).
+     * Record a pending listing submitted in the current browser session (#162).
      */
     public static function recordSelfSubmittedPendingInSession(int $businessId, string $submitterEmail): void
     {
@@ -911,9 +1201,7 @@ final class OwnerAuth
         if ($businessId <= 0 || $norm === '' || !filter_var($norm, FILTER_VALIDATE_EMAIL)) {
             return;
         }
-        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-            session_start();
-        }
+        self::startSecureSession();
         $items = is_array($_SESSION['bbiz_self_submitted_pending'] ?? null)
             ? $_SESSION['bbiz_self_submitted_pending']
             : [];
@@ -936,9 +1224,7 @@ final class OwnerAuth
         if ($ownerId <= 0 || $normOwner === '' || !filter_var($normOwner, FILTER_VALIDATE_EMAIL)) {
             return [];
         }
-        if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-            session_start();
-        }
+        self::startSecureSession();
         $items = $_SESSION['bbiz_self_submitted_pending'] ?? null;
         if (!is_array($items) || empty($items)) {
             return [];
@@ -1013,7 +1299,8 @@ final class OwnerAuth
     }
 
     /**
-     * Check if an email belongs to an existing owner OR matches any business's owner_email, email_public, or corporate website domain (#152).
+     * Check if an email belongs to an existing owner OR exactly matches a business's owner_email or email_public (#152, #164).
+     * Corporate domain similarity alone does NOT qualify as a recognized owner email.
      */
     public static function isRecognizedOwnerEmail(PDO $pdo, string $email): bool
     {
@@ -1024,30 +1311,20 @@ final class OwnerAuth
         if (self::findOwnerByEmail($pdo, $norm) !== null) {
             return true;
         }
-        $emailDomain = self::extractEmailDomain($norm);
-        $isCorp = ($emailDomain !== null && !self::isFreemailDomain($emailDomain));
 
-        $rows = $pdo->query("SELECT email_public, owner_email, website_url FROM businesses WHERE status IN ('approved', 'pending')")->fetchAll();
-        foreach ($rows as $r) {
-            $pub = strtolower(trim((string)($r['email_public'] ?? '')));
-            $own = strtolower(trim((string)($r['owner_email'] ?? '')));
-            if (($own !== '' && $own === $norm) || ($pub !== '' && $pub === $norm)) {
-                return true;
-            }
-            if ($isCorp) {
-                $webDom = self::extractWebsiteDomain($r['website_url'] ?? null);
-                $pubDom = $pub !== '' ? self::extractEmailDomain($pub) : null;
-                if (($webDom !== null && $webDom === $emailDomain) || ($pubDom !== null && $pubDom === $emailDomain)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        $stmt = $pdo->prepare("
+            SELECT 1
+            FROM businesses
+            WHERE status IN ('approved', 'pending')
+              AND (LOWER(owner_email) = :em1 OR LOWER(email_public) = :em2)
+            LIMIT 1
+        ");
+        $stmt->execute([':em1' => $norm, ':em2' => $norm]);
+        return (bool)$stmt->fetchColumn();
     }
 
     /**
      * Issue a single-use 6-digit numeric verification code (15-minute TTL) for setting or resetting an owner password (#152).
-     * Works directly inside the owner's active browser tab without email-client webview cookie loss.
      *
      * @return array{code:string,expires_at:int,email:string}
      */
@@ -1063,7 +1340,6 @@ final class OwnerAuth
         $tokenHash = hash_hmac('sha256', "otp6|{$normEmail}|{$code}", $secret);
         $expiresAt = time() + 900; // 15 minutes
 
-        // Invalidate any prior unused tokens for this email so only the newest code is active
         $pdo->prepare("UPDATE owner_auth_tokens SET used_at = :now WHERE LOWER(email) = :em AND used_at IS NULL")
             ->execute([':now' => time(), ':em' => $normEmail]);
 
@@ -1085,7 +1361,7 @@ final class OwnerAuth
     }
 
     /**
-     * Verify a 6-digit verification code and set the owner's password in one atomic flow (#152).
+     * Verify a 6-digit verification code and set the owner's password in one atomic flow (#152, #165).
      */
     public static function verifyOtpAndSetPassword(PDO $pdo, string $email, string $submittedCode, string $newPassword): ?array
     {
@@ -1198,9 +1474,6 @@ final class OwnerAuth
         return trim(Database::getSetting($conn, 'GOOGLE_CLIENT_SECRET', ''));
     }
 
-    /**
-     * Check whether Google OAuth 2.0 SSO credentials are configured in .env or app_settings.
-     */
     public static function isGoogleSsoConfigured(?PDO $pdo = null): bool
     {
         $clientId = self::getGoogleClientId($pdo);
@@ -1208,9 +1481,6 @@ final class OwnerAuth
         return $clientId !== '' && $clientSecret !== '';
     }
 
-    /**
-     * Build the Google OAuth 2.0 authorization URL.
-     */
     public static function getGoogleAuthorizationUrl(string $stateToken, ?PDO $pdo = null): string
     {
         $clientId = self::getGoogleClientId($pdo);
@@ -1228,9 +1498,6 @@ final class OwnerAuth
         ]);
     }
 
-    /**
-     * Exchange Google OAuth 2.0 authorization code for verified user profile ({email, name, sub}).
-     */
     public static function exchangeGoogleCodeForProfile(string $code, ?PDO $pdo = null): ?array
     {
         if (!self::isGoogleSsoConfigured($pdo) || !function_exists('curl_init')) {
