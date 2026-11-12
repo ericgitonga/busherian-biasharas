@@ -36,6 +36,8 @@ use BusherianBiasharas\Services\OwnerAuth;
 
 OwnerAuth::startSecureSession();
 use BusherianBiasharas\Services\PhotoUploader;
+use BusherianBiasharas\Services\PhotoUploadValidationException;
+use BusherianBiasharas\Services\PreprodSandbox;
 use BusherianBiasharas\Services\VettingPurger;
 use BusherianBiasharas\Services\WebsiteEnricher;
 
@@ -381,7 +383,7 @@ assertTrue(
     'HoursEngine::evaluateStatus reports OPEN_NOW on Sunday when Sunday hours are configured'
 );
 
-// 18. Verify Tickets #90, #91, #92, #93 & #171: PhotoUploader GD re-encoding, EXIF stripping, 5-photo cap, pixel check & corrupt file rejection
+// 18. Verify Tickets #90, #91, #92, #93, #171 & #176: PhotoUploader GD re-encoding, EXIF stripping, upfront PhotoUploadValidationException caps & corrupt file rejection
 $testDataUrls = [];
 for ($i = 0; $i < 6; $i++) {
     $im = imagecreatetruecolor(40, 30);
@@ -393,17 +395,24 @@ for ($i = 0; $i < 6; $i++) {
     imagedestroy($im);
     $testDataUrls[] = 'data:image/jpeg;base64,' . base64_encode($jpegBytes);
 }
-$savedPhotosJson = PhotoUploader::processBusinessPhotos(null, [], null, json_encode($testDataUrls));
+$threwOnSixPhotos = false;
+try {
+    PhotoUploader::processBusinessPhotos(null, [], null, json_encode($testDataUrls));
+} catch (PhotoUploadValidationException $e) {
+    $threwOnSixPhotos = true;
+}
+$savedPhotosJson = PhotoUploader::processBusinessPhotos(null, [], null, json_encode(array_slice($testDataUrls, 0, 5)));
 $decodedPhotos = PhotoUploader::decodePhotosJson($savedPhotosJson);
 $firstSavedDiskPath = $unitTempUploadsRoot . ($decodedPhotos[0] ?? '');
 $savedImgInfo = is_file($firstSavedDiskPath) ? @getimagesize($firstSavedDiskPath) : false;
 assertTrue(
+    $threwOnSixPhotos === true &&
     count($decodedPhotos) === 5 &&
     str_starts_with($decodedPhotos[0], '/uploads/businesses/bbiz_') &&
     is_array($savedImgInfo) &&
     (int)$savedImgInfo[0] === 40 &&
     (int)$savedImgInfo[1] === 30,
-    'PhotoUploader::processBusinessPhotos sanitizes images via GD with verified decoded pixel dimensions and enforces a strict cap of 5 photos'
+    'PhotoUploader::processBusinessPhotos sanitizes up to 5 images via GD and throws PhotoUploadValidationException upfront when >5 photos are submitted (#176)'
 );
 $afterRemoveJson = PhotoUploader::processBusinessPhotos($savedPhotosJson, [$decodedPhotos[0]], null, null);
 $afterRemoveList = PhotoUploader::decodePhotosJson($afterRemoveJson);
@@ -412,7 +421,7 @@ assertTrue(
     'PhotoUploader::processBusinessPhotos removes checked photos accurately'
 );
 
-// Negative image upload tests (#171): corrupt bytes, tiny <10px image, and oversized >8MB payload must all be rejected cleanly
+// Negative image upload tests (#171 & #176): corrupt bytes, tiny <10px image, and oversized >8MB payload
 $corruptTempFile = sys_get_temp_dir() . '/bbiz_corrupt_' . getmypid() . '.jpg';
 file_put_contents($corruptTempFile, "NOT_A_VALID_JPEG_BINARY_HEADER_PAYLOAD_1234567890");
 $tinyIm = imagecreatetruecolor(4, 4);
@@ -421,21 +430,38 @@ imagepng($tinyIm);
 $tinyPngBytes = (string)ob_get_clean();
 imagedestroy($tinyIm);
 
+$threwOversizedSingle = false;
+try {
+    PhotoUploader::processBusinessPhotos(
+        null,
+        [],
+        [
+            'tmp_name' => [$corruptTempFile],
+            'error' => [UPLOAD_ERR_OK],
+            'size' => [PhotoUploader::MAX_FILE_BYTES + 1024],
+        ],
+        null
+    );
+} catch (PhotoUploadValidationException $e) {
+    $threwOversizedSingle = true;
+}
+
 $rejectedCorruptJson = PhotoUploader::processBusinessPhotos(
     null,
     [],
     [
-        'tmp_name' => [$corruptTempFile, $corruptTempFile],
-        'error' => [UPLOAD_ERR_OK, UPLOAD_ERR_OK],
-        'size' => [filesize($corruptTempFile), PhotoUploader::MAX_FILE_BYTES + 1024],
+        'tmp_name' => [$corruptTempFile],
+        'error' => [UPLOAD_ERR_OK],
+        'size' => [filesize($corruptTempFile)],
     ],
     null
 );
 assertTrue(
+    $threwOversizedSingle === true &&
     PhotoUploader::decodePhotosJson($rejectedCorruptJson) === [] &&
     PhotoUploader::sanitizeAndSaveImageBytes("corrupt_non_image_bytes") === null &&
     PhotoUploader::sanitizeAndSaveImageBytes($tinyPngBytes) === null,
-    'PhotoUploader rejects corrupt non-image bytes, <10px images, and >8MB oversized uploads (#171)'
+    'PhotoUploader rejects corrupt non-image bytes, <10px images, and throws PhotoUploadValidationException on >8MB oversized uploads (#171, #176)'
 );
 @unlink($corruptTempFile);
 foreach ($decodedPhotos as $relUrl) {
@@ -831,7 +857,7 @@ assertTrue(
     str_contains($publicIndexPaginated, '<option value="100">100 per page</option>') &&
     str_contains($publicIndexPaginated, 'id="directory-pagination"') &&
     str_contains($directoryJsPaginated, 'ALLOWED_PAGE_SIZES = [10, 25, 50, 100]') &&
-    str_contains($directoryJsPaginated, 'state.perPage = 10'),
+    str_contains($directoryJsPaginated, 'state.perPage = ALLOWED_PAGE_SIZES.includes') && str_contains($directoryJsPaginated, 'per_page'),
     'public/index.php and directory.js paginate cards to 10/25/50/100 defaulting to 10 (#144)'
 );
 
@@ -1679,6 +1705,479 @@ assertTrue(
     $healthFresh['healthy'] === true && $healthFresh['status'] === 'healthy',
     'VettingPurger::getRetentionCronHealth detects never_run, stale (>36h), and fresh scheduled cron heartbeats (#188)'
 );
+
+
+// =========================================================================
+// Section 39: Adversarial MED-01..MED-15 Regression Suite (#172..#186)
+// =========================================================================
+
+// 39a. MED-01 (#172) & MED-03 (#174): OwnerAuth::getOwnerById, OTP prior-challenge invalidation, <5 brute-force lockout, and single-use consumption
+$medOwnerEmail = 'med174_owner@test.co.ke';
+$medOwnerRow = OwnerAuth::upsertOwner($pdo, $medOwnerEmail, 'MED-03 Founder');
+$medOwnerId = (int)$medOwnerRow['id'];
+$fetchedById = OwnerAuth::getOwnerById($pdo, $medOwnerId);
+assertTrue(
+    is_array($fetchedById) &&
+    (int)$fetchedById['id'] === $medOwnerId &&
+    strtolower((string)$fetchedById['email']) === $medOwnerEmail,
+    'OwnerAuth::getOwnerById loads owner record cleanly for transactional claim onboarding (#172)'
+);
+
+$otpFirst = OwnerAuth::issuePasswordOtp($pdo, $medOwnerEmail, null);
+$otpSecond = OwnerAuth::issuePasswordOtp($pdo, $medOwnerEmail, null);
+$staleFirstAttempt = OwnerAuth::verifyOtpAndSetPassword($pdo, $medOwnerEmail, $otpFirst['code'], 'ValidPass123!#');
+// Re-issue fresh second OTP so failed_attempts starts at 0 before the 5-attempt brute-force test below
+$otpSecond = OwnerAuth::issuePasswordOtp($pdo, $medOwnerEmail, null);
+assertTrue(
+    $staleFirstAttempt === null,
+    'OwnerAuth::issuePasswordOtp atomically invalidates prior unused OTP challenges on re-issuance (#174)'
+);
+
+// Brute-force 5 wrong OTP guesses -> challenge must lock out even if correct code is supplied on 6th attempt
+for ($bf = 0; $bf < 5; $bf++) {
+    $wrongRes = OwnerAuth::verifyOtpAndSetPassword($pdo, $medOwnerEmail, '000000', 'ValidPass123!#');
+    assertTrue($wrongRes === null, "Wrong OTP guess #" . ($bf + 1) . " returns null (#174)");
+}
+$sixthCorrectAttempt = OwnerAuth::verifyOtpAndSetPassword($pdo, $medOwnerEmail, $otpSecond['code'], 'ValidPass123!#');
+assertTrue(
+    $sixthCorrectAttempt === null,
+    'OTP challenge locks out permanently after 5 failed_attempts (#174)'
+);
+
+// Fresh OTP succeeds once and rejects replay on second call
+$otpThird = OwnerAuth::issuePasswordOtp($pdo, $medOwnerEmail, null);
+$validConsume1 = OwnerAuth::verifyOtpAndSetPassword($pdo, $medOwnerEmail, $otpThird['code'], 'StrongOwnerPass#174');
+$replayConsume2 = OwnerAuth::verifyOtpAndSetPassword($pdo, $medOwnerEmail, $otpThird['code'], 'AnotherPass#174');
+assertTrue(
+    is_array($validConsume1) && (int)$validConsume1['id'] === $medOwnerId && $replayConsume2 === null,
+    'OwnerAuth::verifyOtpAndSetPassword consumes OTP atomically once and blocks replay (#174)'
+);
+
+// Magic link atomic single-use consumption (#174)
+$magicIssued = OwnerAuth::createMagicLink($pdo, $medOwnerEmail, null);
+parse_str((string)parse_url($magicIssued['url'], PHP_URL_QUERY), $magicQ);
+$rawMagicTok = (string)($magicQ['token'] ?? '');
+$magicConsume1 = OwnerAuth::verifyAndConsumeMagicLink($pdo, $rawMagicTok);
+$magicConsume2 = OwnerAuth::verifyAndConsumeMagicLink($pdo, $rawMagicTok);
+assertTrue(
+    is_array($magicConsume1) && $magicConsume2 === null,
+    'OwnerAuth::verifyAndConsumeMagicLink consumes magic link atomically once and blocks replay (#174)'
+);
+
+// 39b. MED-02 (#173): Atomic claimSingleUseNonce, per-recipient 60s OTP cooldown, global 15/1h outbound mail circuit breaker, and login.php anti-spam gate
+$nonceHash173 = hash('sha256', 'unit_nonce_173_' . bin2hex(random_bytes(8)));
+$claimNonce1 = AntiSpamGate::claimSingleUseNonce($pdo, $nonceHash173, time() + 3600);
+$claimNonce2 = AntiSpamGate::claimSingleUseNonce($pdo, $nonceHash173, time() + 3600);
+assertTrue(
+    $claimNonce1 === true && $claimNonce2 === false,
+    'AntiSpamGate::claimSingleUseNonce claims single-use nonce atomically and rejects duplicate claims (#173)'
+);
+
+$pdo->exec("DELETE FROM rate_limits WHERE action_type IN ('global_outbound_mail', 'otp_recipient_cooldown')");
+$quotaRcpt1 = AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, '198.51.100.73', 'cooldown173@test.co.ke', true, 15);
+$quotaRcpt2 = AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, '198.51.100.74', 'cooldown173@test.co.ke', true, 15);
+assertTrue(
+    $quotaRcpt1['allowed'] === true &&
+    $quotaRcpt2['allowed'] === false &&
+    $quotaRcpt2['reason'] === 'otp_recipient_cooldown_60s',
+    'AntiSpamGate::checkAndRecordOutboundMailQuota enforces 60-second per-recipient OTP cooldown across distinct IPs (#173)'
+);
+
+$pdo->exec("DELETE FROM rate_limits WHERE action_type IN ('global_outbound_mail', 'otp_recipient_cooldown')");
+$breakerAllowedCount = 0;
+for ($gm = 0; $gm < 4; $gm++) {
+    $qRes = AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, '198.51.100.' . (80 + $gm), "u{$gm}@test.co.ke", false, 3);
+    if ($qRes['allowed']) {
+        $breakerAllowedCount++;
+    }
+}
+$pdo->exec("DELETE FROM rate_limits WHERE action_type IN ('global_outbound_mail', 'otp_recipient_cooldown')");
+$loginPhpSrc = (string)file_get_contents(dirname(__DIR__) . '/public/owner/login.php');
+assertTrue(
+    $breakerAllowedCount === 3 &&
+    str_contains($loginPhpSrc, "AntiSpamGate::verifySubmission(\$pdo, \$spamPayload, \$clientIp, 'owner_otp_send')") &&
+    !str_contains($loginPhpSrc, 'automatically emailed a 6-digit verification code'),
+    'Outbound mail circuit breaker caps global hourly mail and public/owner/login.php gates OTP behind AntiSpamGate without auto-OTP on password_login (#173)'
+);
+
+// 39c. MED-04 (#175): Signed admin action jti nonce, pending-only approve/reject guard, and moderation_audit_log
+$catPairStmt = $pdo->query("SELECT c.id AS spec_id, c.parent_id AS sec_id FROM categories c WHERE c.parent_id IS NOT NULL AND c.status = 'approved' LIMIT 1");
+$catPair = $catPairStmt->fetch();
+$validSecId = (int)$catPair['sec_id'];
+$validSpecId = (int)$catPair['spec_id'];
+
+$signedUrl175 = Mailer::generateSignedAdminActionUrl(999, 'approve', time() + 3600, 0);
+parse_str((string)parse_url($signedUrl175, PHP_URL_QUERY), $sq175);
+$validSig175 = Mailer::verifySignedAdminAction(999, 'approve', (int)$sq175['exp'], 0, (string)$sq175['sig'], (string)$sq175['jti']);
+$missingJti175 = Mailer::verifySignedAdminAction(999, 'approve', (int)$sq175['exp'], 0, (string)$sq175['sig'], '');
+$reviewActionSrc = (string)file_get_contents(dirname(__DIR__) . '/public/admin/review-action.php');
+assertTrue(
+    $validSig175 === true &&
+    $missingJti175 === false &&
+    str_contains($reviewActionSrc, 'confirm-review-action-btn') &&
+    str_contains($reviewActionSrc, 'AntiSpamGate::claimSingleUseNonce'),
+    'Mailer signed admin URL binds single-use jti and review-action.php enforces POST+CSRF+single-use jti confirmation (#175)'
+);
+
+// Insert a pending business, approve once, then verify re-approving or rejecting non-pending throws RuntimeException and writes moderation_audit_log
+$pendingBizNumber175 = VettingPurger::allocateNextBusinessNumber($pdo);
+$pendingUid175 = VettingPurger::generateUniqueBusinessUid($pdo);
+$pendingSlug175 = VettingPurger::generateUniqueSlug($pdo, 'Med 175 Moderation Guard Ltd');
+$insPend175 = $pdo->prepare("
+    INSERT INTO businesses (
+        business_number, business_id, name, slug, tagline, description, sector_id, specialty_id,
+        country, city_county, operating_hours_json, phone_primary,
+        status, listing_provenance, consent_recorded_at, privacy_notice_version, age_attested_at
+    ) VALUES (
+        :bnum, :buid, 'Med 175 Moderation Guard Ltd', :slug, 'Moderation guard test', 'Testing pending state guard', :sec, :spec,
+        'Kenya', 'Nairobi', '{}', '+254700175175',
+        'pending', 'owner_submitted', CURRENT_TIMESTAMP, '2026-11-v2', CURRENT_TIMESTAMP
+    )
+");
+$insPend175->execute([
+    ':bnum' => $pendingBizNumber175,
+    ':buid' => $pendingUid175,
+    ':slug' => $pendingSlug175,
+    ':sec' => $validSecId,
+    ':spec' => $validSpecId,
+]);
+$pendId175 = (int)$pdo->lastInsertId();
+$pdo->prepare("INSERT INTO business_vetting_queue (business_id, school_code, house_name, year_left, school_number, submitter_name, submitter_email, submitter_phone) VALUES (:bid, 'AHS', 'Livingstone', 2010, '10175', 'Founder 175', 'f175@test.co.ke', '+254700175175')")->execute([':bid' => $pendId175]);
+
+VettingPurger::approveBusiness($pdo, $pendId175, null, 'signed_email_link', 'signed_link:jti_test175');
+Mailer::clearPendingOutbox();
+$threwOnReApprove = false;
+try {
+    VettingPurger::approveBusiness($pdo, $pendId175, null, 'admin_dashboard', 'admin_session');
+} catch (\RuntimeException $e) {
+    $threwOnReApprove = true;
+}
+$threwOnRejectApproved = false;
+try {
+    VettingPurger::rejectBusiness($pdo, $pendId175, 'signed_email_link', 'signed_link:jti_reject175');
+} catch (\RuntimeException $e) {
+    $threwOnRejectApproved = true;
+}
+$auditStmt175 = $pdo->prepare("SELECT COUNT(*) FROM moderation_audit_log WHERE business_id = :bid AND action = 'approve' AND channel = 'signed_email_link'");
+$auditStmt175->execute([':bid' => $pendId175]);
+assertTrue(
+    $threwOnReApprove === true &&
+    $threwOnRejectApproved === true &&
+    (int)$auditStmt175->fetchColumn() === 1,
+    'VettingPurger::approveBusiness & rejectBusiness enforce status=pending precondition and record moderation_audit_log (#175)'
+);
+
+// 39d. MED-05 (#176) & MED-06 (#177): Pre-decode >4096px/>16MP PNG header guard, quarantine media move/restore, orphan cleanup on edit, path traversal guard, and sweepOrphanedMedia
+// Craft minimal PNG with IHDR 5000x5000 (25 MP > 16 MP & > 4096px) without allocating 25 MP in GD!
+$ihdrData = pack('NNCCCCC', 5000, 5000, 8, 2, 0, 0, 0);
+$pngHeader5000 = "\x89PNG\r\n\x1a\n" . pack('N', 13) . 'IHDR' . $ihdrData . pack('N', crc32('IHDR' . $ihdrData));
+$bombDataUrl = 'data:image/png;base64,' . base64_encode($pngHeader5000);
+$threwOnDecompressionBomb = false;
+try {
+    PhotoUploader::processBusinessPhotos(null, [], null, json_encode([$bombDataUrl]));
+} catch (PhotoUploadValidationException $e) {
+    $threwOnDecompressionBomb = true;
+}
+assertTrue(
+    $threwOnDecompressionBomb === true &&
+    PhotoUploader::resolveSafeUploadFilePath('/uploads/businesses/../../etc/passwd') === null,
+    'PhotoUploader blocks >4096px/>16MP image headers prior to GD decode (#176) and blocks ../ path traversal (#177)'
+);
+
+// Create 2 real photos for $pendId175, test quarantine move/restore & post-commit orphan deletion on updateBusiness
+$im177a = imagecreatetruecolor(32, 32);
+ob_start(); imagejpeg($im177a, null, 85); $jb177a = (string)ob_get_clean(); imagedestroy($im177a);
+$im177b = imagecreatetruecolor(36, 36);
+ob_start(); imagejpeg($im177b, null, 85); $jb177b = (string)ob_get_clean(); imagedestroy($im177b);
+$twoPhotosJson = PhotoUploader::processBusinessPhotos(null, [], null, json_encode([
+    'data:image/jpeg;base64,' . base64_encode($jb177a),
+    'data:image/jpeg;base64,' . base64_encode($jb177b),
+]));
+$twoPhotoUrls = PhotoUploader::decodePhotosJson($twoPhotosJson);
+$pdo->prepare("UPDATE businesses SET photos_json = :pj WHERE id = :id")->execute([':pj' => $twoPhotosJson, ':id' => $pendId175]);
+$diskPhoto0 = PhotoUploader::resolveSafeUploadFilePath($twoPhotoUrls[0]);
+$diskPhoto1 = PhotoUploader::resolveSafeUploadFilePath($twoPhotoUrls[1]);
+
+VettingPurger::quarantineBusinessDpa($pdo, $pendId175, 'Unit test DPA quarantine #177');
+$goneFromPublicDuringQuarantine = ($diskPhoto0 !== null && !is_file($diskPhoto0)) && ($diskPhoto1 !== null && !is_file($diskPhoto1));
+$inQuarantineVault = is_file(PhotoUploader::quarantineDirRoot() . '/' . $pendId175 . '/' . basename((string)$diskPhoto0));
+
+VettingPurger::restoreQuarantinedBusiness($pdo, $pendId175);
+$restoredToPublic = ($diskPhoto0 !== null && is_file($diskPhoto0)) && ($diskPhoto1 !== null && is_file($diskPhoto1));
+assertTrue(
+    $goneFromPublicDuringQuarantine === true &&
+    $inQuarantineVault === true &&
+    $restoredToPublic === true,
+    'quarantineBusinessDpa moves listing media out of public webroot and restoreQuarantinedBusiness restores them (#177)'
+);
+
+// Remove first photo via VettingPurger::updateBusiness -> diskPhoto0 must be deleted post-commit while diskPhoto1 stays!
+$bizRow177Stmt = $pdo->prepare("SELECT * FROM businesses WHERE id = :id");
+$bizRow177Stmt->execute([':id' => $pendId175]);
+$bizRow177 = $bizRow177Stmt->fetch();
+$bizRow177['remove_photos'] = [$twoPhotoUrls[0]];
+VettingPurger::updateBusiness($pdo, $pendId175, $bizRow177);
+assertTrue(
+    $diskPhoto0 !== null && !is_file($diskPhoto0) && $diskPhoto1 !== null && is_file($diskPhoto1),
+    'VettingPurger::updateBusiness deletes removed photo files from disk after transaction commit (#177)'
+);
+
+// Create a stale unreferenced file in uploads/businesses and verify sweepOrphanedMedia deletes it
+$staleOrphanFile = PhotoUploader::uploadDir() . '/bbiz_orphan_stale_test177.jpg';
+file_put_contents($staleOrphanFile, $jb177a);
+@touch($staleOrphanFile, time() - 7200);
+$sweepRes = PhotoUploader::sweepOrphanedMedia($pdo, 3600);
+assertTrue(
+    $sweepRes['orphaned_public_deleted'] >= 1 && !is_file($staleOrphanFile) && ($diskPhoto1 !== null && is_file($diskPhoto1)),
+    'PhotoUploader::sweepOrphanedMedia removes unreferenced stale uploads while preserving referenced listing photos (#177)'
+);
+
+// 39e. MED-07 (#178) & MED-08 (#179): Plain-language OSM/Nominatim/OSRM disclosure, map consent gate, and listing provenance + admin basis enforcement
+$privacySrc178 = (string)file_get_contents(dirname(__DIR__) . '/public/privacy.php');
+$dirJsSrc178 = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+assertTrue(
+    !str_contains($privacySrc178, '<code') &&
+    str_contains($privacySrc178, 'OpenStreetMap') &&
+    str_contains($privacySrc178, 'Nominatim') &&
+    str_contains($privacySrc178, 'OSRM') &&
+    str_contains($dirJsSrc178, 'hasMapTileConsent') &&
+    str_contains($dirJsSrc178, 'btn-enable-osm-map'),
+    'public/privacy.php discloses OpenStreetMap/Nominatim/OSRM in plain language (zero <code> tags) and directory.js gates OSM map tiles on consent (#178)'
+);
+
+$threwMissingAdminBasis = false;
+try {
+    VettingPurger::createBusinessDirectly($pdo, [
+        'name' => 'Missing Provenance Test',
+        'sector_id' => $validSecId,
+        'specialty_id' => $validSpecId,
+        'description' => 'Should fail without lawful basis note',
+        'country' => 'Kenya',
+        'city_county' => 'Nairobi',
+        'require_provenance_basis' => true,
+    ]);
+} catch (\InvalidArgumentException $e) {
+    $threwMissingAdminBasis = true;
+}
+
+$curatedId179 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Curated Provenance Biashara 179',
+    'sector_id' => $validSecId,
+    'specialty_id' => $validSpecId,
+    'description' => 'Curated with explicit founder authorization',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'owner_email' => 'claim179@test.co.ke',
+    'require_provenance_basis' => true,
+    'admin_provenance_basis' => 'alumni_direct_authorization',
+    'admin_provenance_note' => 'Authorized directly via email by founder on 2026-11-12',
+]);
+$provStmt179 = $pdo->prepare("SELECT listing_provenance, admin_provenance_note, privacy_notice_version FROM businesses WHERE id = :id");
+$provStmt179->execute([':id' => $curatedId179]);
+$provRow179 = $provStmt179->fetch();
+
+// Redeem claim invite on $curatedId179 -> listing_provenance transitions to 'claimed' and consent timestamps are recorded
+$claimExp179 = time() + 3600;
+$claimUrl179 = OwnerAuth::generateClaimInviteUrl($curatedId179, $claimExp179, 'claim179@test.co.ke');
+parse_str((string)parse_url($claimUrl179, PHP_URL_QUERY), $cq179);
+$claimOwnerRow179 = OwnerAuth::upsertOwner($pdo, 'claim179@test.co.ke', 'Claimant 179');
+$claimOwner179 = (int)$claimOwnerRow179['id'];
+$redeemed179 = OwnerAuth::redeemVerifiedClaimInvite($pdo, $claimOwner179, 'claim179@test.co.ke', $curatedId179, $claimExp179, (string)$cq179['sig'], 'claim179@test.co.ke');
+$provAfterClaimStmt = $pdo->prepare("SELECT listing_provenance, consent_recorded_at FROM businesses WHERE id = :id");
+$provAfterClaimStmt->execute([':id' => $curatedId179]);
+$provAfterClaim = $provAfterClaimStmt->fetch();
+assertTrue(
+    $threwMissingAdminBasis === true &&
+    is_array($provRow179) &&
+    $provRow179['listing_provenance'] === 'admin_curated' &&
+    str_contains((string)$provRow179['admin_provenance_note'], '[alumni_direct_authorization]') &&
+    $redeemed179 === true &&
+    is_array($provAfterClaim) &&
+    $provAfterClaim['listing_provenance'] === 'claimed' &&
+    !empty($provAfterClaim['consent_recorded_at']),
+    'Listing provenance & DPA lawful-basis fields are enforced on admin curation and updated on verified owner claim (#179)'
+);
+
+// 39f. MED-09 (#180): Batched OwnerAuth::getEditableBusinessIdsForOwner
+$editableMap180 = OwnerAuth::getEditableBusinessIdsForOwner($pdo, $claimOwner179, [$curatedId179, $pendId175, 999999]);
+assertTrue(
+    isset($editableMap180[$curatedId179]) && !isset($editableMap180[$pendId175]) && !isset($editableMap180[999999]),
+    'OwnerAuth::getEditableBusinessIdsForOwner resolves owner edit permissions in a single batched query (#180)'
+);
+
+// 39g. MED-11 (#182): Dynamic column inspection + PII scrubbing in PreprodSandbox::cloneSnapshotRowsIntoSqlite
+$cloneSqlitePath182 = sys_get_temp_dir() . '/bbiz_clone182_' . getmypid() . '.sqlite';
+$clonePdo182 = new PDO('sqlite:' . $cloneSqlitePath182, null, null, [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+]);
+Database::migrateAndSeed($clonePdo182, false);
+$clonePdo182->exec("INSERT INTO email_outbox (recipient_email, subject, body_html, status) VALUES ('secret@real.co.ke', 'PII', '<p>PII</p>', 'sent')");
+$cloneRes182 = PreprodSandbox::cloneSnapshotRowsIntoSqlite(
+    $clonePdo182,
+    [
+        [
+            'id' => 1,
+            'parent_id' => null,
+            'name' => 'Technology',
+            'slug' => 'technology',
+            'status' => 'approved',
+            'submitted_by_email' => 'submitter_pii@real.co.ke',
+            'future_mysql_only_col' => 'ignored_gracefully',
+        ],
+    ],
+    [
+        [
+            'id' => 10,
+            'business_number' => 10,
+            'business_id' => 'BB-00010',
+            'name' => 'Prod Snapshot Co',
+            'slug' => 'prod-snapshot-co',
+            'tagline' => 'Approved tagline',
+            'description' => 'Approved listing',
+            'sector_id' => 1,
+            'specialty_id' => 1,
+            'country' => 'Kenya',
+            'city_county' => 'Nairobi',
+            'operating_hours_json' => '{"mon":[["08:00","17:00"]]}',
+            'phone_primary' => '+254700000010',
+            'owner_email' => 'real_founder_pii@company.co.ke',
+            'admin_provenance_note' => 'Private admin note with phone 0700000000',
+            'status' => 'approved',
+            'future_mysql_only_col' => 'ignored_gracefully',
+        ],
+    ]
+);
+$clonedBizRow182 = $clonePdo182->query("SELECT owner_email, admin_provenance_note, listing_provenance FROM businesses WHERE id = 10")->fetch();
+$clonedCatRow182 = $clonePdo182->query("SELECT submitted_by_email FROM categories WHERE id = 1")->fetch();
+$outboxAfterClone182 = (int)$clonePdo182->query("SELECT COUNT(*) FROM email_outbox")->fetchColumn();
+unset($clonePdo182);
+@unlink($cloneSqlitePath182);
+assertTrue(
+    $cloneRes182['businesses_cloned'] === 1 &&
+    $cloneRes182['pii_fields_scrubbed'] === true &&
+    is_array($clonedBizRow182) &&
+    $clonedBizRow182['owner_email'] === null &&
+    $clonedBizRow182['admin_provenance_note'] === null &&
+    $clonedBizRow182['owner_email'] === null &&
+    is_array($clonedCatRow182) &&
+    $clonedCatRow182['submitted_by_email'] === null &&
+    $outboxAfterClone182 === 0,
+    'PreprodSandbox::cloneSnapshotRowsIntoSqlite inspects columns dynamically, ignores unknown drift columns, wipes outbox/auth tables, and scrubs PII (#182)'
+);
+
+// 39h. MED-12 (#183): Monotonic business_sequences allocation, zero global renumber on deleteBusiness, and CLI bin/migrate-and-seed.php
+$seqNumA = VettingPurger::allocateNextBusinessNumber($pdo);
+$seqNumB = VettingPurger::allocateNextBusinessNumber($pdo);
+$curatedNumBeforeStmt = $pdo->prepare("SELECT business_number FROM businesses WHERE id = :id");
+$curatedNumBeforeStmt->execute([':id' => $curatedId179]);
+$curatedNumBefore = (int)$curatedNumBeforeStmt->fetchColumn();
+
+// Delete earlier business $pendId175 and verify $curatedId179 retains its exact business_number!
+VettingPurger::deleteBusiness($pdo, $pendId175, 'admin_dashboard', 'admin_session');
+$curatedNumAfterStmt = $pdo->prepare("SELECT business_number FROM businesses WHERE id = :id");
+$curatedNumAfterStmt->execute([':id' => $curatedId179]);
+$curatedNumAfter = (int)$curatedNumAfterStmt->fetchColumn();
+
+$cliMigrateSqlite = sys_get_temp_dir() . '/bbiz_cli_mig183_' . getmypid() . '.sqlite';
+$cliOut183 = [];
+$cliRc183 = 0;
+exec(
+    sprintf(
+        'APP_ENV=testing DB_DRIVER=sqlite DB_SQLITE_PATH=%s php %s --seed-samples 2>&1',
+        escapeshellarg($cliMigrateSqlite),
+        escapeshellarg(dirname(__DIR__) . '/bin/migrate-and-seed.php')
+    ),
+    $cliOut183,
+    $cliRc183
+);
+@unlink($cliMigrateSqlite);
+assertTrue(
+    $seqNumB === ($seqNumA + 1) &&
+    $curatedNumBefore > 0 &&
+    $curatedNumAfter === $curatedNumBefore &&
+    $cliRc183 === 0 &&
+    str_contains(implode("\n", $cliOut183), '"status": "ok"') && str_contains(implode("\n", $cliOut183), '"schema_version"'),
+    'business_sequences allocates monotonic numbers, deleteBusiness preserves existing business_number values without global renumbering, and bin/migrate-and-seed.php succeeds (#183)'
+);
+VettingPurger::deleteBusiness($pdo, $curatedId179, 'admin_dashboard', 'admin_session');
+
+// 39i. MED-13 (#184): Overnight shift carryover (Sunday 20:00 -> Monday 02:00) & strict 24h schedule validation
+$overnightSchedule = [
+    'mon' => [],
+    'tue' => [],
+    'wed' => [],
+    'thu' => [],
+    'fri' => [],
+    'sat' => [],
+    'sun' => [['20:00', '02:00']],
+];
+$eatTz = new DateTimeZone('Africa/Nairobi');
+// 2026-11-16 is a Monday -> 01:00 EAT carries over from Sunday's 20:00-02:00 overnight shift!
+$mon0100 = new DateTimeImmutable('2026-11-16 01:00:00', $eatTz);
+$mon0140 = new DateTimeImmutable('2026-11-16 01:40:00', $eatTz);
+$mon0205 = new DateTimeImmutable('2026-11-16 02:05:00', $eatTz);
+$ovOpen = HoursEngine::evaluateStatus($overnightSchedule, $mon0100);
+$ovClosingSoon = HoursEngine::evaluateStatus($overnightSchedule, $mon0140);
+$ovClosed = HoursEngine::evaluateStatus($overnightSchedule, $mon0205);
+
+$badHoursSchedule = $overnightSchedule;
+$badHoursSchedule['mon'] = [['25:00', '17:00']];
+$validMidnightClose = $overnightSchedule;
+$validMidnightClose['mon'] = [['08:00', '24:00']];
+assertTrue(
+    $ovOpen['is_open'] === true && $ovOpen['state'] === 'OPEN_NOW' &&
+    $ovClosingSoon['is_open'] === true && $ovClosingSoon['state'] === 'CLOSING_SOON' &&
+    $ovClosed['is_open'] === false && $ovClosed['state'] === 'CLOSED' &&
+    HoursEngine::validateScheduleJson((string)json_encode($badHoursSchedule)) === false &&
+    HoursEngine::validateScheduleJson((string)json_encode($validMidnightClose)) === true,
+    'HoursEngine evaluates overnight carryover shifts across midnight (including Sunday->Monday) and rejects out-of-range HH:MM values (#184)'
+);
+
+// 39j. MED-14 (#185) & MED-15 (#186): AbortController/request-seq/retry UI, sector+specialty hierarchy check, and strict http(s) URL & bounds validation
+$otherSecStmt = $pdo->prepare("SELECT id FROM categories WHERE parent_id IS NULL AND id <> :sec LIMIT 1");
+$otherSecStmt->execute([':sec' => $validSecId]);
+$otherSecId = (int)$otherSecStmt->fetchColumn();
+
+$validHoursJson186 = (string)json_encode($validMidnightClose);
+$threwJavascriptUrl = false;
+try {
+    VettingPurger::validateListingWritePayload($pdo, [
+        'name' => 'XSS URL Attempt',
+        'sector_id' => $validSecId,
+        'specialty_id' => $validSpecId,
+        'description' => 'Testing javascript URL rejection',
+        'website_url' => 'javascript:alert(document.cookie)',
+    ], null, null, $validHoursJson186);
+} catch (\InvalidArgumentException $e) {
+    $threwJavascriptUrl = true;
+}
+
+$threwOutOfBoundsLat = false;
+try {
+    VettingPurger::validateListingWritePayload($pdo, [
+        'name' => 'Invalid Latitude Attempt',
+        'sector_id' => $validSecId,
+        'specialty_id' => $validSpecId,
+        'description' => 'Testing latitude bounds',
+    ], 95.5, 36.8, $validHoursJson186);
+} catch (\InvalidArgumentException $e) {
+    $threwOutOfBoundsLat = true;
+}
+
+assertTrue(
+    CategoryMatcher::validateSectorAndSpecialtyPair($pdo, $validSecId, $validSpecId) === true &&
+    CategoryMatcher::validateSectorAndSpecialtyPair($pdo, $otherSecId, $validSpecId) === false &&
+    CategoryMatcher::validateSectorAndSpecialtyPair($pdo, $validSecId, $validSecId) === false &&
+    $threwJavascriptUrl === true &&
+    $threwOutOfBoundsLat === true &&
+    str_contains($dirJsSrc178, 'AbortController') &&
+    str_contains($dirJsSrc178, 'latestRequestSeq') &&
+    str_contains($dirJsSrc178, 'directory-fetch-error') &&
+    str_contains($dirJsSrc178, 'sanitizeHttpUrl'),
+    'Server & frontend enforce sector->specialty hierarchy, http(s) URL schemes, coordinate bounds (#186), and AbortController/retryable fetch error UI (#185)'
+);
+
 
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);

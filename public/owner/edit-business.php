@@ -7,6 +7,7 @@ use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\CategoryMatcher;
 use BusherianBiasharas\Services\OwnerAuth;
+use BusherianBiasharas\Services\PhotoUploadValidationException;
 use BusherianBiasharas\Services\VettingPurger;
 
 bbiz_send_security_headers(false);
@@ -40,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($typedConfirm === '' || $typedConfirm !== trim($currentBizNameForCheck)) {
             $errorMsg = 'Deletion cancelled: You must type the exact business name to confirm permanent deletion.';
         } else {
-            VettingPurger::deleteBusiness($pdo, $businessId);
+            VettingPurger::deleteBusiness($pdo, $businessId, 'owner_portal', 'owner:' . (int)$owner['id'], (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'));
             header('Location: /owner/index.php?deleted=1');
             exit;
         }
@@ -63,7 +64,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $savedMsg = 'Your business listing has been updated and is live on the directory!';
                 }
+            } catch (PhotoUploadValidationException|\InvalidArgumentException $e) {
+                $errorMsg = $e->getMessage();
             } catch (\Throwable $e) {
+                error_log('[owner/edit-business.php] Update failed: ' . $e->getMessage());
                 $errorMsg = 'Could not save changes. Please check required fields.';
             }
         }

@@ -67,21 +67,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$delInfo || $typedConfirm !== trim((string)$delInfo['name'])) {
                 $flashErr = 'Deletion cancelled: You must type the exact business name to confirm permanent deletion.';
             } else {
-                VettingPurger::deleteBusiness($pdo, $targetId);
+                $adminClientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+                VettingPurger::deleteBusiness($pdo, $targetId, 'admin_dashboard', 'admin_console', $adminClientIp);
                 $totalNow = (int)$pdo->query("SELECT COUNT(*) FROM businesses")->fetchColumn();
-                $flashMsg = "Permanently deleted '{$delInfo['name']}' (was #{$delInfo['business_number']}, ID: {$delInfo['business_id']}). Remaining {$totalNow} businesses renumbered sequentially (1–{$totalNow}).";
+                $flashMsg = "Permanently deleted '{$delInfo['name']}' (#{$delInfo['business_number']}, ID: {$delInfo['business_id']}). {$totalNow} business listing(s) remain active with stable Business Numbers.";
             }
         } elseif ($adminAction === 'unpublish') {
-            VettingPurger::quarantineBusinessDpa($pdo, $targetId);
+            $adminClientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+            VettingPurger::quarantineBusinessDpa($pdo, $targetId, 'admin_dashboard', 'admin_console', $adminClientIp);
             $flashMsg = "Business #{$targetId} has been unpublished (moved to reversible quarantine).";
         } elseif ($adminAction === 'restore_quarantined') {
-            $restoredStatus = VettingPurger::restoreQuarantinedBusiness($pdo, $targetId);
+            $adminClientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+            $restoredStatus = VettingPurger::restoreQuarantinedBusiness($pdo, $targetId, 'admin_dashboard', 'admin_console', $adminClientIp);
             $flashMsg = "Business #{$targetId} restored from quarantine back to '{$restoredStatus}' status.";
         } elseif ($adminAction === 'approve') {
-            VettingPurger::approveBusiness($pdo, $targetId);
+            $adminClientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+            VettingPurger::approveBusiness($pdo, $targetId, null, 'admin_dashboard', 'admin_console', $adminClientIp);
             $flashMsg = "Business #{$targetId} approved and published (vetting credentials purged).";
         } elseif ($adminAction === 'reject') {
-            VettingPurger::rejectBusiness($pdo, $targetId);
+            $adminClientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+            VettingPurger::rejectBusiness($pdo, $targetId, 'admin_dashboard', 'admin_console', $adminClientIp);
             $flashMsg = "Business #{$targetId} rejected (vetting credentials purged).";
         }
     }

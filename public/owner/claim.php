@@ -47,14 +47,28 @@ $currentOwner = OwnerAuth::getCurrentOwner($pdo);
 if ($currentOwner !== null) {
     $currentEmail = strtolower(trim((string)($currentOwner['email'] ?? '')));
     if (OwnerAuth::isEmailEligibleForClaim($pdo, $bizId, $currentEmail, $invitedEmail)) {
-        if (OwnerAuth::redeemVerifiedClaimInvite($pdo, (int)$currentOwner['id'], $currentEmail, $bizId, $exp, $sig, $invitedEmail)) {
-            header("Location: /owner/edit-business.php?id={$bizId}&claimed=1");
+        $pdo->beginTransaction();
+        try {
+            $freshCurrentOwner = OwnerAuth::getOwnerById($pdo, (int)$currentOwner['id']) ?? $currentOwner;
+            if (OwnerAuth::redeemVerifiedClaimInvite($pdo, (int)$freshCurrentOwner['id'], $currentEmail, $bizId, $exp, $sig, $invitedEmail)) {
+                OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$freshCurrentOwner['id'], $currentEmail);
+                $pdo->commit();
+                header("Location: /owner/edit-business.php?id={$bizId}&claimed=1");
+                exit;
+            }
+            $pdo->rollBack();
+            header('Location: /owner/login.php?err=invalid_link');
             exit;
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            error_log('[claim.php] Authenticated claim redemption failed: ' . $e->getMessage());
+            $errorMsg = 'Could not complete claim linking right now. Please try again.';
         }
-        header('Location: /owner/login.php?err=invalid_link');
-        exit;
+    } else {
+        $errorMsg = "You are currently signed in as {$currentEmail}, which does not match the designated owner email for this invitation. Please sign out first or verify the invited owner email below.";
     }
-    $errorMsg = "You are currently signed in as {$currentEmail}, which does not match the designated owner email for this invitation. Please sign out first or verify the invited owner email below.";
 }
 
 $viewMode = 'identify'; // 'identify' | 'verify_otp'
@@ -82,18 +96,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($currentPw === '') {
             $errorMsg = 'Please enter your current Owner Password, or request a 6-digit email verification code.';
         } else {
-            $authOwner = OwnerAuth::authenticateWithPassword($pdo, $email, $currentPw);
-            if ($authOwner === null) {
-                $errorMsg = 'Incorrect password for that Owner Account. Enter your current password or request a 6-digit email verification code.';
-            } else {
-                if (!OwnerAuth::redeemVerifiedClaimInvite($pdo, (int)$authOwner['id'], $email, $bizId, $exp, $sig, $invitedEmail)) {
-                    header('Location: /owner/login.php?err=invalid_link');
+            $pdo->beginTransaction();
+            try {
+                $authOwner = OwnerAuth::authenticateWithPassword($pdo, $email, $currentPw);
+                if ($authOwner === null) {
+                    $pdo->rollBack();
+                    $errorMsg = 'Incorrect password for that Owner Account. Enter your current password or request a 6-digit email verification code.';
+                } else {
+                    $freshOwner = OwnerAuth::getOwnerById($pdo, (int)$authOwner['id']) ?? $authOwner;
+                    if (!OwnerAuth::redeemVerifiedClaimInvite($pdo, (int)$freshOwner['id'], $email, $bizId, $exp, $sig, $invitedEmail)) {
+                        $pdo->rollBack();
+                        header('Location: /owner/login.php?err=invalid_link');
+                        exit;
+                    }
+                    OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$freshOwner['id'], $email);
+                    $pdo->commit();
+                    OwnerAuth::establishOwnerSession($freshOwner, true, $pdo);
+                    header("Location: /owner/edit-business.php?id={$bizId}&claimed=1");
                     exit;
                 }
-                OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$authOwner['id'], $email);
-                OwnerAuth::establishOwnerSession($authOwner);
-                header("Location: /owner/edit-business.php?id={$bizId}&claimed=1");
-                exit;
+            } catch (\Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                error_log('[claim.php] Password claim failed: ' . $e->getMessage());
+                $errorMsg = 'Could not complete claim sign-in right now. Please try again.';
             }
         }
     } elseif ($claimStep === 'verify_otp') {
@@ -133,9 +160,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         header('Location: /owner/login.php?err=invalid_link');
                         exit;
                     }
-                    $pdo->commit();
                     OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$freshOwner['id'], $email);
-                    OwnerAuth::establishOwnerSession($freshOwner);
+                    $pdo->commit();
+                    OwnerAuth::establishOwnerSession($freshOwner, true, $pdo);
                     header("Location: /owner/edit-business.php?id={$bizId}&claimed=1");
                     exit;
                 }
@@ -169,8 +196,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errorMsg = $reasonMap[$spamCheck['reason']] ?? 'Verification request blocked by security check. Please reload and try again.';
             }
         } else {
-            $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, null);
-            $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], (string)$biz['name']);
+            $mailQuota = AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, $email, true);
+            if (!$mailQuota['allowed']) {
+                $errorMsg = $mailQuota['reason'] === 'otp_recipient_cooldown_60s'
+                    ? 'A verification code was just sent to that email address. Please check your inbox or wait 60 seconds before requesting another code.'
+                    : 'Verification email dispatch is temporarily rate-limited. Please wait a few minutes and try again.';
+            } else {
+                $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, null);
+                $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], (string)$biz['name']);
             if (!Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
                 $errorMsg = 'We could not deliver the 6-digit verification email right now due to a temporary mail server issue. Your email has been queued for automatic retry — please check your inbox shortly or try again in a few minutes.';
             } else {
@@ -179,6 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
                     $devPreviewOtpCode = $otpInfo['code'];
                 }
+            }
             }
         }
     }

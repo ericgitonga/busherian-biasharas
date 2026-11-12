@@ -4,9 +4,9 @@ declare(strict_types=1);
 require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
+use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\CategoryMatcher;
 use BusherianBiasharas\Services\HoursEngine;
-use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\PhotoUploader;
@@ -17,6 +17,7 @@ try {
     $pdo = Database::getConnection();
     $currentOwner = OwnerAuth::getCurrentOwner($pdo);
     $isAdminVisitor = AdminAuth::isAuthenticated();
+    $isAuthenticatedViewer = ($currentOwner !== null || $isAdminVisitor);
 
     $q          = trim((string)($_GET['q'] ?? ''));
     $sectorId   = isset($_GET['sector_id']) && $_GET['sector_id'] !== '' ? (int)$_GET['sector_id'] : null;
@@ -32,24 +33,12 @@ try {
     $userLng    = isset($_GET['lng']) && $_GET['lng'] !== '' ? (float)$_GET['lng'] : null;
     $radiusKm   = isset($_GET['radius_km']) && $_GET['radius_km'] !== '' ? (float)$_GET['radius_km'] : null;
 
+    $page    = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+    $perPage = isset($_GET['per_page']) ? max(1, min(100, (int)$_GET['per_page'])) : 10;
+
     // STRICT PRIVACY GUARANTEE: Explicit column whitelist from `businesses` and `categories` ONLY.
     // `business_vetting_queue` is NEVER joined or queried in public APIs.
-    $sql = "
-        SELECT
-            b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.description,
-            b.school_badge, b.sector_id, b.specialty_id,
-            sec.name AS sector_name, sec.slug AS sector_slug,
-            spec.name AS specialty_name, spec.slug AS specialty_slug,
-            b.service_mode, b.alumni_perk, b.b2b_ready, b.accepts_lpo,
-            b.regulator_name, b.regulator_license,
-            b.branch_name, b.building_name, b.floor_suite, b.street_road,
-            b.area_neighborhood, b.country, b.city_county, b.landmark_directions,
-            b.plus_code, b.latitude, b.longitude, b.google_maps_url,
-            b.operating_hours_json, b.photos_json,
-            b.phone_primary, b.whatsapp_number, b.email_public, b.website_url,
-            b.social_instagram, b.social_linkedin, b.social_x,
-            b.social_facebook, b.social_tiktok, b.social_youtube,
-            b.logo_path, b.verified_at
+    $fromWhereSql = "
         FROM businesses b
         INNER JOIN categories sec ON sec.id = b.sector_id
         INNER JOIN categories spec ON spec.id = b.specialty_id
@@ -59,47 +48,45 @@ try {
     $params = [];
 
     if ($sectorId !== null && $sectorId > 0) {
-        $sql .= " AND b.sector_id = :sector_id";
+        $fromWhereSql .= " AND b.sector_id = :sector_id";
         $params[':sector_id'] = $sectorId;
     }
     if ($specId !== null && $specId > 0) {
-        $sql .= " AND b.specialty_id = :specialty_id";
+        $fromWhereSql .= " AND b.specialty_id = :specialty_id";
         $params[':specialty_id'] = $specId;
     }
     if ($country !== '') {
-        $sql .= " AND LOWER(b.country) = LOWER(:country)";
+        $fromWhereSql .= " AND LOWER(b.country) = LOWER(:country)";
         $params[':country'] = $country;
     }
     if ($cityCounty !== '') {
-        $sql .= " AND LOWER(b.city_county) = LOWER(:city_county)";
+        $fromWhereSql .= " AND LOWER(b.city_county) = LOWER(:city_county)";
         $params[':city_county'] = $cityCounty;
     }
     if (in_array($school, ['AHS', 'AGHS'], true)) {
-        $sql .= " AND (b.school_badge = :school OR b.school_badge = 'BOTH')";
+        $fromWhereSql .= " AND (b.school_badge = :school OR b.school_badge = 'BOTH')";
         $params[':school'] = $school;
     }
     if (in_array($mode, ['physical', 'hybrid', 'online'], true)) {
-        $sql .= " AND b.service_mode = :mode";
+        $fromWhereSql .= " AND b.service_mode = :mode";
         $params[':mode'] = $mode;
     }
     if ($hasPerk) {
-        $sql .= " AND b.alumni_perk IS NOT NULL AND b.alumni_perk != ''";
+        $fromWhereSql .= " AND b.alumni_perk IS NOT NULL AND b.alumni_perk != ''";
     }
     if ($b2bReady) {
-        $sql .= " AND b.b2b_ready = 1";
+        $fromWhereSql .= " AND b.b2b_ready = 1";
     }
 
-    // Bounding-box pre-filter when user coordinates + radius_km are provided
     if ($userLat !== null && $userLng !== null && $radiusKm !== null && $radiusKm > 0) {
         $bbox = LocationEngine::boundingBox($userLat, $userLng, $radiusKm);
-        $sql .= " AND b.latitude BETWEEN :min_lat AND :max_lat AND b.longitude BETWEEN :min_lng AND :max_lng";
+        $fromWhereSql .= " AND b.latitude BETWEEN :min_lat AND :max_lat AND b.longitude BETWEEN :min_lng AND :max_lng";
         $params[':min_lat'] = $bbox['minLat'];
         $params[':max_lat'] = $bbox['maxLat'];
         $params[':min_lng'] = $bbox['minLng'];
         $params[':max_lng'] = $bbox['maxLng'];
     }
 
-    // Keyword + Kenyan/Swahili Synonym Search (escaping LIKE wildcards % and _)
     if ($q !== '') {
         $expandedTerms = CategoryMatcher::expandSearchTerms($q);
         $orClauses = [];
@@ -116,42 +103,103 @@ try {
             $orClauses[] = '(' . implode(' OR ', $colParts) . ')';
         }
         if ($orClauses) {
-            $sql .= " AND (" . implode(' OR ', $orClauses) . ")";
+            $fromWhereSql .= " AND (" . implode(' OR ', $orClauses) . ")";
         }
     }
 
-    $sql .= " ORDER BY b.business_number ASC, b.id ASC";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $rows = $stmt->fetchAll();
+    $selectCols = "
+        SELECT
+            b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.description,
+            b.school_badge, b.sector_id, b.specialty_id,
+            sec.name AS sector_name, sec.slug AS sector_slug,
+            spec.name AS specialty_name, spec.slug AS specialty_slug,
+            b.service_mode, b.alumni_perk, b.b2b_ready, b.accepts_lpo,
+            b.regulator_name, b.regulator_license,
+            b.branch_name, b.building_name, b.floor_suite, b.street_road,
+            b.area_neighborhood, b.country, b.city_county, b.landmark_directions,
+            b.plus_code, b.latitude, b.longitude, b.google_maps_url,
+            b.operating_hours_json, b.photos_json,
+            b.phone_primary, b.whatsapp_number, b.email_public, b.website_url,
+            b.social_instagram, b.social_linkedin, b.social_x,
+            b.social_facebook, b.social_tiktok, b.social_youtube,
+            b.logo_path, b.verified_at
+    ";
 
-    $results = [];
-    foreach ($rows as $row) {
-        $hoursStatus = HoursEngine::evaluateStatus((string)$row['operating_hours_json']);
-        if ($openNow && !$hoursStatus['is_open']) {
-            continue;
+    $needsPhpFilterOrDistanceSort = ($openNow || ($userLat !== null && $userLng !== null));
+
+    if (!$needsPhpFilterOrDistanceSort) {
+        $cntStmt = $pdo->prepare("SELECT COUNT(*) " . $fromWhereSql);
+        $cntStmt->execute($params);
+        $totalCount = (int)$cntStmt->fetchColumn();
+        $totalPages = max(1, (int)ceil($totalCount / $perPage));
+        if ($page > $totalPages) {
+            $page = $totalPages;
         }
+        $offset = ($page - 1) * $perPage;
 
-        $distanceKm = null;
-        if ($userLat !== null && $userLng !== null && $row['latitude'] !== null && $row['longitude'] !== null) {
-            $distanceKm = LocationEngine::haversineKm($userLat, $userLng, (float)$row['latitude'], (float)$row['longitude']);
-            if ($radiusKm !== null && $radiusKm > 0 && $distanceKm > $radiusKm) {
+        $pageSql = $selectCols . $fromWhereSql . " ORDER BY b.business_number ASC, b.id ASC LIMIT " . (int)$perPage . " OFFSET " . (int)$offset;
+        $stmt = $pdo->prepare($pageSql);
+        $stmt->execute($params);
+        $pagedRows = $stmt->fetchAll();
+    } else {
+        $stmt = $pdo->prepare($selectCols . $fromWhereSql . " ORDER BY b.business_number ASC, b.id ASC");
+        $stmt->execute($params);
+        $allRows = $stmt->fetchAll();
+        $filteredRows = [];
+        foreach ($allRows as $row) {
+            $hoursStatus = HoursEngine::evaluateStatus((string)$row['operating_hours_json']);
+            if ($openNow && !$hoursStatus['is_open']) {
                 continue;
             }
+            $distanceKm = null;
+            if ($userLat !== null && $userLng !== null && $row['latitude'] !== null && $row['longitude'] !== null) {
+                $distanceKm = LocationEngine::haversineKm($userLat, $userLng, (float)$row['latitude'], (float)$row['longitude']);
+                if ($radiusKm !== null && $radiusKm > 0 && $distanceKm > $radiusKm) {
+                    continue;
+                }
+            }
+            $row['_eval_hours'] = $hoursStatus;
+            $row['_eval_dist'] = $distanceKm;
+            $filteredRows[] = $row;
         }
+        if ($userLat !== null && $userLng !== null) {
+            usort($filteredRows, static function (array $a, array $b): int {
+                $da = $a['_eval_dist'] ?? 999999.0;
+                $db = $b['_eval_dist'] ?? 999999.0;
+                return $da <=> $db;
+            });
+        }
+        $totalCount = count($filteredRows);
+        $totalPages = max(1, (int)ceil($totalCount / $perPage));
+        if ($page > $totalPages) {
+            $page = $totalPages;
+        }
+        $offset = ($page - 1) * $perPage;
+        $pagedRows = array_slice($filteredRows, $offset, $perPage);
+    }
 
+    // Batch ownership check in a SINGLE query (#180: zero N+1 queries)
+    $pageBizIds = array_map(static fn(array $r): int => (int)$r['id'], $pagedRows);
+    $editableBizIds = ($currentOwner !== null && $pageBizIds !== [])
+        ? OwnerAuth::getEditableBusinessIdsForOwner($pdo, (int)$currentOwner['id'], $pageBizIds)
+        : [];
+
+    $results = [];
+    foreach ($pagedRows as $row) {
         $bizId = (int)$row['id'];
-        $canOwnerEdit = $currentOwner !== null && OwnerAuth::canOwnerEditBusiness($pdo, (int)$currentOwner['id'], $bizId);
+        $hoursStatus = $row['_eval_hours'] ?? HoursEngine::evaluateStatus((string)$row['operating_hours_json']);
+        $distanceKm = array_key_exists('_eval_dist', $row) ? $row['_eval_dist'] : null;
+
+        $canOwnerEdit = !empty($editableBizIds[$bizId]);
         $canEdit = $canOwnerEdit || $isAdminVisitor;
         $editUrl = $canOwnerEdit
             ? ('/owner/edit-business.php?id=' . $bizId)
             : ($isAdminVisitor ? ('/admin/edit-business.php?id=' . $bizId) : null);
 
-        $results[] = [
+        $item = [
             'id' => $bizId,
             'can_edit' => $canEdit,
             'edit_url' => $editUrl,
-            'owner_email_hints' => OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $bizId),
             'business_id' => $row['business_id'],
             'business_number' => (int)$row['business_number'],
             'name' => $row['name'],
@@ -197,19 +245,25 @@ try {
                 'youtube'   => $row['social_youtube'],
             ]),
         ];
-    }
 
-    if ($userLat !== null && $userLng !== null) {
-        usort($results, static function (array $a, array $b): int {
-            $da = $a['distance_km'] ?? 999999.0;
-            $db = $b['distance_km'] ?? 999999.0;
-            return $da <=> $db;
-        });
+        // Privacy (#180): Omit owner_email_hints from unauthenticated public directory feeds
+        if ($isAuthenticatedViewer) {
+            $item['owner_email_hints'] = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $bizId);
+        }
+
+        $results[] = $item;
     }
 
     echo json_encode([
         'status' => 'ok',
         'count' => count($results),
+        'total_count' => $totalCount,
+        'pagination' => [
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $totalCount,
+            'total_pages' => $totalPages,
+        ],
         'businesses' => $results,
     ], JSON_UNESCAPED_SLASHES);
 } catch (\Throwable $e) {

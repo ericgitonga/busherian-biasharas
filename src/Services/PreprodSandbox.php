@@ -950,44 +950,95 @@ BANNER;
         $prodApproved = $prodPdo->query("SELECT * FROM businesses WHERE status = 'approved' ORDER BY id ASC")->fetchAll();
         $prodPdo = null; // Close production MySQL handle immediately
 
-        // Discover valid columns in Pre-Prod SQLite businesses table
-        $sqliteCols = [];
+        return self::cloneSnapshotRowsIntoSqlite($preprodPdo, $prodCategories, $prodApproved);
+    }
+
+    /**
+     * Dynamically clone category & approved-business rows into a Pre-Prod SQLite database while:
+     * 1. Inspecting actual SQLite columns via PRAGMA table_info(...) (never referencing nonexistent columns) (#182).
+     * 2. Scrubbing private owner_email, admin_provenance_note, category submitted_by_email, and wiping all
+     *    owner accounts, sessions, auth tokens, vetting rows, outbox bodies, and takedown PII (#182).
+     *
+     * @param list<array<string,mixed>> $prodCategories
+     * @param list<array<string,mixed>> $prodApproved
+     * @return array{categories_cloned: int, businesses_cloned: int, pii_fields_scrubbed: bool}
+     */
+    public static function cloneSnapshotRowsIntoSqlite(
+        PDO $preprodPdo,
+        array $prodCategories,
+        array $prodApproved
+    ): array {
+        $catCols = [];
+        foreach ($preprodPdo->query("PRAGMA table_info(categories)")->fetchAll() as $col) {
+            $catCols[] = (string)$col['name'];
+        }
+        $bizCols = [];
         foreach ($preprodPdo->query("PRAGMA table_info(businesses)")->fetchAll() as $col) {
-            $sqliteCols[] = (string)$col['name'];
+            $bizCols[] = (string)$col['name'];
+        }
+
+        $tablesToWipe = [
+            'business_vetting_queue',
+            'business_owner_links',
+            'owner_sessions',
+            'owner_auth_tokens',
+            'business_owners',
+            'email_outbox',
+            'takedown_requests',
+            'moderation_audit_log',
+            'used_nonces',
+            'rate_limits',
+        ];
+        $existingTables = [];
+        foreach ($preprodPdo->query("SELECT name FROM sqlite_master WHERE type = 'table'")->fetchAll() as $tr) {
+            $existingTables[(string)$tr['name']] = true;
         }
 
         $preprodPdo->exec('PRAGMA foreign_keys = OFF;');
         $preprodPdo->beginTransaction();
         try {
-            if (!empty($prodCategories)) {
-                $preprodPdo->exec('DELETE FROM categories');
-                $catStmt = $preprodPdo->prepare("
-                    INSERT INTO categories (id, parent_id, name, slug, icon, synonyms, is_regulated, default_regulator, status, sort_order)
-                    VALUES (:id, :parent_id, :name, :slug, :icon, :synonyms, :is_regulated, :default_regulator, :status, :sort_order)
-                ");
-                foreach ($prodCategories as $c) {
-                    $catStmt->execute([
-                        ':id' => (int)$c['id'],
-                        ':parent_id' => $c['parent_id'] !== null ? (int)$c['parent_id'] : null,
-                        ':name' => (string)$c['name'],
-                        ':slug' => (string)$c['slug'],
-                        ':icon' => $c['icon'] ?? null,
-                        ':synonyms' => $c['synonyms'] ?? null,
-                        ':is_regulated' => (int)($c['is_regulated'] ?? 0),
-                        ':default_regulator' => $c['default_regulator'] ?? null,
-                        ':status' => (string)($c['status'] ?? 'approved'),
-                        ':sort_order' => (int)($c['sort_order'] ?? 0),
-                    ]);
+            foreach ($tablesToWipe as $tbl) {
+                if (isset($existingTables[$tbl])) {
+                    $preprodPdo->exec("DELETE FROM {$tbl}");
                 }
             }
 
-            $preprodPdo->exec('DELETE FROM business_vetting_queue');
-            $preprodPdo->exec('DELETE FROM businesses');
+            $copiedCats = 0;
+            if (!empty($prodCategories)) {
+                $preprodPdo->exec('DELETE FROM categories');
+                foreach ($prodCategories as $c) {
+                    $filteredCat = [];
+                    foreach ($catCols as $colName) {
+                        if (array_key_exists($colName, $c)) {
+                            $filteredCat[$colName] = $c[$colName];
+                        }
+                    }
+                    if (array_key_exists('submitted_by_email', $filteredCat)) {
+                        $filteredCat['submitted_by_email'] = null;
+                    }
+                    if (empty($filteredCat)) {
+                        continue;
+                    }
+                    $cSql = implode(', ', array_keys($filteredCat));
+                    $pSql = implode(', ', array_map(static fn(string $k): string => ':' . $k, array_keys($filteredCat)));
+                    $insC = $preprodPdo->prepare("INSERT INTO categories ({$cSql}) VALUES ({$pSql})");
+                    $cParams = [];
+                    foreach ($filteredCat as $k => $v) {
+                        $cParams[':' . $k] = $v;
+                    }
+                    $insC->execute($cParams);
+                    $copiedCats++;
+                }
+            }
 
-            $copied = 0;
+            $preprodPdo->exec('DELETE FROM businesses');
+            $copiedBiz = 0;
             foreach ($prodApproved as $b) {
+                if (($b['status'] ?? 'approved') !== 'approved') {
+                    continue;
+                }
                 $filtered = [];
-                foreach ($sqliteCols as $colName) {
+                foreach ($bizCols as $colName) {
                     if (array_key_exists($colName, $b)) {
                         $filtered[$colName] = $b[$colName];
                     }
@@ -995,6 +1046,16 @@ BANNER;
                 if (empty($filtered)) {
                     continue;
                 }
+                if (array_key_exists('owner_email', $filtered)) {
+                    $filtered['owner_email'] = null;
+                }
+                if (array_key_exists('admin_provenance_note', $filtered)) {
+                    $filtered['admin_provenance_note'] = null;
+                }
+                if (array_key_exists('quarantine_prev_status', $filtered)) {
+                    $filtered['quarantine_prev_status'] = null;
+                }
+
                 $colsSql = implode(', ', array_keys($filtered));
                 $placeholders = implode(', ', array_map(static fn(string $k): string => ':' . $k, array_keys($filtered)));
                 $ins = $preprodPdo->prepare("INSERT INTO businesses ({$colsSql}) VALUES ({$placeholders})");
@@ -1003,9 +1064,10 @@ BANNER;
                     $params[':' . $k] = $v;
                 }
                 $ins->execute($params);
-                $copied++;
+                $copiedBiz++;
             }
 
+            Database::syncBusinessSequenceFloor($preprodPdo, 'sqlite');
             $preprodPdo->commit();
         } catch (Throwable $txErr) {
             if ($preprodPdo->inTransaction()) {
@@ -1017,8 +1079,9 @@ BANNER;
         $preprodPdo->exec('PRAGMA foreign_keys = ON;');
 
         return [
-            'categories_cloned' => count($prodCategories),
-            'businesses_cloned' => count($prodApproved),
+            'categories_cloned' => $copiedCats,
+            'businesses_cloned' => $copiedBiz,
+            'pii_fields_scrubbed' => true,
         ];
     }
 

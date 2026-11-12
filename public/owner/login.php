@@ -101,30 +101,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $flashError = 'Please enter a valid email address.';
     } elseif ($formStep === 'send_otp') {
-        $rate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'owner_otp_send', 6, 15);
-        $pendingSubBizId = OwnerAuth::findPendingSubmissionBusinessIdForEmail($pdo, $email);
-        $hasEligibleVerifiedClaim = (
-            $claimBizId > 0 &&
-            OwnerAuth::isEmailEligibleForClaim($pdo, $claimBizId, $email, $claimInvitedEmail)
-        );
-        if (!$rate['allowed']) {
-            $flashError = 'Too many verification code requests. Please wait a few minutes and try again.';
-            $viewStep = 'reset';
-        } elseif (!OwnerAuth::isRecognizedOwnerEmail($pdo, $email) && $pendingSubBizId === null && !$hasEligibleVerifiedClaim) {
-            $flashError = 'We could not find a business listing matching that exact email address. Please check the masked email hint on your listing card, or ask the directory admin for your Owner Access Link.';
-            $viewStep = 'reset';
-        } else {
-            $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, $pendingSubBizId);
-            $ctxName = $claimBizName ?: $targetBizName;
-            $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
-            if (!Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
-                $viewStep = 'reset';
-                $flashError = 'We could not deliver your 6-digit verification email right now due to a temporary mail server issue. Your email is queued for automatic retry — please check your inbox shortly or try again in a few minutes.';
-            } else {
+        $emailDomain = OwnerAuth::extractEmailDomain($email) ?? '';
+        $spamPayload = [
+            'website' => $_POST['website'] ?? '',
+            'form_ts' => $_POST['form_ts'] ?? 0,
+            'form_nonce' => $_POST['form_nonce'] ?? '',
+            'form_sig' => $_POST['form_sig'] ?? '',
+            'js_interaction_token' => $_POST['js_interaction_token'] ?? '',
+            'submitter_name' => 'Business Owner',
+            'name' => 'Owner Account Verification',
+            'tagline' => 'Password Verification Code',
+            'description' => 'Owner OTP request',
+            'website_url' => $emailDomain !== '' ? ('https://' . $emailDomain) : '',
+        ];
+        $spamCheck = AntiSpamGate::verifySubmission($pdo, $spamPayload, $clientIp, 'owner_otp_send');
+        if (!$spamCheck['passed']) {
+            if ($spamCheck['silent_drop']) {
                 $viewStep = 'verify_otp';
-                $flashSuccess = "We sent a 6-digit verification code to {$email}. Enter the 6-digit code below and choose your password right here in this browser window.";
-                if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
-                    $devPreviewOtpCode = $otpInfo['code'];
+                $flashSuccess = "If {$email} is linked to a verified Busherian listing, a 6-digit verification code has been dispatched.";
+            } else {
+                $viewStep = 'reset';
+                $reasonMap = [
+                    'layer2_invalid_signature' => 'Security verification signature could not be confirmed. Please reload the page and try again.',
+                    'layer2_form_expired' => 'This verification form expired (older than 2 hours). Please reload and try again.',
+                    'layer2_nonce_replayed' => 'This verification form was already submitted. Enter your 6-digit code or reload for a fresh form.',
+                ];
+                $flashError = $reasonMap[$spamCheck['reason']] ?? 'Verification request blocked by security check. Please reload and try again.';
+            }
+        } else {
+            $pendingSubBizId = OwnerAuth::findPendingSubmissionBusinessIdForEmail($pdo, $email);
+            $hasEligibleVerifiedClaim = (
+                $claimBizId > 0 &&
+                OwnerAuth::isEmailEligibleForClaim($pdo, $claimBizId, $email, $claimInvitedEmail)
+            );
+            if (!OwnerAuth::isRecognizedOwnerEmail($pdo, $email) && $pendingSubBizId === null && !$hasEligibleVerifiedClaim) {
+                $flashError = 'We could not find a business listing matching that exact email address. Please check the masked email hint on your listing card, or ask the directory admin for your Owner Access Link.';
+                $viewStep = 'reset';
+            } else {
+                $mailQuota = AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, $email, true);
+                if (!$mailQuota['allowed']) {
+                    $viewStep = 'reset';
+                    $flashError = $mailQuota['reason'] === 'otp_recipient_cooldown_60s'
+                        ? 'A 6-digit verification code was just sent to that email address. Please check your inbox or wait 60 seconds before requesting another code.'
+                        : 'Too many verification emails requested recently. Please wait a few minutes and try again.';
+                } else {
+                    $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, $pendingSubBizId);
+                    $ctxName = $claimBizName ?: $targetBizName;
+                    $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
+                    if (!Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
+                        $viewStep = 'reset';
+                        $flashError = 'We could not deliver your 6-digit verification email right now due to a temporary mail server issue. Your email is queued for automatic retry — please check your inbox shortly or try again in a few minutes.';
+                    } else {
+                        $viewStep = 'verify_otp';
+                        $flashSuccess = "We sent a 6-digit verification code to {$email}. Enter the 6-digit code below and choose your password right here in this browser window.";
+                        if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
+                            $devPreviewOtpCode = $otpInfo['code'];
+                        }
+                    }
                 }
             }
         }
@@ -174,34 +207,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashError = 'Too many sign-in attempts. Please wait 15 minutes or reset your password.';
         } else {
             $existingOwner = OwnerAuth::findOwnerByEmail($pdo, $email);
-            if ($existingOwner !== null && empty($existingOwner['password_hash'])) {
-                $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, null);
-                $ctxName = $claimBizName ?: $targetBizName;
-                $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
-                if (!Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
-                    $viewStep = 'reset';
-                    $flashError = 'We could not deliver your 6-digit verification email right now due to a temporary mail server issue. Your email is queued for automatic retry — please try again shortly.';
-                } else {
-                    $viewStep = 'verify_otp';
-                    $flashSuccess = "Welcome back! Because your listing was added before passwords were enabled, we just sent a 6-digit verification code to {$email}. Enter that code below and choose your password to unlock editing.";
-                    if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
-                        $devPreviewOtpCode = $otpInfo['code'];
-                    }
-                }
-            } elseif ($existingOwner === null && OwnerAuth::isRecognizedOwnerEmail($pdo, $email)) {
-                $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, null);
-                $ctxName = $claimBizName ?: $targetBizName;
-                $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
-                if (!Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
-                    $viewStep = 'reset';
-                    $flashError = 'We could not deliver your 6-digit verification email right now due to a temporary mail server issue. Your email is queued for automatic retry — please try again shortly.';
-                } else {
-                    $viewStep = 'verify_otp';
-                    $flashSuccess = "We found a business listing matching {$email} and sent a 6-digit verification code to your inbox. Enter the code below and choose your password to start editing!";
-                    if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
-                        $devPreviewOtpCode = $otpInfo['code'];
-                    }
-                }
+            if (
+                ($existingOwner !== null && empty($existingOwner['password_hash'])) ||
+                ($existingOwner === null && OwnerAuth::isRecognizedOwnerEmail($pdo, $email))
+            ) {
+                // Security (#173): Never auto-dispatch unthrottled OTP emails from password_login.
+                // Direct the owner to the 7-layer AntiSpamGate-protected OTP form instead.
+                $viewStep = 'reset';
+                $flashSuccess = "To protect your account, please click 'Send 6-Digit Verification Code' below to verify {$email} and set your Owner Password.";
             } else {
                 $authOwner = OwnerAuth::authenticateWithPassword($pdo, $email, $password);
                 if ($authOwner !== null) {
@@ -343,8 +356,16 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
         </p>
         <form method="POST" action="/owner/login.php" data-testid="owner-otp-send-form">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="form_ts" value="<?= (int)$tokens['form_ts'] ?>">
+          <input type="hidden" name="form_nonce" value="<?= htmlspecialchars($tokens['form_nonce'], ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="form_sig" value="<?= htmlspecialchars($tokens['form_sig'], ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="js_interaction_token" id="owner_reset_js_interaction_token" value="">
           <input type="hidden" name="form_step" value="send_otp">
           <input type="hidden" name="biz" value="<?= $targetBizId ?>">
+          <div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
+            <label for="owner_portal_ref_url">Official Portal URL</label>
+            <input type="text" id="owner_portal_ref_url" name="website" value="" tabindex="-1" autocomplete="nope">
+          </div>
 
           <label for="reset-email" style="display:block;font-weight:700;font-size:0.84rem;margin-bottom:0.35rem;color:#111827;">
             Your Owner Email Address *
@@ -426,5 +447,19 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
       </div>
     </section>
   </main>
+  <script>
+    (function () {
+      var tok = document.getElementById('owner_reset_js_interaction_token');
+      if (!tok) return;
+      var arm = function () {
+        if (!tok.value) {
+          tok.value = 'human_verified_' + Date.now();
+        }
+      };
+      ['focusin', 'keydown', 'pointerdown', 'touchstart'].forEach(function (ev) {
+        document.addEventListener(ev, arm, { once: true, passive: true });
+      });
+    })();
+  </script>
 </body>
 </html>

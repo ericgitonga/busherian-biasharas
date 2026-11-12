@@ -10,6 +10,9 @@ final class AntiSpamGate
 {
     private const MIN_FILL_SECONDS = 4;
     private const MAX_FORM_AGE_SECONDS = 7200; // 2 hours
+    public const GLOBAL_OUTBOUND_MAIL_LIMIT_1H = 15;
+    public const OTP_RECIPIENT_COOLDOWN_SECONDS = 60;
+    public const OTP_RECIPIENT_LIMIT_1H = 4;
 
     private const BLOCKED_DOMAINS = [
         'telegra.ph',
@@ -34,9 +37,6 @@ final class AntiSpamGate
         '/\b(?:crypto\s+airdrop|bitcoin\s+investment|forex\s+signals\s+guaranteed|casino\s+bonus|buy\s+backlinks|seo\s+ranking\s+service|passive\s+income\s+daily)\b/i',
     ];
 
-    /**
-     * Generate signed timestamp + nonce tokens for rendering in a public form.
-     */
     public static function generateFormTokens(?int $timestampOverride = null): array
     {
         $ts = $timestampOverride ?? time();
@@ -54,9 +54,6 @@ final class AntiSpamGate
         ];
     }
 
-    /**
-     * Generate a session-bound HMAC-SHA256 CSRF token, failing closed if no active session ID exists (#187).
-     */
     public static function generateCsrfToken(): string
     {
         OwnerAuth::startSecureSession();
@@ -68,9 +65,6 @@ final class AntiSpamGate
         return hash_hmac('sha256', $sessionId, $csrfSecret);
     }
 
-    /**
-     * Verify a session-bound HMAC-SHA256 CSRF token with zero stateless fallback (#187).
-     */
     public static function verifyCsrfToken(string $submittedToken): bool
     {
         if ($submittedToken === '') {
@@ -86,20 +80,42 @@ final class AntiSpamGate
         return hash_equals($expected, $submittedToken);
     }
 
-    /**
-     * Evaluate all 7 Anti-Spam Layers on an unauthenticated public form submission.
-     *
-     * @return array{passed: bool, silent_drop: bool, reason: string}
-     */
+    public static function claimSingleUseNonce(PDO $pdo, string $nonceHash, int $expiresAt): bool
+    {
+        $cleanHash = trim($nonceHash);
+        if ($cleanHash === '') {
+            return false;
+        }
+        $now = time();
+        $pdo->prepare("DELETE FROM used_nonces WHERE expires_at < :now")->execute([':now' => $now]);
+
+        $driver = strtolower((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        $sql = ($driver === 'sqlite')
+            ? "INSERT OR IGNORE INTO used_nonces (nonce_hash, expires_at) VALUES (:nh, :exp)"
+            : "INSERT IGNORE INTO used_nonces (nonce_hash, expires_at) VALUES (:nh, :exp)";
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            ':nh' => $cleanHash,
+            ':exp' => max($expiresAt, $now + 60),
+        ]);
+        return $stmt->rowCount() === 1;
+    }
+
+    public static function isNonceUsed(PDO $pdo, string $nonceHash): bool
+    {
+        $stmt = $pdo->prepare("SELECT 1 FROM used_nonces WHERE nonce_hash = :nh AND expires_at >= :now LIMIT 1");
+        $stmt->execute([':nh' => trim($nonceHash), ':now' => time()]);
+        return (bool)$stmt->fetchColumn();
+    }
+
     public static function verifySubmission(PDO $pdo, array $post, string $clientIp, string $actionType = 'business_submit'): array
     {
-        // Layer 1: Disguised Text Honeypot (Never Checkbox-Only)
         $honeypot = trim((string)($post['website'] ?? ''));
         if ($honeypot !== '') {
             return ['passed' => false, 'silent_drop' => true, 'reason' => 'layer1_honeypot_filled'];
         }
 
-        // Layer 2: Signed Timestamp Time-Trap & Single-Use Nonce Replay Lock
         $ts = (int)($post['form_ts'] ?? 0);
         $nonce = trim((string)($post['form_nonce'] ?? ''));
         $sig = trim((string)($post['form_sig'] ?? ''));
@@ -118,48 +134,36 @@ final class AntiSpamGate
             return ['passed' => false, 'silent_drop' => false, 'reason' => 'layer2_form_expired'];
         }
 
-        // Single-use nonce replay check
-        $nonceHash = hash('sha256', $nonce);
-        $pdo->prepare("DELETE FROM used_nonces WHERE expires_at < :now")->execute([':now' => time()]);
-        $checkNonce = $pdo->prepare("SELECT nonce_hash FROM used_nonces WHERE nonce_hash = :nh");
-        $checkNonce->execute([':nh' => $nonceHash]);
-        if ($checkNonce->fetch()) {
-            return ['passed' => false, 'silent_drop' => false, 'reason' => 'layer2_nonce_replayed'];
-        }
-        $pdo->prepare("INSERT INTO used_nonces (nonce_hash, expires_at) VALUES (:nh, :exp)")
-            ->execute([':nh' => $nonceHash, ':exp' => time() + self::MAX_FORM_AGE_SECONDS]);
-
-        // Layer 3: Client-Side Human Interaction Token
         $jsToken = trim((string)($post['js_interaction_token'] ?? ''));
         if ($jsToken === '' || !str_starts_with($jsToken, 'human_verified_')) {
             return ['passed' => false, 'silent_drop' => true, 'reason' => 'layer3_missing_human_interaction_token'];
         }
 
-        // Layer 4: Heuristic Content & URL Filter
+        $nonceHash = hash('sha256', $nonce);
+        if (!self::claimSingleUseNonce($pdo, $nonceHash, time() + self::MAX_FORM_AGE_SECONDS)) {
+            return ['passed' => false, 'silent_drop' => false, 'reason' => 'layer2_nonce_replayed'];
+        }
+
         $submitterName = trim((string)($post['submitter_name'] ?? ''));
         $businessName = trim((string)($post['name'] ?? ''));
         $tagline = trim((string)($post['tagline'] ?? ''));
         $description = trim((string)($post['description'] ?? ''));
 
-        // 4a. Reject single-word CamelCase bot names (e.g., "EdwardWaw", "oliviaVaugt")
         foreach ([$submitterName, $businessName] as $nameField) {
             if ($nameField !== '' && !str_contains($nameField, ' ') && preg_match('/^[a-zA-Z]+[a-z][A-Z][a-zA-Z]*$/', $nameField)) {
                 return ['passed' => false, 'silent_drop' => true, 'reason' => 'layer4_camelcase_bot_name'];
             }
-            // Reject URLs in Name fields
             if (preg_match('#(?:https?://|www\.)#i', $nameField)) {
                 return ['passed' => false, 'silent_drop' => true, 'reason' => 'layer4_url_in_name'];
             }
         }
 
-        // 4b. Cap URLs in Description/Message (<= 1)
         $combinedMessage = $tagline . ' ' . $description;
         $urlCount = preg_match_all('#https?://[^\s"\x27<>]+#i', $combinedMessage, $urlMatches);
         if ($urlCount > 1) {
             return ['passed' => false, 'silent_drop' => false, 'reason' => 'layer4_excessive_urls_in_description'];
         }
 
-        // 4c. Block spam/shortener/paste domains & high-abuse TLDs across all fields
         $allUrlsText = strtolower($combinedMessage . ' ' . ($post['website_url'] ?? ''));
         foreach (self::BLOCKED_DOMAINS as $domain) {
             if (str_contains($allUrlsText, $domain)) {
@@ -176,21 +180,18 @@ final class AntiSpamGate
             }
         }
 
-        // 4d. Reject ALL-CAPS shouting (> 60% uppercase across >= 15 alphabetic characters)
         foreach ([$businessName, $tagline, $description] as $textField) {
             if (self::isAllCapsShouting($textField)) {
                 return ['passed' => false, 'silent_drop' => false, 'reason' => 'layer4_all_caps_shouting'];
             }
         }
 
-        // 4e. Block financial/crypto/SEO scam lures
         foreach (self::SCAM_PATTERNS as $pattern) {
             if (preg_match($pattern, $combinedMessage)) {
                 return ['passed' => false, 'silent_drop' => true, 'reason' => 'layer4_scam_lure_detected'];
             }
         }
 
-        // Layer 5: Per-IP & Global Circuit-Breaker Rate Limiting (Keyed HMAC-SHA256 IP Hash)
         $rateCheck = self::checkAndRecordRateLimit($pdo, $clientIp, $actionType);
         if (!$rateCheck['allowed']) {
             return ['passed' => false, 'silent_drop' => true, 'reason' => $rateCheck['reason']];
@@ -210,71 +211,160 @@ final class AntiSpamGate
         return ($upperLetters / $totalLetters) > 0.60;
     }
 
-    /**
-     * Keyed HMAC-SHA256 pseudonymization of IP address (Kenya DPA 2019 s.31/41).
-     * Never stores raw IP address in database.
-     */
     public static function pseudonymizeIp(string $rawIp): string
     {
         $salt = Database::env('IP_HASH_SECRET', 'dev_dpa_ip_salt_secret_key_32_bytes_min');
         return hash_hmac('sha256', trim($rawIp), $salt);
     }
 
-    public static function checkAndRecordRateLimit(PDO $pdo, string $rawIp, string $actionType, int $limit15m = 2, int $limit24h = 5, int $limitGlobal1h = 15): array
+    private static function acquireRateLimitSerializationLock(PDO $pdo): void
     {
+        try {
+            $pdo->prepare("UPDATE business_sequences SET last_value = last_value + 1 WHERE seq_key = 'rate_limit_mutex'")
+                ->execute();
+        } catch (\Throwable $e) {
+        }
+    }
+
+    public static function checkAndRecordRateLimit(
+        PDO $pdo,
+        string $rawIp,
+        string $actionType,
+        int $limit15m = 2,
+        int $limit24h = 5,
+        int $limitGlobal1h = 15
+    ): array {
         $now = time();
         $ipHmac = self::pseudonymizeIp($rawIp);
 
-        // Clean up records older than 24h
-        $pdo->prepare("DELETE FROM rate_limits WHERE created_at < :cutoff")
-            ->execute([':cutoff' => $now - 86400]);
-
-        // Per-IP 15-minute window
-        $stmt15m = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ip AND action_type = :act AND created_at >= :since");
-        $stmt15m->execute([':ip' => $ipHmac, ':act' => $actionType, ':since' => $now - 900]);
-        if ((int)$stmt15m->fetchColumn() >= $limit15m) {
-            return ['allowed' => false, 'reason' => 'layer5_ip_rate_limit_15m'];
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
         }
+        try {
+            self::acquireRateLimitSerializationLock($pdo);
 
-        // Per-IP 24-hour window
-        $stmt24h = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ip AND action_type = :act AND created_at >= :since");
-        $stmt24h->execute([':ip' => $ipHmac, ':act' => $actionType, ':since' => $now - 86400]);
-        if ((int)$stmt24h->fetchColumn() >= $limit24h) {
-            return ['allowed' => false, 'reason' => 'layer5_ip_rate_limit_24h'];
+            $pdo->prepare("DELETE FROM rate_limits WHERE created_at < :cutoff")
+                ->execute([':cutoff' => $now - 86400]);
+
+            $stmt15m = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ip AND action_type = :act AND created_at >= :since");
+            $stmt15m->execute([':ip' => $ipHmac, ':act' => $actionType, ':since' => $now - 900]);
+            if ((int)$stmt15m->fetchColumn() >= $limit15m) {
+                if ($ownTx) {
+                    $pdo->commit();
+                }
+                return ['allowed' => false, 'reason' => 'layer5_ip_rate_limit_15m'];
+            }
+
+            $stmt24h = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ip AND action_type = :act AND created_at >= :since");
+            $stmt24h->execute([':ip' => $ipHmac, ':act' => $actionType, ':since' => $now - 86400]);
+            if ((int)$stmt24h->fetchColumn() >= $limit24h) {
+                if ($ownTx) {
+                    $pdo->commit();
+                }
+                return ['allowed' => false, 'reason' => 'layer5_ip_rate_limit_24h'];
+            }
+
+            $stmtGlobal = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE action_type = :act AND created_at >= :since");
+            $stmtGlobal->execute([':act' => $actionType, ':since' => $now - 3600]);
+            if ((int)$stmtGlobal->fetchColumn() >= $limitGlobal1h) {
+                if ($ownTx) {
+                    $pdo->commit();
+                }
+                return ['allowed' => false, 'reason' => 'layer5_global_circuit_breaker_1h'];
+            }
+
+            $pdo->prepare("INSERT INTO rate_limits (ip_hmac, action_type, created_at) VALUES (:ip, :act, :now)")
+                ->execute([':ip' => $ipHmac, ':act' => $actionType, ':now' => $now]);
+
+            if ($ownTx) {
+                $pdo->commit();
+            }
+            return ['allowed' => true, 'reason' => 'ok'];
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
         }
-
-        // Global circuit-breaker (1h across all IPs)
-        $stmtGlobal = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE action_type = :act AND created_at >= :since");
-        $stmtGlobal->execute([':act' => $actionType, ':since' => $now - 3600]);
-        if ((int)$stmtGlobal->fetchColumn() >= $limitGlobal1h) {
-            return ['allowed' => false, 'reason' => 'layer5_global_circuit_breaker_1h'];
-        }
-
-        // Record this submission
-        $pdo->prepare("INSERT INTO rate_limits (ip_hmac, action_type, created_at) VALUES (:ip, :act, :now)")
-            ->execute([':ip' => $ipHmac, ':act' => $actionType, ':now' => $now]);
-
-        return ['allowed' => true, 'reason' => 'ok'];
     }
 
-    /**
-     * Layer 6: Strip header injection characters from user-supplied names/emails used in Reply-To.
-     */
+    public static function checkAndRecordOutboundMailQuota(
+        PDO $pdo,
+        string $rawIp,
+        ?string $recipientEmail = null,
+        bool $isOtpOrAuth = false,
+        int $globalLimit1h = self::GLOBAL_OUTBOUND_MAIL_LIMIT_1H
+    ): array {
+        $now = time();
+        $ipHmac = self::pseudonymizeIp($rawIp);
+        $salt = Database::env('IP_HASH_SECRET', 'dev_dpa_ip_salt_secret_key_32_bytes_min');
+        $normEmail = $recipientEmail !== null ? strtolower(trim($recipientEmail)) : '';
+        $rcptHmac = $normEmail !== '' ? hash_hmac('sha256', 'mail_rcpt|' . $normEmail, $salt) : '';
+
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            self::acquireRateLimitSerializationLock($pdo);
+
+            $stmtGlobal = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE action_type = 'global_outbound_mail' AND created_at >= :since");
+            $stmtGlobal->execute([':since' => $now - 3600]);
+            if ((int)$stmtGlobal->fetchColumn() >= $globalLimit1h) {
+                if ($ownTx) {
+                    $pdo->commit();
+                }
+                return ['allowed' => false, 'reason' => 'global_outbound_mail_circuit_breaker_1h'];
+            }
+
+            if ($isOtpOrAuth && $rcptHmac !== '') {
+                $stmt60s = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :rh AND action_type = 'otp_recipient_cooldown' AND created_at >= :since");
+                $stmt60s->execute([':rh' => $rcptHmac, ':since' => $now - self::OTP_RECIPIENT_COOLDOWN_SECONDS]);
+                if ((int)$stmt60s->fetchColumn() >= 1) {
+                    if ($ownTx) {
+                        $pdo->commit();
+                    }
+                    return ['allowed' => false, 'reason' => 'otp_recipient_cooldown_60s'];
+                }
+
+                $stmtRcpt1h = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :rh AND action_type = 'otp_recipient_cooldown' AND created_at >= :since");
+                $stmtRcpt1h->execute([':rh' => $rcptHmac, ':since' => $now - 3600]);
+                if ((int)$stmtRcpt1h->fetchColumn() >= self::OTP_RECIPIENT_LIMIT_1H) {
+                    if ($ownTx) {
+                        $pdo->commit();
+                    }
+                    return ['allowed' => false, 'reason' => 'otp_recipient_limit_1h'];
+                }
+            }
+
+            $ins = $pdo->prepare("INSERT INTO rate_limits (ip_hmac, action_type, created_at) VALUES (:h, :act, :now)");
+            $ins->execute([':h' => $ipHmac, ':act' => 'global_outbound_mail', ':now' => $now]);
+            if ($isOtpOrAuth && $rcptHmac !== '') {
+                $ins->execute([':h' => $rcptHmac, ':act' => 'otp_recipient_cooldown', ':now' => $now]);
+            }
+
+            if ($ownTx) {
+                $pdo->commit();
+            }
+            return ['allowed' => true, 'reason' => 'ok'];
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
     public static function sanitizeHeaderValue(string $input): string
     {
         return trim(preg_replace('/[\r\n<>",;]+/', ' ', $input) ?? '');
     }
 
-    /**
-     * L1 CSV/Spreadsheet Formula Injection Sanitizer:
-     * Prefixes leading '=', '+', '-', '@', '|', '	', '
-' with a single quote.
-     */
     public static function sanitizeForCsv(string $value): string
     {
         $trimmed = ltrim($value);
-        if ($trimmed !== '' && in_array($trimmed[0], ['=', '+', '-', '@', '|', "	", "
-"], true)) {
+        if ($trimmed !== '' && in_array($trimmed[0], ['=', '+', '-', '@', '|', "\t", "\r", "\n"], true)) {
             return "'" . $value;
         }
         return $value;

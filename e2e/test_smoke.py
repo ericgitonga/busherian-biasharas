@@ -87,13 +87,35 @@ def _request(path: str, method: str = "GET", data: bytes | None = None, headers:
         return e.code, e.read().decode("utf-8", errors="replace"), dict(e.headers)
 
 
-def _fetch_api_businesses(query: str = "") -> list[dict]:
+def _fetch_api_payload(query: str = "") -> dict:
     suffix = f"?{query.lstrip('?')}" if query else ""
     status, body, _ = _request(f"/api/businesses.php{suffix}")
     assert status == 200, f"Expected 200 from /api/businesses.php{suffix}, got {status}: {body}"
     payload = json.loads(body)
     assert payload["status"] == "ok"
-    return payload["businesses"]
+    return payload
+
+
+def _fetch_api_businesses(query: str = "") -> list[dict]:
+    clean_q = query.lstrip("?")
+    params = dict(urllib.parse.parse_qsl(clean_q, keep_blank_values=True))
+    if "page" in params or "per_page" in params:
+        return _fetch_api_payload(clean_q)["businesses"]
+
+    combined: list[dict] = []
+    page_num = 1
+    while True:
+        paged_params = dict(params)
+        paged_params["page"] = str(page_num)
+        paged_params["per_page"] = "100"
+        payload = _fetch_api_payload(urllib.parse.urlencode(paged_params))
+        combined.extend(payload["businesses"])
+        pagination = payload.get("pagination") or {}
+        total_pages = int(pagination.get("total_pages") or 1)
+        if page_num >= total_pages:
+            break
+        page_num += 1
+    return combined
 
 
 def test_health_endpoint():
@@ -134,20 +156,31 @@ def test_playwright_pre_consent_network_and_cookie_gate():
         assert not any("/api/track-metric.php" in u for u in seen_urls), (
             f"Pre-consent DPA violation: track-metric fired before consent: {seen_urls}"
         )
+        assert not any("tile.openstreetmap.org" in u for u in seen_urls), (
+            f"MED-07 (#178) violation: OpenStreetMap tiles requested prior to consent: {seen_urls}"
+        )
+        page.get_by_test_id("map-consent-placeholder").wait_for(state="visible", timeout=5000)
         for bad_host in forbidden_hosts:
             assert not any(bad_host in u for u in seen_urls), f"Forbidden external request to {bad_host}: {seen_urls}"
 
         cookie_names_initial = {c["name"] for c in ctx.cookies()}
         assert "bbiz_vid" not in cookie_names_initial
 
-        # Clicking "Allow only Essential" must dismiss banner and STILL fire zero analytics requests
+        # Clicking "Allow only Essential" must dismiss banner and STILL fire zero analytics or OSM tile requests
         page.get_by_test_id("cookie-reject-btn").click()
         banner.wait_for(state="hidden", timeout=5000)
         page.wait_for_timeout(250)
         assert not any("/api/track-metric.php" in u for u in seen_urls)
+        assert not any("tile.openstreetmap.org" in u for u in seen_urls)
         cookies_after_reject = {c["name"]: c["value"] for c in ctx.cookies()}
         assert cookies_after_reject.get("bbiz_consent") == "rejected"
         assert "bbiz_vid" not in cookies_after_reject
+
+        # Clicking "#btn-enable-osm-map" explicitly opts into OSM map tiles without turning on analytics (#178)
+        page.locator("#btn-enable-osm-map").click()
+        page.locator(".bbiz-leaflet-pin").first.wait_for(state="attached", timeout=8000)
+        assert any("tile.openstreetmap.org" in u for u in seen_urls), "Expected OSM tile fetch after explicit map opt-in (#178)"
+        assert not any("/api/track-metric.php" in u for u in seen_urls)
 
         # Reset cookie preference in a fresh context and click "Allow for Analysis" -> beacon fires & bbiz_vid is set
         ctx_accept = _new_browser_context()
@@ -171,10 +204,10 @@ def test_playwright_directory_filters_pagination_and_modal():
     total_count = len(all_biz)
     assert total_count >= 1
 
-    # Verify sequential 1..N business_number and unique BBIZ-* IDs dynamically (zero hardcoded counts)
-    nums = sorted(int(b["business_number"]) for b in all_biz)
+    # Verify unique positive monotonic business_number (#183) and unique BBIZ-* IDs dynamically (zero hardcoded counts)
+    nums = [int(b["business_number"]) for b in all_biz]
     uids = {b["business_id"] for b in all_biz}
-    assert nums == list(range(1, total_count + 1)), f"Expected gapless 1..{total_count} business_number, got {nums}"
+    assert len(set(nums)) == total_count and all(n >= 1 for n in nums), f"Expected unique positive business_number values, got {nums}"
     assert len(uids) == total_count and all(u.startswith("BBIZ-") for u in uids)
 
     ahs_biz = _fetch_api_businesses("school=AHS")
@@ -380,6 +413,7 @@ def test_privacy_and_dpa_takedown_pages():
     st_priv, html_priv, _ = _request("/privacy.php")
     assert st_priv == 200
     assert "Kenya Data Protection Act, 2019" in html_priv
+    assert "OpenStreetMap" in html_priv and "Nominatim" in html_priv and "OSRM" in html_priv
     assert "DELETE FROM" not in html_priv
     assert "business_vetting_queue" not in html_priv
     assert "<code>" not in html_priv
@@ -527,6 +561,8 @@ def test_playwright_submission_photo_upload_admin_approval_and_outbox_privacy():
                 adm.locator("#btn-delete-final-submit").click()
                 adm.wait_for_load_state("networkidle")
                 assert len(_fetch_api_businesses()) == before_count
+                st_del_img, _, _ = _request(photo_url)
+                assert st_del_img == 404, f"Expected 404 for deleted business photo {photo_url} (#177), got {st_del_img}"
             finally:
                 ctx_admin.close()
     finally:
@@ -602,28 +638,45 @@ def test_adversarial_crit_01_and_crit_02_regressions():
     )
     other_biz_id = int(other_biz["id"])
 
-    # 1. Establish a real password-protected Victim Owner via verified 6-digit OTP
+    # 1. Establish a real password-protected Victim Owner via verified 6-digit OTP (gated by 7-layer AntiSpamGate #173)
+    #    Also pass forged ?claim=<attacker_seed_biz_id> during OTP verification to prove CRIT-02 blocks cross-business linking!
+    attacker_seed_biz_id = int(attacker_seed_biz["id"])
     victim_cookies: dict[str, str] = {}
     victim_pw = "VictimSafe#Pass2026"
 
-    st, login_html, _, _ = _http_raw("/owner/login.php?mode=reset", cookie_jar=victim_cookies)
+    st, login_html, _, _ = _http_raw(f"/owner/login.php?mode=reset&claim={attacker_seed_biz_id}", cookie_jar=victim_cookies)
     assert st == 200
     pre_login_phpsessid = victim_cookies.get("PHPSESSID", "")
     csrf_v = _extract_hidden(login_html, "csrf_token")
+    login_ts = _extract_hidden(login_html, "form_ts")
+    login_nonce = _extract_hidden(login_html, "form_nonce")
+    login_sig = _extract_hidden(login_html, "form_sig")
+    time.sleep(4.2)
     st_otp, otp_html, _, _ = _http_raw(
-        "/owner/login.php",
+        f"/owner/login.php?claim={attacker_seed_biz_id}",
         method="POST",
-        form={"csrf_token": csrf_v, "form_step": "send_otp", "email": victim_email, "biz": "0"},
+        form={
+            "csrf_token": csrf_v,
+            "form_ts": login_ts,
+            "form_nonce": login_nonce,
+            "form_sig": login_sig,
+            "js_interaction_token": "human_verified_1700000000173",
+            "website": "",
+            "form_step": "send_otp",
+            "email": victim_email,
+            "claim": str(attacker_seed_biz_id),
+            "biz": "0",
+        },
         cookie_jar=victim_cookies,
     )
     assert st_otp == 200
     otp_match = re.search(r"Preview Verification Code:.*?<strong[^>]*>(\d{6})</strong>", otp_html, re.S)
-    assert otp_match, "Expected simulated 6-digit OTP preview in testing mode"
+    assert otp_match, f"Expected simulated 6-digit OTP preview in testing mode, got HTML snippet: {otp_html[:500]}"
     otp_code = otp_match.group(1)
     csrf_v2 = _extract_hidden(otp_html, "csrf_token")
 
-    st_ver, _, _, _ = _http_raw(
-        "/owner/login.php",
+    st_ver, _, ver_hdrs, _ = _http_raw(
+        f"/owner/login.php?claim={attacker_seed_biz_id}",
         method="POST",
         form={
             "csrf_token": csrf_v2,
@@ -632,11 +685,13 @@ def test_adversarial_crit_01_and_crit_02_regressions():
             "otp_code": otp_code,
             "new_password": victim_pw,
             "confirm_password": victim_pw,
+            "claim": str(attacker_seed_biz_id),
             "biz": "0",
         },
         cookie_jar=victim_cookies,
     )
     assert st_ver == 302, f"Expected 302 after verified OTP setup, got {st_ver}"
+    assert f"id={attacker_seed_biz_id}" not in (ver_hdrs.get("Location") or "")
     owner_cookie_val = next((v for k, v in victim_cookies.items() if "owner_session" in k), "")
     assert owner_cookie_val.startswith("v2."), f"Expected v2 server-backed owner cookie (#165), got {owner_cookie_val}"
     if pre_login_phpsessid:
@@ -737,48 +792,29 @@ def test_adversarial_crit_01_and_crit_02_regressions():
     )
     assert st_good_pw == 302 and any("owner_session" in k for k in pw_probe_cookies)
 
-    # 3. CRIT-02 Negative Test: Attacker logs into their own account via /owner/login.php?claim=<victim_biz_id>
-    attacker_cookies: dict[str, str] = {}
-    attacker_email = attacker_seed_email
-    attacker_pw = "AttackerOwn#Pass2026"
-
-    _, al_html, _, _ = _http_raw(f"/owner/login.php?mode=reset&claim={victim_biz_id}", cookie_jar=attacker_cookies)
+    # 3. CRIT-02 Negative Test: Logging into a valid owner account via password_login with ?claim=<other_biz_id>
+    #    MUST NOT grant edit access to <attacker_seed_biz_id> or <other_biz_id>!
+    forged_claim_cookies: dict[str, str] = {}
+    _, al_html, _, _ = _http_raw(f"/owner/login.php?claim={attacker_seed_biz_id}", cookie_jar=forged_claim_cookies)
     al_csrf = _extract_hidden(al_html, "csrf_token")
-    st_aotp, aotp_html, _, _ = _http_raw(
-        f"/owner/login.php?claim={victim_biz_id}",
+    st_aver, _, aver_hdrs, _ = _http_raw(
+        f"/owner/login.php?claim={attacker_seed_biz_id}",
         method="POST",
         form={
             "csrf_token": al_csrf,
-            "form_step": "send_otp",
-            "email": attacker_email,
-            "claim": str(victim_biz_id),
+            "form_step": "password_login",
+            "email": victim_email,
+            "password": victim_pw,
+            "claim": str(attacker_seed_biz_id),
             "biz": "0",
         },
-        cookie_jar=attacker_cookies,
+        cookie_jar=forged_claim_cookies,
     )
-    assert st_aotp == 200
-    aotp_code = re.search(r"Preview Verification Code:.*?<strong[^>]*>(\d{6})</strong>", aotp_html, re.S).group(1)
-    al_csrf2 = _extract_hidden(aotp_html, "csrf_token")
-    st_aver, _, aver_hdrs, _ = _http_raw(
-        f"/owner/login.php?claim={victim_biz_id}",
-        method="POST",
-        form={
-            "csrf_token": al_csrf2,
-            "form_step": "verify_otp",
-            "email": attacker_email,
-            "otp_code": aotp_code,
-            "new_password": attacker_pw,
-            "confirm_password": attacker_pw,
-            "claim": str(victim_biz_id),
-            "biz": "0",
-        },
-        cookie_jar=attacker_cookies,
-    )
-    assert st_aver == 302 and f"id={victim_biz_id}" not in (aver_hdrs.get("Location") or "")
+    assert st_aver == 302 and f"id={attacker_seed_biz_id}" not in (aver_hdrs.get("Location") or "")
 
     st_edit_v, _, edit_v_hdrs, _ = _http_raw(
-        f"/owner/edit-business.php?id={victim_biz_id}",
-        cookie_jar=attacker_cookies,
+        f"/owner/edit-business.php?id={attacker_seed_biz_id}",
+        cookie_jar=forged_claim_cookies,
     )
     assert st_edit_v == 302 and "/owner/index.php" in (edit_v_hdrs.get("Location") or "")
 
@@ -876,8 +912,12 @@ def test_playwright_high_01_02_05_browser_security_regressions():
     try:
         p1 = ctx_dev1.new_page()
         # Gate A: Unrecognized corporate-domain email cannot even request an owner OTP without a pending/claimed listing
+        t_gate_a = time.monotonic()
         p1.goto(f"{BASE_URL}/owner/login.php?mode=reset", wait_until="networkidle")
         p1.locator("input[name='email']").first.fill(corp_staff_email)
+        rem_a = 4.3 - (time.monotonic() - t_gate_a)
+        if rem_a > 0:
+            time.sleep(rem_a)
         p1.locator("form button[type='submit']").first.click()
         p1.wait_for_load_state("networkidle")
         assert "could not find a business listing matching that exact email address" in p1.content()
@@ -1001,6 +1041,166 @@ def test_playwright_high_01_02_05_browser_security_regressions():
         ctx_3p.close()
 
 
+def test_playwright_med_04_08_09_12_14_15_regressions():
+    """Browser & API E2E regressions for MED-04 (#175), MED-08 (#179), MED-09 (#180), MED-12 (#183), MED-14 (#185), and MED-15 (#186)."""
+    # 1. MED-09 (#180): Server-side pagination metadata + omission of owner_email_hints for anonymous callers
+    all_biz = _fetch_api_businesses()
+    total_count = len(all_biz)
+    paged = _fetch_api_payload("page=1&per_page=5")
+    assert "pagination" in paged
+    assert paged["pagination"]["page"] == 1
+    assert paged["pagination"]["per_page"] == 5
+    assert paged["pagination"]["total"] == total_count
+    assert len(paged["businesses"]) == min(5, total_count)
+    for b in paged["businesses"]:
+        assert "owner_email_hints" not in b, f"Anonymous /api/businesses.php leaked owner_email_hints (#180): {b.get('id')}"
+
+    _, home_html, _ = _request("/")
+    assert "window.INITIAL_PAGINATION" in home_html
+    assert '"owner_email_hints"' not in home_html
+
+    # 2. MED-14 (#185) & MED-15 (#186): Directory fetch error + retry recovery AND XSS scheme rejection in Chromium modal
+    ctx = _new_browser_context()
+    try:
+        page = ctx.new_page()
+        page.goto(f"{BASE_URL}/", wait_until="networkidle")
+        if page.get_by_test_id("cookie-reject-btn").is_visible():
+            page.get_by_test_id("cookie-reject-btn").click()
+
+        fail_next = {"active": True}
+
+        def _intercept_api(route):
+            if fail_next["active"]:
+                fail_next["active"] = False
+                route.fulfill(status=503, content_type="application/json", body='{"status":"error","message":"Simulated outage"}')
+            else:
+                route.continue_()
+
+        page.route("**/api/businesses.php*", _intercept_api)
+        page.get_by_test_id("search-input").fill("wakili")
+        err_banner = page.get_by_test_id("directory-fetch-error")
+        err_banner.wait_for(state="visible", timeout=6000)
+
+        # Click Retry -> fetch succeeds and error banner hides (#185)
+        page.get_by_test_id("directory-fetch-retry").click()
+        err_banner.wait_for(state="hidden", timeout=6000)
+        page.unroute("**/api/businesses.php*", _intercept_api)
+
+        # Inject a mocked API listing with malicious javascript:/data: URLs and verify modal strips them (#186)
+        sample_item = dict(all_biz[0])
+        sample_item["id"] = 999186
+        sample_item["name"] = "MED-15 Safe Scheme Check Co"
+        sample_item["website_url"] = "javascript:alert('xss_website')"
+        sample_item["google_maps_url"] = "javascript:alert('xss_maps')"
+        sample_item["social_instagram"] = "data:text/html,<script>alert(1)</script>"
+
+        page.route(
+            "**/api/businesses.php*",
+            lambda route: route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps({
+                    "status": "ok",
+                    "count": 1,
+                    "pagination": {"page": 1, "per_page": 10, "total": 1, "total_pages": 1, "has_more": False},
+                    "businesses": [sample_item],
+                }),
+            ),
+        )
+        page.get_by_test_id("search-input").fill("MED-15 Safe Scheme")
+        page.wait_for_function(
+            "() => document.body.innerText.includes('MED-15 Safe Scheme Check Co')",
+            timeout=6000,
+        )
+        page.get_by_test_id("biz-card-title").first.click()
+        modal = page.get_by_test_id("biz-modal-backdrop")
+        modal.wait_for(state="visible", timeout=5000)
+        assert page.locator("a[href^='javascript:'], a[href^='data:'], a[href^='vbscript:']").count() == 0, (
+            "MED-15 (#186) regression: unsafe URL scheme rendered inside directory DOM!"
+        )
+    finally:
+        ctx.close()
+
+    # 3. MED-04 (#175), MED-08 (#179) & MED-12 (#183): POST-only signed review-action + Admin curation lawful-basis + stable business_number
+    hmac_secret = os.environ.get("APP_HMAC_SECRET", "").strip()
+    if ADMIN_ACCESS_TOKEN and hmac_secret:
+        ctx_adm = _new_browser_context()
+        try:
+            adm = ctx_adm.new_page()
+            adm.goto(f"{BASE_URL}/admin/login.php", wait_until="networkidle")
+            adm.locator("#admin_token").fill(ADMIN_ACCESS_TOKEN)
+            adm.locator("form button[type='submit']").click()
+            adm.wait_for_url("**/admin/index.php**", timeout=8000)
+
+            # MED-08 (#179) & MED-12 (#183): Curate a listing via /admin/add-business.php with required DPA provenance basis,
+            # then delete it and verify existing businesses retain their exact business_number!
+            nums_before_map = {int(b["id"]): int(b["business_number"]) for b in _fetch_api_businesses()}
+            _, cat_body, _ = _request("/api/categories.php")
+            sectors = json.loads(cat_body)["sectors"]
+            sec_id = str(sectors[0]["id"])
+            spec_id = str(sectors[0]["specialties"][0]["id"])
+
+            adm.goto(f"{BASE_URL}/admin/add-business.php", wait_until="networkidle")
+            curated_name = f"E2E Curated Provenance {int(time.time()) % 100000}"
+            adm.locator("input[name='name']").fill(curated_name)
+            adm.locator("input[name='tagline']").fill("Curated E2E listing with explicit founder authorization")
+            adm.locator("textarea[name='description']").fill("Verifying MED-08 lawful basis and MED-12 monotonic business_number.")
+            adm.locator("#sector_id").select_option(sec_id)
+            adm.locator("#specialty_id").select_option(spec_id)
+            adm.locator("input[name='phone_primary']").fill("+254722179179")
+            adm.locator("#admin_provenance_basis").select_option("alumni_direct_authorization")
+            adm.locator("#admin_provenance_note").fill("Confirmed directly with alumni founder during E2E test")
+            adm.locator("form button[type='submit']").click()
+            adm.wait_for_url("**/admin/index.php**", timeout=8000)
+
+            after_curate = _fetch_api_businesses()
+            curated_row = next((b for b in after_curate if b["name"] == curated_name), None)
+            assert curated_row is not None
+
+            adm.goto(f"{BASE_URL}/admin/edit-business.php?id={curated_row['id']}", wait_until="networkidle")
+            adm.locator("button[data-open-delete-modal='1']").click()
+            adm.locator("#btn-delete-step1-yes").click()
+            adm.locator("#delete-confirm-name-input").fill(curated_name)
+            adm.locator("#btn-delete-final-submit").click()
+            adm.wait_for_load_state("networkidle")
+
+            nums_after_map = {int(b["id"]): int(b["business_number"]) for b in _fetch_api_businesses()}
+            assert nums_after_map == nums_before_map, "MED-12 (#183) regression: deleting a listing mutated existing business_number values!"
+
+            # MED-04 (#175): Test POST-only signed /admin/review-action.php against any pending submission (e.g. Impersonation Attempt Bistro)
+            adm.goto(f"{BASE_URL}/admin/index.php", wait_until="networkidle")
+            pend_cards = adm.locator("[data-testid='admin-pending-card']")
+            if pend_cards.count() >= 1:
+                id_inp = pend_cards.first.locator("input[name='business_id']").first
+                pend_id = int(id_inp.input_value())
+                exp = int(time.time()) + 1800
+                jti = f"e2ejti{int(time.time() * 1000)}abcdef123456"
+                sig = hmac.new(
+                    hmac_secret.encode("utf-8"),
+                    f"{pend_id}|reject|{exp}|0|{jti}".encode("utf-8"),
+                    hashlib.sha256,
+                ).hexdigest()
+                signed_review_url = (
+                    f"{BASE_URL}/admin/review-action.php?id={pend_id}&action=reject&exp={exp}&merge=0&jti={jti}&sig={sig}"
+                )
+
+                # GET MUST NOT mutate state — renders confirmation button while business stays pending!
+                resp_get = adm.goto(signed_review_url, wait_until="networkidle")
+                assert resp_get is not None and resp_get.status == 200
+                adm.get_by_test_id("confirm-review-action-btn").wait_for(state="visible", timeout=5000)
+
+                # Clicking confirm submits POST + CSRF + single-use jti -> completes rejection
+                adm.get_by_test_id("confirm-review-action-btn").click()
+                adm.get_by_test_id("review-action-completed").wait_for(state="visible", timeout=6000)
+
+                # Re-visiting the exact same single-use signed URL MUST return 409 nonce_replayed (#175)
+                resp_replay = adm.goto(signed_review_url, wait_until="networkidle")
+                assert resp_replay is not None and resp_replay.status == 409
+                adm.get_by_test_id("review-action-error").wait_for(state="visible", timeout=5000)
+        finally:
+            ctx_adm.close()
+
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -1011,4 +1211,5 @@ TESTS = [
     test_playwright_submission_photo_upload_admin_approval_and_outbox_privacy,
     test_adversarial_crit_01_and_crit_02_regressions,
     test_playwright_high_01_02_05_browser_security_regressions,
+    test_playwright_med_04_08_09_12_14_15_regressions,
 ]

@@ -53,6 +53,8 @@ $form = [
     'social_facebook' => '',
     'social_tiktok' => '',
     'social_youtube' => '',
+    'admin_provenance_basis' => 'alumni_direct_authorization',
+    'admin_provenance_note' => '',
 ];
 
 $autoExtractMsg = '';
@@ -114,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errorMsg = 'Professional Regulator is required for regulated industries.';
     } else {
         try {
-            $newId = VettingPurger::createBusinessDirectly($pdo, array_merge($_POST, $form));
+            $newId = VettingPurger::createBusinessDirectly($pdo, array_merge($_POST, $form, ['require_provenance_basis' => true]));
             header('Location: /admin/index.php?added=' . $newId);
             exit;
         } catch (\Throwable $e) {
@@ -339,6 +341,33 @@ $tokens = AntiSpamGate::generateFormTokens();
       </div>
 
       <?= bbiz_render_hours_and_photos_fields() ?>
+
+      <div style="margin-top:1.1rem;background:#F0FDF4;border:1px solid #059669;border-radius:10px;padding:1rem;">
+        <div style="font-weight:800;font-size:0.88rem;color:#065F46;margin-bottom:0.45rem;">
+          🔒 Kenya DPA 2019 Lawful Basis &amp; Listing Provenance Record *
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.85rem;">
+          <div>
+            <label for="admin_provenance_basis" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Authorization / Source Basis *</label>
+            <select id="admin_provenance_basis" name="admin_provenance_basis" class="select-control" required>
+              <?php foreach ([
+                  'alumni_direct_authorization' => 'Direct Alumni Owner Authorization',
+                  'owner_written_request' => 'Written Owner Listing Request',
+                  'public_alumni_business_registry' => 'Verified Public Corporate / Alumni Business Registry',
+                  'verified_event_or_chapter_directory' => 'Verified Alumni Chapter / Trade Showcase Directory',
+              ] as $bKey => $bLabel): ?>
+                <option value="<?= $bKey ?>" <?= ($form['admin_provenance_basis'] ?? '') === $bKey ? 'selected' : '' ?>><?= htmlspecialchars($bLabel, ENT_QUOTES, 'UTF-8') ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div>
+            <label for="admin_provenance_note" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Source / Consent Audit Note *</label>
+            <input type="text" id="admin_provenance_note" name="admin_provenance_note" class="input-control"
+              value="<?= htmlspecialchars((string)($form['admin_provenance_note'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+              placeholder="e.g. Confirmed with founder via WhatsApp / email on 2026-11-12" required>
+          </div>
+        </div>
+      </div>
 
       <div style="margin-top:1.35rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
         <button type="submit" class="btn btn-green" style="padding:0.75rem 1.6rem;font-size:0.95rem;">✓ Add &amp; Publish Immediately</button>

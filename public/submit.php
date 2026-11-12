@@ -12,6 +12,7 @@ use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\PhotoUploader;
+use BusherianBiasharas\Services\PhotoUploadValidationException;
 use BusherianBiasharas\Services\VettingPurger;
 use BusherianBiasharas\Services\WebsiteEnricher;
 
@@ -119,14 +120,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Please select an Industry Sector.';
             }
             if ($specialtyId === '__custom__') {
-                if ($customSpec === '' || mb_strlen($customSpec) < 3) {
-                    $errors[] = 'Please enter the name of your custom Specialty.';
+                if ($customSpec === '' || mb_strlen($customSpec) < 3 || mb_strlen($customSpec) > 120) {
+                    $errors[] = 'Please enter a custom Specialty name between 3 and 120 characters.';
+                }
+                if ($sectorId > 0) {
+                    $secChk = $pdo->prepare("SELECT id FROM categories WHERE id = :sid AND parent_id IS NULL AND status = 'approved' LIMIT 1");
+                    $secChk->execute([':sid' => $sectorId]);
+                    if (!$secChk->fetch()) {
+                        $errors[] = 'Selected Industry Sector is invalid.';
+                    }
                 }
                 $regName = '';
             } elseif ((int)$specialtyId <= 0) {
                 $errors[] = 'Please select a Specialty (or choose "+ Add New Specialty").';
                 $regName = '';
             } else {
+                if ($sectorId > 0 && !CategoryMatcher::validateSectorAndSpecialtyPair($pdo, $sectorId, (int)$specialtyId)) {
+                    $errors[] = 'Selected Specialty does not belong to the chosen Industry Sector.';
+                }
                 $regInfo = CategoryMatcher::getSpecialtyRegulationById($pdo, (int)$specialtyId);
                 if ($regInfo !== null) {
                     if ($regName === '') {
@@ -190,17 +201,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $hoursJson = HoursEngine::buildScheduleJsonFromPost($_POST);
+                    $validationPayload = [
+                        'name' => $bizName,
+                        'tagline' => $tagline,
+                        'description' => $description,
+                        'sector_id' => $sectorId,
+                        'specialty_id' => $finalSpecialtyId,
+                        'email_public' => $emailPublic,
+                        'website_url' => $websiteUrl,
+                        'google_maps_url' => $gmapsUrl,
+                        'social_instagram' => trim((string)($_POST['social_instagram'] ?? '')),
+                        'social_linkedin' => trim((string)($_POST['social_linkedin'] ?? '')),
+                        'social_x' => trim((string)($_POST['social_x'] ?? '')),
+                        'social_facebook' => trim((string)($_POST['social_facebook'] ?? '')),
+                        'social_tiktok' => trim((string)($_POST['social_tiktok'] ?? '')),
+                        'social_youtube' => trim((string)($_POST['social_youtube'] ?? '')),
+                    ];
+                    VettingPurger::validateListingWritePayload($pdo, $validationPayload, $lat, $lng, $hoursJson);
+
                     $photosJson = PhotoUploader::processBusinessPhotos(
                         null,
                         [],
                         $_FILES['business_photos'] ?? null,
                         isset($_POST['business_photos_data_json']) ? (string)$_POST['business_photos_data_json'] : null
                     );
+                    $createdSubmitPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
 
                     $slugBase = CategoryMatcher::slugify($bizName);
                     $slug = $slugBase . '-' . substr(bin2hex(random_bytes(3)), 0, 6);
                     $bizUid = VettingPurger::generateUniqueBusinessUid($pdo);
-                    $nextBizNum = ((int)$pdo->query("SELECT COALESCE(MAX(business_number), 0) FROM businesses")->fetchColumn()) + 1;
+                    $nextBizNum = VettingPurger::allocateNextBusinessNumber($pdo);
+                    $nowConsentUtc = gmdate('Y-m-d H:i:s');
 
                     // Insert into `businesses` (STRICTLY ZERO House, Year Left, or School Number columns)
                     $insBiz = $pdo->prepare("
@@ -215,7 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             email_public, website_url,
                             social_instagram, social_linkedin, social_x,
                             social_facebook, social_tiktok, social_youtube,
-                            status
+                            status, consent_recorded_at, privacy_notice_version, age_attested_at, listing_provenance
                         ) VALUES (
                             :business_id, :business_number, :name, :slug, :tagline, :description, :school_badge,
                             :sector_id, :specialty_id, :service_mode, :alumni_perk,
@@ -227,7 +258,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             :email_public, :website_url,
                             :social_instagram, :social_linkedin, :social_x,
                             :social_facebook, :social_tiktok, :social_youtube,
-                            'pending'
+                            'pending', :consent_at, :privacy_ver, :age_at, 'owner_submitted'
                         )
                     ");
 
@@ -271,6 +302,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':social_facebook' => trim((string)($_POST['social_facebook'] ?? '')) ?: null,
                         ':social_tiktok' => trim((string)($_POST['social_tiktok'] ?? '')) ?: null,
                         ':social_youtube' => trim((string)($_POST['social_youtube'] ?? '')) ?: null,
+                        ':consent_at' => $nowConsentUtc,
+                        ':privacy_ver' => VettingPurger::PRIVACY_NOTICE_VERSION,
+                        ':age_at' => $nowConsentUtc,
                     ]);
 
                     $submittedBusinessId = (int)$pdo->lastInsertId();
@@ -313,26 +347,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($existingTargetOwner === null && !OwnerAuth::isRecognizedOwnerEmail($pdo, $submitterEmail)) {
                             $otpRate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'submit_owner_otp', 2, 5, 15);
                             if ($otpRate['allowed']) {
-                                $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $submitterEmail, $submittedBusinessId);
-                                $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $submitterEmail, $otpInfo['code'], $bizName);
+                                $otpQuota = AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, $submitterEmail, true);
+                                if ($otpQuota['allowed']) {
+                                    $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $submitterEmail, $submittedBusinessId);
+                                    $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $submitterEmail, $otpInfo['code'], $bizName);
+                                }
                             }
                         }
                     }
 
-                    // Enqueue notification inside transaction; SMTP dispatch runs strictly after commit (#188)
-                    Mailer::notifyAdminNewSubmission(
-                        $pdo,
-                        ['id' => $submittedBusinessId, 'name' => $bizName],
-                        [
-                            'school_code' => $schoolCode,
-                            'house_name' => $houseName,
-                            'year_left' => $yearLeft,
-                            'school_number' => $schoolNumber,
-                            'submitter_name' => $submitterName,
-                            'submitter_email' => $submitterEmail,
-                        ],
-                        $createdCustomCategory
-                    );
+                    // Enqueue notification inside transaction when within global outbound mail ceiling (#173, #188)
+                    $adminMailQuota = AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, null, false);
+                    if ($adminMailQuota['allowed']) {
+                        Mailer::notifyAdminNewSubmission(
+                            $pdo,
+                            ['id' => $submittedBusinessId, 'name' => $bizName],
+                            [
+                                'school_code' => $schoolCode,
+                                'house_name' => $houseName,
+                                'year_left' => $yearLeft,
+                                'school_number' => $schoolNumber,
+                                'submitter_name' => $submitterName,
+                                'submitter_email' => $submitterEmail,
+                            ],
+                            $createdCustomCategory
+                        );
+                    }
 
                     $pdo->commit();
                     Mailer::flushPendingOutbox($pdo);
@@ -347,18 +387,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $postSubmitVerifyUrl = '/owner/login.php?email=' . rawurlencode($submitterEmail);
                         $postSubmitVerifyLabel = 'Sign In to Your Owner Account';
                         $successMessage = "Your business has been submitted for one-time alumni vetting! For your security, existing Owner Accounts are never modified without signing in. Sign in with your email and password (or verify a 6-digit email code on Owner Sign In) to manage your listings.";
-                    } elseif ($otpOutboxId > 0 && !Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
+                    } elseif ($otpOutboxId === 0 || !Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
                         $postSubmitVerifyUrl = '/owner/login.php?mode=reset&email=' . rawurlencode($submitterEmail);
                         $postSubmitVerifyLabel = 'Request Verification Code';
-                        $successMessage = "Your business has been submitted for one-time alumni vetting! Outbound email delivery to {$submitterEmail} is temporarily delayed and queued for automatic retry — you can request a fresh 6-digit code anytime on Owner Sign In.";
+                        $successMessage = "Your business has been submitted for one-time alumni vetting! You can request a 6-digit verification code anytime on Owner Sign In to set your Owner Password.";
                     } else {
                         $postSubmitVerifyUrl = '/owner/login.php?mode=verify_otp&email=' . rawurlencode($submitterEmail);
                         $postSubmitVerifyLabel = 'Verify Email & Set Owner Password';
                         $successMessage = "Your business has been submitted for one-time alumni vetting! We sent a 6-digit verification code to {$submitterEmail} — verify your email now to set your Owner Password, or sign in anytime after admin approval.";
                     }
+                } catch (PhotoUploadValidationException|\InvalidArgumentException $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    if (!empty($createdSubmitPhotoUrls)) {
+                        PhotoUploader::deleteRemovedPhotoUrls($createdSubmitPhotoUrls, []);
+                    }
+                    Mailer::clearPendingOutbox();
+                    $errors[] = $e->getMessage();
                 } catch (\Throwable $e) {
                     if ($pdo->inTransaction()) {
                         $pdo->rollBack();
+                    }
+                    if (!empty($createdSubmitPhotoUrls)) {
+                        PhotoUploader::deleteRemovedPhotoUrls($createdSubmitPhotoUrls, []);
                     }
                     Mailer::clearPendingOutbox();
                     error_log('[submit.php] Submission save failed: ' . $e->getMessage());

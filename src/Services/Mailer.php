@@ -16,12 +16,18 @@ final class Mailer
     /**
      * Generate a cryptographically signed one-click Admin Triage URL (HMAC-SHA256).
      */
-    public static function generateSignedAdminActionUrl(int $businessId, string $action, ?int $expiresAt = null, ?int $mergeCategoryId = null): string
-    {
+    public static function generateSignedAdminActionUrl(
+        int $businessId,
+        string $action,
+        ?int $expiresAt = null,
+        ?int $mergeCategoryId = null,
+        ?string $jtiOverride = null
+    ): string {
         $exp = $expiresAt ?? (time() + self::ACTION_LINK_TTL_SECONDS);
         $merge = $mergeCategoryId ?? 0;
+        $jti = ($jtiOverride !== null && trim($jtiOverride) !== '') ? trim($jtiOverride) : bin2hex(random_bytes(16));
         $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
-        $payload = "{$businessId}|{$action}|{$exp}|{$merge}";
+        $payload = "{$businessId}|{$action}|{$exp}|{$merge}|{$jti}";
         $sig = hash_hmac('sha256', $payload, $secret);
 
         $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
@@ -30,21 +36,42 @@ final class Mailer
             'action' => $action,
             'exp' => $exp,
             'merge' => $merge,
+            'jti' => $jti,
             'sig' => $sig,
         ]);
 
         return "{$baseUrl}/admin/review-action.php?{$query}";
     }
 
-    public static function verifySignedAdminAction(int $businessId, string $action, int $expiresAt, int $mergeCategoryId, string $signature): bool
-    {
-        if ($expiresAt < time() || $signature === '') {
+    public static function verifySignedAdminAction(
+        int $businessId,
+        string $action,
+        int $expiresAt,
+        int $mergeCategoryId,
+        string $signature,
+        string $jti = ''
+    ): bool {
+        $cleanJti = trim($jti);
+        if ($businessId <= 0 || $expiresAt < time() || $signature === '' || strlen($cleanJti) < 16 || !preg_match('/^[A-Za-z0-9_-]+$/', $cleanJti)) {
+            return false;
+        }
+        if (!in_array($action, ['approve', 'reject'], true)) {
             return false;
         }
         $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
-        $payload = "{$businessId}|{$action}|{$expiresAt}|{$mergeCategoryId}";
+        $payload = "{$businessId}|{$action}|{$expiresAt}|{$mergeCategoryId}|{$cleanJti}";
         $expected = hash_hmac('sha256', $payload, $secret);
         return hash_equals($expected, $signature);
+    }
+
+    public static function adminActionNonceHash(
+        int $businessId,
+        string $action,
+        int $expiresAt,
+        int $mergeCategoryId,
+        string $jti
+    ): string {
+        return hash('sha256', "admin_review_jti|{$businessId}|{$action}|{$expiresAt}|{$mergeCategoryId}|" . trim($jti));
     }
 
     /**

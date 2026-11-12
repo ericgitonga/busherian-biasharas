@@ -29,9 +29,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Stage Pre-Prod build & lint all PHP files
+      - name: Stage Pre-Prod build, detect retired files & lint all PHP files
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          : > /tmp/preprod_deleted_files.txt
+          if [ -n "${BEFORE_SHA:-}" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            git diff --name-only --diff-filter=D "$BEFORE_SHA" "$AFTER_SHA" -- public src bin | grep -vE '^(public/)?uploads/' > /tmp/preprod_deleted_files.txt || true
+          fi
           python3 - << 'PYEOF'
           import os, pathlib, shutil, subprocess
 
@@ -79,7 +86,7 @@ jobs:
           print("Staged & linted all Pre-Prod files cleanly.")
           PYEOF
 
-      - name: Upload Pre-Prod files via Explicit FTPS (TLS Verified)
+      - name: Upload Pre-Prod files via Atomic Explicit FTPS (TLS Verified)
         env:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
@@ -91,4 +98,4 @@ jobs:
           if [[ "${FTP_SERVER}" != "angryhosting.com" && "${FTP_SERVER}" != *.angryhosting.com ]]; then
             TLS_ARG=(--tls-servername "angryhosting.com")
           fi
-          python3 .github/scripts/ftps_deploy.py --mode preprod --stage-dir /tmp/preprod_stage "${TLS_ARG[@]}"
+          python3 .github/scripts/ftps_deploy.py --mode preprod --stage-dir /tmp/preprod_stage --deleted-files-list /tmp/preprod_deleted_files.txt --release-sha "${GITHUB_SHA}" "${TLS_ARG[@]}"

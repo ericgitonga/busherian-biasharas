@@ -242,3 +242,26 @@ CREATE TABLE IF NOT EXISTS app_settings (
     setting_value TEXT NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 13. Moderation & Lifecycle Audit Log (#175)
+CREATE TABLE IF NOT EXISTS moderation_audit_log (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    business_id INT UNSIGNED NOT NULL,
+    action VARCHAR(32) NOT NULL,
+    channel VARCHAR(40) NOT NULL,
+    actor_identifier VARCHAR(190) NOT NULL,
+    previous_status VARCHAR(24) DEFAULT NULL,
+    new_status VARCHAR(24) NOT NULL,
+    reason_note VARCHAR(255) DEFAULT NULL,
+    ip_hash CHAR(64) DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_mod_audit_biz (business_id, created_at),
+    INDEX idx_mod_audit_action (action, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 14. Atomic Sequence & Rate-Limit Serialization Locks (#173, #183)
+CREATE TABLE IF NOT EXISTS business_sequences (
+    seq_key VARCHAR(40) NOT NULL PRIMARY KEY,
+    last_value INT UNSIGNED NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
