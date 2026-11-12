@@ -91,10 +91,13 @@ if (PHP_SAPI !== 'cli') {
     // Auto-expires after 120 seconds so an interrupted FTPS disconnect can never wedge the site indefinitely.
     $bbizDeployGateFile = dirname(__DIR__) . '/.maintenance_deploy.json';
     if (is_file($bbizDeployGateFile)) {
+        $gateRaw = @file_get_contents($bbizDeployGateFile);
+        $gateJson = is_string($gateRaw) ? json_decode($gateRaw, true) : null;
+        $rollbackFailed = is_array($gateJson) && !empty($gateJson['rollback_failed']);
         $gateMtime = @filemtime($bbizDeployGateFile);
-        if (is_int($gateMtime) && (time() - $gateMtime) <= 120) {
+        if ($rollbackFailed || (is_int($gateMtime) && (time() - $gateMtime) <= 120)) {
             if (!headers_sent()) {
-                header('Retry-After: 5');
+                header('Retry-After: ' . ($rollbackFailed ? '60' : '5'));
             }
             echo bbiz_render_maintenance_503();
             exit;

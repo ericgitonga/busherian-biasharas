@@ -93,13 +93,63 @@ final class AdminAuth
             );
         }
 
-        // Also support stateless Bearer / X-Admin-Token header for automated tests & CLI
+        // Support stateless X-Admin-Token ONLY when explicitly enabled in production (or non-prod testing),
+        // strictly separated from password_verify() and protected by the same per-IP auth rate limiter (#236 H-01).
         $headerToken = trim((string)($_SERVER['HTTP_X_ADMIN_TOKEN'] ?? ''));
-        if ($headerToken !== '' && self::verifyCredentials($headerToken)) {
-            return true;
+        if ($headerToken !== '' && self::isHeaderTokenEnabled()) {
+            try {
+                $conn = $pdo ?? Database::getConnection();
+                $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+                $rate = AntiSpamGate::checkAuthAttemptAllowed(
+                    $conn,
+                    $clientIp,
+                    'admin_login',
+                    '',
+                    8,
+                    25,
+                    8,
+                    25,
+                    static fn(): bool => self::verifyAutomationHeaderToken($headerToken)
+                );
+                if (!empty($rate['allowed']) && !empty($rate['verified'])) {
+                    return true;
+                }
+            } catch (\Throwable $e) {
+                return false;
+            }
         }
 
         return false;
+    }
+
+    public static function isHeaderTokenEnabled(): bool
+    {
+        $appEnv = strtolower(trim(Database::env('APP_ENV', 'production')));
+        if ($appEnv === 'production' && !PreprodSandbox::isPreprod()) {
+            return strtolower(trim(Database::env('ALLOW_ADMIN_HEADER_TOKEN', 'false'))) === 'true';
+        }
+        return true;
+    }
+
+    /**
+     * Verify stateless automation token ONLY — never evaluates ADMIN_PASSWORD_HASH / password_verify() (#236 H-01).
+     */
+    public static function verifyAutomationHeaderToken(string $submittedToken): bool
+    {
+        if ($submittedToken === '' || !self::isHeaderTokenEnabled()) {
+            return false;
+        }
+
+        $autoToken = Database::env('ADMIN_AUTOMATION_TOKEN', '');
+        if ($autoToken !== '') {
+            return hash_equals($autoToken, $submittedToken);
+        }
+
+        $accessToken = Database::env('ADMIN_ACCESS_TOKEN', Database::env('ADMIN_Access_Token', ''));
+        if ($accessToken === '' && strtolower(Database::env('APP_ENV', 'production')) !== 'production') {
+            $accessToken = Database::env('APP_HMAC_SECRET', '');
+        }
+        return ($accessToken !== '' && hash_equals($accessToken, $submittedToken));
     }
 
     public static function verifyCredentials(string $submittedPasswordOrToken): bool
@@ -127,12 +177,21 @@ final class AdminAuth
 
     public static function login(PDO $pdo, string $submittedPasswordOrToken, string $clientIp): array
     {
-        $rate = AntiSpamGate::checkAuthAttemptAllowed($pdo, $clientIp, 'admin_login', '', 8, 25, 8, 25);
+        $rate = AntiSpamGate::checkAuthAttemptAllowed(
+            $pdo,
+            $clientIp,
+            'admin_login',
+            '',
+            8,
+            25,
+            8,
+            25,
+            static fn(): bool => self::verifyCredentials($submittedPasswordOrToken)
+        );
         if (!$rate['allowed']) {
             return ['ok' => false, 'error' => 'Too many login attempts from this network. Please wait 15 minutes.'];
         }
-
-        if (!self::verifyCredentials($submittedPasswordOrToken)) {
+        if (empty($rate['verified'])) {
             return ['ok' => false, 'error' => 'Invalid admin access credentials.'];
         }
 

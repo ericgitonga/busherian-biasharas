@@ -274,3 +274,15 @@ CREATE TABLE IF NOT EXISTS business_sequences (
     current_val INT UNSIGNED NOT NULL DEFAULT 0,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 15. Durable Media Deletion Obligations Queue (#240 R3-HIGH-05)
+CREATE TABLE IF NOT EXISTS pending_media_deletions (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    business_id INT UNSIGNED NOT NULL,
+    photos_json TEXT DEFAULT NULL,
+    attempts INT UNSIGNED NOT NULL DEFAULT 0,
+    last_error VARCHAR(255) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_pending_media_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

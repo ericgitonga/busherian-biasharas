@@ -388,9 +388,28 @@ def deploy_items(
         )
 
         promoted_backups: list[tuple[str, str | None, str]] = []
+        consumed_staging: set[tuple[str, str]] = set()
+        rollback_failed = False
         try:
             try:
-                for r_dir, stg_name, dst_name, rel_label, byte_len in staged_plan:
+                for idx_promo, (r_dir, stg_name, dst_name, rel_label, byte_len) in enumerate(staged_plan):
+                    if idx_promo > 0 and idx_promo % 25 == 0:
+                        refreshed_gate = json.dumps(
+                            {
+                                "active": True,
+                                "mode": mode,
+                                "release_sha": effective_sha,
+                                "started_at_ts": int(time.time()),
+                            }
+                        ).encode("utf-8")
+                        _atomic_upload_bytes(
+                            ftp,
+                            ensure_remote_dir,
+                            gate_full,
+                            refreshed_gate,
+                            ".maintenance_deploy.json",
+                            allow_unverified_size=allow_unverified_size,
+                        )
                     ensure_remote_dir(r_dir)
                     backup_name = f".bbiz_prev_{os.getpid()}_{secrets.token_hex(4)}_{dst_name}"
                     has_backup = False
@@ -399,25 +418,60 @@ def deploy_items(
                         has_backup = True
                     except (ftplib.error_perm, KeyError):
                         has_backup = False
+
+                    # Journal backup BEFORE stg_name -> dst_name rename so mid-promotion failure restores dst_name (#238 H-03)
+                    if has_backup:
+                        promoted_backups.append((r_dir, backup_name, dst_name))
+
                     ftp.rename(stg_name, dst_name)
-                    promoted_backups.append((r_dir, backup_name if has_backup else None, dst_name))
+                    consumed_staging.add((r_dir, stg_name))
+                    if not has_backup:
+                        promoted_backups.append((r_dir, None, dst_name))
                     print(f"Promoted staged file: {rel_label} -> {r_dir}/{dst_name} ({byte_len}B)")
                     uploaded += 1
             except Exception:
-                # Roll back already-promoted files from `.bbiz_prev_*` backups & remove unpromoted `.bbiz_stage_*`
+                # Roll back every mutated live path from `.bbiz_prev_*` backups & remove all unconsumed `.bbiz_stage_*`
                 for r_dir, bkp_name, dst_name in reversed(promoted_backups):
                     try:
                         ensure_remote_dir(r_dir)
                         if bkp_name is not None:
+                            try:
+                                ftp.delete(dst_name)
+                            except Exception:
+                                pass
                             ftp.rename(bkp_name, dst_name)
                         else:
                             ftp.delete(dst_name)
-                    except Exception:
-                        pass
-                for r_dir, stg_name, _, _, _ in staged_plan[len(promoted_backups):]:
+                    except Exception as rb_exc:
+                        rollback_failed = True
+                        print(f"CRITICAL: Rollback restoration failed for {r_dir}/{dst_name}: {rb_exc}", file=sys.stderr)
+                for r_dir, stg_name, _, _, _ in staged_plan:
+                    if (r_dir, stg_name) in consumed_staging:
+                        continue
                     try:
                         ensure_remote_dir(r_dir)
                         ftp.delete(stg_name)
+                    except Exception:
+                        pass
+                if rollback_failed:
+                    try:
+                        locked_gate = json.dumps(
+                            {
+                                "active": True,
+                                "rollback_failed": True,
+                                "mode": mode,
+                                "release_sha": effective_sha,
+                                "started_at_ts": int(time.time()),
+                            }
+                        ).encode("utf-8")
+                        _atomic_upload_bytes(
+                            ftp,
+                            ensure_remote_dir,
+                            gate_full,
+                            locked_gate,
+                            ".maintenance_deploy.json",
+                            allow_unverified_size=True,
+                        )
                     except Exception:
                         pass
                 raise
@@ -463,10 +517,11 @@ def deploy_items(
                     allow_unverified_size=allow_unverified_size,
                 )
         finally:
-            try:
-                ftp.delete(gate_full)
-            except Exception:
-                pass
+            if not rollback_failed:
+                try:
+                    ftp.delete(gate_full)
+                except Exception:
+                    pass
     finally:
         try:
             ftp.quit()

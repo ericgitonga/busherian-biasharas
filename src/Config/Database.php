@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v17-med';
+    public const SCHEMA_INIT_VERSION = '2026-11-v18-high';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -549,6 +549,15 @@ final class Database
                     current_val INTEGER NOT NULL DEFAULT 0,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS pending_media_deletions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    business_id INTEGER NOT NULL,
+                    photos_json TEXT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
             ");
         } else {
             $bizCols = [];
@@ -600,6 +609,18 @@ final class Database
                     seq_key VARCHAR(40) NOT NULL PRIMARY KEY,
                     current_val INT UNSIGNED NOT NULL DEFAULT 0,
                     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS pending_media_deletions (
+                    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                    business_id INT UNSIGNED NOT NULL,
+                    photos_json TEXT DEFAULT NULL,
+                    attempts INT UNSIGNED NOT NULL DEFAULT 0,
+                    last_error VARCHAR(255) DEFAULT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_pending_media_created (created_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
         }

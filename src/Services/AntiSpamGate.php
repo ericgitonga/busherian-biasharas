@@ -382,7 +382,8 @@ final class AntiSpamGate
         int $ipLimit15m = 10,
         int $ipLimit24h = 30,
         int $acctLimit15m = 5,
-        int $acctLimit24h = 15
+        int $acctLimit24h = 15,
+        ?callable $verifyCallback = null
     ): array {
         $now = time();
         $ipHmac = self::pseudonymizeIp($rawIp);
@@ -438,6 +439,16 @@ final class AntiSpamGate
                 }
             }
 
+            if ($verifyCallback !== null) {
+                $verified = (bool)$verifyCallback();
+                if ($verified) {
+                    if ($ownTx) {
+                        $pdo->commit();
+                    }
+                    return ['allowed' => true, 'verified' => true, 'reason' => 'ok'];
+                }
+            }
+
             $ins = $pdo->prepare("INSERT INTO rate_limits (ip_hmac, action_type, created_at) VALUES (:h, :act, :now)");
             $ins->execute([':h' => $ipHmac, ':act' => $actionType, ':now' => $now]);
             if ($acctHmac !== '') {
@@ -446,6 +457,9 @@ final class AntiSpamGate
 
             if ($ownTx) {
                 $pdo->commit();
+            }
+            if ($verifyCallback !== null) {
+                return ['allowed' => true, 'verified' => false, 'reason' => 'invalid_credentials'];
             }
             return ['allowed' => true, 'reason' => 'ok'];
         } catch (\Throwable $e) {
