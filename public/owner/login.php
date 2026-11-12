@@ -116,11 +116,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, $pendingSubBizId);
             $ctxName = $claimBizName ?: $targetBizName;
-            Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
-            $viewStep = 'verify_otp';
-            $flashSuccess = "We sent a 6-digit verification code to {$email}. Enter the 6-digit code below and choose your password right here in this browser window.";
-            if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
-                $devPreviewOtpCode = $otpInfo['code'];
+            $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
+            if (!Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
+                $viewStep = 'reset';
+                $flashError = 'We could not deliver your 6-digit verification email right now due to a temporary mail server issue. Your email is queued for automatic retry — please check your inbox shortly or try again in a few minutes.';
+            } else {
+                $viewStep = 'verify_otp';
+                $flashSuccess = "We sent a 6-digit verification code to {$email}. Enter the 6-digit code below and choose your password right here in this browser window.";
+                if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
+                    $devPreviewOtpCode = $otpInfo['code'];
+                }
             }
         }
     } elseif ($formStep === 'verify_otp') {
@@ -172,20 +177,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($existingOwner !== null && empty($existingOwner['password_hash'])) {
                 $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, null);
                 $ctxName = $claimBizName ?: $targetBizName;
-                Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
-                $viewStep = 'verify_otp';
-                $flashSuccess = "Welcome back! Because your listing was added before passwords were enabled, we just sent a 6-digit verification code to {$email}. Enter that code below and choose your password to unlock editing.";
-                if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
-                    $devPreviewOtpCode = $otpInfo['code'];
+                $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
+                if (!Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
+                    $viewStep = 'reset';
+                    $flashError = 'We could not deliver your 6-digit verification email right now due to a temporary mail server issue. Your email is queued for automatic retry — please try again shortly.';
+                } else {
+                    $viewStep = 'verify_otp';
+                    $flashSuccess = "Welcome back! Because your listing was added before passwords were enabled, we just sent a 6-digit verification code to {$email}. Enter that code below and choose your password to unlock editing.";
+                    if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
+                        $devPreviewOtpCode = $otpInfo['code'];
+                    }
                 }
             } elseif ($existingOwner === null && OwnerAuth::isRecognizedOwnerEmail($pdo, $email)) {
                 $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, null);
                 $ctxName = $claimBizName ?: $targetBizName;
-                Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
-                $viewStep = 'verify_otp';
-                $flashSuccess = "We found a business listing matching {$email} and sent a 6-digit verification code to your inbox. Enter the code below and choose your password to start editing!";
-                if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
-                    $devPreviewOtpCode = $otpInfo['code'];
+                $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
+                if (!Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
+                    $viewStep = 'reset';
+                    $flashError = 'We could not deliver your 6-digit verification email right now due to a temporary mail server issue. Your email is queued for automatic retry — please try again shortly.';
+                } else {
+                    $viewStep = 'verify_otp';
+                    $flashSuccess = "We found a business listing matching {$email} and sent a 6-digit verification code to your inbox. Enter the code below and choose your password to start editing!";
+                    if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
+                        $devPreviewOtpCode = $otpInfo['code'];
+                    }
                 }
             } else {
                 $authOwner = OwnerAuth::authenticateWithPassword($pdo, $email, $password);

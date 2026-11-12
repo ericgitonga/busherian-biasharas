@@ -44,10 +44,7 @@ final class AntiSpamGate
         $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
         $sig = hash_hmac('sha256', "{$ts}|{$nonce}", $secret);
 
-        $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
-        OwnerAuth::startSecureSession();
-        $sessionId = session_id() ?: 'stateless';
-        $csrfToken = hash_hmac('sha256', $sessionId, $csrfSecret);
+        $csrfToken = self::generateCsrfToken();
 
         return [
             'form_ts' => $ts,
@@ -57,17 +54,36 @@ final class AntiSpamGate
         ];
     }
 
+    /**
+     * Generate a session-bound HMAC-SHA256 CSRF token, failing closed if no active session ID exists (#187).
+     */
+    public static function generateCsrfToken(): string
+    {
+        OwnerAuth::startSecureSession();
+        $sessionId = session_id();
+        if (!is_string($sessionId) || $sessionId === '') {
+            throw new \RuntimeException('Cannot generate CSRF token without an active PHP session.');
+        }
+        $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
+        return hash_hmac('sha256', $sessionId, $csrfSecret);
+    }
+
+    /**
+     * Verify a session-bound HMAC-SHA256 CSRF token with zero stateless fallback (#187).
+     */
     public static function verifyCsrfToken(string $submittedToken): bool
     {
         if ($submittedToken === '') {
             return false;
         }
-        $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
         OwnerAuth::startSecureSession();
-        $sessionId = session_id() ?: 'stateless';
+        $sessionId = session_id();
+        if (!is_string($sessionId) || $sessionId === '') {
+            return false;
+        }
+        $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
         $expected = hash_hmac('sha256', $sessionId, $csrfSecret);
-        $expectedStateless = hash_hmac('sha256', 'stateless', $csrfSecret);
-        return hash_equals($expected, $submittedToken) || hash_equals($expectedStateless, $submittedToken);
+        return hash_equals($expected, $submittedToken);
     }
 
     /**

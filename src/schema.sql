@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS email_outbox (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     business_id INT UNSIGNED NULL,
     recipient_email VARCHAR(190) NOT NULL,
+    reply_to VARCHAR(190) NULL,
     subject VARCHAR(255) NOT NULL,
     body_html MEDIUMTEXT NOT NULL,
     status ENUM('queued', 'sent', 'simulated', 'failed') NOT NULL DEFAULT 'queued',

@@ -90,6 +90,9 @@ if (PHP_SAPI !== 'cli') {
 if (!function_exists('bbiz_send_security_headers')) {
     function bbiz_send_security_headers(bool $isJson = false): void
     {
+        if (!$isJson) {
+            \BusherianBiasharas\Services\OwnerAuth::startSecureSession();
+        }
         if (headers_sent()) {
             return;
         }

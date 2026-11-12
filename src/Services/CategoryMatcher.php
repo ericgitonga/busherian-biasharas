@@ -313,7 +313,7 @@ final class CategoryMatcher
     }
 
     /**
-     * Jaro-Winkler & Levenshtein similarity score between 0.0 and 1.0
+     * Substring, normalized Levenshtein & similar_text() fuzzy similarity score between 0.0 and 1.0 (#189)
      */
     public static function similarity(string $a, string $b): float
     {
