@@ -422,9 +422,10 @@ final class VettingPurger
         $outboxRedacted = $redactOutbox->rowCount();
 
         // 3. Purge expired nonces, >24h rate-limit hashes, and expired/revoked persistent owner sessions (#165)
+        $nowUtc = gmdate('Y-m-d H:i:s');
         $pdo->prepare("DELETE FROM used_nonces WHERE expires_at < :now")->execute([':now' => time()]);
         $pdo->prepare("DELETE FROM rate_limits WHERE created_at < :cut")->execute([':cut' => time() - 86400]);
-        $pdo->prepare("DELETE FROM owner_sessions WHERE expires_at < :now OR revoked_at IS NOT NULL")->execute([':now' => time()]);
+        $pdo->prepare("DELETE FROM owner_sessions WHERE expires_at < :now OR revoked_at IS NOT NULL")->execute([':now' => $nowUtc]);
         $metricsCutoff = gmdate('Y-m-d H:i:s', time() - (180 * 86400));
         $pdo->prepare("DELETE FROM usage_metrics WHERE created_at < :mcut")->execute([':mcut' => $metricsCutoff]);
 
