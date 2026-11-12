@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS email_outbox (
     status ENUM('queued', 'sending', 'sent', 'simulated', 'failed', 'expired') NOT NULL DEFAULT 'queued',
     attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
     lease_until INT UNSIGNED NULL,
+    lease_token VARCHAR(36) NULL,
     next_retry_at INT UNSIGNED NULL,
     expires_at INT UNSIGNED NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -165,6 +166,17 @@ CREATE TABLE IF NOT EXISTS usage_metrics (
     INDEX idx_metric_type_time (event_type, created_at),
     INDEX idx_metric_visitor (visitor_hash, created_at),
     INDEX idx_metric_biz (business_id, event_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Server-Side Versioned Analytics Consent Provenance (Kenya DPA 2019 s.32; fixed non-rolling 12-month expiry #245)
+CREATE TABLE IF NOT EXISTS analytics_consents (
+    visitor_hash CHAR(64) PRIMARY KEY,
+    consent_status VARCHAR(16) NOT NULL,
+    policy_version VARCHAR(32) NOT NULL,
+    granted_at DATETIME NOT NULL,
+    expires_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_consent_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 

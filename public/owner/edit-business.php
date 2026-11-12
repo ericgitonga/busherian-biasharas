@@ -288,6 +288,15 @@ $tokens = AntiSpamGate::generateFormTokens();
 
       <?= bbiz_render_hours_and_photos_fields((string)($biz['operating_hours_json'] ?? ''), isset($biz['photos_json']) ? (string)$biz['photos_json'] : null) ?>
 
+      <div style="margin-top:1.1rem;background:#F9FAFB;border:1px solid #D1D5DB;border-radius:10px;padding:0.85rem 1rem;">
+        <label style="display:flex;align-items:flex-start;gap:0.55rem;font-size:0.84rem;line-height:1.45;cursor:pointer;">
+          <input type="checkbox" name="owner_adult_attestation_18" value="1" data-testid="owner-edit-adult-checkbox" required style="margin-top:0.2rem;">
+          <span>
+            <strong>Adult-Only (18+) Contact &amp; Photo Confirmation:</strong> I confirm that all updated contact details, social links, and uploaded photographs on this listing belong to or depict consenting adults aged <strong>18 years or older</strong> in accordance with the <a href="/privacy.php" target="_blank" rel="noopener" style="color:#7B1113;font-weight:600;">Privacy Notice</a>.
+          </span>
+        </label>
+      </div>
+
       <div style="margin-top:1.35rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
         <button type="submit" class="btn btn-green" style="padding:0.7rem 1.5rem;">💾 Save &amp; Publish Changes Immediately</button>
         <a href="/owner/index.php" class="btn btn-outline">Back to My Businesses</a>

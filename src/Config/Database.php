@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v18-high';
+    public const SCHEMA_INIT_VERSION = '2026-11-v19-med';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -189,6 +189,74 @@ final class Database
         return self::$activeDriver;
     }
 
+    /**
+     * Inspect active schema version and required tables for deployment readiness gating (#251 M-11).
+     *
+     * @return array{schema_version:string, expected_schema_version:string, schema_ready:bool, missing_tables:list<string>}
+     */
+    public static function getSchemaReadiness(PDO $pdo): array
+    {
+        $driver = strtolower((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        $recorded = '';
+        try {
+            $stmt = $pdo->prepare("SELECT setting_value FROM app_settings WHERE setting_key = 'schema_init_version' LIMIT 1");
+            $stmt->execute();
+            $recorded = trim((string)($stmt->fetchColumn() ?: ''));
+        } catch (\Throwable $e) {
+            $recorded = '';
+        }
+
+        $requiredTables = [
+            'categories',
+            'businesses',
+            'business_vetting_queue',
+            'used_nonces',
+            'rate_limits',
+            'email_outbox',
+            'click_events',
+            'usage_metrics',
+            'analytics_consents',
+            'business_owners',
+            'business_owner_links',
+            'owner_sessions',
+            'owner_auth_tokens',
+            'takedown_requests',
+            'moderation_audit_log',
+            'business_sequences',
+            'pending_media_deletions',
+            'app_settings',
+        ];
+        $existing = [];
+        try {
+            if ($driver === 'sqlite') {
+                $rows = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table'")->fetchAll();
+                foreach ($rows as $r) {
+                    $existing[strtolower((string)($r['name'] ?? ''))] = true;
+                }
+            } else {
+                $rows = $pdo->query("SHOW TABLES")->fetchAll(PDO::FETCH_NUM);
+                foreach ($rows as $r) {
+                    $existing[strtolower((string)($r[0] ?? ''))] = true;
+                }
+            }
+        } catch (\Throwable $e) {
+        }
+
+        $missing = [];
+        foreach ($requiredTables as $tbl) {
+            if (empty($existing[$tbl])) {
+                $missing[] = $tbl;
+            }
+        }
+
+        return [
+            'schema_version' => $recorded,
+            'expected_schema_version' => self::SCHEMA_INIT_VERSION,
+            'schema_ready' => ($recorded === self::SCHEMA_INIT_VERSION && $missing === []),
+            'missing_tables' => $missing,
+        ];
+    }
+
     private static function registerSqliteMathFunctions(PDO $pdo): void
     {
         if (method_exists($pdo, 'sqliteCreateFunction')) {
@@ -214,7 +282,11 @@ final class Database
         }
 
         if (strtolower(self::env('BBIZ_DISABLE_WEB_AUTO_MIGRATE', 'false')) === 'true' && PHP_SAPI !== 'cli') {
-            throw new DatabaseUnavailableException('Database schema migration is pending; run php bin/migrate-and-seed.php.');
+            $allowDeployProbeMigrate = !empty($_GET['verify_schema'])
+                && is_file(dirname(__DIR__, 2) . '/.deploy_manifest.json');
+            if (!$allowDeployProbeMigrate) {
+                throw new DatabaseUnavailableException('Database schema migration is pending; run php bin/migrate-and-seed.php.');
+            }
         }
 
         self::migrateAndSeed($pdo, false);
@@ -700,6 +772,31 @@ final class Database
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
         }
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS analytics_consents (
+                    visitor_hash TEXT PRIMARY KEY,
+                    consent_status TEXT NOT NULL,
+                    policy_version TEXT NOT NULL,
+                    granted_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_consent_expires ON analytics_consents (expires_at);
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS analytics_consents (
+                    visitor_hash CHAR(64) PRIMARY KEY,
+                    consent_status VARCHAR(16) NOT NULL,
+                    policy_version VARCHAR(32) NOT NULL,
+                    granted_at DATETIME NOT NULL,
+                    expires_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL,
+                    INDEX idx_consent_expires (expires_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        }
     }
 
     public static function getSetting(PDO $pdo, string $key, string $default = ''): string
@@ -955,6 +1052,9 @@ final class Database
             if (!in_array('lease_until', $outboxColNames, true)) {
                 $pdo->exec("ALTER TABLE email_outbox ADD COLUMN lease_until INTEGER NULL");
             }
+            if (!in_array('lease_token', $outboxColNames, true)) {
+                $pdo->exec("ALTER TABLE email_outbox ADD COLUMN lease_token TEXT NULL");
+            }
             if (!in_array('next_retry_at', $outboxColNames, true)) {
                 $pdo->exec("ALTER TABLE email_outbox ADD COLUMN next_retry_at INTEGER NULL");
             }
@@ -1015,6 +1115,9 @@ final class Database
             $mysqlOutboxColNames = array_map(static fn(array $r): string => (string)($r['Field'] ?? ''), $outboxCols);
             if (!in_array('lease_until', $mysqlOutboxColNames, true)) {
                 $pdo->exec("ALTER TABLE email_outbox ADD COLUMN lease_until INT UNSIGNED NULL AFTER attempts");
+            }
+            if (!in_array('lease_token', $mysqlOutboxColNames, true)) {
+                $pdo->exec("ALTER TABLE email_outbox ADD COLUMN lease_token VARCHAR(36) NULL AFTER lease_until");
             }
             if (!in_array('next_retry_at', $mysqlOutboxColNames, true)) {
                 $pdo->exec("ALTER TABLE email_outbox ADD COLUMN next_retry_at INT UNSIGNED NULL AFTER lease_until");

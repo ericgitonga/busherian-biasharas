@@ -197,37 +197,82 @@ try {
         }
         unset($pRow);
     } else {
-        // Bounded Open-Now evaluation (#218 M-10): cap SQL candidate scan to 500 rows (with SQL distance order when coords supplied)
-        $openParams = $params;
-        if ($hasCoordsQuery) {
-            $openHavExpr = $buildHaversineExpr('oh', $openParams);
-            $openSql = $selectCols . ", CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL THEN ROUND({$openHavExpr}, 2) ELSE NULL END AS _sql_dist "
-                . $fromWhereSql
-                . " ORDER BY CASE WHEN b.latitude IS NULL OR b.longitude IS NULL THEN 1 ELSE 0 END ASC, _sql_dist ASC, b.business_number ASC, b.id ASC LIMIT 500";
-        } else {
-            $openSql = $selectCols . $fromWhereSql . " ORDER BY b.business_number ASC, b.id ASC LIMIT 500";
-        }
-        $stmt = $pdo->prepare($openSql);
-        $stmt->execute($openParams);
-        $candidateRows = $stmt->fetchAll();
-        $filteredRows = [];
-        foreach ($candidateRows as $row) {
-            $hoursStatus = HoursEngine::evaluateStatus((string)$row['operating_hours_json']);
-            if (!$hoursStatus['is_open']) {
-                continue;
+        // Complete Batched Open-Now evaluation (#243 M-03): scan lightweight schedule chunks of 250 without truncating at 500
+        $batchSize = 250;
+        $batchOffset = 0;
+        $matchedOpenMeta = [];
+        while (true) {
+            $openParams = $params;
+            if ($hasCoordsQuery) {
+                $openHavExpr = $buildHaversineExpr('oh', $openParams);
+                $openSql = "SELECT b.id, b.operating_hours_json, CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL THEN ROUND({$openHavExpr}, 2) ELSE NULL END AS _sql_dist "
+                    . $fromWhereSql
+                    . " ORDER BY CASE WHEN b.latitude IS NULL OR b.longitude IS NULL THEN 1 ELSE 0 END ASC, _sql_dist ASC, b.business_number ASC, b.id ASC"
+                    . " LIMIT 250 OFFSET " . (int)$batchOffset;
+            } else {
+                $openSql = "SELECT b.id, b.operating_hours_json "
+                    . $fromWhereSql
+                    . " ORDER BY b.business_number ASC, b.id ASC"
+                    . " LIMIT 250 OFFSET " . (int)$batchOffset;
             }
-            $distanceKm = isset($row['_sql_dist']) && $row['_sql_dist'] !== null ? (float)$row['_sql_dist'] : null;
-            $row['_eval_hours'] = $hoursStatus;
-            $row['_eval_dist'] = $distanceKm;
-            $filteredRows[] = $row;
+            $stmt = $pdo->prepare($openSql);
+            $stmt->execute($openParams);
+            $candidateBatch = $stmt->fetchAll();
+            if ($candidateBatch === []) {
+                break;
+            }
+            foreach ($candidateBatch as $cRow) {
+                $hoursStatus = HoursEngine::evaluateStatus((string)$cRow['operating_hours_json']);
+                if (!$hoursStatus['is_open']) {
+                    continue;
+                }
+                $distanceKm = isset($cRow['_sql_dist']) && $cRow['_sql_dist'] !== null ? (float)$cRow['_sql_dist'] : null;
+                $matchedOpenMeta[] = [
+                    'id' => (int)$cRow['id'],
+                    '_eval_hours' => $hoursStatus,
+                    '_eval_dist' => $distanceKm,
+                ];
+            }
+            if (count($candidateBatch) < $batchSize) {
+                break;
+            }
+            $batchOffset += $batchSize;
         }
-        $totalCount = count($filteredRows);
+
+        $totalCount = count($matchedOpenMeta);
         $totalPages = max(1, (int)ceil($totalCount / $perPage));
         if ($page > $totalPages) {
             $page = $totalPages;
         }
         $offset = ($page - 1) * $perPage;
-        $pagedRows = array_slice($filteredRows, $offset, $perPage);
+        $pageSliceMeta = array_slice($matchedOpenMeta, $offset, $perPage);
+        $pagedRows = [];
+        if ($pageSliceMeta !== []) {
+            $winIds = array_map(static fn(array $m): int => (int)$m['id'], $pageSliceMeta);
+            $inPlaceholders = implode(',', array_fill(0, count($winIds), '?'));
+            $hydStmt = $pdo->prepare(
+                $selectCols
+                . " FROM businesses b"
+                . " INNER JOIN categories sec ON sec.id = b.sector_id"
+                . " INNER JOIN categories spec ON spec.id = b.specialty_id"
+                . " WHERE b.id IN ({$inPlaceholders})"
+            );
+            $hydStmt->execute($winIds);
+            $byId = [];
+            foreach ($hydStmt->fetchAll() as $fullRow) {
+                $byId[(int)$fullRow['id']] = $fullRow;
+            }
+            foreach ($pageSliceMeta as $m) {
+                $wid = (int)$m['id'];
+                if (!isset($byId[$wid])) {
+                    continue;
+                }
+                $fullRow = $byId[$wid];
+                $fullRow['_eval_hours'] = $m['_eval_hours'];
+                $fullRow['_eval_dist'] = $m['_eval_dist'];
+                $pagedRows[] = $fullRow;
+            }
+        }
     }
 
     // Batch ownership check in a SINGLE query (#180: zero N+1 queries)

@@ -5,6 +5,7 @@ require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\AntiSpamGate;
+use BusherianBiasharas\Services\VettingPurger;
 
 bbiz_send_security_headers(true);
 
@@ -14,10 +15,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Strict Kenya DPA 2019 s.32 Opt-In Gate: NEVER record usage metrics unless 'bbiz_consent' cookie is 'accepted'
+// Strict Kenya DPA 2019 s.32 Opt-In Gate: require 'bbiz_consent=accepted' AND active server-side provenance (#245 M-05)
 $consentCookie = trim((string)($_COOKIE['bbiz_consent'] ?? ''));
 $visitorId     = trim((string)($_COOKIE['bbiz_vid'] ?? ''));
-if ($consentCookie !== 'accepted' || $visitorId === '' || strlen($visitorId) < 8) {
+if ($consentCookie !== 'accepted' || $visitorId === '' || !preg_match('/^[a-zA-Z0-9_\-]{12,64}$/', $visitorId)) {
     echo json_encode(['status' => 'ignored_no_consent']);
     exit;
 }
@@ -33,7 +34,42 @@ if (!in_array($eventType, $allowedTypes, true)) {
     exit;
 }
 
-$pagePath   = mb_substr(trim((string)($data['page_path'] ?? '')), 0, 160) ?: null;
+// Server-side page_path sanitization & route allowlisting (#244 M-04): strip query/fragment & PII
+$rawPageInput = trim((string)($data['page_path'] ?? ''));
+$pagePath = null;
+if ($rawPageInput !== '') {
+    $parsedPath = (string)(parse_url($rawPageInput, PHP_URL_PATH) ?? '');
+    $parsedPath = rawurldecode($parsedPath);
+    $parsedPath = (string)preg_replace('#/+#', '/', '/' . ltrim($parsedPath, '/'));
+    if ($parsedPath !== '/' && str_ends_with($parsedPath, '/')) {
+        $parsedPath = rtrim($parsedPath, '/');
+    }
+    if (str_starts_with($parsedPath, '/admin/preprod/')) {
+        $parsedPath = substr($parsedPath, strlen('/admin/preprod')) ?: '/';
+    } elseif ($parsedPath === '/admin/preprod') {
+        $parsedPath = '/';
+    }
+    $allowedRoutes = [
+        '/',
+        '/index.php',
+        '/submit.php',
+        '/privacy.php',
+        '/takedown.php',
+        '/owner/login.php',
+        '/owner/index.php',
+        '/owner/edit-business.php',
+        '/owner/claim.php',
+        '/owner/google-callback.php',
+        '/admin/index.php',
+        '/admin/login.php',
+        '/admin/add-business.php',
+        '/admin/edit-business.php',
+        '/admin/metrics.php',
+        '/admin/sandbox.php',
+    ];
+    $pagePath = in_array($parsedPath, $allowedRoutes, true) ? $parsedPath : '/[other]';
+}
+
 $businessId = isset($data['business_id']) && (int)$data['business_id'] > 0 ? (int)$data['business_id'] : null;
 $rawMeta    = trim((string)($data['meta_label'] ?? ''));
 if ($rawMeta !== '') {
@@ -56,6 +92,27 @@ try {
 
     $salt = Database::env('IP_HASH_SECRET', 'bbiz_default_metric_salt');
     $visitorHash = hash_hmac('sha256', $visitorId, $salt);
+
+    // Verify durable server-side consent provenance under current notice version & unexpired window (#245 M-05)
+    $nowUtc = gmdate('Y-m-d H:i:s');
+    $consentStmt = $pdo->prepare("
+        SELECT 1
+        FROM analytics_consents
+        WHERE visitor_hash = :vh
+          AND consent_status = 'accepted'
+          AND policy_version = :pv
+          AND expires_at >= :now_utc
+        LIMIT 1
+    ");
+    $consentStmt->execute([
+        ':vh' => $visitorHash,
+        ':pv' => VettingPurger::PRIVACY_NOTICE_VERSION,
+        ':now_utc' => $nowUtc,
+    ]);
+    if (!$consentStmt->fetchColumn()) {
+        echo json_encode(['status' => 'ignored_no_consent']);
+        exit;
+    }
 
     $stmt = $pdo->prepare("
         INSERT INTO usage_metrics (event_type, visitor_hash, page_path, business_id, meta_label)

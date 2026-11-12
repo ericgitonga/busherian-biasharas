@@ -8,7 +8,7 @@ use RuntimeException;
 
 final class VettingPurger
 {
-    public const PRIVACY_NOTICE_VERSION = '2026-11-v3';
+    public const PRIVACY_NOTICE_VERSION = '2026-11-v4';
 
     /** @var array<int, array{business_id:int, photos_json:?string}> */
     private static array $deferredPostCommitMediaDeletions = [];
@@ -1016,11 +1016,14 @@ final class VettingPurger
         $scrubCatEmails->execute([':ccut' => $cutoffDate]);
         $catEmailsCleared = $scrubCatEmails->rowCount();
 
-        // 6. Purge expired nonces, >24h rate-limit hashes, and expired/revoked persistent owner sessions (#165)
+        // 6. Purge expired nonces, >24h rate-limit hashes, expired/revoked persistent owner sessions (#165), and expired analytics consents (#245)
         $nowUtc = gmdate('Y-m-d H:i:s', $nowTs);
         $pdo->prepare("DELETE FROM used_nonces WHERE expires_at < :now")->execute([':now' => $nowTs]);
         $pdo->prepare("DELETE FROM rate_limits WHERE created_at < :cut")->execute([':cut' => $nowTs - 86400]);
         $pdo->prepare("DELETE FROM owner_sessions WHERE expires_at < :now OR revoked_at IS NOT NULL")->execute([':now' => $nowUtc]);
+        $delConsents = $pdo->prepare("DELETE FROM analytics_consents WHERE expires_at < :now OR consent_status != 'accepted'");
+        $delConsents->execute([':now' => $nowUtc]);
+        $consentsPurged = $delConsents->rowCount();
 
         // 7. Apply 180-day (6-month) purge consistently to BOTH usage_metrics AND click_events (#214 M-06)
         $metricsCutoff = gmdate('Y-m-d H:i:s', $nowTs - (180 * 86400));
@@ -1053,6 +1056,7 @@ final class VettingPurger
             'auth_tokens_purged' => $authTokensPurged,
             'takedown_pii_redacted' => $takedownPiiRedacted,
             'category_submitter_emails_cleared' => $catEmailsCleared,
+            'analytics_consents_purged' => $consentsPurged,
             'usage_metrics_purged' => $metricsPurged,
             'click_events_purged' => $clicksPurged,
             'orphaned_public_media_deleted' => $mediaSweep['orphaned_public_deleted'],
@@ -1608,6 +1612,9 @@ final class VettingPurger
         if (!OwnerAuth::canOwnerEditBusiness($pdo, (int)$owner['id'], $businessId)) {
             throw new RuntimeException('You are not authorized to edit this business listing.');
         }
+        if (empty($data['owner_adult_attestation_18']) || (string)$data['owner_adult_attestation_18'] === '0') {
+            throw new \InvalidArgumentException('Adult-only (18+) data-subject and media attestation is required before saving listing updates.');
+        }
 
         $oldStmt = $pdo->prepare("
             SELECT b.*, sec.name AS sector_name, spec.name AS specialty_name
@@ -1703,6 +1710,8 @@ final class VettingPurger
                 social_facebook = :social_facebook,
                 social_tiktok = :social_tiktok,
                 social_youtube = :social_youtube,
+                age_attested_at = CURRENT_TIMESTAMP,
+                privacy_notice_version = :privacy_notice_version,
                 last_confirmed_at = CURRENT_TIMESTAMP,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :id
@@ -1747,6 +1756,7 @@ final class VettingPurger
             ':social_facebook' => trim((string)($data['social_facebook'] ?? '')) ?: null,
             ':social_tiktok' => trim((string)($data['social_tiktok'] ?? '')) ?: null,
             ':social_youtube' => trim((string)($data['social_youtube'] ?? '')) ?: null,
+            ':privacy_notice_version' => self::PRIVACY_NOTICE_VERSION,
             ':id' => $businessId,
         ]);
         if ($lockedOwnerStatus === 'quarantined_dpa') {
