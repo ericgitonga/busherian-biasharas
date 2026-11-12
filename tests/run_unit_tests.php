@@ -3810,6 +3810,81 @@ assertTrue(
     'Database::getSchemaReadiness detects pending schema version drift and migrateAndSeed restores full readiness (#251)'
 );
 
+
+// 46. Chapter 1 Chunk 1 (#272, #273, #274): Publishing Taxonomy Expansion, Synonym Lexicon & Type-Ahead Specialty Finder
+$tree273 = CategoryMatcher::getTaxonomyTree($pdo);
+$allSpecNames273 = [];
+foreach ($tree273 as $sec273) {
+    foreach ($sec273['specialties'] as $sp273) {
+        $allSpecNames273[$sp273['name']] = $sec273['name'];
+    }
+}
+assertTrue(
+    count($allSpecNames273) >= 116 &&
+    ($allSpecNames273['Book, Academic & Digital Publishing'] ?? '') === 'Creative, Media, Marketing & Events' &&
+    ($allSpecNames273['Editorial, Ghostwriting & Author Services'] ?? '') === 'Creative, Media, Marketing & Events' &&
+    ($allSpecNames273['Podcast, Broadcast & Content Studio'] ?? '') === 'Creative, Media, Marketing & Events' &&
+    ($allSpecNames273['Author Coaching & Manuscript Advisory'] ?? '') === 'Education, Training & Coaching' &&
+    !isset($allSpecNames273['Publishing, Podcast & Content Studio']),
+    'Publishing taxonomy represents Book/Digital Publishing, Editorial/Author Services, Podcast Studio, and Author Coaching across Creative & Education sectors (#273)'
+);
+
+// Verify safe in-place migration of legacy 'publishing-podcast-content-studio' slug preserves row ID
+$podcastId273 = (int)$pdo->query("SELECT id FROM categories WHERE slug = 'creative-media-marketing-events-podcast-broadcast-content-studio' LIMIT 1")->fetchColumn();
+$pdo->prepare("UPDATE categories SET name = 'Publishing, Podcast & Content Studio', slug = 'creative-media-marketing-events-publishing-podcast-content-studio' WHERE id = :id")
+    ->execute([':id' => $podcastId273]);
+CategoryMatcher::ensureTaxonomyUpToDate($pdo);
+$migratedRow273 = $pdo->query("SELECT id, name, slug FROM categories WHERE id = {$podcastId273}")->fetch();
+assertTrue(
+    (int)($migratedRow273['id'] ?? 0) === $podcastId273 &&
+    ($migratedRow273['name'] ?? '') === 'Podcast, Broadcast & Content Studio' &&
+    ($migratedRow273['slug'] ?? '') === 'creative-media-marketing-events-podcast-broadcast-content-studio',
+    'ensureTaxonomyUpToDate migrates legacy publishing-podcast-content-studio row in-place preserving FK specialty ID (#273)'
+);
+
+$expPub273 = CategoryMatcher::expandSearchTerms('mchapishaji vitabu proofreading');
+$searchPub273 = CategoryMatcher::searchSpecialties($pdo, 'publishing', 8);
+$searchPubNames273 = array_column($searchPub273, 'specialty_name');
+$searchSwahili273 = CategoryMatcher::searchSpecialties($pdo, 'mchapishaji', 6);
+$searchSwahiliNames273 = array_column($searchSwahili273, 'specialty_name');
+$suggestPub273 = CategoryMatcher::suggestCategoryFromText($pdo, 'Independent Nairobi book publisher offering manuscript editing, ISBN registration, and author services.');
+assertTrue(
+    in_array('Publishing', $expPub273, true) &&
+    in_array('Editorial', $expPub273, true) &&
+    in_array('Book, Academic & Digital Publishing', $searchPubNames273, true) &&
+    in_array('Author Coaching & Manuscript Advisory', $searchPubNames273, true) &&
+    in_array('Book, Academic & Digital Publishing', $searchSwahiliNames273, true) &&
+    $suggestPub273 !== null &&
+    in_array($suggestPub273['specialty_name'], [
+        'Book, Academic & Digital Publishing',
+        'Editorial, Ghostwriting & Author Services',
+        'Author Coaching & Manuscript Advisory',
+    ], true),
+    'Synonym lexicon, searchSpecialties(), and suggestCategoryFromText() resolve English & Swahili publishing/author terms (#273)'
+);
+
+$finderHtml274 = bbiz_render_specialty_finder($tree273);
+$formsWithFinder274 = [
+    'public/submit.php',
+    'public/owner/edit-business.php',
+    'public/admin/add-business.php',
+    'public/admin/edit-business.php',
+];
+$allFormsHaveFinder274 = true;
+foreach ($formsWithFinder274 as $relForm274) {
+    $fSrc274 = (string)file_get_contents(dirname(__DIR__) . '/' . $relForm274);
+    if (!str_contains($fSrc274, 'bbiz_render_specialty_finder($taxonomyTree)')) {
+        $allFormsHaveFinder274 = false;
+    }
+}
+assertTrue(
+    $allFormsHaveFinder274 &&
+    str_contains($finderHtml274, 'id="specialty-quick-finder"') &&
+    str_contains($finderHtml274, 'data-taxonomy-json="') &&
+    str_contains($finderHtml274, 'data-synonyms-json="'),
+    'Type-Ahead Specialty Finder renders cleanly across submit, owner edit, admin add, and admin edit forms (#274)'
+);
+
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);
 }

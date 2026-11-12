@@ -8,7 +8,7 @@ use PDO;
 final class CategoryMatcher
 {
     /**
-     * 15 Standard Industry Sectors & 113 Pre-Populated Specialties
+     * 15 Standard Industry Sectors & 116 Pre-Populated Specialties
      */
     public const DEFAULT_TAXONOMY = [
         [
@@ -158,6 +158,7 @@ final class CategoryMatcher
                 'Music, Arts & Coding Academy',
                 'Study Abroad & University Placement',
                 'Driving School & Technical TVET',
+                'Author Coaching & Manuscript Advisory',
             ],
         ],
         [
@@ -170,7 +171,9 @@ final class CategoryMatcher
                 'Commercial Photography & Videography',
                 'Event Planning, Tent/Sound & Decor',
                 'Printing, Signage & Branded Merchandise',
-                'Publishing, Podcast & Content Studio',
+                'Book, Academic & Digital Publishing',
+                'Editorial, Ghostwriting & Author Services',
+                'Podcast, Broadcast & Content Studio',
             ],
         ],
         [
@@ -284,6 +287,28 @@ final class CategoryMatcher
         'band' => ['Music', 'Live Bands', 'Performing Arts'],
         'mziki' => ['Music', 'Live Bands', 'Sound Production'],
         'muziki' => ['Music', 'Live Bands', 'Sound Production'],
+        'publisher' => ['Publishing', 'Book', 'Editorial', 'Author Coaching', 'Printing'],
+        'publishers' => ['Publishing', 'Book', 'Editorial', 'Author Coaching', 'Printing'],
+        'publishing' => ['Publishing', 'Book', 'Editorial', 'Author Coaching', 'Bookshop'],
+        'book' => ['Book', 'Publishing', 'Editorial', 'Bookshop', 'Author Coaching', 'Literary Arts'],
+        'books' => ['Book', 'Publishing', 'Editorial', 'Bookshop', 'Author Coaching', 'Literary Arts'],
+        'author' => ['Author Services', 'Author Coaching', 'Publishing', 'Editorial', 'Literary Arts'],
+        'authors' => ['Author Services', 'Author Coaching', 'Publishing', 'Editorial', 'Literary Arts'],
+        'editing' => ['Editorial', 'Ghostwriting', 'Publishing', 'Manuscript', 'Author Services'],
+        'editor' => ['Editorial', 'Ghostwriting', 'Publishing', 'Manuscript'],
+        'editorial' => ['Editorial', 'Publishing', 'Author Services', 'Manuscript'],
+        'proofreading' => ['Editorial', 'Author Services', 'Manuscript', 'Publishing'],
+        'ghostwriting' => ['Ghostwriting', 'Editorial', 'Author Services', 'Author Coaching'],
+        'manuscript' => ['Manuscript', 'Author Coaching', 'Editorial', 'Publishing'],
+        'isbn' => ['Book', 'Publishing', 'Author Services'],
+        'mchapishaji' => ['Publishing', 'Book', 'Editorial', 'Printing'],
+        'uchapishaji' => ['Publishing', 'Book', 'Editorial', 'Printing'],
+        'vitabu' => ['Book', 'Publishing', 'Bookshop', 'Author Coaching', 'Literary Arts'],
+        'kitabu' => ['Book', 'Publishing', 'Bookshop', 'Author Coaching', 'Literary Arts'],
+        'mwandishi' => ['Author Services', 'Author Coaching', 'Editorial', 'Literary Arts', 'Publishing'],
+        'podcast' => ['Podcast', 'Broadcast', 'Content Studio'],
+        'app' => ['Mobile App Dev', 'Custom Software', 'Web Design'],
+        'website' => ['Web Design', 'Custom Software', 'E-Commerce'],
     ];
 
 
@@ -428,10 +453,12 @@ final class CategoryMatcher
      */
     public static function suggestCategoryFromText(PDO $pdo, string $text): ?array
     {
-        $haystack = strtolower($text);
-        if (trim($haystack) === '') {
+        $rawTrim = trim($text);
+        if ($rawTrim === '') {
             return null;
         }
+        $expandedPhrases = self::expandSearchTerms($rawTrim);
+        $haystack = strtolower(implode(' ', $expandedPhrases));
 
         $stmt = $pdo->query("
             SELECT c.id AS specialty_id, c.name AS specialty_name,
@@ -469,6 +496,117 @@ final class CategoryMatcher
         }
 
         return ($bestScore >= 1.5) ? $best : null;
+    }
+
+
+    /**
+     * Rank Level 2 specialties across all 15 sectors using direct substring/prefix matching
+     * plus English/Swahili SYNONYM_LEXICON expansion (#273, #274).
+     *
+     * @return list<array{specialty_id:int, specialty_name:string, sector_id:int, sector_name:string, is_regulated:bool, score:float}>
+     */
+    public static function searchSpecialties(PDO $pdo, string $rawQuery, int $limit = 8, bool $includePending = false): array
+    {
+        $clean = strtolower(trim(mb_substr($rawQuery, 0, 100)));
+        if ($clean === '') {
+            return [];
+        }
+
+        $tokens = array_values(array_filter(
+            preg_split('/[^a-z0-9]+/i', $clean) ?: [],
+            static fn(string $t): bool => $t !== ''
+        ));
+        if ($tokens === []) {
+            return [];
+        }
+
+        $synonymPhrases = [];
+        foreach ($tokens as $tok) {
+            if (isset(self::SYNONYM_LEXICON[$tok])) {
+                foreach (self::SYNONYM_LEXICON[$tok] as $mapped) {
+                    $synonymPhrases[] = strtolower($mapped);
+                }
+            }
+            // Prefix match on lexicon keys >= 4 chars (e.g. "publish" -> "publishing", "proofread" -> "proofreading")
+            if (strlen($tok) >= 4) {
+                foreach (self::SYNONYM_LEXICON as $lexKey => $mappedList) {
+                    if (str_starts_with($lexKey, $tok)) {
+                        foreach ($mappedList as $mapped) {
+                            $synonymPhrases[] = strtolower($mapped);
+                        }
+                    }
+                }
+            }
+        }
+        $synonymPhrases = array_values(array_unique($synonymPhrases));
+
+        $tree = self::getTaxonomyTree($pdo, $includePending);
+        $scored = [];
+
+        foreach ($tree as $sec) {
+            $secId = (int)$sec['id'];
+            $secName = (string)$sec['name'];
+            $secLower = strtolower($secName);
+
+            foreach ($sec['specialties'] as $sp) {
+                $specName = (string)$sp['name'];
+                $specLower = strtolower($specName);
+                $combined = $specLower . ' ' . $secLower;
+                $score = 0.0;
+
+                if ($specLower === $clean) {
+                    $score += 30.0;
+                } elseif (str_starts_with($specLower, $clean)) {
+                    $score += 18.0;
+                } elseif (str_contains($specLower, $clean)) {
+                    $score += 14.0;
+                } elseif (str_contains($secLower, $clean)) {
+                    $score += 6.0;
+                }
+
+                foreach ($tokens as $tok) {
+                    if (strlen($tok) < 2) {
+                        continue;
+                    }
+                    if (preg_match('/\b' . preg_quote($tok, '/') . '/i', $specName)) {
+                        $score += 7.0;
+                    } elseif (str_contains($specLower, $tok)) {
+                        $score += 4.5;
+                    } elseif (preg_match('/\b' . preg_quote($tok, '/') . '/i', $secName)) {
+                        $score += 2.5;
+                    }
+                }
+
+                foreach ($synonymPhrases as $syn) {
+                    if ($syn !== '' && str_contains($specLower, $syn)) {
+                        $score += 5.5;
+                    } elseif ($syn !== '' && str_contains($combined, $syn)) {
+                        $score += 2.0;
+                    }
+                }
+
+                if ($score > 0.0) {
+                    $scored[] = [
+                        'specialty_id' => (int)$sp['id'],
+                        'specialty_name' => $specName,
+                        'sector_id' => $secId,
+                        'sector_name' => $secName,
+                        'is_regulated' => !empty($sp['is_regulated']),
+                        'score' => round($score, 2),
+                    ];
+                }
+            }
+        }
+
+        usort($scored, static function (array $a, array $b): int {
+            $cmp = $b['score'] <=> $a['score'];
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            return strcmp($a['specialty_name'], $b['specialty_name']);
+        });
+
+        return array_slice($scored, 0, max(1, $limit));
     }
 
     /**
@@ -985,6 +1123,26 @@ final class CategoryMatcher
 
     public static function ensureTaxonomyUpToDate(PDO $pdo): void
     {
+        // Safely migrate legacy bundled 'Publishing, Podcast & Content Studio' slug in-place (#273)
+        // so any existing foreign-key references preserve their specialty ID without leaving duplicate studio rows.
+        $legacySlug = 'creative-media-marketing-events-publishing-podcast-content-studio';
+        $modernPodcastSlug = 'creative-media-marketing-events-podcast-broadcast-content-studio';
+        $chkLegacy = $pdo->prepare("SELECT id FROM categories WHERE parent_id IS NOT NULL AND slug = :slug LIMIT 1");
+        $chkLegacy->execute([':slug' => $legacySlug]);
+        $legacyId = (int)$chkLegacy->fetchColumn();
+        if ($legacyId > 0) {
+            $chkModern = $pdo->prepare("SELECT id FROM categories WHERE parent_id IS NOT NULL AND slug = :slug LIMIT 1");
+            $chkModern->execute([':slug' => $modernPodcastSlug]);
+            if ((int)$chkModern->fetchColumn() <= 0) {
+                $pdo->prepare("UPDATE categories SET name = :name, slug = :slug WHERE id = :id")
+                    ->execute([
+                        ':name' => 'Podcast, Broadcast & Content Studio',
+                        ':slug' => $modernPodcastSlug,
+                        ':id' => $legacyId,
+                    ]);
+            }
+        }
+
         $findSector = $pdo->prepare("SELECT id FROM categories WHERE parent_id IS NULL AND slug = :slug LIMIT 1");
         $insertSector = $pdo->prepare("INSERT INTO categories (parent_id, name, slug, icon, status) VALUES (NULL, :name, :slug, :icon, 'approved')");
         $findSpec = $pdo->prepare("SELECT id FROM categories WHERE parent_id IS NOT NULL AND slug = :slug LIMIT 1");

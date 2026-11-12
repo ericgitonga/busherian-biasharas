@@ -668,6 +668,8 @@ $aghsHouses = Houses::AGHS_HOUSES;
             placeholder="Describe your products, services, target clients, and key strengths..." required></textarea>
         </div>
 
+        <?= bbiz_render_specialty_finder($taxonomyTree) ?>
+
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0.9rem;margin-top:0.9rem;">
           <div>
             <label for="sector_id" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Industry Sector *</label>

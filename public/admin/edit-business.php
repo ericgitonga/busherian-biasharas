@@ -246,6 +246,8 @@ $vettingRow = $vetStmt->fetch() ?: null;
         <textarea id="description" name="description" rows="3" class="input-control" required><?= htmlspecialchars((string)$biz['description'], ENT_QUOTES, 'UTF-8') ?></textarea>
       </div>
 
+      <?= bbiz_render_specialty_finder($taxonomyTree) ?>
+
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.9rem;margin-top:0.9rem;">
         <div>
           <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Level 1: Industry Sector *</label>
