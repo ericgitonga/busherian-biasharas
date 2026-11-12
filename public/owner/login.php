@@ -10,9 +10,7 @@ use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\OwnerAuth;
 
 bbiz_send_security_headers(false);
-if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-    session_start();
-}
+OwnerAuth::startSecureSession();
 
 $pdo = Database::getConnection();
 $targetBizId = (int)($_REQUEST['biz'] ?? ($_SESSION['bbiz_target_edit_biz_id'] ?? 0));
@@ -83,7 +81,9 @@ $flashError = '';
 $devPreviewOtpCode = null;
 $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
 
-if (isset($_GET['logged_out'])) {
+if (isset($_GET['logged_out_all'])) {
+    $flashSuccess = 'You have been signed out on this browser and all other active devices.';
+} elseif (isset($_GET['logged_out'])) {
     $flashSuccess = 'You have been signed out of your Owner session.';
 }
 if (isset($_GET['err']) && $_GET['err'] === 'invalid_link') {
@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashError = 'Too many verification code requests. Please wait a few minutes and try again.';
             $viewStep = 'reset';
         } elseif (!OwnerAuth::isRecognizedOwnerEmail($pdo, $email) && $pendingSubBizId === null && !$hasEligibleVerifiedClaim) {
-            $flashError = 'We could not find a business listing matching that email address. Please check the masked email hint on your listing card, or ask the directory admin for your Owner Access Link.';
+            $flashError = 'We could not find a business listing matching that exact email address. Please check the masked email hint on your listing card, or ask the directory admin for your Owner Access Link.';
             $viewStep = 'reset';
         } else {
             $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, $pendingSubBizId);
@@ -144,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$verifiedOwner['id'], $email);
                     $redeemedClaimId = OwnerAuth::redeemVerifiedClaimFromSession($pdo, (int)$verifiedOwner['id'], $email);
-                    OwnerAuth::establishOwnerSession($verifiedOwner);
+                    OwnerAuth::establishOwnerSession($verifiedOwner, true, $pdo);
                     if ($redeemedClaimId !== null && $redeemedClaimId > 0) {
                         header("Location: /owner/edit-business.php?id={$redeemedClaimId}&claimed=1");
                         exit;
@@ -170,7 +170,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $existingOwner = OwnerAuth::findOwnerByEmail($pdo, $email);
             if ($existingOwner !== null && empty($existingOwner['password_hash'])) {
-                // Existing pre-password owner (e.g. justinake@yahoo.com): seamlessly send 6-digit setup code!
                 $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, null);
                 $ctxName = $claimBizName ?: $targetBizName;
                 Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
@@ -180,7 +179,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $devPreviewOtpCode = $otpInfo['code'];
                 }
             } elseif ($existingOwner === null && OwnerAuth::isRecognizedOwnerEmail($pdo, $email)) {
-                // Email matches public/owner email on a listing that hasn't created an owner row yet
                 $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, null);
                 $ctxName = $claimBizName ?: $targetBizName;
                 Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
@@ -194,7 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($authOwner !== null) {
                     OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$authOwner['id'], $email);
                     $redeemedClaimId = OwnerAuth::redeemVerifiedClaimFromSession($pdo, (int)$authOwner['id'], $email);
-                    OwnerAuth::establishOwnerSession($authOwner);
+                    OwnerAuth::establishOwnerSession($authOwner, true, $pdo);
                     if ($redeemedClaimId !== null && $redeemedClaimId > 0) {
                         header("Location: /owner/edit-business.php?id={$redeemedClaimId}&claimed=1");
                         exit;
@@ -245,7 +243,7 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
 
   <main style="max-width:540px;margin:2.25rem auto;padding:0 1.25rem;">
     <?php if ($claimBizName !== null): ?>
-      <div style="background:#F0FDF4;border:2px solid #114B3E;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;">
+      <div data-testid="owner-claim-banner" style="background:#F0FDF4;border:2px solid #114B3E;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;">
         <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;color:#114B3E;letter-spacing:0.04em;">🔗 Claim &amp; Link Pre-Populated Business</div>
         <div style="font-size:1.02rem;font-weight:800;color:#111827;margin-top:0.2rem;"><?= htmlspecialchars((string)$claimBizName, ENT_QUOTES, 'UTF-8') ?></div>
         <p style="margin:0.35rem 0 0 0;font-size:0.84rem;color:#374151;">
@@ -270,18 +268,18 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
     <?php endif; ?>
 
     <?php if ($flashSuccess !== ''): ?>
-      <div style="background:#ECFDF5;border:2px solid #059669;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;color:#065F46;font-weight:600;">
+      <div data-testid="owner-login-success" style="background:#ECFDF5;border:2px solid #059669;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;color:#065F46;font-weight:600;">
         ✓ <?= htmlspecialchars($flashSuccess, ENT_QUOTES, 'UTF-8') ?>
         <?php if ($devPreviewOtpCode !== null): ?>
           <div style="margin-top:0.65rem;padding-top:0.65rem;border-top:1px dashed #059669;font-size:0.86rem;">
-            🧪 Preview Verification Code: <strong style="font-size:1.15rem;letter-spacing:0.15em;"><?= htmlspecialchars($devPreviewOtpCode, ENT_QUOTES, 'UTF-8') ?></strong>
+            🧪 Preview Verification Code: <strong data-testid="owner-dev-otp-code" style="font-size:1.15rem;letter-spacing:0.15em;"><?= htmlspecialchars($devPreviewOtpCode, ENT_QUOTES, 'UTF-8') ?></strong>
           </div>
         <?php endif; ?>
       </div>
     <?php endif; ?>
 
     <?php if ($flashError !== ''): ?>
-      <div style="background:#FEF2F2;border:2px solid #DC2626;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;color:#991B1B;font-weight:600;">
+      <div data-testid="owner-login-error" style="background:#FEF2F2;border:2px solid #DC2626;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;color:#991B1B;font-weight:600;">
         ⚠️ <?= htmlspecialchars($flashError, ENT_QUOTES, 'UTF-8') ?>
       </div>
     <?php endif; ?>
@@ -292,7 +290,7 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
         <p style="margin:0 0 1.15rem 0;font-size:0.86rem;color:#4B5563;">
           Check your inbox (and Spam/Junk folder) for the 6-digit code sent to <strong><?= htmlspecialchars($stickyEmail, ENT_QUOTES, 'UTF-8') ?></strong>. Entering it right here keeps you signed in inside your current browser.
         </p>
-        <form method="POST" action="/owner/login.php">
+        <form method="POST" action="/owner/login.php" data-testid="owner-otp-verify-form">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="form_step" value="verify_otp">
           <input type="hidden" name="biz" value="<?= $targetBizId ?>">
@@ -300,20 +298,20 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
 
           <div style="margin-bottom:0.85rem;">
             <label for="otp-code" style="display:block;font-weight:700;font-size:0.84rem;margin-bottom:0.3rem;color:#111827;">6-Digit Verification Code *</label>
-            <input type="text" id="otp-code" name="otp_code" class="input-control" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" style="font-size:1.2rem;letter-spacing:0.25em;font-weight:800;text-align:center;" required autofocus>
+            <input type="text" id="otp-code" name="otp_code" data-testid="owner-otp-input" class="input-control" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" style="font-size:1.2rem;letter-spacing:0.25em;font-weight:800;text-align:center;" required autofocus>
           </div>
 
           <div style="margin-bottom:0.85rem;">
             <label for="new-owner-password" style="display:block;font-weight:700;font-size:0.84rem;margin-bottom:0.3rem;color:#111827;">Choose Your New Password (At least 8 characters) *</label>
-            <input type="password" id="new-owner-password" name="new_password" class="input-control" minlength="8" autocomplete="new-password" placeholder="At least 8 characters..." required>
+            <input type="password" id="new-owner-password" name="new_password" data-testid="owner-otp-new-password" class="input-control" minlength="8" autocomplete="new-password" placeholder="At least 8 characters..." required>
           </div>
 
           <div style="margin-bottom:1.1rem;">
             <label for="confirm-owner-password" style="display:block;font-weight:700;font-size:0.84rem;margin-bottom:0.3rem;color:#111827;">Confirm New Password *</label>
-            <input type="password" id="confirm-owner-password" name="confirm_password" class="input-control" minlength="8" autocomplete="new-password" placeholder="Re-enter your password..." required>
+            <input type="password" id="confirm-owner-password" name="confirm_password" data-testid="owner-otp-confirm-password" class="input-control" minlength="8" autocomplete="new-password" placeholder="Re-enter your password..." required>
           </div>
 
-          <button type="submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.94rem;">
+          <button type="submit" data-testid="owner-otp-verify-submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.94rem;">
             ✓ Save Password &amp; Sign In
           </button>
         </form>
@@ -326,9 +324,9 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
       <?php elseif ($viewStep === 'reset'): ?>
         <h2 style="margin:0 0 0.35rem 0;color:#7B1113;font-size:1.2rem;">Set or Reset Your Owner Password</h2>
         <p style="margin:0 0 1.15rem 0;font-size:0.86rem;color:#4B5563;">
-          Enter the email address linked to your business listing. We will send a 6-digit verification code so you can set or reset your password right in this browser window.
+          Enter the exact email address linked to your business listing. We will send a 6-digit verification code so you can set or reset your password right in this browser window.
         </p>
-        <form method="POST" action="/owner/login.php">
+        <form method="POST" action="/owner/login.php" data-testid="owner-otp-send-form">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="form_step" value="send_otp">
           <input type="hidden" name="biz" value="<?= $targetBizId ?>">
@@ -336,11 +334,11 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
           <label for="reset-email" style="display:block;font-weight:700;font-size:0.84rem;margin-bottom:0.35rem;color:#111827;">
             Your Owner Email Address *
           </label>
-          <input type="email" id="reset-email" name="email" class="input-control"
+          <input type="email" id="reset-email" name="email" data-testid="owner-reset-email" class="input-control"
             value="<?= htmlspecialchars($stickyEmail, ENT_QUOTES, 'UTF-8') ?>"
             placeholder="e.g. you@yourbusiness.co.ke or yourname@gmail.com" required autofocus>
 
-          <button type="submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.93rem;margin-top:1rem;">
+          <button type="submit" data-testid="owner-otp-send-submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.93rem;margin-top:1rem;">
             ✉️ Send 6-Digit Verification Code
           </button>
         </form>
@@ -369,7 +367,7 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
           </div>
         <?php endif; ?>
 
-        <form method="POST" action="/owner/login.php">
+        <form method="POST" action="/owner/login.php" data-testid="owner-password-login-form">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="form_step" value="password_login">
           <input type="hidden" name="biz" value="<?= $targetBizId ?>">
@@ -377,21 +375,21 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
           <label for="owner-email" style="display:block;font-weight:700;font-size:0.84rem;margin-bottom:0.35rem;color:#111827;">
             Your Owner Email Address *
           </label>
-          <input type="email" id="owner-email" name="email" class="input-control"
+          <input type="email" id="owner-email" name="email" data-testid="owner-login-email" class="input-control"
             value="<?= htmlspecialchars($stickyEmail, ENT_QUOTES, 'UTF-8') ?>"
             placeholder="e.g. you@yourbusiness.co.ke or yourname@gmail.com" required>
 
           <div style="margin-top:0.85rem;">
             <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.35rem;">
               <label for="owner-password" style="font-weight:700;font-size:0.84rem;color:#111827;">Password *</label>
-              <a href="/owner/login.php?mode=reset<?= htmlspecialchars($bizParamSuffix, ENT_QUOTES, 'UTF-8') ?>" style="font-size:0.79rem;color:#7B1113;font-weight:700;">Forgot or haven't set a password?</a>
+              <a href="/owner/login.php?mode=reset<?= htmlspecialchars($bizParamSuffix, ENT_QUOTES, 'UTF-8') ?>" data-testid="owner-forgot-password-link" style="font-size:0.79rem;color:#7B1113;font-weight:700;">Forgot or haven't set a password?</a>
             </div>
-            <input type="password" id="owner-password" name="password" class="input-control"
+            <input type="password" id="owner-password" name="password" data-testid="owner-login-password" class="input-control"
               autocomplete="current-password"
               placeholder="Enter your password" required>
           </div>
 
-          <button type="submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.94rem;margin-top:1.1rem;">
+          <button type="submit" data-testid="owner-login-submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.94rem;margin-top:1.1rem;">
             🔑 Sign In with Email &amp; Password
           </button>
         </form>
@@ -405,8 +403,8 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
       <div id="owner-signin-guide" style="margin-top:1.35rem;padding-top:1.15rem;border-top:1px solid #E5E7EB;">
         <h3 style="margin:0 0 0.5rem 0;font-size:0.92rem;color:#114B3E;">🔑 How Owner Sign-In &amp; Business Linking Works</h3>
         <ol style="margin:0;padding-left:1.2rem;font-size:0.81rem;color:#374151;line-height:1.55;">
-          <li style="margin-bottom:0.35rem;"><strong>Sign In with Email &amp; Password:</strong> Enter the email address linked to your listing and your password. Your session stays active for 30 days and renews automatically when you visit.</li>
-          <li style="margin-bottom:0.35rem;"><strong>Automatic Business Linking:</strong> Your account automatically links to any listing matching your registration email, your public business email, or your business website domain.</li>
+          <li style="margin-bottom:0.35rem;"><strong>Sign In with Email &amp; Password:</strong> Enter the email address linked to your listing and your password. Your session stays active for 30 days and can be signed out across all devices anytime.</li>
+          <li style="margin-bottom:0.35rem;"><strong>Verified Business Linking:</strong> Your account automatically links to any listing matching your exact registration email or your exact public business email, or via a single-use Owner Access Invitation Link.</li>
           <li style="margin-bottom:0.35rem;"><strong>First Time or Forgot Password?</strong> Use <em>Set or Reset Password with a 6-Digit Email Code</em> above — entering the 6-digit code right in this browser window keeps you signed in on Safari, Chrome, or desktop without getting stuck in an email app preview.</li>
           <li><strong>Direct "✏️ Edit My Business" Button:</strong> Once signed in, an <strong>✏️ Edit My Business</strong> button appears directly on your business card and details window in the public directory.</li>
         </ol>

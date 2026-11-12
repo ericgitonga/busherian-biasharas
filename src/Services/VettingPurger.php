@@ -53,6 +53,7 @@ final class VettingPurger
             $pdo->prepare("
                 UPDATE businesses
                 SET status = 'approved',
+                    quarantine_prev_status = NULL,
                     verified_at = CURRENT_TIMESTAMP,
                     last_confirmed_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
@@ -77,10 +78,11 @@ final class VettingPurger
                 Mailer::notifyOwnerListingApproved($pdo, ['id' => $businessId, 'name' => (string)$biz['name']], $subEmail);
             }
 
-            // STRICT PRIVACY GUARANTEE: Permanently hard-delete House, Year Left & School Number
+            // STRICT PRIVACY GUARANTEE: Permanently hard-delete House, Year Left & School Number & scrub any legacy outbox PII
             $del = $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id");
             $del->execute([':id' => $businessId]);
             $purgedRows = $del->rowCount();
+            Mailer::scrubLegacyVettingPiiFromOutbox($pdo, $businessId);
 
             if ($ownTx) {
                 $pdo->commit();
@@ -123,10 +125,11 @@ final class VettingPurger
             $pdo->prepare("UPDATE categories SET status = 'rejected' WHERE id = :sid AND status = 'pending_approval'")
                 ->execute([':sid' => (int)$biz['specialty_id']]);
 
-            // Permanently hard-delete House, Year Left & School Number
+            // Permanently hard-delete House, Year Left & School Number & scrub any legacy outbox PII
             $del = $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id");
             $del->execute([':id' => $businessId]);
             $purgedRows = $del->rowCount();
+            Mailer::scrubLegacyVettingPiiFromOutbox($pdo, $businessId);
 
             if ($ownTx) {
                 $pdo->commit();
@@ -146,33 +149,264 @@ final class VettingPurger
     }
 
     /**
-     * Kenya DPA 2019 s.40 Instant Quarantine on Takedown / Erasure Request
+     * Reversible DPA Quarantine (#168):
+     * Hides a listing from public endpoints while preserving its previous status (`quarantine_prev_status`)
+     * and NEVER deleting pending `business_vetting_queue` verification evidence.
      */
     public static function quarantineBusinessDpa(PDO $pdo, int $businessId): void
     {
-        $pdo->prepare("UPDATE businesses SET status = 'quarantined_dpa', updated_at = CURRENT_TIMESTAMP WHERE id = :id")
-            ->execute([':id' => $businessId]);
-        $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")
-            ->execute([':id' => $businessId]);
+        $curStmt = $pdo->prepare("SELECT status FROM businesses WHERE id = :id LIMIT 1");
+        $curStmt->execute([':id' => $businessId]);
+        $curStatus = (string)($curStmt->fetchColumn() ?: '');
+        if ($curStatus === '') {
+            return;
+        }
+        if ($curStatus !== 'quarantined_dpa') {
+            $pdo->prepare("
+                UPDATE businesses
+                SET quarantine_prev_status = :prev,
+                    status = 'quarantined_dpa',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :id
+            ")->execute([
+                ':prev' => $curStatus,
+                ':id' => $businessId,
+            ]);
+        }
+    }
+
+    /**
+     * Restore a quarantined business back to its pre-quarantine state ('pending' if unreviewed vetting exists, else 'approved') (#168).
+     */
+    public static function restoreQuarantinedBusiness(PDO $pdo, int $businessId): string
+    {
+        $stmt = $pdo->prepare("SELECT status, quarantine_prev_status, verified_at FROM businesses WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $businessId]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            throw new RuntimeException("Business #{$businessId} not found.");
+        }
+
+        $vetCntStmt = $pdo->prepare("SELECT COUNT(*) FROM business_vetting_queue WHERE business_id = :id");
+        $vetCntStmt->execute([':id' => $businessId]);
+        $hasPendingVetting = ((int)$vetCntStmt->fetchColumn()) > 0;
+
+        $prev = (string)($row['quarantine_prev_status'] ?? '');
+        if ($prev === 'pending' || ($hasPendingVetting && empty($row['verified_at']))) {
+            $targetStatus = 'pending';
+        } elseif (in_array($prev, ['approved', 'rejected'], true)) {
+            $targetStatus = $prev;
+        } else {
+            $targetStatus = 'approved';
+        }
+
+        $pdo->prepare("
+            UPDATE businesses
+            SET status = :st,
+                quarantine_prev_status = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id
+        ")->execute([
+            ':st' => $targetStatus,
+            ':id' => $businessId,
+        ]);
+
+        return $targetStatus;
+    }
+
+    /**
+     * Record a takedown / DPA objection request without allowing anonymous third parties to nuke live listings or vetting rows (#168).
+     *
+     * @return array{request_id:int, status:string, raw_token:?string}
+     */
+    public static function submitTakedownRequest(
+        PDO $pdo,
+        int $businessId,
+        string $requesterName,
+        string $requesterEmail,
+        string $reason,
+        string $clientIp,
+        bool $isAuthenticatedOwner = false,
+        bool $matchesDesignatedOwnerEmail = false
+    ): array {
+        $ipHmac = AntiSpamGate::pseudonymizeIp($clientIp);
+        $cleanEmail = strtolower(trim($requesterEmail));
+        $cleanName = trim($requesterName);
+        $cleanReason = trim($reason);
+
+        if ($isAuthenticatedOwner) {
+            self::quarantineBusinessDpa($pdo, $businessId);
+            $nowUtc = gmdate('Y-m-d H:i:s');
+            $ins = $pdo->prepare("
+                INSERT INTO takedown_requests (
+                    business_id, requester_name, requester_email, reason,
+                    verified_at, status, ip_hmac, created_at, resolved_at
+                ) VALUES (
+                    :bid, :nm, :em, :rsn,
+                    :v_at, 'owner_verified_quarantined', :ip, :c_at, :r_at
+                )
+            ");
+            $ins->execute([
+                ':bid' => $businessId,
+                ':nm' => $cleanName,
+                ':em' => $cleanEmail,
+                ':rsn' => $cleanReason,
+                ':v_at' => $nowUtc,
+                ':ip' => $ipHmac,
+                ':c_at' => $nowUtc,
+                ':r_at' => $nowUtc,
+            ]);
+            return [
+                'request_id' => (int)$pdo->lastInsertId(),
+                'status' => 'owner_verified_quarantined',
+                'raw_token' => null,
+            ];
+        }
+
+        $rawToken = null;
+        $tokenHash = null;
+        $tokenExp = null;
+        $status = 'pending_review';
+
+        if ($matchesDesignatedOwnerEmail) {
+            $rawToken = bin2hex(random_bytes(24));
+            $tokenHash = hash('sha256', $rawToken);
+            $tokenExp = gmdate('Y-m-d H:i:s', time() + 7200);
+            $status = 'awaiting_owner_email_confirm';
+        }
+
+        $nowUtc = gmdate('Y-m-d H:i:s');
+        $ins = $pdo->prepare("
+            INSERT INTO takedown_requests (
+                business_id, requester_name, requester_email, reason,
+                verification_token_hash, token_expires_at, status, ip_hmac, created_at
+            ) VALUES (
+                :bid, :nm, :em, :rsn,
+                :thash, :texp, :st, :ip, :c_at
+            )
+        ");
+        $ins->execute([
+            ':bid' => $businessId,
+            ':nm' => $cleanName,
+            ':em' => $cleanEmail,
+            ':rsn' => $cleanReason,
+            ':thash' => $tokenHash,
+            ':texp' => $tokenExp,
+            ':st' => $status,
+            ':ip' => $ipHmac,
+            ':c_at' => $nowUtc,
+        ]);
+
+        return [
+            'request_id' => (int)$pdo->lastInsertId(),
+            'status' => $status,
+            'raw_token' => $rawToken,
+        ];
+    }
+
+    /**
+     * Confirm a designated owner's email-verified takedown link (single-use) and quarantine the listing (#168).
+     */
+    public static function confirmOwnerTakedownByToken(PDO $pdo, string $rawToken): ?array
+    {
+        $clean = trim($rawToken);
+        if (strlen($clean) < 32 || !ctype_xdigit($clean)) {
+            return null;
+        }
+        $tokenHash = hash('sha256', $clean);
+        $nowUtc = gmdate('Y-m-d H:i:s');
+
+        $stmt = $pdo->prepare("
+            SELECT * FROM takedown_requests
+            WHERE verification_token_hash = :th
+              AND status = 'awaiting_owner_email_confirm'
+              AND verified_at IS NULL
+              AND token_expires_at >= :now
+            LIMIT 1
+        ");
+        $stmt->execute([':th' => $tokenHash, ':now' => $nowUtc]);
+        $req = $stmt->fetch();
+        if (!$req) {
+            return null;
+        }
+
+        $upd = $pdo->prepare("
+            UPDATE takedown_requests
+            SET verified_at = :v_at,
+                resolved_at = :r_at,
+                status = 'owner_verified_quarantined',
+                verification_token_hash = NULL
+            WHERE id = :id
+              AND status = 'awaiting_owner_email_confirm'
+        ");
+        $upd->execute([
+            ':v_at' => $nowUtc,
+            ':r_at' => $nowUtc,
+            ':id' => (int)$req['id'],
+        ]);
+        if ($upd->rowCount() === 0) {
+            return null;
+        }
+
+        $bizId = (int)$req['business_id'];
+        self::quarantineBusinessDpa($pdo, $bizId);
+        return $req;
+    }
+
+    /**
+     * Resolve a queued takedown request from the Admin Console ('quarantine' or 'dismiss') (#168).
+     */
+    public static function resolveTakedownRequestByAdmin(PDO $pdo, int $requestId, string $decision): bool
+    {
+        $stmt = $pdo->prepare("SELECT * FROM takedown_requests WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $requestId]);
+        $req = $stmt->fetch();
+        if (!$req) {
+            return false;
+        }
+
+        $nowUtc = gmdate('Y-m-d H:i:s');
+        $bizId = (int)$req['business_id'];
+        if ($decision === 'quarantine') {
+            self::quarantineBusinessDpa($pdo, $bizId);
+            $newSt = 'admin_quarantined';
+        } elseif ($decision === 'dismiss') {
+            $newSt = 'dismissed';
+        } else {
+            return false;
+        }
+
+        $pdo->prepare("
+            UPDATE takedown_requests
+            SET status = :st,
+                resolved_at = :r_at,
+                verification_token_hash = NULL
+            WHERE id = :id
+        ")->execute([
+            ':st' => $newSt,
+            ':r_at' => $nowUtc,
+            ':id' => $requestId,
+        ]);
+
+        return true;
     }
 
     /**
      * Kenya DPA 2019 ss. 25(e), 39 Automated Storage-Limitation Ceiling Purge:
      * 1. Hard-deletes any `business_vetting_queue` rows older than $maxPendingDays (default 30 days)
-     *    or belonging to already-reviewed businesses.
-     * 2. Redacts `email_outbox.body_html` older than $maxPendingDays so temporary vetting details
-     *    inside admin notification emails are also scrubbed.
-     * 3. Purges expired `used_nonces` and `rate_limits`.
+     *    or belonging to finalized (`approved` / `rejected`) businesses (never `quarantined_dpa` pending listings).
+     * 2. Redacts `email_outbox.body_html` older than $maxPendingDays plus any legacy vetting PII rows.
+     * 3. Purges expired `used_nonces`, `rate_limits`, and expired/revoked `owner_sessions`.
      */
     public static function enforceRetentionCeilings(PDO $pdo, int $maxPendingDays = 30): array
     {
         $cutoffDate = gmdate('Y-m-d H:i:s', time() - ($maxPendingDays * 86400));
 
-        // 1. Delete vetting rows for reviewed businesses or abandoned rows older than cutoff
+        // 1. Delete vetting rows ONLY for approved/rejected businesses or abandoned rows older than cutoff (#168)
         $delVetting = $pdo->prepare("
             DELETE FROM business_vetting_queue
             WHERE created_at < :cutoff
-               OR business_id IN (SELECT id FROM businesses WHERE status IN ('approved', 'rejected', 'quarantined_dpa'))
+               OR business_id IN (SELECT id FROM businesses WHERE status IN ('approved', 'rejected'))
         ");
         $delVetting->execute([':cutoff' => $cutoffDate]);
         $vettingPurged = $delVetting->rowCount();
@@ -187,9 +421,10 @@ final class VettingPurger
         $redactOutbox->execute([':cutoff' => $cutoffDate]);
         $outboxRedacted = $redactOutbox->rowCount();
 
-        // 3. Purge expired nonces and >24h rate-limit hashes
+        // 3. Purge expired nonces, >24h rate-limit hashes, and expired/revoked persistent owner sessions (#165)
         $pdo->prepare("DELETE FROM used_nonces WHERE expires_at < :now")->execute([':now' => time()]);
         $pdo->prepare("DELETE FROM rate_limits WHERE created_at < :cut")->execute([':cut' => time() - 86400]);
+        $pdo->prepare("DELETE FROM owner_sessions WHERE expires_at < :now OR revoked_at IS NOT NULL")->execute([':now' => time()]);
         $metricsCutoff = gmdate('Y-m-d H:i:s', time() - (180 * 86400));
         $pdo->prepare("DELETE FROM usage_metrics WHERE created_at < :mcut")->execute([':mcut' => $metricsCutoff]);
 
@@ -201,16 +436,23 @@ final class VettingPurger
     }
 
     /**
-     * Permanently delete an existing business record (and any associated vetting/click rows).
+     * Permanently delete an existing business record (and any associated vetting, outbox, takedown, link & click rows).
      */
     public static function deleteBusiness(PDO $pdo, int $businessId): bool
     {
+        $photoStmt = $pdo->prepare("SELECT photos_json FROM businesses WHERE id = :id LIMIT 1");
+        $photoStmt->execute([':id' => $businessId]);
+        $photosJson = $photoStmt->fetchColumn();
+
         $ownTx = !$pdo->inTransaction();
         if ($ownTx) {
             $pdo->beginTransaction();
         }
         try {
             $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")->execute([':id' => $businessId]);
+            $pdo->prepare("DELETE FROM email_outbox WHERE business_id = :id")->execute([':id' => $businessId]);
+            $pdo->prepare("DELETE FROM takedown_requests WHERE business_id = :id")->execute([':id' => $businessId]);
+            $pdo->prepare("DELETE FROM business_owner_links WHERE business_id = :id")->execute([':id' => $businessId]);
             $pdo->prepare("DELETE FROM click_events WHERE business_id = :id")->execute([':id' => $businessId]);
             $pdo->prepare("DELETE FROM usage_metrics WHERE business_id = :id")->execute([':id' => $businessId]);
             $del = $pdo->prepare("DELETE FROM businesses WHERE id = :id");
@@ -221,6 +463,9 @@ final class VettingPurger
             }
             if ($ownTx) {
                 $pdo->commit();
+            }
+            if ($deleted && is_string($photosJson) && $photosJson !== '') {
+                PhotoUploader::deleteBusinessPhotoFiles($photosJson);
             }
             return $deleted;
         } catch (\Throwable $e) {
@@ -346,8 +591,8 @@ final class VettingPurger
             OwnerAuth::linkOwnerToBusiness($pdo, (int)$ownerRec['id'], $businessId, 'admin_assigned');
         }
 
-        // If status is approved/rejected/quarantined_dpa, ensure no vetting queue row remains
-        if (in_array($data['status'] ?? 'approved', ['approved', 'rejected', 'quarantined_dpa'], true)) {
+        // If status is approved/rejected, ensure no vetting queue row remains (preserve vetting on quarantine per #168)
+        if (in_array($data['status'] ?? 'approved', ['approved', 'rejected'], true)) {
             $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")->execute([':id' => $businessId]);
         }
     }

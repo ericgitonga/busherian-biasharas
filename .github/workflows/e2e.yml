@@ -14,6 +14,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install Playwright & Chromium
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
       - name: Start PHP built-in web server and run E2E suite
         env:
           APP_ENV: testing
@@ -22,6 +27,8 @@ jobs:
           APP_HMAC_SECRET: 9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b2a9f8e
           IP_HASH_SECRET: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b
           CSRF_SECRET: 5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e
+          ADMIN_ACCESS_TOKEN: e2e_admin_token_secret_12345
+          BBIZ_OFFLINE_ROUTING: "1"
           SIMULATE_EMAILS: "yes"
           BASE_URL: "http://127.0.0.1:8080"
         run: |

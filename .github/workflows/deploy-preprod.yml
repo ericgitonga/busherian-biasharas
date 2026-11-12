@@ -79,63 +79,10 @@ jobs:
           print("Staged & linted all Pre-Prod files cleanly.")
           PYEOF
 
-      - name: Upload Pre-Prod files via Explicit FTPS
+      - name: Upload Pre-Prod files via Explicit FTPS (TLS Verified)
         env:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           FTP_APP_ROOT: ${{ secrets.FTP_SERVER_DIR }}
-        run: |
-          python3 - << 'PYEOF'
-          import ftplib, os, pathlib, posixpath
-
-          stage = pathlib.Path("/tmp/preprod_stage")
-          files = sorted(p for p in stage.rglob("*") if p.is_file())
-
-          host = os.environ["FTP_SERVER"]
-          user = os.environ["FTP_USERNAME"]
-          password = os.environ["FTP_PASSWORD"]
-          app_root = (os.environ.get("FTP_APP_ROOT") or "/busherianbiasharas.com/www").rstrip("/")
-
-          ftp = ftplib.FTP_TLS()
-          ftp.connect(host, 21, timeout=30)
-          ftp.login(user, password)
-          ftp.prot_p()
-
-          ensured_dirs = set()
-          def ensure_remote_dir(remote_dir):
-              if remote_dir in ensured_dirs:
-                  ftp.cwd(remote_dir)
-                  return
-              parts = [p for p in remote_dir.split("/") if p]
-              curr = ""
-              for part in parts:
-                  curr = f"{curr}/{part}"
-                  if curr not in ensured_dirs:
-                      try:
-                          ftp.cwd(curr)
-                      except ftplib.error_perm:
-                          ftp.mkd(curr)
-                          ftp.cwd(curr)
-                      ensured_dirs.add(curr)
-              ftp.cwd(remote_dir)
-
-          uploaded = 0
-          for local_path in files:
-              rel_path = local_path.relative_to(stage).as_posix()
-              if rel_path.startswith("public/"):
-                  sub = rel_path[len("public/"):]
-                  remote_full = f"{app_root}/html/admin/preprod/{sub}"
-              else:
-                  remote_full = f"{app_root}/preprod_app/{rel_path}"
-
-              remote_dir = posixpath.dirname(remote_full)
-              remote_filename = posixpath.basename(remote_full)
-              ensure_remote_dir(remote_dir)
-              with open(local_path, "rb") as lf:
-                  ftp.storbinary(f"STOR {remote_filename}", lf)
-              uploaded += 1
-
-          ftp.quit()
-          print(f"Successfully uploaded {uploaded} file(s) to Pre-Prod (/admin/preprod & /preprod_app).")
-          PYEOF
+        run: python3 .github/scripts/ftps_deploy.py --mode preprod --stage-dir /tmp/preprod_stage

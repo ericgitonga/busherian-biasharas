@@ -30,7 +30,7 @@ bbiz_send_security_headers(false);
   </header>
 
   <main style="max-width:860px;margin:2rem auto;padding:0 1.25rem;">
-    <article style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:2rem;box-shadow:0 2px 10px rgba(0,0,0,0.04);">
+    <article data-testid="privacy-notice-article" style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:2rem;box-shadow:0 2px 10px rgba(0,0,0,0.04);">
       <h2 style="margin-top:0;color:#7B1113;">1. Who We Are &amp; Why We Collect Information</h2>
       <p>
         <strong>Busherian Biasharas</strong> operates as a verified business directory for alumni of
@@ -40,14 +40,15 @@ bbiz_send_security_headers(false);
         <a href="mailto:admin@busherianbiasharas.com" style="color:#7B1113;font-weight:600;">admin@busherianbiasharas.com</a>.
       </p>
 
-      <h2 style="color:#114B3E;">2. One-Time Alumni Verification &amp; Immediate Deletion of School Details</h2>
+      <h2 style="color:#114B3E;">2. One-Time Alumni Verification &amp; Retention of School Details</h2>
       <div class="vetting-privacy-banner">
-        <strong>Your School Details Are Never Shown Publicly &amp; Are Deleted Immediately After Review:</strong>
+        <strong>Your School Details Are Never Emailed, Never Shown Publicly &amp; Cleared From Active Records After Review:</strong>
         <ul>
           <li>When you list a business, Step 1 asks for your <strong>School</strong> (AHS or AGHS), <strong>House</strong>, <strong>Year Left</strong>, and optional <strong>School Number</strong>.</li>
-          <li>These details are used <strong>strictly once</strong> by our verification team to confirm that the business belongs to a fellow Busherian.</li>
-          <li><strong>Your House, Year Left, and School Number DO NOT appear anywhere in the public directory.</strong></li>
-          <li>The moment your listing is reviewed (whether approved or declined), your House, Year Left, and School Number are <strong>permanently deleted from our records</strong>.</li>
+          <li>These details are used <strong>strictly once</strong> inside our secure administrator review console to confirm that the business belongs to a fellow Busherian.</li>
+          <li><strong>Your House, Year Left, and School Number are never included in notification emails or email delivery logs, and DO NOT appear anywhere in the public directory or Owner Portal.</strong></li>
+          <li>As soon as an administrator approves or declines your listing, your House, Year Left, and School Number are removed from our active database (and any unreviewed submission older than 30 days is automatically cleared from the active verification queue).</li>
+          <li>Routine transactional email delivery logs (which exclude school verification details) are automatically redacted after 30 days. Encrypted hosting provider database backups may briefly retain historical database snapshots during routine disaster-recovery backup rotation before aging out automatically; those backups are strictly restricted to system recovery and are never used for directory operations.</li>
         </ul>
       </div>
 
@@ -63,13 +64,14 @@ bbiz_send_security_headers(false);
         <button type="button" onclick="if(window.BBizMetrics) window.BBizMetrics.resetChoice();" class="btn btn-outline" style="font-size:0.8rem;padding:0.35rem 0.8rem;">Change Cookie Choice</button>
       </div>
 
-      <h2 style="color:#114B3E;">4. Updating or Removing a Business Listing Anytime</h2>
+      <h2 style="color:#114B3E;">4. Updating, Pausing, or Removing a Business Listing Anytime</h2>
       <p>
         Under the <strong>Kenya Data Protection Act, 2019</strong>, you have the right to update, correct, or remove any business listing that includes your business or contact details:
       </p>
       <ul>
-        <li><strong>Update Your Own Listing Anytime:</strong> Sign in via the <a href="/owner/login.php" style="color:#114B3E;font-weight:700;">Owner Sign-In</a> page using your email address to edit your business details directly.</li>
-        <li><strong>Immediately Hide or Remove a Listing:</strong> Use our <a href="/takedown.php" style="color:#7B1113;font-weight:700;">Report or Remove a Listing Form</a> at any time to immediately hide a listing from public view while our team completes your removal or correction request.</li>
+        <li><strong>Update or Delete Your Own Listing Anytime:</strong> Sign in via the <a href="/owner/login.php" style="color:#114B3E;font-weight:700;">Owner Sign-In</a> page using your verified business email address to edit or permanently delete your listing directly, or to sign out across all active devices.</li>
+        <li><strong>Verified Owner Immediate Pause:</strong> When you submit our <a href="/takedown.php" style="color:#7B1113;font-weight:700;">Report or Remove a Listing Form</a> while signed in as the verified owner (or confirm the single-use link sent to the listing's registered owner email), your listing is hidden from the public directory immediately while our team completes your request.</li>
+        <li><strong>Third-Party Privacy or Accuracy Reports:</strong> Anyone may report an inaccurate or unauthorized listing through our <a href="/takedown.php" style="color:#7B1113;font-weight:700;">Report or Remove a Listing Form</a>. Third-party reports are routed immediately to our administrators for priority review while keeping verified alumni listings protected against unverified third-party disruption during review.</li>
       </ul>
     </article>
   </main>

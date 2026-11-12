@@ -1,7 +1,21 @@
+import importlib.util
+import socket
+import ssl
 import subprocess
+import threading
 from pathlib import Path
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_ftps_deploy_module():
+    script_path = ROOT / ".github" / "scripts" / "ftps_deploy.py"
+    spec = importlib.util.spec_from_file_location("ftps_deploy", script_path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def test_php_unit_suite():
@@ -37,3 +51,159 @@ def test_zero_external_cdn_links_in_public_pages():
         content = php_file.read_text()
         for cdn in forbidden_cdns:
             assert cdn not in content, f"External CDN {cdn} found in {php_file} (violates L2 DPA pre-consent IP leak rule)"
+
+
+def _generate_self_signed_cert(tmp_path: Path, cn: str, san_dns: str) -> tuple[Path, Path]:
+    cert_pem = tmp_path / f"{cn}.crt"
+    key_pem = tmp_path / f"{cn}.key"
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(key_pem),
+            "-out",
+            str(cert_pem),
+            "-days",
+            "2",
+            "-subj",
+            f"/CN={cn}",
+            "-addext",
+            f"subjectAltName=DNS:{san_dns}",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return cert_pem, key_pem
+
+
+class _MockExplicitFtpsServer:
+    """Minimal Explicit FTPS server speaking 220 -> AUTH TLS -> 234 -> TLS wrap to test client verification (#170)."""
+
+    def __init__(self, cert_pem: Path, key_pem: Path):
+        self.server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        self.server_ctx.load_cert_chain(certfile=str(cert_pem), keyfile=str(key_pem))
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(5)
+        self.port = self.sock.getsockname()[1]
+        self.received_cleartext: list[bytes] = []
+        self.received_tls_post_handshake: list[bytes] = []
+        self._thread = threading.Thread(target=self._serve_once, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def _serve_once(self):
+        self.sock.settimeout(5.0)
+        try:
+            conn, _ = self.sock.accept()
+        except OSError:
+            return
+        with conn:
+            conn.settimeout(5.0)
+            try:
+                conn.sendall(b"220 Mock FTPS Server Ready\r\n")
+                line = conn.recv(1024)
+                self.received_cleartext.append(line)
+                if line.upper().startswith(b"AUTH TLS"):
+                    conn.sendall(b"234 Proceed with negotiation\r\n")
+                    with self.server_ctx.wrap_socket(conn, server_side=True) as tls_conn:
+                        tls_conn.settimeout(2.0)
+                        try:
+                            post = tls_conn.recv(1024)
+                            if post:
+                                self.received_tls_post_handshake.append(post)
+                        except OSError:
+                            pass
+            except OSError:
+                pass
+            finally:
+                try:
+                    self.sock.close()
+                except OSError:
+                    pass
+
+    def join(self):
+        self._thread.join(timeout=5.0)
+
+
+def test_ftps_deploy_tls_context_and_path_safety():
+    ftps_mod = _load_ftps_deploy_module()
+    ctx = ftps_mod.build_verified_tls_context()
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+    assert ctx.check_hostname is True
+    assert ctx.minimum_version >= ssl.TLSVersion.TLSv1_2
+
+    assert (
+        ftps_mod.map_remote_path("public/index.php", "/busherianbiasharas.com/www", "prod")
+        == "/busherianbiasharas.com/www/html/index.php"
+    )
+    assert (
+        ftps_mod.map_remote_path("src/bootstrap.php", "/busherianbiasharas.com/www", "prod")
+        == "/busherianbiasharas.com/www/src/bootstrap.php"
+    )
+    assert (
+        ftps_mod.map_remote_path("public/index.php", "/busherianbiasharas.com/www", "preprod")
+        == "/busherianbiasharas.com/www/html/admin/preprod/index.php"
+    )
+    assert (
+        ftps_mod.map_remote_path("src/bootstrap.php", "/busherianbiasharas.com/www", "preprod")
+        == "/busherianbiasharas.com/www/preprod_app/src/bootstrap.php"
+    )
+
+    for forbidden in (".env", ".env.production", "storage/busherian_biasharas.sqlite", "public/uploads/a.jpg", "../etc/passwd"):
+        with pytest.raises(ValueError):
+            ftps_mod.validate_relative_deploy_path(forbidden)
+
+    for wf_name in ("deploy-ftp.yml", "deploy-preprod.yml"):
+        wf_src = (ROOT / ".github" / "workflows" / wf_name).read_text()
+        assert "ftps_deploy.py" in wf_src
+        assert "ftplib.FTP_TLS()" not in wf_src
+
+
+def test_ftps_deploy_aborts_before_login_on_untrusted_or_mismatched_tls_cert(tmp_path: Path):
+    ftps_mod = _load_ftps_deploy_module()
+    secret_pw = "SuperSecretHostingPass#170"
+
+    # 1. Self-signed untrusted CA certificate MUST abort during AUTH TLS before USER/PASS
+    cert_untrusted, key_untrusted = _generate_self_signed_cert(tmp_path, "localhost", "localhost")
+    srv1 = _MockExplicitFtpsServer(cert_untrusted, key_untrusted)
+    srv1.start()
+    with pytest.raises(ssl.SSLError):
+        ftps_mod.connect_verified_ftps(
+            host="localhost",
+            user="deploy_user",
+            password=secret_pw,
+            port=srv1.port,
+            timeout=5,
+        )
+    srv1.join()
+    combined_1 = b"".join(srv1.received_cleartext + srv1.received_tls_post_handshake)
+    assert secret_pw.encode("utf-8") not in combined_1
+    assert b"PASS " not in combined_1
+
+    # 2. Trusted CA certificate with mismatched hostname MUST abort during AUTH TLS before USER/PASS
+    cert_wrong_host, key_wrong_host = _generate_self_signed_cert(
+        tmp_path, "wrong-host.example.invalid", "wrong-host.example.invalid"
+    )
+    srv2 = _MockExplicitFtpsServer(cert_wrong_host, key_wrong_host)
+    srv2.start()
+    with pytest.raises(ssl.SSLCertVerificationError):
+        ftps_mod.connect_verified_ftps(
+            host="localhost",
+            user="deploy_user",
+            password=secret_pw,
+            port=srv2.port,
+            timeout=5,
+            cafile=str(cert_wrong_host),
+        )
+    srv2.join()
+    combined_2 = b"".join(srv2.received_cleartext + srv2.received_tls_post_handshake)
+    assert secret_pw.encode("utf-8") not in combined_2
+    assert b"PASS " not in combined_2

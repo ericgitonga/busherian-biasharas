@@ -115,6 +115,7 @@
 
     const bar = document.createElement('aside');
     bar.id = 'bbiz-cookie-banner';
+    bar.setAttribute('data-testid', 'cookie-banner');
     bar.className = 'bbiz-cookie-banner';
     bar.setAttribute('role', 'region');
     bar.setAttribute('aria-label', 'Cookie and Usage Metrics Consent');
@@ -126,8 +127,8 @@
           <a href="/privacy.php">Privacy Notice</a>
         </div>
         <div class="bbiz-cookie-actions">
-          <button type="button" id="btn-cookie-reject" class="bbiz-cookie-btn bbiz-cookie-btn-reject">Allow only Essential</button>
-          <button type="button" id="btn-cookie-accept" class="bbiz-cookie-btn bbiz-cookie-btn-accept">Allow for Analysis</button>
+          <button type="button" id="btn-cookie-reject" data-testid="cookie-reject-btn" class="bbiz-cookie-btn bbiz-cookie-btn-reject">Allow only Essential</button>
+          <button type="button" id="btn-cookie-accept" data-testid="cookie-accept-btn" class="bbiz-cookie-btn bbiz-cookie-btn-accept">Allow for Analysis</button>
         </div>
       </div>
     `;

@@ -9,9 +9,7 @@ use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\OwnerAuth;
 
 bbiz_send_security_headers(false);
-if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-    session_start();
-}
+OwnerAuth::startSecureSession();
 
 $bizId = (int)($_REQUEST['biz_id'] ?? 0);
 $exp = (int)($_REQUEST['exp'] ?? 0);

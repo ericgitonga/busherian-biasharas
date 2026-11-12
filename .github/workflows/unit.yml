@@ -19,10 +19,54 @@ jobs:
 
       - run: pip install pytest
 
-      - name: Run PHP & Python unit test suite
+      - name: Run PHP & Python unit test suite (SQLite)
         env:
           APP_ENV: testing
           DB_DRIVER: sqlite
+          APP_HMAC_SECRET: 9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e
+          IP_HASH_SECRET: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b
+          CSRF_SECRET: 5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e
+          SIMULATE_EMAILS: "yes"
+        run: pytest -v
+
+  unit-mysql:
+    name: Unit (MySQL 8.0 Parity)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root_test_password_123
+          MYSQL_DATABASE: busherian_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_test_password_123 --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify PHP CLI & PDO MySQL Extension
+        run: php -v && php -m | grep -i pdo_mysql
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install pytest
+
+      - name: Run PHP & Python unit test suite against MySQL 8.0
+        env:
+          APP_ENV: testing
+          DB_DRIVER: mysql
+          DB_DRIVER_FALLBACK: none
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: busherian_test
+          DB_USER: root
+          DB_PASS: root_test_password_123
           APP_HMAC_SECRET: 9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e
           IP_HASH_SECRET: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b
           CSRF_SECRET: 5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e

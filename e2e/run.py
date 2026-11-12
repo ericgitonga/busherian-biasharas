@@ -20,6 +20,7 @@ SKIP_MODULES = {m for m in os.environ.get("E2E_SKIP_MODULES", "").split(",") if 
 
 def discover_tests():
     tests = []
+    modules = []
     for mod_info in pkgutil.iter_modules([str(Path(__file__).parent)]):
         if not mod_info.name.startswith("test_"):
             continue
@@ -27,27 +28,37 @@ def discover_tests():
             print(f"SKIP module {mod_info.name} (E2E_SKIP_MODULES)")
             continue
         module = importlib.import_module(mod_info.name)
+        modules.append(module)
         tests.extend(module.TESTS)
-    return tests
+    return tests, modules
 
 
 def main() -> int:
-    tests = discover_tests()
+    tests, modules = discover_tests()
     if not tests:
         print("No e2e tests discovered.")
         return 1
 
     failures = []
-    for t in tests:
-        label = f"{t.__module__}.{t.__name__}"
-        try:
-            t()
-        except Exception:
-            print(f"FAIL {label}")
-            traceback.print_exc()
-            failures.append(label)
-        else:
-            print(f"PASS {label}")
+    try:
+        for t in tests:
+            label = f"{t.__module__}.{t.__name__}"
+            try:
+                t()
+            except Exception:
+                print(f"FAIL {label}")
+                traceback.print_exc()
+                failures.append(label)
+            else:
+                print(f"PASS {label}")
+    finally:
+        for mod in modules:
+            teardown = getattr(mod, "TEARDOWN", None)
+            if callable(teardown):
+                try:
+                    teardown()
+                except Exception:
+                    traceback.print_exc()
 
     print(f"\n{len(tests) - len(failures)}/{len(tests)} passed.")
     if failures:

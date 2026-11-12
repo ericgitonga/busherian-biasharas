@@ -47,10 +47,11 @@ try {
         exit;
     }
 
-    // First run the SSRF validation on the URL (always enforced, even in testing!)
-    // Support deterministic offline HTML fixture parsing for *.busherian-demo.co.ke so users/tests can test instant extraction even offline
-    $lowerUrl = strtolower($targetUrl);
-    if (str_contains($lowerUrl, 'busherian-demo.co.ke')) {
+    // Support deterministic offline HTML fixture parsing ONLY when the validated URL's host is *.busherian-demo.co.ke
+    $candidateNormalizedUrl = preg_match('#^https?://#i', $targetUrl) ? $targetUrl : ('https://' . $targetUrl);
+    $candidateHost = strtolower(trim((string)(parse_url($candidateNormalizedUrl, PHP_URL_HOST) ?? ''), '[]'));
+    if ($candidateHost === 'busherian-demo.co.ke' || str_ends_with($candidateHost, '.busherian-demo.co.ke')) {
+        WebsiteEnricher::validateSafeUrlAndResolveIp($targetUrl, static fn(string $_h): array => ['93.184.216.34']);
         $demoHtml = '<!DOCTYPE html><html><head>'
             . '<title>Wakili Peak Advocates | Corporate & Conveyancing Law Firm in Nairobi</title>'
             . '<meta property="og:site_name" content="Wakili Peak Advocates LLP">'

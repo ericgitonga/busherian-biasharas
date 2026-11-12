@@ -7,9 +7,7 @@ use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\OwnerAuth;
 
 bbiz_send_security_headers(false);
-if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-    session_start();
-}
+OwnerAuth::startSecureSession();
 
 $state = trim((string)($_GET['state'] ?? ''));
 $expectedState = trim((string)($_SESSION['bbiz_google_oauth_state'] ?? ''));
@@ -33,7 +31,7 @@ $owner = OwnerAuth::upsertOwner($pdo, $profile['email'], $profile['name'], null,
 OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$owner['id'], (string)$profile['email']);
 $redeemedClaimId = OwnerAuth::redeemVerifiedClaimFromSession($pdo, (int)$owner['id'], (string)$profile['email']);
 
-OwnerAuth::establishOwnerSession($owner);
+OwnerAuth::establishOwnerSession($owner, true, $pdo);
 if ($redeemedClaimId !== null && $redeemedClaimId > 0) {
     header("Location: /owner/edit-business.php?id={$redeemedClaimId}&claimed=1");
 } else {
