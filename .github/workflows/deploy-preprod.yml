@@ -37,7 +37,7 @@ jobs:
           set -euo pipefail
           : > /tmp/preprod_deleted_files.txt
           if [ -n "${BEFORE_SHA:-}" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
-            git diff --name-only --diff-filter=D "$BEFORE_SHA" "$AFTER_SHA" -- public src bin | grep -vE '^(public/)?uploads/' > /tmp/preprod_deleted_files.txt || true
+            git diff -M --name-status "$BEFORE_SHA" "$AFTER_SHA" -- public src bin | python3 .github/scripts/ftps_deploy.py --mode preprod --extract-retired-from-stdin > /tmp/preprod_deleted_files.txt
           fi
           python3 - << 'PYEOF'
           import os, pathlib, shutil, subprocess

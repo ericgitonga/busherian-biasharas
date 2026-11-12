@@ -8,7 +8,24 @@ use RuntimeException;
 
 final class VettingPurger
 {
-    public const PRIVACY_NOTICE_VERSION = '2026-11-v2';
+    public const PRIVACY_NOTICE_VERSION = '2026-11-v3';
+
+    /** @var array<int, array{business_id:int, photos_json:?string}> */
+    private static array $deferredPostCommitMediaDeletions = [];
+
+    public static function flushDeferredMediaDeletions(): void
+    {
+        $queue = self::$deferredPostCommitMediaDeletions;
+        self::$deferredPostCommitMediaDeletions = [];
+        foreach ($queue as $item) {
+            PhotoUploader::deleteAllBusinessMedia((int)$item['business_id'], $item['photos_json']);
+        }
+    }
+
+    public static function clearDeferredMediaDeletions(): void
+    {
+        self::$deferredPostCommitMediaDeletions = [];
+    }
 
     public const ALLOWED_ADMIN_PROVENANCE_BASES = [
         'alumni_direct_authorization',
@@ -76,14 +93,14 @@ final class VettingPurger
         ]);
     }
 
-    public static function validateHttpUrl(?string $rawUrl, string $fieldLabel): ?string
+    public static function validateHttpUrl(?string $rawUrl, string $fieldLabel, int $maxLength = 500): ?string
     {
         $u = trim((string)($rawUrl ?? ''));
         if ($u === '') {
             return null;
         }
-        if (strlen($u) > 500) {
-            throw new \InvalidArgumentException("{$fieldLabel} must be 500 characters or fewer.");
+        if (mb_strlen($u) > $maxLength || strlen($u) > $maxLength) {
+            throw new \InvalidArgumentException("{$fieldLabel} must be {$maxLength} characters or fewer.");
         }
         if (!preg_match('#^https?://[^\s<>"\x00-\x1f]+$#i', $u)) {
             throw new \InvalidArgumentException("{$fieldLabel} must start with http:// or https://.");
@@ -115,32 +132,59 @@ final class VettingPurger
             throw new \InvalidArgumentException('Business Name is required and must be 180 characters or fewer.');
         }
         $tagline = trim((string)($data['tagline'] ?? ''));
-        if (mb_strlen($tagline) > 220) {
-            throw new \InvalidArgumentException('Short Tagline must be 220 characters or fewer.');
+        if (mb_strlen($tagline) > 180) {
+            throw new \InvalidArgumentException('Short Tagline must be 180 characters or fewer.');
         }
         $desc = trim((string)($data['description'] ?? ''));
         if (mb_strlen($desc) > 5000) {
             throw new \InvalidArgumentException('Business Description must be 5,000 characters or fewer.');
         }
 
+        $textColumnLimits = [
+            'alumni_perk' => ['Alumni Offer / Perk', 190],
+            'regulator_name' => ['Professional Regulator', 120],
+            'regulator_license' => ['Regulator License / Registration', 120],
+            'branch_name' => ['Branch Name', 120],
+            'building_name' => ['Building / Premise', 140],
+            'floor_suite' => ['Floor / Suite', 80],
+            'street_road' => ['Street / Road', 160],
+            'area_neighborhood' => ['Area / Neighborhood', 120],
+            'landmark_directions' => ['Landmark / Directions', 255],
+            'plus_code' => ['Plus Code', 40],
+            'phone_primary' => ['Primary Phone', 40],
+            'whatsapp_number' => ['WhatsApp Number', 40],
+        ];
+        foreach ($textColumnLimits as $colKey => [$colLabel, $colLimit]) {
+            if (array_key_exists($colKey, $data) && is_scalar($data[$colKey])) {
+                $valStr = trim((string)$data[$colKey]);
+                if ($valStr !== '' && mb_strlen($valStr) > $colLimit) {
+                    throw new \InvalidArgumentException("{$colLabel} must be {$colLimit} characters or fewer.");
+                }
+            }
+        }
+
         $emailPub = trim((string)($data['email_public'] ?? ''));
-        if ($emailPub !== '' && (!filter_var($emailPub, FILTER_VALIDATE_EMAIL) || strlen($emailPub) > 190)) {
-            throw new \InvalidArgumentException('Public Contact Email must be a valid email address.');
+        if ($emailPub !== '' && (!filter_var($emailPub, FILTER_VALIDATE_EMAIL) || mb_strlen($emailPub) > 190 || strlen($emailPub) > 190)) {
+            throw new \InvalidArgumentException('Public Contact Email must be a valid email address (190 characters or fewer).');
+        }
+        $ownerEm = trim((string)($data['owner_email'] ?? ''));
+        if ($ownerEm !== '' && (!filter_var($ownerEm, FILTER_VALIDATE_EMAIL) || mb_strlen($ownerEm) > 190 || strlen($ownerEm) > 190)) {
+            throw new \InvalidArgumentException('Owner Email must be a valid email address (190 characters or fewer).');
         }
 
         $urlFields = [
-            'website_url' => 'Website URL',
-            'google_maps_url' => 'Google Maps URL',
-            'social_instagram' => 'Instagram URL',
-            'social_linkedin' => 'LinkedIn URL',
-            'social_x' => 'X (Twitter) URL',
-            'social_facebook' => 'Facebook URL',
-            'social_tiktok' => 'TikTok URL',
-            'social_youtube' => 'YouTube URL',
+            'website_url' => ['Website URL', 350],
+            'google_maps_url' => ['Google Maps URL', 500],
+            'social_instagram' => ['Instagram URL', 255],
+            'social_linkedin' => ['LinkedIn URL', 255],
+            'social_x' => ['X (Twitter) URL', 255],
+            'social_facebook' => ['Facebook URL', 255],
+            'social_tiktok' => ['TikTok URL', 255],
+            'social_youtube' => ['YouTube URL', 255],
         ];
-        foreach ($urlFields as $key => $label) {
+        foreach ($urlFields as $key => [$label, $maxLen]) {
             if (array_key_exists($key, $data)) {
-                self::validateHttpUrl(is_scalar($data[$key]) ? (string)$data[$key] : null, $label);
+                self::validateHttpUrl(is_scalar($data[$key]) ? (string)$data[$key] : null, $label, $maxLen);
             }
         }
 
@@ -323,10 +367,15 @@ final class VettingPurger
 
             if ($ownTx) {
                 $pdo->commit();
-            }
-
-            if ($oldPhotosJson !== null && $oldPhotosJson !== '') {
-                PhotoUploader::deleteAllBusinessMedia($businessId, $oldPhotosJson);
+                if ($oldPhotosJson !== null && $oldPhotosJson !== '') {
+                    PhotoUploader::deleteAllBusinessMedia($businessId, $oldPhotosJson);
+                }
+                self::flushDeferredMediaDeletions();
+            } elseif ($oldPhotosJson !== null && $oldPhotosJson !== '') {
+                self::$deferredPostCommitMediaDeletions[] = [
+                    'business_id' => $businessId,
+                    'photos_json' => $oldPhotosJson,
+                ];
             }
 
             return [
@@ -575,27 +624,44 @@ final class VettingPurger
             return null;
         }
 
-        $upd = $pdo->prepare("
-            UPDATE takedown_requests
-            SET verified_at = :v_at,
-                resolved_at = :r_at,
-                status = 'owner_verified_quarantined',
-                verification_token_hash = NULL
-            WHERE id = :id
-              AND status = 'awaiting_owner_email_confirm'
-        ");
-        $upd->execute([
-            ':v_at' => $nowUtc,
-            ':r_at' => $nowUtc,
-            ':id' => (int)$req['id'],
-        ]);
-        if ($upd->rowCount() === 0) {
-            return null;
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
         }
+        try {
+            $upd = $pdo->prepare("
+                UPDATE takedown_requests
+                SET verified_at = :v_at,
+                    resolved_at = :r_at,
+                    status = 'owner_verified_quarantined',
+                    verification_token_hash = NULL
+                WHERE id = :id
+                  AND status = 'awaiting_owner_email_confirm'
+            ");
+            $upd->execute([
+                ':v_at' => $nowUtc,
+                ':r_at' => $nowUtc,
+                ':id' => (int)$req['id'],
+            ]);
+            if ($upd->rowCount() === 0) {
+                if ($ownTx && $pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                return null;
+            }
 
-        $bizId = (int)$req['business_id'];
-        self::quarantineBusinessDpa($pdo, $bizId);
-        return $req;
+            $bizId = (int)$req['business_id'];
+            self::quarantineBusinessDpa($pdo, $bizId);
+            if ($ownTx) {
+                $pdo->commit();
+            }
+            return $req;
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**
@@ -613,7 +679,6 @@ final class VettingPurger
         $nowUtc = gmdate('Y-m-d H:i:s');
         $bizId = (int)$req['business_id'];
         if ($decision === 'quarantine') {
-            self::quarantineBusinessDpa($pdo, $bizId);
             $newSt = 'admin_quarantined';
         } elseif ($decision === 'dismiss') {
             $newSt = 'dismissed';
@@ -621,19 +686,35 @@ final class VettingPurger
             return false;
         }
 
-        $pdo->prepare("
-            UPDATE takedown_requests
-            SET status = :st,
-                resolved_at = :r_at,
-                verification_token_hash = NULL
-            WHERE id = :id
-        ")->execute([
-            ':st' => $newSt,
-            ':r_at' => $nowUtc,
-            ':id' => $requestId,
-        ]);
-
-        return true;
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            if ($decision === 'quarantine') {
+                self::quarantineBusinessDpa($pdo, $bizId);
+            }
+            $pdo->prepare("
+                UPDATE takedown_requests
+                SET status = :st,
+                    resolved_at = :r_at,
+                    verification_token_hash = NULL
+                WHERE id = :id
+            ")->execute([
+                ':st' => $newSt,
+                ':r_at' => $nowUtc,
+                ':id' => $requestId,
+            ]);
+            if ($ownTx) {
+                $pdo->commit();
+            }
+            return true;
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**
@@ -645,7 +726,8 @@ final class VettingPurger
      */
     public static function enforceRetentionCeilings(PDO $pdo, int $maxPendingDays = 30): array
     {
-        $cutoffDate = gmdate('Y-m-d H:i:s', time() - ($maxPendingDays * 86400));
+        $nowTs = time();
+        $cutoffDate = gmdate('Y-m-d H:i:s', $nowTs - ($maxPendingDays * 86400));
 
         // 1. Delete vetting rows ONLY for approved/rejected businesses or abandoned rows older than cutoff (#168)
         $delVetting = $pdo->prepare("
@@ -656,29 +738,101 @@ final class VettingPurger
         $delVetting->execute([':cutoff' => $cutoffDate]);
         $vettingPurged = $delVetting->rowCount();
 
-        // 2. Redact old email_outbox bodies containing historical vetting alerts
+        // 2. Redact old email_outbox recipient, reply_to, subject AND body (#214 M-06)
         $redactOutbox = $pdo->prepare("
             UPDATE email_outbox
-            SET body_html = '[REDACTED PER KENYA DPA 2019 30-DAY RETENTION POLICY]'
+            SET recipient_email = 'redacted@retention.invalid',
+                reply_to = NULL,
+                subject = '[REDACTED PER 30-DAY RETENTION POLICY]',
+                body_html = '[REDACTED PER KENYA DPA 2019 30-DAY RETENTION POLICY]'
             WHERE created_at < :cutoff
-              AND body_html != '[REDACTED PER KENYA DPA 2019 30-DAY RETENTION POLICY]'
+              AND (
+                  body_html != '[REDACTED PER KENYA DPA 2019 30-DAY RETENTION POLICY]'
+                  OR recipient_email != 'redacted@retention.invalid'
+                  OR reply_to IS NOT NULL
+                  OR subject != '[REDACTED PER 30-DAY RETENTION POLICY]'
+              )
         ");
         $redactOutbox->execute([':cutoff' => $cutoffDate]);
         $outboxRedacted = $redactOutbox->rowCount();
 
-        // 3. Purge expired nonces, >24h rate-limit hashes, and expired/revoked persistent owner sessions (#165)
-        $nowUtc = gmdate('Y-m-d H:i:s');
-        $pdo->prepare("DELETE FROM used_nonces WHERE expires_at < :now")->execute([':now' => time()]);
-        $pdo->prepare("DELETE FROM rate_limits WHERE created_at < :cut")->execute([':cut' => time() - 86400]);
+        // 3. Purge >7d authentication tokens (#214 M-06)
+        $authExpCut = $nowTs - (7 * 86400);
+        $authCreatedCut = gmdate('Y-m-d H:i:s', $authExpCut);
+        $delAuthTokens = $pdo->prepare("
+            DELETE FROM owner_auth_tokens
+            WHERE expires_at < :exp_cut
+               OR created_at < :created_cut
+        ");
+        $delAuthTokens->execute([':exp_cut' => $authExpCut, ':created_cut' => $authCreatedCut]);
+        $authTokensPurged = $delAuthTokens->rowCount();
+
+        // 4. Redact PII in resolved takedown_requests older than 90 days (#214 M-06)
+        $takedownCutoff = gmdate('Y-m-d H:i:s', $nowTs - (90 * 86400));
+        $redactTakedowns = $pdo->prepare("
+            UPDATE takedown_requests
+            SET requester_name = '[REDACTED]',
+                requester_email = 'redacted@retention.invalid',
+                reason = '[REDACTED PER 90-DAY RETENTION POLICY]',
+                ip_hmac = NULL,
+                verification_token_hash = NULL
+            WHERE resolved_at IS NOT NULL
+              AND resolved_at < :tcut
+              AND (
+                  requester_email != 'redacted@retention.invalid'
+                  OR requester_name != '[REDACTED]'
+                  OR ip_hmac IS NOT NULL
+              )
+        ");
+        $redactTakedowns->execute([':tcut' => $takedownCutoff]);
+        $takedownPiiRedacted = $redactTakedowns->rowCount();
+
+        // 5. Scrub categories.submitted_by_email once finalized or older than cutoff (#214 M-06)
+        $scrubCatEmails = $pdo->prepare("
+            UPDATE categories
+            SET submitted_by_email = NULL
+            WHERE submitted_by_email IS NOT NULL
+              AND (status IN ('approved', 'rejected') OR created_at < :ccut)
+        ");
+        $scrubCatEmails->execute([':ccut' => $cutoffDate]);
+        $catEmailsCleared = $scrubCatEmails->rowCount();
+
+        // 6. Purge expired nonces, >24h rate-limit hashes, and expired/revoked persistent owner sessions (#165)
+        $nowUtc = gmdate('Y-m-d H:i:s', $nowTs);
+        $pdo->prepare("DELETE FROM used_nonces WHERE expires_at < :now")->execute([':now' => $nowTs]);
+        $pdo->prepare("DELETE FROM rate_limits WHERE created_at < :cut")->execute([':cut' => $nowTs - 86400]);
         $pdo->prepare("DELETE FROM owner_sessions WHERE expires_at < :now OR revoked_at IS NOT NULL")->execute([':now' => $nowUtc]);
-        $metricsCutoff = gmdate('Y-m-d H:i:s', time() - (180 * 86400));
-        $pdo->prepare("DELETE FROM usage_metrics WHERE created_at < :mcut")->execute([':mcut' => $metricsCutoff]);
+
+        // 7. Apply 180-day (6-month) purge consistently to BOTH usage_metrics AND click_events (#214 M-06)
+        $metricsCutoff = gmdate('Y-m-d H:i:s', $nowTs - (180 * 86400));
+        $delMetrics = $pdo->prepare("DELETE FROM usage_metrics WHERE created_at < :mcut");
+        $delMetrics->execute([':mcut' => $metricsCutoff]);
+        $metricsPurged = $delMetrics->rowCount();
+
+        $delClicks = $pdo->prepare("DELETE FROM click_events WHERE created_at < :ccut");
+        $delClicks->execute([':ccut' => $metricsCutoff]);
+        $clicksPurged = $delClicks->rowCount();
+
+        // 8. Pseudonymize personal actor emails & IP hashes in >365d moderation_audit_log (#214 M-06)
+        $auditCutoff = gmdate('Y-m-d H:i:s', $nowTs - (365 * 86400));
+        $pdo->prepare("
+            UPDATE moderation_audit_log
+            SET actor_identifier = CASE WHEN actor_identifier LIKE '%@%' THEN 'redacted_actor' ELSE actor_identifier END,
+                ip_hash = NULL
+            WHERE created_at < :acut
+              AND (actor_identifier LIKE '%@%' OR ip_hash IS NOT NULL)
+        ")->execute([':acut' => $auditCutoff]);
 
         $mediaSweep = PhotoUploader::sweepOrphanedMedia($pdo, 3600);
 
         return [
             'vetting_rows_purged' => $vettingPurged,
             'outbox_bodies_redacted' => $outboxRedacted,
+            'auth_tokens_purged' => $authTokensPurged,
+            'takedown_pii_redacted' => $takedownPiiRedacted,
+            'category_submitter_emails_cleared' => $catEmailsCleared,
+            'usage_metrics_purged' => $metricsPurged,
+            'click_events_purged' => $clicksPurged,
             'orphaned_public_media_deleted' => $mediaSweep['orphaned_public_deleted'],
             'orphaned_quarantine_media_deleted' => $mediaSweep['orphaned_quarantine_deleted'],
             'cutoff_utc' => $cutoffDate,
@@ -786,9 +940,19 @@ final class VettingPurger
             }
             if ($ownTx) {
                 $pdo->commit();
-            }
-            if ($deleted) {
-                PhotoUploader::deleteAllBusinessMedia($businessId, $photosJson);
+                if ($deleted) {
+                    PhotoUploader::deleteAllBusinessMedia($businessId, $photosJson);
+                    self::flushDeferredMediaDeletions();
+                    if (PhotoUploader::hasRemainingBusinessMediaOnDisk($businessId, $photosJson)) {
+                        error_log("[VettingPurger::deleteBusiness] Incomplete media removal on disk for business #{$businessId}");
+                        throw new RuntimeException("Listing record deleted, but one or more media files for Business #{$businessId} could not be removed from disk and remain queued for sweep retry.");
+                    }
+                }
+            } elseif ($deleted) {
+                self::$deferredPostCommitMediaDeletions[] = [
+                    'business_id' => $businessId,
+                    'photos_json' => $photosJson,
+                ];
             }
             return $deleted;
         } catch (\Throwable $e) {
@@ -1035,12 +1199,16 @@ final class VettingPurger
 
         $validationPayload = $data;
         $validationPayload['name'] = $name;
-        $validationPayload['tagline'] = mb_substr($tagline, 0, 180);
+        $validationPayload['tagline'] = $tagline;
         $validationPayload['description'] = $description;
         $validationPayload['sector_id'] = $sectorId;
         $validationPayload['specialty_id'] = $specialtyId;
         $validationPayload['google_maps_url'] = $coordsMeta['google_maps_url'];
         self::validateListingWritePayload($pdo, $validationPayload, $lat, $lng, $hoursJson);
+
+        if (!empty($data['require_adult_attestation']) && empty($data['admin_adult_subject_attested'])) {
+            throw new \InvalidArgumentException('Please confirm the Kenya DPA s. 33 adult-only (18+) data-subject attestation before publishing.');
+        }
 
         $provenanceNote = trim((string)($data['admin_provenance_note'] ?? ''));
         if (!empty($data['require_provenance_basis'])) {
@@ -1080,7 +1248,7 @@ final class VettingPurger
                 operating_hours_json, photos_json, phone_primary, whatsapp_number,
                 email_public, owner_email, website_url, social_instagram, social_linkedin,
                 social_x, social_facebook, social_tiktok, social_youtube,
-                status, privacy_notice_version, listing_provenance, admin_provenance_note,
+                status, privacy_notice_version, age_attested_at, listing_provenance, admin_provenance_note,
                 verified_at, last_confirmed_at
             ) VALUES (
                 :business_id, :business_number, :name, :slug, :tagline, :description, :school_badge,
@@ -1092,7 +1260,7 @@ final class VettingPurger
                 :operating_hours_json, :photos_json, :phone_primary, :whatsapp_number,
                 :email_public, :owner_email, :website_url, :social_instagram, :social_linkedin,
                 :social_x, :social_facebook, :social_tiktok, :social_youtube,
-                :status, :pver, 'admin_curated', :pnote,
+                :status, :pver, :age_at, 'admin_curated', :pnote,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
         ");
@@ -1140,6 +1308,7 @@ final class VettingPurger
             ':social_youtube' => trim((string)($data['social_youtube'] ?? '')) ?: null,
             ':status' => $status,
             ':pver' => self::PRIVACY_NOTICE_VERSION,
+            ':age_at' => !empty($data['admin_adult_subject_attested']) ? gmdate('Y-m-d H:i:s') : null,
             ':pnote' => $provenanceNote,
         ]);
 

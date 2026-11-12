@@ -2,6 +2,8 @@
   'use strict';
 
   const STORAGE_KEY = 'bbiz_cookie_consent';
+  const CONSENT_META_KEY = 'bbiz_cookie_consent_meta';
+  const CONSENT_NOTICE_VERSION = '2026-11-v3';
   const CONSENT_COOKIE = 'bbiz_consent';
   const VID_COOKIE = 'bbiz_vid';
   const ONE_YEAR_SECONDS = 31536000; // 365 days
@@ -82,6 +84,11 @@
     currentDecision = decision;
     try {
       localStorage.setItem(STORAGE_KEY, decision);
+      localStorage.setItem(CONSENT_META_KEY, JSON.stringify({
+        decision: decision,
+        notice_version: CONSENT_NOTICE_VERSION,
+        recorded_at: new Date().toISOString()
+      }));
     } catch (_) {}
     setCookie(CONSENT_COOKIE, decision, ONE_YEAR_SECONDS);
 
@@ -105,6 +112,7 @@
     currentDecision = '';
     try {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(CONSENT_META_KEY);
       localStorage.removeItem('bbiz_map_tiles_enabled');
     } catch (_) {}
     deleteCookie(CONSENT_COOKIE);
@@ -130,7 +138,7 @@
       <div class="bbiz-cookie-inner">
         <div class="bbiz-cookie-text">
           <strong>🍪 Cookie &amp; Privacy Choice:</strong>
-          With your permission, we use a single anonymous cookie to count overall page visits and popular searches so we can improve the directory. We never use outside ad trackers.
+          With your permission, we use a pseudonymous browser cookie for first-party directory visit and search statistics (cleared after 6 months). Interactive OpenStreetMap tiles remain off unless you load the map separately.
           <a href="/privacy.php">Privacy Notice</a>
         </div>
         <div class="bbiz-cookie-actions">
@@ -149,13 +157,24 @@
 
   function updatePrivacyPageStatus() {
     const labelEl = document.getElementById('dpa-cookie-status-label');
-    if (!labelEl) return;
-    if (currentDecision === 'accepted') {
-      labelEl.textContent = 'Allow for Analysis (Anonymous directory usage statistics enabled on this browser)';
-    } else if (currentDecision === 'rejected') {
-      labelEl.textContent = 'Allow only Essential (Usage analysis cookies disabled on this browser)';
-    } else {
-      labelEl.textContent = 'No choice recorded yet (Only essential functionality active)';
+    if (labelEl) {
+      if (currentDecision === 'accepted') {
+        labelEl.textContent = 'Allow for Analysis (First-party pseudonymous usage statistics enabled; map tiles remain separate)';
+      } else if (currentDecision === 'rejected') {
+        labelEl.textContent = 'Allow only Essential (Usage analysis cookies disabled on this browser)';
+      } else {
+        labelEl.textContent = 'No choice recorded yet (Only essential functionality active)';
+      }
+    }
+    const mapLabelEl = document.getElementById('dpa-map-status-label');
+    if (mapLabelEl) {
+      let mapEnabled = false;
+      try {
+        mapEnabled = localStorage.getItem('bbiz_map_tiles_enabled') === 'yes';
+      } catch (_) {}
+      mapLabelEl.textContent = mapEnabled
+        ? 'Enabled by explicit map opt-in on this browser'
+        : 'Disabled (OpenStreetMap tiles will not load unless you click Load Interactive Map)';
     }
   }
 

@@ -351,8 +351,8 @@ final class CategoryMatcher
      */
     public static function similarity(string $a, string $b): float
     {
-        $s1 = strtolower(trim(preg_replace('/[^a-z0-9\s]/i', '', $a) ?? ''));
-        $s2 = strtolower(trim(preg_replace('/[^a-z0-9\s]/i', '', $b) ?? ''));
+        $s1 = strtolower(trim(preg_replace('/[^a-z0-9\s]/i', '', mb_substr($a, 0, 100)) ?? ''));
+        $s2 = strtolower(trim(preg_replace('/[^a-z0-9\s]/i', '', mb_substr($b, 0, 100)) ?? ''));
         if ($s1 === '' || $s2 === '') {
             return 0.0;
         }
@@ -381,6 +381,10 @@ final class CategoryMatcher
      */
     public static function findFuzzyMatches(PDO $pdo, string $customName, ?int $parentId = null, float $threshold = 0.65): array
     {
+        $customName = mb_substr(trim($customName), 0, 80);
+        if ($customName === '') {
+            return [];
+        }
         $sql = "SELECT c.id, c.parent_id, c.name, c.slug, p.name AS sector_name
                 FROM categories c
                 LEFT JOIN categories p ON p.id = c.parent_id

@@ -11,6 +11,7 @@ final class AntiSpamGate
     private const MIN_FILL_SECONDS = 4;
     private const MAX_FORM_AGE_SECONDS = 7200; // 2 hours
     public const GLOBAL_OUTBOUND_MAIL_LIMIT_1H = 15;
+    public const CENTRAL_DISPATCH_MAIL_LIMIT_1H = 25;
     public const OTP_RECIPIENT_COOLDOWN_SECONDS = 60;
     public const OTP_RECIPIENT_LIMIT_1H = 4;
 
@@ -217,12 +218,26 @@ final class AntiSpamGate
         return hash_hmac('sha256', trim($rawIp), $salt);
     }
 
-    private static function acquireRateLimitSerializationLock(PDO $pdo): void
+    public static function acquireRateLimitSerializationLock(PDO $pdo): void
     {
         try {
-            $pdo->prepare("UPDATE business_sequences SET current_val = current_val + 1 WHERE seq_key = 'rate_limit_mutex'")
-                ->execute();
+            $upd = $pdo->prepare("UPDATE business_sequences SET current_val = current_val + 1 WHERE seq_key = 'rate_limit_mutex'");
+            $upd->execute();
+            if ($upd->rowCount() === 0) {
+                $drv = strtolower((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+                if ($drv === 'sqlite') {
+                    $pdo->exec("INSERT OR IGNORE INTO business_sequences (seq_key, current_val) VALUES ('rate_limit_mutex', 0)");
+                } else {
+                    $pdo->exec("INSERT IGNORE INTO business_sequences (seq_key, current_val) VALUES ('rate_limit_mutex', 0)");
+                }
+                $upd->execute();
+                if ($upd->rowCount() === 0) {
+                    throw new \RuntimeException('rate_limit_mutex row missing after initialization.');
+                }
+            }
         } catch (\Throwable $e) {
+            error_log('[AntiSpamGate] Critical rate-limit serialization mutex failure: ' . $e->getMessage());
+            throw new \RuntimeException('Rate-limit serialization mutex could not be acquired.', 0, $e);
         }
     }
 
@@ -348,6 +363,139 @@ final class AntiSpamGate
                 $pdo->commit();
             }
             return ['allowed' => true, 'reason' => 'ok'];
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Per-IP + Per-Account authentication throttle WITHOUT a shared global DoS ceiling (#213 M-05).
+     */
+    public static function checkAuthAttemptAllowed(
+        PDO $pdo,
+        string $rawIp,
+        string $actionType,
+        string $accountIdentifier = '',
+        int $ipLimit15m = 10,
+        int $ipLimit24h = 30,
+        int $acctLimit15m = 5,
+        int $acctLimit24h = 15
+    ): array {
+        $now = time();
+        $ipHmac = self::pseudonymizeIp($rawIp);
+        $salt = Database::env('IP_HASH_SECRET', 'dev_dpa_ip_salt_secret_key_32_bytes_min');
+        $normAcct = strtolower(trim($accountIdentifier));
+        $acctHmac = $normAcct !== '' ? hash_hmac('sha256', 'auth_acct|' . $actionType . '|' . $normAcct, $salt) : '';
+        $acctAction = substr('acct_' . $actionType, 0, 40);
+
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            self::acquireRateLimitSerializationLock($pdo);
+            $pdo->prepare("DELETE FROM rate_limits WHERE created_at < :cutoff")
+                ->execute([':cutoff' => $now - 86400]);
+
+            $stmtIp15 = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ip AND action_type = :act AND created_at >= :since");
+            $stmtIp15->execute([':ip' => $ipHmac, ':act' => $actionType, ':since' => $now - 900]);
+            if ((int)$stmtIp15->fetchColumn() >= $ipLimit15m) {
+                if ($ownTx) {
+                    $pdo->commit();
+                }
+                return ['allowed' => false, 'reason' => 'auth_ip_rate_limit_15m'];
+            }
+
+            $stmtIp24 = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ip AND action_type = :act AND created_at >= :since");
+            $stmtIp24->execute([':ip' => $ipHmac, ':act' => $actionType, ':since' => $now - 86400]);
+            if ((int)$stmtIp24->fetchColumn() >= $ipLimit24h) {
+                if ($ownTx) {
+                    $pdo->commit();
+                }
+                return ['allowed' => false, 'reason' => 'auth_ip_rate_limit_24h'];
+            }
+
+            if ($acctHmac !== '') {
+                $stmtAc15 = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ah AND action_type = :act AND created_at >= :since");
+                $stmtAc15->execute([':ah' => $acctHmac, ':act' => $acctAction, ':since' => $now - 900]);
+                if ((int)$stmtAc15->fetchColumn() >= $acctLimit15m) {
+                    if ($ownTx) {
+                        $pdo->commit();
+                    }
+                    return ['allowed' => false, 'reason' => 'auth_account_rate_limit_15m'];
+                }
+
+                $stmtAc24 = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ah AND action_type = :act AND created_at >= :since");
+                $stmtAc24->execute([':ah' => $acctHmac, ':act' => $acctAction, ':since' => $now - 86400]);
+                if ((int)$stmtAc24->fetchColumn() >= $acctLimit24h) {
+                    if ($ownTx) {
+                        $pdo->commit();
+                    }
+                    return ['allowed' => false, 'reason' => 'auth_account_rate_limit_24h'];
+                }
+            }
+
+            $ins = $pdo->prepare("INSERT INTO rate_limits (ip_hmac, action_type, created_at) VALUES (:h, :act, :now)");
+            $ins->execute([':h' => $ipHmac, ':act' => $actionType, ':now' => $now]);
+            if ($acctHmac !== '') {
+                $ins->execute([':h' => $acctHmac, ':act' => $acctAction, ':now' => $now]);
+            }
+
+            if ($ownTx) {
+                $pdo->commit();
+            }
+            return ['allowed' => true, 'reason' => 'ok'];
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Central dispatch-time outbound mail ceiling enforced directly in Mailer::dispatchOutboxRow() (#212 M-04).
+     */
+    public static function consumeCentralDispatchQuota(PDO $pdo, ?int $hourlyCeiling = null): array
+    {
+        $now = time();
+        $envOverride = trim(Database::env('BBIZ_MAX_DISPATCH_PER_HOUR', ''));
+        if ($hourlyCeiling !== null) {
+            $ceiling = max(1, $hourlyCeiling);
+        } elseif ($envOverride !== '' && ctype_digit($envOverride)) {
+            $ceiling = max(1, (int)$envOverride);
+        } elseif (strtolower(Database::env('APP_ENV', 'development')) === 'testing') {
+            $ceiling = 250;
+        } else {
+            $ceiling = self::CENTRAL_DISPATCH_MAIL_LIMIT_1H;
+        }
+
+        $salt = Database::env('IP_HASH_SECRET', 'dev_dpa_ip_salt_secret_key_32_bytes_min');
+        $dispHmac = hash_hmac('sha256', 'central_mail_dispatcher', $salt);
+
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            self::acquireRateLimitSerializationLock($pdo);
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE action_type = 'central_mail_dispatch' AND created_at >= :since");
+            $stmt->execute([':since' => $now - 3600]);
+            if ((int)$stmt->fetchColumn() >= $ceiling) {
+                if ($ownTx) {
+                    $pdo->commit();
+                }
+                return ['allowed' => false, 'reason' => 'central_mail_dispatch_ceiling_1h', 'ceiling' => $ceiling];
+            }
+            $pdo->prepare("INSERT INTO rate_limits (ip_hmac, action_type, created_at) VALUES (:h, 'central_mail_dispatch', :now)")
+                ->execute([':h' => $dispHmac, ':now' => $now]);
+            if ($ownTx) {
+                $pdo->commit();
+            }
+            return ['allowed' => true, 'reason' => 'ok', 'ceiling' => $ceiling];
         } catch (\Throwable $e) {
             if ($ownTx && $pdo->inTransaction()) {
                 $pdo->rollBack();

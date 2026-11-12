@@ -697,7 +697,9 @@ final class OwnerAuth
         int $businessId,
         int $expiresAt,
         string $signature,
-        string $invitedEmail = ''
+        string $invitedEmail = '',
+        bool $explicitPublicationConsent = false,
+        bool $adultAttested18 = false
     ): bool {
         if ($ownerId <= 0 ||
             !self::verifyClaimInviteSignature($businessId, $expiresAt, $signature, $invitedEmail) ||
@@ -718,17 +720,43 @@ final class OwnerAuth
             }
             self::linkOwnerToBusiness($pdo, $ownerId, $businessId, 'claim_invite_link');
             $nowUtc = gmdate('Y-m-d H:i:s');
-            $pdo->prepare("
-                UPDATE businesses
-                SET listing_provenance = CASE WHEN listing_provenance = 'admin_curated' THEN 'claimed' ELSE listing_provenance END,
-                    consent_recorded_at = COALESCE(consent_recorded_at, :now1),
-                    privacy_notice_version = COALESCE(privacy_notice_version, :ver)
-                WHERE id = :bid
-            ")->execute([
-                ':now1' => $nowUtc,
-                ':ver' => VettingPurger::PRIVACY_NOTICE_VERSION,
-                ':bid' => $businessId,
-            ]);
+            if ($explicitPublicationConsent) {
+                $pdo->prepare("
+                    UPDATE businesses
+                    SET listing_provenance = CASE WHEN listing_provenance = 'admin_curated' THEN 'claimed' ELSE listing_provenance END,
+                        consent_recorded_at = :now1,
+                        privacy_notice_version = :ver,
+                        age_attested_at = CASE WHEN :has_age = 1 THEN COALESCE(age_attested_at, :now2) ELSE age_attested_at END
+                    WHERE id = :bid
+                ")->execute([
+                    ':now1' => $nowUtc,
+                    ':ver' => VettingPurger::PRIVACY_NOTICE_VERSION,
+                    ':has_age' => $adultAttested18 ? 1 : 0,
+                    ':now2' => $nowUtc,
+                    ':bid' => $businessId,
+                ]);
+                $stStmt = $pdo->prepare("SELECT status FROM businesses WHERE id = :id LIMIT 1");
+                $stStmt->execute([':id' => $businessId]);
+                $curSt = (string)($stStmt->fetchColumn() ?: 'approved');
+                VettingPurger::recordModerationAudit(
+                    $pdo,
+                    $businessId,
+                    'claim_consent',
+                    'owner_claim',
+                    strtolower(trim($ownerEmail)),
+                    $curSt,
+                    $curSt,
+                    'explicit_publication_consent=' . VettingPurger::PRIVACY_NOTICE_VERSION . ';adult_18=' . ($adultAttested18 ? '1' : '0')
+                );
+            } else {
+                // Separate ownership verification from publication consent (#209 M-01):
+                // Do NOT manufacture consent_recorded_at or privacy_notice_version when explicit consent was not captured.
+                $pdo->prepare("
+                    UPDATE businesses
+                    SET listing_provenance = CASE WHEN listing_provenance = 'admin_curated' THEN 'claimed' ELSE listing_provenance END
+                    WHERE id = :bid
+                ")->execute([':bid' => $businessId]);
+            }
             if ($ownTx) {
                 $pdo->commit();
             }
@@ -1737,6 +1765,284 @@ final class OwnerAuth
             'email' => strtolower(trim((string)$userData['email'])),
             'name' => trim((string)($userData['name'] ?? '')),
             'sub' => trim((string)($userData['sub'] ?? '')),
+        ];
+    }
+
+    /**
+     * Build a structured subject-access / data-portability export for a verified Owner Account (Kenya DPA ss. 26, 38; #215 M-07).
+     */
+    public static function exportOwnerPersonalData(PDO $pdo, int $ownerId): array
+    {
+        $owner = self::getOwnerById($pdo, $ownerId);
+        if ($owner === null) {
+            throw new \RuntimeException('Owner account not found.');
+        }
+        $normEmail = strtolower(trim((string)$owner['email']));
+
+        $sessStmt = $pdo->prepare("
+            SELECT selector, auth_version, user_agent_summary, created_at, last_seen_at, expires_at, revoked_at
+            FROM owner_sessions
+            WHERE owner_id = :oid
+            ORDER BY id DESC
+        ");
+        $sessStmt->execute([':oid' => $ownerId]);
+        $sessions = $sessStmt->fetchAll() ?: [];
+
+        $bizStmt = $pdo->prepare("
+            SELECT b.id, b.business_id, b.business_number, b.name, b.status,
+                   b.listing_provenance, b.consent_recorded_at, b.privacy_notice_version,
+                   b.age_attested_at, b.email_public, b.owner_email, b.phone_primary,
+                   l.linked_via, l.created_at AS linked_at
+            FROM business_owner_links l
+            INNER JOIN businesses b ON b.id = l.business_id
+            WHERE l.owner_id = :oid
+            ORDER BY b.business_number ASC
+        ");
+        $bizStmt->execute([':oid' => $ownerId]);
+        $linkedBusinesses = $bizStmt->fetchAll() ?: [];
+
+        $tdStmt = $pdo->prepare("
+            SELECT id, business_id, requester_name, requester_email, reason, status, created_at, resolved_at
+            FROM takedown_requests
+            WHERE LOWER(requester_email) = :em
+            ORDER BY id DESC
+        ");
+        $tdStmt->execute([':em' => $normEmail]);
+        $takedowns = $tdStmt->fetchAll() ?: [];
+
+        $mailStmt = $pdo->prepare("
+            SELECT id, business_id, recipient_email, subject, status, created_at, sent_at
+            FROM email_outbox
+            WHERE LOWER(recipient_email) = :em
+            ORDER BY id DESC
+            LIMIT 100
+        ");
+        $mailStmt->execute([':em' => $normEmail]);
+        $correspondence = $mailStmt->fetchAll() ?: [];
+
+        $catStmt = $pdo->prepare("
+            SELECT id, name, slug, status, created_at
+            FROM categories
+            WHERE LOWER(submitted_by_email) = :em
+            ORDER BY id DESC
+        ");
+        $catStmt->execute([':em' => $normEmail]);
+        $submittedCategories = $catStmt->fetchAll() ?: [];
+
+        return [
+            'exported_at_utc' => gmdate('Y-m-d\TH:i:s\Z'),
+            'privacy_notice_version' => VettingPurger::PRIVACY_NOTICE_VERSION,
+            'owner_profile' => [
+                'id' => (int)$owner['id'],
+                'email' => $normEmail,
+                'full_name' => $owner['full_name'] ?? null,
+                'phone' => $owner['phone'] ?? null,
+                'google_sso_linked' => !empty($owner['google_sub']),
+                'password_configured' => !empty($owner['password_hash']),
+                'auth_version' => (int)($owner['auth_version'] ?? 1),
+                'created_at' => $owner['created_at'] ?? null,
+                'last_login_at' => $owner['last_login_at'] ?? null,
+            ],
+            'linked_businesses' => $linkedBusinesses,
+            'sessions' => $sessions,
+            'takedown_requests' => $takedowns,
+            'correspondence_metadata' => $correspondence,
+            'submitted_categories' => $submittedCategories,
+        ];
+    }
+
+    /**
+     * Subject-level Owner Account & Personal Data Erasure (Kenya DPA s. 40; #215 M-07).
+     * Preserves co-owned businesses (detaching only this owner), optionally deletes sole-owned listings,
+     * scrubs auth tokens, sessions, category submitter email, takedown PII, and outbox correspondence,
+     * and verifies complete media removal on disk.
+     */
+    public static function deleteOwnerAccountAndData(
+        PDO $pdo,
+        int $ownerId,
+        bool $deleteSoleOwnedListings = false,
+        ?string $clientIp = null
+    ): array {
+        $owner = self::getOwnerById($pdo, $ownerId);
+        if ($owner === null) {
+            throw new \RuntimeException('Owner account not found.');
+        }
+        $normEmail = strtolower(trim((string)$owner['email']));
+
+        $linksStmt = $pdo->prepare("
+            SELECT business_id
+            FROM business_owner_links
+            WHERE owner_id = :oid
+        ");
+        $linksStmt->execute([':oid' => $ownerId]);
+        $linkedBizIds = array_map('intval', array_column($linksStmt->fetchAll() ?: [], 'business_id'));
+
+        $soleBizIds = [];
+        $coOwnedBizIds = [];
+        $solePhotosCheck = [];
+
+        $cntStmt = $pdo->prepare("SELECT COUNT(*) FROM business_owner_links WHERE business_id = :bid AND owner_id != :oid");
+        $coEmailStmt = $pdo->prepare("
+            SELECT o.email
+            FROM business_owner_links l
+            INNER JOIN business_owners o ON o.id = l.owner_id
+            WHERE l.business_id = :bid AND l.owner_id != :oid
+            ORDER BY l.id ASC
+            LIMIT 1
+        ");
+        $phStmt = $pdo->prepare("SELECT photos_json FROM businesses WHERE id = :id LIMIT 1");
+
+        foreach ($linkedBizIds as $bid) {
+            $cntStmt->execute([':bid' => $bid, ':oid' => $ownerId]);
+            $otherOwnersCount = (int)$cntStmt->fetchColumn();
+            if ($otherOwnersCount > 0) {
+                $coOwnedBizIds[] = $bid;
+            } else {
+                $soleBizIds[] = $bid;
+                if ($deleteSoleOwnedListings) {
+                    $phStmt->execute([':id' => $bid]);
+                    $pRow = $phStmt->fetch();
+                    $solePhotosCheck[$bid] = is_array($pRow) && is_string($pRow['photos_json'] ?? null) ? $pRow['photos_json'] : null;
+                }
+            }
+        }
+
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            // 1. Co-owned businesses: preserve listing & co-owner rights, detach this owner, rotate owner_email if matching
+            foreach ($coOwnedBizIds as $coBid) {
+                $coEmailStmt->execute([':bid' => $coBid, ':oid' => $ownerId]);
+                $replacementOwnerEmail = strtolower(trim((string)($coEmailStmt->fetchColumn() ?: ''))) ?: null;
+                $pdo->prepare("
+                    UPDATE businesses
+                    SET owner_email = CASE WHEN LOWER(owner_email) = :em THEN :rep ELSE owner_email END
+                    WHERE id = :bid
+                ")->execute([
+                    ':em' => $normEmail,
+                    ':rep' => $replacementOwnerEmail,
+                    ':bid' => $coBid,
+                ]);
+                $pdo->prepare("DELETE FROM business_owner_links WHERE business_id = :bid AND owner_id = :oid")
+                    ->execute([':bid' => $coBid, ':oid' => $ownerId]);
+            }
+
+            // 2. Sole-owned businesses: delete completely if requested, otherwise detach & clear personal owner_email
+            $deletedSoleIds = [];
+            foreach ($soleBizIds as $sBid) {
+                if ($deleteSoleOwnedListings) {
+                    if (VettingPurger::deleteBusiness($pdo, $sBid, 'owner_account_erasure', 'erased_owner', $clientIp)) {
+                        $deletedSoleIds[] = $sBid;
+                    }
+                } else {
+                    $pdo->prepare("
+                        UPDATE businesses
+                        SET owner_email = CASE WHEN LOWER(owner_email) = :em THEN NULL ELSE owner_email END
+                        WHERE id = :bid
+                    ")->execute([':em' => $normEmail, ':bid' => $sBid]);
+                    $pdo->prepare("DELETE FROM business_owner_links WHERE business_id = :bid AND owner_id = :oid")
+                        ->execute([':bid' => $sBid, ':oid' => $ownerId]);
+                }
+            }
+
+            // Also scrub owner_email on any unlinked businesses pointing to this subject email
+            $pdo->prepare("UPDATE businesses SET owner_email = NULL WHERE LOWER(owner_email) = :em")
+                ->execute([':em' => $normEmail]);
+
+            // 3. Delete pending vetting rows submitted by this email
+            $pdo->prepare("DELETE FROM business_vetting_queue WHERE LOWER(submitter_email) = :em")
+                ->execute([':em' => $normEmail]);
+
+            // 4. Delete authentication tokens & sessions
+            $delTok = $pdo->prepare("DELETE FROM owner_auth_tokens WHERE LOWER(email) = :em");
+            $delTok->execute([':em' => $normEmail]);
+            $authTokensDeleted = $delTok->rowCount();
+
+            $delSess = $pdo->prepare("DELETE FROM owner_sessions WHERE owner_id = :oid");
+            $delSess->execute([':oid' => $ownerId]);
+            $sessionsDeleted = $delSess->rowCount();
+
+            // 5. Scrub category submission attribution
+            $updCat = $pdo->prepare("UPDATE categories SET submitted_by_email = NULL WHERE LOWER(submitted_by_email) = :em");
+            $updCat->execute([':em' => $normEmail]);
+            $categoriesScrubbed = $updCat->rowCount();
+
+            // 6. Redact email_outbox correspondence addressed to or from this subject
+            $updMail = $pdo->prepare("
+                UPDATE email_outbox
+                SET recipient_email = CASE WHEN LOWER(recipient_email) = :em1 THEN 'erased@subject-erasure.invalid' ELSE recipient_email END,
+                    reply_to = CASE WHEN LOWER(reply_to) = :em2 THEN NULL ELSE reply_to END,
+                    subject = '[ERASED PER KENYA DPA S.40 REQUEST]',
+                    body_html = '[ERASED PER KENYA DPA S.40 SUBJECT ERASURE]'
+                WHERE LOWER(recipient_email) = :em3 OR LOWER(reply_to) = :em4
+            ");
+            $updMail->execute([
+                ':em1' => $normEmail,
+                ':em2' => $normEmail,
+                ':em3' => $normEmail,
+                ':em4' => $normEmail,
+            ]);
+            $outboxScrubbed = $updMail->rowCount();
+
+            // 7. Redact requester PII on takedown_requests
+            $pdo->prepare("
+                UPDATE takedown_requests
+                SET requester_name = '[ERASED]',
+                    requester_email = 'erased@subject-erasure.invalid',
+                    reason = '[ERASED PER KENYA DPA S.40 SUBJECT ERASURE]',
+                    ip_hmac = NULL,
+                    verification_token_hash = NULL
+                WHERE LOWER(requester_email) = :em
+            ")->execute([':em' => $normEmail]);
+
+            // 8. Scrub personal email in moderation_audit_log while keeping anonymous audit integrity
+            $pdo->prepare("
+                UPDATE moderation_audit_log
+                SET actor_identifier = 'erased_owner_subject',
+                    ip_hash = NULL
+                WHERE LOWER(actor_identifier) = :em
+            ")->execute([':em' => $normEmail]);
+
+            // 9. Delete remaining links & the business_owners account row itself
+            $pdo->prepare("DELETE FROM business_owner_links WHERE owner_id = :oid")->execute([':oid' => $ownerId]);
+            $delOwner = $pdo->prepare("DELETE FROM business_owners WHERE id = :oid");
+            $delOwner->execute([':oid' => $ownerId]);
+            $ownerDeleted = $delOwner->rowCount() > 0;
+
+            if ($ownTx) {
+                $pdo->commit();
+                VettingPurger::flushDeferredMediaDeletions();
+            }
+        } catch (\Throwable $e) {
+            VettingPurger::clearDeferredMediaDeletions();
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        $incompleteMediaBizIds = [];
+        foreach ($deletedSoleIds as $dBid) {
+            if (PhotoUploader::hasRemainingBusinessMediaOnDisk($dBid, $solePhotosCheck[$dBid] ?? null)) {
+                $incompleteMediaBizIds[] = $dBid;
+            }
+        }
+
+        if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_ACTIVE) {
+            self::logoutOwner($pdo);
+        }
+
+        return [
+            'owner_deleted' => $ownerDeleted,
+            'sole_listings_deleted' => $deletedSoleIds,
+            'co_owned_listings_preserved' => $coOwnedBizIds,
+            'auth_tokens_deleted' => $authTokensDeleted,
+            'sessions_deleted' => $sessionsDeleted,
+            'categories_scrubbed' => $categoriesScrubbed,
+            'outbox_rows_scrubbed' => $outboxScrubbed,
+            'incomplete_media_biz_ids' => $incompleteMediaBizIds,
         ];
     }
 }

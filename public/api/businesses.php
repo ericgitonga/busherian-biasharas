@@ -5,6 +5,7 @@ require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\AdminAuth;
+use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\CategoryMatcher;
 use BusherianBiasharas\Services\HoursEngine;
 use BusherianBiasharas\Services\LocationEngine;
@@ -15,15 +16,24 @@ bbiz_send_security_headers(true);
 
 try {
     $pdo = Database::getConnection();
+    $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+    $apiBudget = AntiSpamGate::checkAuthAttemptAllowed($pdo, $clientIp, 'api_businesses_read', '', 240, 3000, 240, 3000);
+    if (!$apiBudget['allowed']) {
+        http_response_code(429);
+        header('Retry-After: 60');
+        echo json_encode(['status' => 'error', 'message' => 'Too many directory queries from this network. Please wait a moment and try again.']);
+        exit;
+    }
+
     $currentOwner = OwnerAuth::getCurrentOwner($pdo);
     $isAdminVisitor = AdminAuth::isAuthenticated();
     $isAuthenticatedViewer = ($currentOwner !== null || $isAdminVisitor);
 
-    $q          = trim((string)($_GET['q'] ?? ''));
+    $q          = mb_substr(trim((string)($_GET['q'] ?? '')), 0, 120);
     $sectorId   = isset($_GET['sector_id']) && $_GET['sector_id'] !== '' ? (int)$_GET['sector_id'] : null;
     $specId     = isset($_GET['specialty_id']) && $_GET['specialty_id'] !== '' ? (int)$_GET['specialty_id'] : null;
-    $country    = trim((string)($_GET['country'] ?? ''));
-    $cityCounty = trim((string)($_GET['city_county'] ?? ''));
+    $country    = mb_substr(trim((string)($_GET['country'] ?? '')), 0, 80);
+    $cityCounty = mb_substr(trim((string)($_GET['city_county'] ?? '')), 0, 100);
     $school     = strtoupper(trim((string)($_GET['school'] ?? '')));
     $mode       = strtolower(trim((string)($_GET['service_mode'] ?? '')));
     $openNow    = !empty($_GET['open_now']) && $_GET['open_now'] !== '0' && $_GET['open_now'] !== 'false';
@@ -31,9 +41,15 @@ try {
     $b2bReady   = !empty($_GET['b2b_ready']) && $_GET['b2b_ready'] !== '0' && $_GET['b2b_ready'] !== 'false';
     $userLat    = isset($_GET['lat']) && $_GET['lat'] !== '' ? (float)$_GET['lat'] : null;
     $userLng    = isset($_GET['lng']) && $_GET['lng'] !== '' ? (float)$_GET['lng'] : null;
-    $radiusKm   = isset($_GET['radius_km']) && $_GET['radius_km'] !== '' ? (float)$_GET['radius_km'] : null;
+    $radiusKm   = isset($_GET['radius_km']) && $_GET['radius_km'] !== '' ? max(0.0, min(20000.0, (float)$_GET['radius_km'])) : null;
+    if ($userLat !== null && (!is_finite($userLat) || $userLat < -90.0 || $userLat > 90.0)) {
+        $userLat = null;
+    }
+    if ($userLng !== null && (!is_finite($userLng) || $userLng < -180.0 || $userLng > 180.0)) {
+        $userLng = null;
+    }
 
-    $page    = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+    $page    = isset($_GET['page']) ? min(250, max(1, (int)$_GET['page'])) : 1;
     $perPage = isset($_GET['per_page']) ? max(1, min(100, (int)$_GET['per_page'])) : 10;
 
     // STRICT PRIVACY GUARANTEE: Explicit column whitelist from `businesses` and `categories` ONLY.
@@ -78,9 +94,11 @@ try {
         $fromWhereSql .= " AND b.b2b_ready = 1";
     }
 
-    if ($userLat !== null && $userLng !== null && $radiusKm !== null && $radiusKm > 0) {
+    $hasCoordsQuery = ($userLat !== null && $userLng !== null);
+    if ($hasCoordsQuery && $radiusKm !== null && $radiusKm > 0) {
         $bbox = LocationEngine::boundingBox($userLat, $userLng, $radiusKm);
-        $fromWhereSql .= " AND b.latitude BETWEEN :min_lat AND :max_lat AND b.longitude BETWEEN :min_lng AND :max_lng";
+        $fromWhereSql .= " AND b.latitude IS NOT NULL AND b.longitude IS NOT NULL"
+            . " AND b.latitude BETWEEN :min_lat AND :max_lat AND b.longitude BETWEEN :min_lng AND :max_lng";
         $params[':min_lat'] = $bbox['minLat'];
         $params[':max_lat'] = $bbox['maxLat'];
         $params[':min_lng'] = $bbox['minLng'];
@@ -125,9 +143,31 @@ try {
             b.logo_path, b.verified_at
     ";
 
-    $needsPhpFilterOrDistanceSort = ($openNow || ($userLat !== null && $userLng !== null));
+    // SQL Haversine helper using distinct named parameters for MySQL 8.0 native prepared-statement compatibility (#218 M-10)
+    $buildHaversineExpr = static function (string $prefix, array &$bindTarget) use ($userLat, $userLng): string {
+        $bindTarget[":{$prefix}_lat1"] = $userLat;
+        $bindTarget[":{$prefix}_lng1"] = $userLng;
+        $bindTarget[":{$prefix}_lat2"] = $userLat;
+        $bindTarget[":{$prefix}_lat3"] = $userLat;
+        $bindTarget[":{$prefix}_lng2"] = $userLng;
+        $bindTarget[":{$prefix}_lat4"] = $userLat;
+        $bindTarget[":{$prefix}_lat5"] = $userLat;
+        $bindTarget[":{$prefix}_lng3"] = $userLng;
+        $bindTarget[":{$prefix}_lat6"] = $userLat;
+        $c1 = "(COS(RADIANS(:{$prefix}_lat1)) * COS(RADIANS(b.latitude)) * COS(RADIANS(b.longitude) - RADIANS(:{$prefix}_lng1)) + SIN(RADIANS(:{$prefix}_lat2)) * SIN(RADIANS(b.latitude)))";
+        $c2 = "(COS(RADIANS(:{$prefix}_lat3)) * COS(RADIANS(b.latitude)) * COS(RADIANS(b.longitude) - RADIANS(:{$prefix}_lng2)) + SIN(RADIANS(:{$prefix}_lat4)) * SIN(RADIANS(b.latitude)))";
+        $c3 = "(COS(RADIANS(:{$prefix}_lat5)) * COS(RADIANS(b.latitude)) * COS(RADIANS(b.longitude) - RADIANS(:{$prefix}_lng3)) + SIN(RADIANS(:{$prefix}_lat6)) * SIN(RADIANS(b.latitude)))";
+        return "(6371.0 * ACOS(CASE WHEN {$c1} > 1.0 THEN 1.0 WHEN {$c2} < -1.0 THEN -1.0 ELSE {$c3} END))";
+    };
 
-    if (!$needsPhpFilterOrDistanceSort) {
+    if ($hasCoordsQuery && $radiusKm !== null && $radiusKm > 0) {
+        $whereHavExpr = $buildHaversineExpr('wh', $params);
+        $fromWhereSql .= " AND {$whereHavExpr} <= :exact_radius_km";
+        $params[':exact_radius_km'] = $radiusKm;
+    }
+
+    if (!$openNow) {
+        // Pure SQL pagination & distance sorting (#218 M-10): zero full-table fetch into PHP memory
         $cntStmt = $pdo->prepare("SELECT COUNT(*) " . $fromWhereSql);
         $cntStmt->execute($params);
         $totalCount = (int)$cntStmt->fetchColumn();
@@ -137,37 +177,49 @@ try {
         }
         $offset = ($page - 1) * $perPage;
 
-        $pageSql = $selectCols . $fromWhereSql . " ORDER BY b.business_number ASC, b.id ASC LIMIT " . (int)$perPage . " OFFSET " . (int)$offset;
+        $pageParams = $params;
+        if ($hasCoordsQuery) {
+            $selHavExpr = $buildHaversineExpr('sh', $pageParams);
+            $pageSql = $selectCols . ", CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL THEN ROUND({$selHavExpr}, 2) ELSE NULL END AS _sql_dist "
+                . $fromWhereSql
+                . " ORDER BY CASE WHEN b.latitude IS NULL OR b.longitude IS NULL THEN 1 ELSE 0 END ASC, _sql_dist ASC, b.business_number ASC, b.id ASC"
+                . " LIMIT " . (int)$perPage . " OFFSET " . (int)$offset;
+        } else {
+            $pageSql = $selectCols . $fromWhereSql . " ORDER BY b.business_number ASC, b.id ASC LIMIT " . (int)$perPage . " OFFSET " . (int)$offset;
+        }
         $stmt = $pdo->prepare($pageSql);
-        $stmt->execute($params);
+        $stmt->execute($pageParams);
         $pagedRows = $stmt->fetchAll();
+        foreach ($pagedRows as &$pRow) {
+            if (array_key_exists('_sql_dist', $pRow)) {
+                $pRow['_eval_dist'] = $pRow['_sql_dist'] !== null ? (float)$pRow['_sql_dist'] : null;
+            }
+        }
+        unset($pRow);
     } else {
-        $stmt = $pdo->prepare($selectCols . $fromWhereSql . " ORDER BY b.business_number ASC, b.id ASC");
-        $stmt->execute($params);
-        $allRows = $stmt->fetchAll();
+        // Bounded Open-Now evaluation (#218 M-10): cap SQL candidate scan to 500 rows (with SQL distance order when coords supplied)
+        $openParams = $params;
+        if ($hasCoordsQuery) {
+            $openHavExpr = $buildHaversineExpr('oh', $openParams);
+            $openSql = $selectCols . ", CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL THEN ROUND({$openHavExpr}, 2) ELSE NULL END AS _sql_dist "
+                . $fromWhereSql
+                . " ORDER BY CASE WHEN b.latitude IS NULL OR b.longitude IS NULL THEN 1 ELSE 0 END ASC, _sql_dist ASC, b.business_number ASC, b.id ASC LIMIT 500";
+        } else {
+            $openSql = $selectCols . $fromWhereSql . " ORDER BY b.business_number ASC, b.id ASC LIMIT 500";
+        }
+        $stmt = $pdo->prepare($openSql);
+        $stmt->execute($openParams);
+        $candidateRows = $stmt->fetchAll();
         $filteredRows = [];
-        foreach ($allRows as $row) {
+        foreach ($candidateRows as $row) {
             $hoursStatus = HoursEngine::evaluateStatus((string)$row['operating_hours_json']);
-            if ($openNow && !$hoursStatus['is_open']) {
+            if (!$hoursStatus['is_open']) {
                 continue;
             }
-            $distanceKm = null;
-            if ($userLat !== null && $userLng !== null && $row['latitude'] !== null && $row['longitude'] !== null) {
-                $distanceKm = LocationEngine::haversineKm($userLat, $userLng, (float)$row['latitude'], (float)$row['longitude']);
-                if ($radiusKm !== null && $radiusKm > 0 && $distanceKm > $radiusKm) {
-                    continue;
-                }
-            }
+            $distanceKm = isset($row['_sql_dist']) && $row['_sql_dist'] !== null ? (float)$row['_sql_dist'] : null;
             $row['_eval_hours'] = $hoursStatus;
             $row['_eval_dist'] = $distanceKm;
             $filteredRows[] = $row;
-        }
-        if ($userLat !== null && $userLng !== null) {
-            usort($filteredRows, static function (array $a, array $b): int {
-                $da = $a['_eval_dist'] ?? 999999.0;
-                $db = $b['_eval_dist'] ?? 999999.0;
-                return $da <=> $db;
-            });
         }
         $totalCount = count($filteredRows);
         $totalPages = max(1, (int)ceil($totalCount / $perPage));

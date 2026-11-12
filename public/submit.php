@@ -201,14 +201,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $hoursJson = HoursEngine::buildScheduleJsonFromPost($_POST);
-                    $validationPayload = [
+                    $validationPayload = array_merge($_POST, [
                         'name' => $bizName,
                         'tagline' => $tagline,
                         'description' => $description,
                         'sector_id' => $sectorId,
                         'specialty_id' => $finalSpecialtyId,
+                        'alumni_perk' => $alumniPerk,
+                        'regulator_name' => $regName,
+                        'regulator_license' => $regLicense,
+                        'phone_primary' => $phonePrimary,
+                        'whatsapp_number' => $whatsappNum,
                         'email_public' => $emailPublic,
                         'website_url' => $websiteUrl,
+                        'plus_code' => $plusCode,
                         'google_maps_url' => $gmapsUrl,
                         'social_instagram' => trim((string)($_POST['social_instagram'] ?? '')),
                         'social_linkedin' => trim((string)($_POST['social_linkedin'] ?? '')),
@@ -216,7 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'social_facebook' => trim((string)($_POST['social_facebook'] ?? '')),
                         'social_tiktok' => trim((string)($_POST['social_tiktok'] ?? '')),
                         'social_youtube' => trim((string)($_POST['social_youtube'] ?? '')),
-                    ];
+                    ]);
                     VettingPurger::validateListingWritePayload($pdo, $validationPayload, $lat, $lng, $hoursJson);
 
                     $photosJson = PhotoUploader::processBusinessPhotos(
@@ -375,7 +381,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $pdo->commit();
-                    Mailer::flushPendingOutbox($pdo);
+                    $txCommitted = true;
+                } catch (PhotoUploadValidationException|\InvalidArgumentException $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    if (empty($txCommitted) && !empty($createdSubmitPhotoUrls)) {
+                        PhotoUploader::deleteRemovedPhotoUrls($createdSubmitPhotoUrls, []);
+                    }
+                    Mailer::clearPendingOutbox();
+                    $errors[] = $e->getMessage();
+                } catch (\Throwable $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    if (empty($txCommitted) && !empty($createdSubmitPhotoUrls)) {
+                        PhotoUploader::deleteRemovedPhotoUrls($createdSubmitPhotoUrls, []);
+                    }
+                    Mailer::clearPendingOutbox();
+                    error_log('[submit.php] Submission save failed: ' . $e->getMessage());
+                    $errors[] = 'Could not save submission due to a temporary server error. Please verify your entries and try again.';
+                }
+
+                // Post-commit side effects (#222 M-14): NEVER delete committed photos if mail dispatch or session tracking fails!
+                if (!empty($txCommitted)) {
+                    try {
+                        Mailer::flushPendingOutbox($pdo);
+                    } catch (\Throwable $mailErr) {
+                        error_log('[submit.php] Post-commit outbox flush failed (queued for retry): ' . $mailErr->getMessage());
+                    }
                     if (!$isAuthenticatedSameEmail) {
                         OwnerAuth::recordSelfSubmittedPendingInSession($submittedBusinessId, $submitterEmail);
                     }
@@ -383,7 +417,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $postSubmitVerifyUrl = '/owner/index.php';
                         $postSubmitVerifyLabel = 'Manage My Biasharas';
                         $successMessage = 'Your business has been submitted for one-time alumni vetting and linked to your signed-in Owner Account! Once verified by the admin team, your listing will go live and your House, Year Left, and School Number will be permanently deleted.';
-                    } elseif ($existingTargetOwner !== null || OwnerAuth::isRecognizedOwnerEmail($pdo, $submitterEmail)) {
+                    } elseif (($existingTargetOwner ?? null) !== null || OwnerAuth::isRecognizedOwnerEmail($pdo, $submitterEmail)) {
                         $postSubmitVerifyUrl = '/owner/login.php?email=' . rawurlencode($submitterEmail);
                         $postSubmitVerifyLabel = 'Sign In to Your Owner Account';
                         $successMessage = "Your business has been submitted for one-time alumni vetting! For your security, existing Owner Accounts are never modified without signing in. Sign in with your email and password (or verify a 6-digit email code on Owner Sign In) to manage your listings.";
@@ -396,25 +430,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $postSubmitVerifyLabel = 'Verify Email & Set Owner Password';
                         $successMessage = "Your business has been submitted for one-time alumni vetting! We sent a 6-digit verification code to {$submitterEmail} — verify your email now to set your Owner Password, or sign in anytime after admin approval.";
                     }
-                } catch (PhotoUploadValidationException|\InvalidArgumentException $e) {
-                    if ($pdo->inTransaction()) {
-                        $pdo->rollBack();
-                    }
-                    if (!empty($createdSubmitPhotoUrls)) {
-                        PhotoUploader::deleteRemovedPhotoUrls($createdSubmitPhotoUrls, []);
-                    }
-                    Mailer::clearPendingOutbox();
-                    $errors[] = $e->getMessage();
-                } catch (\Throwable $e) {
-                    if ($pdo->inTransaction()) {
-                        $pdo->rollBack();
-                    }
-                    if (!empty($createdSubmitPhotoUrls)) {
-                        PhotoUploader::deleteRemovedPhotoUrls($createdSubmitPhotoUrls, []);
-                    }
-                    Mailer::clearPendingOutbox();
-                    error_log('[submit.php] Submission save failed: ' . $e->getMessage());
-                    $errors[] = 'Could not save submission due to a temporary server error. Please verify your entries and try again.';
                 }
             }
         }
@@ -802,11 +817,11 @@ $aghsHouses = Houses::AGHS_HOUSES;
         <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:1rem;margin-top:1.15rem;font-size:0.84rem;">
           <label style="display:flex;align-items:flex-start;gap:0.55rem;margin-bottom:0.55rem;cursor:pointer;">
             <input type="checkbox" name="age_attestation_18" value="1" required style="margin-top:0.2rem;">
-            <span><strong>Age Confirmation:</strong> I confirm that I am 18 years of age or older and authorized to list this business. *</span>
+            <span><strong>Adult-Only Attestation (Kenya DPA s. 33):</strong> I confirm that I am 18 years of age or older, authorized to list this business, and that this listing and its photographs contain no personal contact details or identifiable images of any person under 18. *</span>
           </label>
           <label style="display:flex;align-items:flex-start;gap:0.55rem;cursor:pointer;">
             <input type="checkbox" name="dpa_consent_directory" value="1" required style="margin-top:0.2rem;">
-            <span><strong>Privacy Confirmation:</strong> I have read the <a href="/privacy.php" target="_blank" style="color:#7B1113;text-decoration:underline;">Privacy Notice</a>. I understand that my House, Year Left, and School Number are used strictly once for alumni verification, are never displayed publicly, and are permanently deleted upon review. *</span>
+            <span><strong>Directory Publication Consent &amp; Privacy Notice:</strong> I have read the <a href="/privacy.php" target="_blank" style="color:#7B1113;text-decoration:underline;">Privacy Notice</a> and explicitly consent to publishing the business profile, location, and public contact details above in the public Busherian Biasharas directory. I understand that my House, Year Left, and School Number are used strictly once for alumni verification, are never published, and are permanently deleted upon review. *</span>
           </label>
         </div>
 
@@ -1097,7 +1112,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
   <script>
     window.BBIZ_SUBMIT_SUCCESS = <?= $successMessage !== '' ? 'true' : 'false' ?>;
     window.BBIZ_SUBMIT_POST_DRAFT = <?= ($_SERVER['REQUEST_METHOD'] === 'POST' && $successMessage === '')
-      ? bbiz_json_for_html_script(array_diff_key($_POST, array_flip(['csrf_token', 'form_ts', 'form_nonce', 'form_sig', 'js_interaction_token', 'website', 'owner_password', 'owner_password_confirm'])))
+      ? bbiz_json_for_html_script(array_diff_key($_POST, array_flip(['csrf_token', 'form_ts', 'form_nonce', 'form_sig', 'js_interaction_token', 'website', 'owner_password', 'owner_password_confirm', 'house_name', 'house_custom', 'year_left', 'school_number', 'business_photos_data_json', 'age_attestation_18', 'dpa_consent_directory'])))
       : 'null' ?>;
   </script>
   <script src="/assets/js/form-enhancements.js"></script>

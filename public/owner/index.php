@@ -19,6 +19,39 @@ $profileError = '';
 if (isset($_GET['deleted'])) {
     $profileSaved = 'The business listing has been permanently deleted from the directory.';
 }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'export_personal_data') {
+    $csrf = trim((string)($_POST['csrf_token'] ?? ''));
+    if (!AntiSpamGate::verifyCsrfToken($csrf)) {
+        $profileError = 'Your page session expired. Please reload and try again.';
+    } else {
+        $exportPayload = OwnerAuth::exportOwnerPersonalData($pdo, (int)$owner['id']);
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Disposition: attachment; filename="busherian-owner-data-' . (int)$owner['id'] . '.json"');
+        header('Cache-Control: no-store, no-cache, must-revalidate');
+        echo json_encode($exportPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_owner_account') {
+    $csrf = trim((string)($_POST['csrf_token'] ?? ''));
+    $typedEmail = strtolower(trim((string)($_POST['confirm_owner_email'] ?? '')));
+    $deleteSoleListings = !empty($_POST['delete_sole_listings']);
+    if (!AntiSpamGate::verifyCsrfToken($csrf)) {
+        $profileError = 'Your page session expired. Please reload and try again.';
+    } elseif ($typedEmail === '' || $typedEmail !== strtolower(trim((string)$owner['email']))) {
+        $profileError = 'Account deletion cancelled: Please type your exact signed-in email address to confirm permanent erasure.';
+    } else {
+        $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+        try {
+            OwnerAuth::deleteOwnerAccountAndData($pdo, (int)$owner['id'], $deleteSoleListings, $clientIp);
+            header('Location: /owner/login.php?account_erased=1');
+            exit;
+        } catch (\Throwable $e) {
+            error_log('[owner/index.php] Owner erasure error: ' . $e->getMessage());
+            $profileError = 'Could not complete full account erasure: ' . $e->getMessage();
+        }
+    }
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_business') {
     $csrf = trim((string)($_POST['csrf_token'] ?? ''));
     $delBizId = (int)($_POST['business_id'] ?? 0);
@@ -34,8 +67,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
         if ($actualName === '' || $typedConfirm !== $actualName) {
             $profileError = 'Deletion cancelled: You must type the exact business name to confirm permanent deletion.';
         } else {
-            VettingPurger::deleteBusiness($pdo, $delBizId);
-            $profileSaved = "Permanently deleted '{$actualName}' from the directory.";
+            try {
+                $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+                VettingPurger::deleteBusiness($pdo, $delBizId, 'owner_portal', (string)$owner['email'], $clientIp);
+                $profileSaved = "Permanently deleted '{$actualName}' from the directory.";
+            } catch (\Throwable $delErr) {
+                $profileError = $delErr->getMessage();
+            }
         }
     }
 }
@@ -223,6 +261,35 @@ $tokens = AntiSpamGate::generateFormTokens();
           <button type="submit" data-testid="owner-save-profile-btn" class="btn btn-outline" style="width:100%;justify-content:center;">💾 Save Owner Profile &amp; Password</button>
         </div>
       </form>
+    </section>
+
+    <!-- Section 3: Kenya DPA Rights — Personal Data Export & Subject-Level Account Erasure (#215 M-07) -->
+    <section data-testid="owner-dpa-rights-section" style="margin-top:1.5rem;background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1.35rem;">
+      <h3 style="margin:0 0 0.3rem 0;color:#114B3E;font-size:1rem;">Your Kenya DPA Privacy Rights: Data Export &amp; Complete Account Erasure</h3>
+      <p style="margin:0 0 0.9rem 0;font-size:0.82rem;color:#4B5563;line-height:1.5;">
+        Download a complete JSON copy of your Owner Account profile, linked listings, session history, and correspondence metadata, or permanently erase your Owner Account (co-owned listings remain intact for your co-owners).
+      </p>
+      <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-start;justify-content:space-between;">
+        <form method="POST" action="/owner/index.php" data-testid="owner-export-data-form" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="action" value="export_personal_data">
+          <button type="submit" data-testid="owner-export-data-btn" class="btn btn-outline">📥 Download My Personal Data (JSON)</button>
+        </form>
+
+        <form method="POST" action="/owner/index.php" data-testid="owner-delete-account-form" style="flex:1;min-width:280px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:0.9rem;">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="action" value="delete_owner_account">
+          <div style="font-weight:800;font-size:0.84rem;color:#991B1B;margin-bottom:0.35rem;">🗑️ Permanently Delete My Owner Account &amp; Personal Records</div>
+          <label style="display:flex;align-items:flex-start;gap:0.45rem;font-size:0.8rem;color:#7F1D1D;margin-bottom:0.55rem;cursor:pointer;">
+            <input type="checkbox" name="delete_sole_listings" data-testid="owner-delete-sole-listings-checkbox" value="1" style="margin-top:0.15rem;">
+            <span>Also permanently delete any directory listings where I am the <strong>sole</strong> owner (co-owned listings are preserved for co-owners).</span>
+          </label>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <input type="email" name="confirm_owner_email" data-testid="owner-confirm-delete-email" class="input-control" style="flex:1;min-width:190px;background:#fff;" placeholder="Type <?= htmlspecialchars((string)$owner['email'], ENT_QUOTES, 'UTF-8') ?> to confirm" required>
+            <button type="submit" data-testid="owner-delete-account-btn" class="btn btn-crimson" style="font-size:0.82rem;">Erase My Owner Account</button>
+          </div>
+        </form>
+      </div>
     </section>
     <?= bbiz_render_github_delete_modal($tokens['csrf_token'], '/owner/index.php', 0, '', 'action', 'delete_business') ?>
   </main>

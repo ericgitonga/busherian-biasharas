@@ -21,17 +21,22 @@ if ($result === null) {
 $owner = $result['owner'];
 OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$owner['id'], (string)($owner['email'] ?? ''));
 $claimedBizId = (int)($result['claimed_business_id'] ?? 0);
-if ($claimedBizId <= 0) {
-    $sessionClaimId = OwnerAuth::redeemVerifiedClaimFromSession($pdo, (int)$owner['id'], (string)($owner['email'] ?? ''));
-    if ($sessionClaimId !== null && $sessionClaimId > 0) {
-        $claimedBizId = $sessionClaimId;
-    }
-}
+$pendingSessionClaim = ($claimedBizId <= 0) ? OwnerAuth::getVerifiedClaimFromSession($pdo) : null;
 
 OwnerAuth::establishOwnerSession($owner, true, $pdo);
 $targetEditBizId = (int)($_SESSION['bbiz_target_edit_biz_id'] ?? 0);
 unset($_SESSION['bbiz_target_edit_biz_id']);
 
+if ($pendingSessionClaim !== null) {
+    $claimQs = http_build_query([
+        'biz_id' => $pendingSessionClaim['biz_id'],
+        'exp' => $pendingSessionClaim['exp'],
+        'sig' => $pendingSessionClaim['sig'],
+        'em' => $pendingSessionClaim['em'],
+    ]);
+    header("Location: /owner/claim.php?{$claimQs}");
+    exit;
+}
 if ($claimedBizId > 0) {
     header("Location: /owner/edit-business.php?id={$claimedBizId}&claimed=1");
 } elseif ($targetEditBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$owner['id'], $targetEditBizId)) {

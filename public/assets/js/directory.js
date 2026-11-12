@@ -97,9 +97,8 @@
   }
 
   function hasMapTileConsent() {
-    if (window.BBizMetrics && typeof window.BBizMetrics.hasConsent === 'function' && window.BBizMetrics.hasConsent()) {
-      return true;
-    }
+    // Unbundled consent (#217 M-09): "Allow for Analysis" NEVER enables third-party OpenStreetMap tiles.
+    // Map tiles load ONLY after explicit click on #btn-enable-osm-map ('bbiz_map_tiles_enabled' === 'yes').
     try {
       return localStorage.getItem('bbiz_map_tiles_enabled') === 'yes';
     } catch (_) {

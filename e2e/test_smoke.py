@@ -186,9 +186,15 @@ def test_playwright_pre_consent_network_and_cookie_gate():
         ctx_accept = _new_browser_context()
         try:
             page_acc = ctx_accept.new_page()
+            seen_acc_urls: list[str] = []
+            page_acc.on("request", lambda req: seen_acc_urls.append(req.url))
             page_acc.goto(f"{BASE_URL}/", wait_until="networkidle")
             with page_acc.expect_response(lambda r: "/api/track-metric.php" in r.url and r.status == 200, timeout=5000):
                 page_acc.get_by_test_id("cookie-accept-btn").click()
+            page_acc.wait_for_timeout(250)
+            assert not any("tile.openstreetmap.org" in u for u in seen_acc_urls), (
+                f"R2-MED-09 (#217) regression: clicking Allow for Analysis loaded OSM tiles without map opt-in: {seen_acc_urls}"
+            )
             cookies_after_accept = {c["name"]: c["value"] for c in ctx_accept.cookies()}
             assert cookies_after_accept.get("bbiz_consent") == "accepted"
             assert "bbiz_vid" in cookies_after_accept and len(cookies_after_accept["bbiz_vid"]) >= 8
@@ -898,7 +904,8 @@ def test_adversarial_crit_01_and_crit_02_regressions():
         assert st_lotp == 200 and "Set Your Owner Password" in lotp_html
         lotp_code = re.search(r"Preview Verification Code:.*?<strong[^>]*>(\d{6})</strong>", lotp_html, re.S).group(1)
         lcl_csrf2 = _extract_hidden(lotp_html, "csrf_token")
-        st_lver, _, lver_hdrs, _ = _http_raw(
+        # R2-MED-01 (#209) & R2-MED-16 (#224): Omitting explicit publication consent or 18+ attestation MUST reject without consuming OTP/invite!
+        st_no_cons, no_cons_html, _, _ = _http_raw(
             "/owner/claim.php",
             method="POST",
             form={
@@ -913,6 +920,29 @@ def test_adversarial_crit_01_and_crit_02_regressions():
                 "phone": "+254700112233",
                 "new_password": "ClaimantSafe#Pass2026",
                 "confirm_password": "ClaimantSafe#Pass2026",
+            },
+            cookie_jar=legit_cookies,
+        )
+        assert st_no_cons == 200 and ("18 years or older" in no_cons_html or "explicitly consent" in no_cons_html)
+
+        lcl_csrf3 = _extract_hidden(no_cons_html, "csrf_token")
+        st_lver, _, lver_hdrs, _ = _http_raw(
+            "/owner/claim.php",
+            method="POST",
+            form={
+                "csrf_token": lcl_csrf3,
+                "claim_step": "verify_otp",
+                "biz_id": str(other_biz_id),
+                "exp": str(exp),
+                "sig": sig,
+                "owner_email": legit_claim_email,
+                "otp_code": lotp_code,
+                "full_name": "Verified Claimant",
+                "phone": "+254700112233",
+                "new_password": "ClaimantSafe#Pass2026",
+                "confirm_password": "ClaimantSafe#Pass2026",
+                "claim_age_attestation_18": "1",
+                "claim_publication_consent": "1",
             },
             cookie_jar=legit_cookies,
         )
@@ -1004,6 +1034,8 @@ def test_playwright_high_01_02_05_browser_security_regressions():
         p1.locator("input[name='phone']").fill("+254700164164")
         p1.locator("input[name='new_password']").fill(corp_pw)
         p1.locator("input[name='confirm_password']").fill(corp_pw)
+        p1.get_by_test_id("claim-age-18-checkbox").check()
+        p1.get_by_test_id("claim-consent-checkbox").check()
         p1.locator("form button[type='submit']").first.click()
         p1.wait_for_load_state("networkidle")
 
@@ -1251,6 +1283,7 @@ def test_playwright_med_04_08_09_12_14_15_regressions():
             adm.locator("input[name='phone_primary']").fill("+254722179179")
             adm.locator("#admin_provenance_basis").select_option("alumni_direct_authorization")
             adm.locator("#admin_provenance_note").fill("Confirmed directly with alumni founder during E2E test")
+            adm.get_by_test_id("admin-adult-attestation-checkbox").check()
             adm.locator("form button[type='submit']").click()
             adm.wait_for_url("**/admin/index.php**", timeout=8000)
 
@@ -1322,6 +1355,217 @@ def test_playwright_med_04_08_09_12_14_15_regressions():
             ctx_adm.close()
 
 
+def test_playwright_r2_medium_regressions():
+    """Browser & API E2E regressions for Round-2 MEDIUM (#209, #210, #215, #217, #218, #223, #224, #225)."""
+    # 1. R2-MED-10 (#218) & R2-MED-09 (#217): SQL Haversine spatial pagination, query cap, and track-metric PII scrubbing
+    spatial = _fetch_api_payload("lat=-1.2647&lng=36.8021&radius_km=50&page=1&per_page=3")
+    assert spatial["pagination"]["per_page"] == 3
+    dists = [float(b["distance_km"]) for b in spatial["businesses"]]
+    assert dists == sorted(dists), f"Expected SQL Haversine distances sorted ascending, got {dists}"
+
+    st_long_q, body_long_q, _ = _request("/api/businesses.php?q=" + ("x" * 150))
+    assert st_long_q == 200, f"Expected bounded 200 truncation for >120-char search query (#218), got {st_long_q}"
+    assert json.loads(body_long_q)["status"] == "ok"
+    st_long_cat, body_long_cat, _ = _request("/api/categories.php?check_custom=" + ("x" * 150))
+    assert st_long_cat == 200
+    assert len(json.loads(body_long_cat)["custom_input"]) == 80, "Expected check_custom bounded to 80 chars (#218)"
+
+    st_tm, body_tm, _ = _request(
+        "/api/track-metric.php",
+        method="POST",
+        data=json.dumps({
+            "event_type": "search",
+            "page_path": "/",
+            "meta_label": "Email leak217@example.com call +254722333444",
+        }).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Cookie": "bbiz_consent=accepted; bbiz_vid=e2evid2170001",
+        },
+    )
+    assert st_tm == 200, f"Expected 200 from /api/track-metric.php, got {st_tm}: {body_tm}"
+    sqlite_env = os.environ.get("DB_SQLITE_PATH", "").strip()
+    if sqlite_env:
+        db_file = Path(sqlite_env) if os.path.isabs(sqlite_env) else (Path(__file__).resolve().parent.parent / sqlite_env)
+        if db_file.is_file():
+            with sqlite3.connect(str(db_file)) as conn:
+                row_tm = conn.execute(
+                    "SELECT meta_label FROM usage_metrics WHERE event_type = 'search' ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+            assert row_tm is not None
+            assert "leak217@example.com" not in (row_tm[0] or "")
+            assert "+254722333444" not in (row_tm[0] or "")
+            assert "[redacted-email]" in (row_tm[0] or "")
+
+    # 2. R2-MED-02 (#210): Ephemeral 2-hour sessionStorage draft excluding vetting PII, photos & consent state
+    ctx_draft = _new_browser_context()
+    try:
+        pd = ctx_draft.new_page()
+        pd.add_init_script(
+            "try { localStorage.setItem('bbiz_submit_draft_v1', JSON.stringify({house_name:'Livingstone', school_number:'OLD-99'})); } catch (_) {}"
+        )
+        pd.goto(f"{BASE_URL}/submit.php", wait_until="networkidle")
+        pd.locator("#school_code").select_option("AHS")
+        pd.locator("#house_name").select_option("Livingstone")
+        pd.locator("#year_left").fill("2011")
+        pd.locator("#school_number").fill("SNO-210-SECRET")
+        pd.locator("#biz_name").fill("R2 Ephemeral Draft Venture")
+        pd.locator("input[name='age_attestation_18']").check()
+        pd.locator("input[name='dpa_consent_directory']").check()
+        pd.wait_for_timeout(400)
+
+        storage_state = pd.evaluate(
+            """() => ({
+                legacy_local: localStorage.getItem('bbiz_submit_draft_v1'),
+                v2_local: localStorage.getItem('bbiz_submit_draft_v2'),
+                v2_session: sessionStorage.getItem('bbiz_submit_draft_v2')
+            })"""
+        )
+        assert storage_state["legacy_local"] is None
+        assert storage_state["v2_local"] is None
+        assert storage_state["v2_session"] is not None
+        parsed_draft = json.loads(storage_state["v2_session"])
+        draft_fields = parsed_draft.get("fields") or {}
+        assert draft_fields.get("name") == "R2 Ephemeral Draft Venture"
+        for forbidden_draft_key in (
+            "house_name",
+            "year_left",
+            "school_number",
+            "business_photos_data_json",
+            "age_attestation_18",
+            "dpa_consent_directory",
+        ):
+            assert forbidden_draft_key not in draft_fields, f"Forbidden key {forbidden_draft_key} stored in draft (#210)"
+
+        # Reload in same tab (without re-running legacy init script) -> non-sensitive name restores, vetting PII & consents stay blank/unchecked!
+        pd2 = ctx_draft.new_page()
+        pd2.goto(f"{BASE_URL}/submit.php", wait_until="networkidle")
+        # sessionStorage is tab-scoped, so opening a NEW tab must NOT leak the first tab's draft!
+        assert pd2.locator("#biz_name").input_value() == ""
+        pd2.close()
+    finally:
+        ctx_draft.close()
+
+    # 3. R2-MED-01 (#209), R2-MED-07 (#215) & R2-MED-17 (#225):
+    #    Authenticated GET-safe claim consent form + Owner JSON data export + account erasure + Admin multi-session revocation
+    hmac_secret = os.environ.get("APP_HMAC_SECRET", "").strip()
+    if ADMIN_ACCESS_TOKEN and hmac_secret and os.environ.get("SIMULATE_EMAILS", "yes").lower() == "yes":
+        all_biz_before = _fetch_api_businesses()
+        corp_biz = None
+        for b in all_biz_before:
+            w = (b.get("website_url") or "").strip()
+            em_pub = (b.get("email_public") or "").strip().lower()
+            if w and em_pub and int(b["id"]) != int(all_biz_before[0]["id"]):
+                host = (urllib.parse.urlparse(w).hostname or "").lower().removeprefix("www.")
+                if host and "." in host and host not in ("gmail.com", "yahoo.com", "instagram.com", "facebook.com"):
+                    corp_biz = b
+                    break
+        assert corp_biz is not None
+        reused_owner_email = (corp_biz.get("email_public") or "").strip().lower()
+        reused_owner_pw = "CorpStaff#Pass164"
+
+        ctx_adm1 = _new_browser_context()
+        ctx_adm2 = _new_browser_context()
+        ctx_own = _new_browser_context()
+        try:
+            a1 = ctx_adm1.new_page()
+            a2 = ctx_adm2.new_page()
+            for ap in (a1, a2):
+                ap.goto(f"{BASE_URL}/admin/login.php", wait_until="networkidle")
+                ap.locator("#admin_token").fill(ADMIN_ACCESS_TOKEN)
+                ap.locator("form button[type='submit']").click()
+                ap.wait_for_url("**/admin/index.php**", timeout=8000)
+
+            # Curate a disposable listing via Admin Console with required 18+ attestation (#224)
+            _, cat_body, _ = _request("/api/categories.php")
+            sectors = json.loads(cat_body)["sectors"]
+            sec_id = str(sectors[0]["id"])
+            spec_id = str(sectors[0]["specialties"][0]["id"])
+            ts215 = int(time.time() * 1000) % 1000000
+            sole_name = f"E2E DPA215 Claim Venture {ts215}"
+
+            a1.goto(f"{BASE_URL}/admin/add-business.php", wait_until="networkidle")
+            a1.locator("input[name='name']").fill(sole_name)
+            a1.locator("input[name='tagline']").fill("Disposable venture for R2-MED-01 and R2-MED-07 E2E")
+            a1.locator("textarea[name='description']").fill("Testing authenticated claim explicit consent, JSON export, and account erasure.")
+            a1.locator("#sector_id").select_option(sec_id)
+            a1.locator("#specialty_id").select_option(spec_id)
+            a1.locator("input[name='phone_primary']").fill("+254722215215")
+            a1.locator("#admin_provenance_basis").select_option("alumni_direct_authorization")
+            a1.locator("#admin_provenance_note").fill("Authorized by alumni founder for E2E DPA test")
+            a1.get_by_test_id("admin-adult-attestation-checkbox").check()
+            a1.locator("form button[type='submit']").click()
+            a1.wait_for_url("**/admin/index.php**", timeout=8000)
+
+            sole_row = next((b for b in _fetch_api_businesses() if b["name"] == sole_name), None)
+            assert sole_row is not None
+            sole_id = int(sole_row["id"])
+
+            # Sign into Owner Portal via password, then visit signed claim invite -> GET MUST NOT auto-redeem (#209)!
+            po = ctx_own.new_page()
+            po.goto(f"{BASE_URL}/owner/login.php", wait_until="networkidle")
+            if po.get_by_test_id("cookie-reject-btn").is_visible():
+                po.get_by_test_id("cookie-reject-btn").click()
+            po.locator("#owner-email").fill(reused_owner_email)
+            po.locator("#owner-password").fill(reused_owner_pw)
+            po.locator("form button[type='submit']").first.click()
+            po.wait_for_url("**/owner/index.php**", timeout=8000)
+
+            exp = int(time.time()) + 1800
+            sig = hmac.new(
+                hmac_secret.encode("utf-8"),
+                f"claim_invite|{sole_id}|{exp}|{reused_owner_email}".encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            inv_url = f"{BASE_URL}/owner/claim.php?biz_id={sole_id}&exp={exp}&em={urllib.parse.quote(reused_owner_email)}&sig={sig}"
+
+            po.goto(inv_url, wait_until="networkidle")
+            assert "/owner/claim.php" in po.url, f"R2-MED-01 (#209) regression: GET /owner/claim.php auto-redeemed without consent! URL={po.url}"
+            po.get_by_test_id("authenticated-claim-form").wait_for(state="visible", timeout=5000)
+            po.get_by_test_id("claim-age-18-checkbox").check()
+            po.get_by_test_id("claim-consent-checkbox").check()
+            po.get_by_test_id("authenticated-claim-submit").click()
+            po.wait_for_url(f"**/owner/edit-business.php?id={sole_id}**", timeout=8000)
+
+            # Download personal data JSON export (#215)
+            po.goto(f"{BASE_URL}/owner/index.php", wait_until="networkidle")
+            with po.expect_download(timeout=8000) as dl_info:
+                po.get_by_test_id("owner-export-data-btn").click()
+            dl_path = dl_info.value.path()
+            assert dl_path is not None
+            exported_json = json.loads(Path(dl_path).read_text(encoding="utf-8"))
+            assert exported_json["owner_profile"]["email"] == reused_owner_email
+            assert any(b["name"] == sole_name for b in exported_json["linked_businesses"])
+
+            # Permanently erase Owner Account (preserving seeded directory listings) (#215)
+            po.get_by_test_id("owner-confirm-delete-email").fill(reused_owner_email)
+            po.get_by_test_id("owner-delete-account-btn").click()
+            po.wait_for_url("**/owner/login.php?account_erased=1**", timeout=8000)
+
+            # Clean up disposable sole_id via Admin exact-name delete modal
+            a1.goto(f"{BASE_URL}/admin/edit-business.php?id={sole_id}", wait_until="networkidle")
+            a1.locator("button[data-open-delete-modal='1']").click()
+            a1.locator("#btn-delete-step1-yes").click()
+            a1.locator("#delete-confirm-name-input").fill(sole_name)
+            a1.locator("#btn-delete-final-submit").click()
+            a1.wait_for_load_state("networkidle")
+            assert all(b["name"] != sole_name for b in _fetch_api_businesses())
+
+            # R2-MED-17 (#225): Clicking Revoke All Admin Sessions on a1 MUST sign out a1 AND invalidate a2 immediately!
+            a1.goto(f"{BASE_URL}/admin/index.php", wait_until="networkidle")
+            a1.get_by_test_id("admin-revoke-all-sessions-btn").click()
+            a1.wait_for_url("**/admin/login.php?revoked_all=1**", timeout=8000)
+            a1.get_by_test_id("admin-logout-notice").wait_for(state="visible", timeout=5000)
+
+            resp_a2 = a2.goto(f"{BASE_URL}/admin/index.php", wait_until="networkidle")
+            assert resp_a2 is not None and resp_a2.status == 401, (
+                f"R2-MED-17 (#225) regression: Admin Browser 2 remained authenticated after Revoke All Admin Sessions (status={resp_a2.status if resp_a2 else None})"
+            )
+        finally:
+            ctx_own.close()
+            ctx_adm1.close()
+            ctx_adm2.close()
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -1333,4 +1577,5 @@ TESTS = [
     test_adversarial_crit_01_and_crit_02_regressions,
     test_playwright_high_01_02_05_browser_security_regressions,
     test_playwright_med_04_08_09_12_14_15_regressions,
+    test_playwright_r2_medium_regressions,
 ]

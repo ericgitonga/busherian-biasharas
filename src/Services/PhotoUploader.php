@@ -468,6 +468,30 @@ final class PhotoUploader
         return $deleted;
     }
 
+    public static function hasRemainingBusinessMediaOnDisk(int $businessId, ?string $photosJson): bool
+    {
+        foreach (self::decodePhotosJson($photosJson) as $url) {
+            $safePath = self::resolveSafeUploadFilePath($url, true);
+            if ($safePath !== null && is_file($safePath)) {
+                return true;
+            }
+        }
+        if ($businessId > 0) {
+            $qDir = self::quarantineDirRoot() . '/' . $businessId;
+            if (is_dir($qDir) && !is_link($qDir)) {
+                foreach (@scandir($qDir) ?: [] as $entry) {
+                    if ($entry === '.' || $entry === '..') {
+                        continue;
+                    }
+                    if (is_file($qDir . '/' . $entry)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     public static function sweepOrphanedMedia(PDO $pdo, int $minAgeSeconds = 3600): array
     {
         $referencedFiles = [];
@@ -479,6 +503,10 @@ final class PhotoUploader
             $st = (string)($row['status'] ?? '');
             if ($st === 'quarantined_dpa') {
                 $quarantinedBizIds[$bid] = true;
+                continue; // Quarantined records MUST NEVER keep files in public/uploads/ (#208)
+            }
+            if ($st === 'rejected') {
+                continue;
             }
             foreach (self::decodePhotosJson($row['photos_json'] ?? null) as $u) {
                 $referencedFiles[basename($u)] = true;

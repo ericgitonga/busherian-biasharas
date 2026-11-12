@@ -30,16 +30,67 @@ final class AdminAuth
         }
     }
 
-    public static function isAuthenticated(): bool
+    public static function currentCredentialFingerprint(): string
+    {
+        $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
+        $passHash = Database::env('ADMIN_PASSWORD_HASH', '');
+        $accessToken = Database::env('ADMIN_ACCESS_TOKEN', Database::env('ADMIN_Access_Token', ''));
+        return hash_hmac('sha256', "admin_cred_v1|{$passHash}|{$accessToken}", $secret);
+    }
+
+    public static function getServerAuthVersion(PDO $pdo): int
+    {
+        $raw = trim(Database::getSetting($pdo, 'admin_auth_version', '1'));
+        $ver = ctype_digit($raw) ? (int)$raw : 1;
+        return max(1, $ver);
+    }
+
+    public static function revokeAllAdminSessions(PDO $pdo): int
+    {
+        $next = self::getServerAuthVersion($pdo) + 1;
+        Database::setSetting($pdo, 'admin_auth_version', (string)$next);
+        return $next;
+    }
+
+    public static function establishAdminSession(?PDO $pdo = null): void
+    {
+        self::startSecureSession();
+        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+            @session_regenerate_id(true);
+        }
+        $conn = $pdo ?? Database::getConnection();
+        $_SESSION['bbiz_admin_auth'] = true;
+        $_SESSION['bbiz_admin_exp'] = time() + 7200;
+        $_SESSION['bbiz_admin_ver'] = self::getServerAuthVersion($conn);
+        $_SESSION['bbiz_admin_cred_fp'] = self::currentCredentialFingerprint();
+    }
+
+    public static function isAuthenticated(?PDO $pdo = null): bool
     {
         self::startSecureSession();
 
-        // Check session authentication flag + expiry (2 hours max)
+        // Check session authentication flag + expiry (2 hours max) + credential fingerprint + server revocation version (#225)
         if (!empty($_SESSION['bbiz_admin_auth']) && !empty($_SESSION['bbiz_admin_exp'])) {
-            if ((int)$_SESSION['bbiz_admin_exp'] >= time()) {
-                return true;
+            $expValid = ((int)$_SESSION['bbiz_admin_exp'] >= time());
+            $sessFp = (string)($_SESSION['bbiz_admin_cred_fp'] ?? '');
+            $fpValid = ($sessFp !== '' && hash_equals(self::currentCredentialFingerprint(), $sessFp));
+            if ($expValid && $fpValid) {
+                try {
+                    $conn = $pdo ?? Database::getConnection();
+                    $sessVer = (int)($_SESSION['bbiz_admin_ver'] ?? 0);
+                    if ($sessVer > 0 && $sessVer === self::getServerAuthVersion($conn)) {
+                        return true;
+                    }
+                } catch (\Throwable $e) {
+                    return false;
+                }
             }
-            unset($_SESSION['bbiz_admin_auth'], $_SESSION['bbiz_admin_exp']);
+            unset(
+                $_SESSION['bbiz_admin_auth'],
+                $_SESSION['bbiz_admin_exp'],
+                $_SESSION['bbiz_admin_ver'],
+                $_SESSION['bbiz_admin_cred_fp']
+            );
         }
 
         // Also support stateless Bearer / X-Admin-Token header for automated tests & CLI
@@ -76,22 +127,16 @@ final class AdminAuth
 
     public static function login(PDO $pdo, string $submittedPasswordOrToken, string $clientIp): array
     {
-        $rate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'admin_login', 5, 15);
+        $rate = AntiSpamGate::checkAuthAttemptAllowed($pdo, $clientIp, 'admin_login', '', 8, 25, 8, 25);
         if (!$rate['allowed']) {
-            return ['ok' => false, 'error' => 'Too many login attempts. Please wait 15 minutes.'];
+            return ['ok' => false, 'error' => 'Too many login attempts from this network. Please wait 15 minutes.'];
         }
 
         if (!self::verifyCredentials($submittedPasswordOrToken)) {
             return ['ok' => false, 'error' => 'Invalid admin access credentials.'];
         }
 
-        self::startSecureSession();
-        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
-            @session_regenerate_id(true);
-        }
-        $_SESSION['bbiz_admin_auth'] = true;
-        $_SESSION['bbiz_admin_exp'] = time() + 7200;
-
+        self::establishAdminSession($pdo);
         return ['ok' => true, 'error' => ''];
     }
 

@@ -325,9 +325,7 @@ final class PreprodSandbox
         // 2. 1-click signed handoff from Live Prod /admin/index.php
         if (!empty($_GET['preprod_handoff']) && self::verifyProdHandoffToken((string)$_GET['preprod_handoff'])) {
             self::issueGateCookie();
-            AdminAuth::startSecureSession();
-            $_SESSION['bbiz_admin_auth'] = true;
-            $_SESSION['bbiz_admin_exp'] = time() + 7200;
+            AdminAuth::establishAdminSession();
 
             $reqUri = (string)($_SERVER['REQUEST_URI'] ?? self::basePath() . '/');
             $cleanUri = preg_replace('/([?&])preprod_handoff=[^&]*(&|$)/', '$1', $reqUri) ?? $reqUri;
@@ -365,14 +363,12 @@ final class PreprodSandbox
                 $gateError = 'Invalid or expired security token. Please try again.';
             } else {
                 $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
-                $rate = AntiSpamGate::checkAndRecordRateLimit($pdo, $ip, 'preprod_gate_login', 8, 15);
+                $rate = AntiSpamGate::checkAuthAttemptAllowed($pdo, $ip, 'preprod_gate_login', '', 8, 25, 8, 25);
                 if (!$rate['allowed']) {
                     $gateError = 'Too many attempts. Please wait 15 minutes.';
                 } elseif (AdminAuth::verifyCredentials(trim((string)$_POST['preprod_gate_token']))) {
                     self::issueGateCookie();
-                    AdminAuth::startSecureSession();
-                    $_SESSION['bbiz_admin_auth'] = true;
-                    $_SESSION['bbiz_admin_exp'] = time() + 7200;
+                    AdminAuth::establishAdminSession($pdo);
                     $target = (string)($_SERVER['REQUEST_URI'] ?? (self::basePath() . '/'));
                     if (!str_starts_with($target, '/')) {
                         $target = self::basePath() . '/';

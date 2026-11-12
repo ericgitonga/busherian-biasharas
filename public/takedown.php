@@ -69,7 +69,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'confi
     $bizId = (int)($_POST['business_id'] ?? 0);
     $requesterName = trim((string)($_POST['requester_name'] ?? ''));
     $requesterEmail = strtolower(trim((string)($_POST['requester_email'] ?? '')));
-    $reason = trim((string)($_POST['reason'] ?? ''));
+    $requestCategory = trim((string)($_POST['request_category'] ?? 'general_accuracy'));
+    $rawReason = trim((string)($_POST['reason'] ?? ''));
+    $categoryPrefixes = [
+        'minor_data_s33' => '[URGENT MINOR DATA S.33] ',
+        'privacy_erasure_s40' => '[DPA ERASURE/OBJECTION S.40] ',
+        'owner_pause_removal' => '[OWNER PAUSE/REMOVAL] ',
+    ];
+    $reason = ($rawReason !== '' && isset($categoryPrefixes[$requestCategory]))
+        ? ($categoryPrefixes[$requestCategory] . $rawReason)
+        : $rawReason;
 
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
         $error = 'Invalid security token. Please reload the page.';
@@ -288,6 +297,16 @@ $businesses = $pdo->query("SELECT id, business_number, name, city_county FROM bu
         <input type="email" id="requester_email" name="requester_email" data-testid="takedown-email" class="input-control"
           value="<?= htmlspecialchars((string)($currentOwner['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
           required placeholder="you@domain.co.ke">
+      </div>
+
+      <div style="margin-bottom:0.9rem;">
+        <label for="request_category" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Request Category *</label>
+        <select id="request_category" name="request_category" data-testid="takedown-category-select" class="select-control">
+          <option value="owner_pause_removal">Business Owner Pause / Removal Request</option>
+          <option value="privacy_erasure_s40">Personal Data Objection or Erasure (Kenya DPA ss. 36 / 40)</option>
+          <option value="minor_data_s33">Urgent: Listing or Photo Involves a Person Under 18 (Kenya DPA s. 33)</option>
+          <option value="general_accuracy">Accuracy / Outdated Contact Information Correction</option>
+        </select>
       </div>
 
       <div style="margin-bottom:1.1rem;">
