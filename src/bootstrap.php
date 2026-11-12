@@ -87,6 +87,20 @@ HTML;
 }
 
 if (PHP_SAPI !== 'cli') {
+    // Release-promotion maintenance gate (#219 M-11): prevent mixed old/new PHP execution during atomic FTPS rename window.
+    // Auto-expires after 120 seconds so an interrupted FTPS disconnect can never wedge the site indefinitely.
+    $bbizDeployGateFile = dirname(__DIR__) . '/.maintenance_deploy.json';
+    if (is_file($bbizDeployGateFile)) {
+        $gateMtime = @filemtime($bbizDeployGateFile);
+        if (is_int($gateMtime) && (time() - $gateMtime) <= 120) {
+            if (!headers_sent()) {
+                header('Retry-After: 5');
+            }
+            echo bbiz_render_maintenance_503();
+            exit;
+        }
+    }
+
     set_exception_handler(static function (\Throwable $e): void {
         error_log('[Uncaught Web Exception] ' . get_class($e) . ': ' . $e->getMessage());
         if ($e instanceof \BusherianBiasharas\Config\DatabaseUnavailableException) {

@@ -1685,14 +1685,16 @@ putenv('SIMULATE_EMAILS=no');
 putenv('SMTP_HOST=127.0.0.1');
 putenv('SMTP_PORT=1');
 putenv('SMTP_DISABLE_MAIL_FALLBACK=yes');
-$failedOtpId = Mailer::sendOwnerPasswordOtp($pdo, 'retry188@test.co.ke', '654321', 'Retry Test Biashara');
+$issuedOtp188 = OwnerAuth::issuePasswordOtp($pdo, 'retry188@test.co.ke');
+$failedOtpId = Mailer::sendOwnerPasswordOtp($pdo, 'retry188@test.co.ke', $issuedOtp188['code'], 'Retry Test Biashara');
 $wasDeliveredWhenDown = Mailer::wasDeliveredOrSimulated($pdo, $failedOtpId);
 
-// Recover mail transport (re-enable simulation for test environment) and run retry worker
+// Recover mail transport (re-enable simulation for test environment), fast-forward retry backoff window, and run retry worker
 putenv('APP_ENV=testing');
 putenv('SIMULATE_EMAILS=yes');
 putenv('SMTP_HOST=');
 putenv('SMTP_DISABLE_MAIL_FALLBACK=no');
+$pdo->prepare("UPDATE email_outbox SET next_retry_at = :past WHERE id = :id")->execute([':past' => time() - 1, ':id' => $failedOtpId]);
 $retrySummary = Mailer::processRetryQueue($pdo, 25, 5);
 $wasDeliveredAfterRetry = Mailer::wasDeliveredOrSimulated($pdo, $failedOtpId);
 assertTrue(
@@ -1993,7 +1995,7 @@ $claimUrl179 = OwnerAuth::generateClaimInviteUrl($curatedId179, $claimExp179, 'c
 parse_str((string)parse_url($claimUrl179, PHP_URL_QUERY), $cq179);
 $claimOwnerRow179 = OwnerAuth::upsertOwner($pdo, 'claim179@test.co.ke', 'Claimant 179');
 $claimOwner179 = (int)$claimOwnerRow179['id'];
-$redeemed179 = OwnerAuth::redeemVerifiedClaimInvite($pdo, $claimOwner179, 'claim179@test.co.ke', $curatedId179, $claimExp179, (string)$cq179['sig'], 'claim179@test.co.ke');
+$redeemed179 = OwnerAuth::redeemVerifiedClaimInvite($pdo, $claimOwner179, 'claim179@test.co.ke', $curatedId179, $claimExp179, (string)$cq179['sig'], 'claim179@test.co.ke', true, true);
 $provAfterClaimStmt = $pdo->prepare("SELECT listing_provenance, consent_recorded_at FROM businesses WHERE id = :id");
 $provAfterClaimStmt->execute([':id' => $curatedId179]);
 $provAfterClaim = $provAfterClaimStmt->fetch();
@@ -2462,6 +2464,618 @@ assertTrue(
     'Editing a quarantined_dpa business immediately quarantines replacement uploads out of public webroot, restores on unquarantine, and rolls back DB status if quarantine file move fails (#208)'
 );
 VettingPurger::deleteBusiness($pdo, $qBizId208, 'unit_cleanup', 'system');
+
+// =========================================================================
+// 42. Pass-2 R2-MED-01..17 (#209..#225) Behavioral & Multi-Process Concurrency Suite
+// =========================================================================
+
+// 42a. R2-MED-03 (#211), R2-MED-04 (#212), R2-MED-15 (#223): Real 2-process proc_open races on shared DB
+$workerPhpBin = PHP_BINARY ?: 'php';
+$bootstrapPath = dirname(__DIR__) . '/src/bootstrap.php';
+$raceTempSqlite = sys_get_temp_dir() . '/bbiz_proc_race_' . getmypid() . '.sqlite';
+$workerEnv = getenv();
+$workerEnv['APP_ENV'] = 'testing';
+$workerEnv['DB_DRIVER'] = $initialDriver;
+$workerEnv['SIMULATE_EMAILS'] = 'yes';
+if ($initialDriver === 'sqlite') {
+    $workerEnv['DB_SQLITE_PATH'] = $raceTempSqlite;
+}
+
+// Seed the shared target DB (isolated file-backed SQLite or shared MySQL 8.0) via a clean subprocess so zero parent WAL cursors pin snapshots
+$seedWorkerCode = sprintf(
+    'require %s; ' .
+    '$pdo = \BusherianBiasharas\Config\Database::getConnection(); ' .
+    '$stmt = $pdo->prepare("INSERT INTO email_outbox (recipient_email, subject, body_html, status, attempts, lease_until, next_retry_at, expires_at) VALUES (\'race211@busherian-test.co.ke\', \'Concurrent Lease Race #211\', \'<p>Lease test</p>\', \'queued\', 0, NULL, NULL, :exp)"); ' .
+    '$stmt->execute([\':exp\' => time() + 600]); ' .
+    'echo (int)$pdo->lastInsertId();',
+    var_export($bootstrapPath, true)
+);
+$descSpec = [
+    0 => ['pipe', 'r'],
+    1 => ['pipe', 'w'],
+    2 => ['pipe', 'w'],
+];
+$pSeed = proc_open([$workerPhpBin, '-r', $seedWorkerCode], $descSpec, $pipesSeed, null, $workerEnv);
+fclose($pipesSeed[0]);
+$raceOutboxId = (int)trim((string)stream_get_contents($pipesSeed[1]));
+$seedErr = (string)stream_get_contents($pipesSeed[2]);
+fclose($pipesSeed[1]);
+fclose($pipesSeed[2]);
+$seedRc = proc_close($pSeed);
+
+$barrierAt1 = microtime(true) + 0.22;
+$outboxWorkerCode = sprintf(
+    '$target = %.6f; while (microtime(true) < $target) { usleep(1000); } ' .
+    'require %s; ' .
+    '$pdo = \BusherianBiasharas\Config\Database::getConnection(); ' .
+    '$ok = \BusherianBiasharas\Services\Mailer::dispatchOutboxRow($pdo, %d); ' .
+    'echo $ok ? "1" : "0";',
+    $barrierAt1,
+    var_export($bootstrapPath, true),
+    $raceOutboxId
+);
+
+$pA = proc_open([$workerPhpBin, '-r', $outboxWorkerCode], $descSpec, $pipesA, null, $workerEnv);
+$pB = proc_open([$workerPhpBin, '-r', $outboxWorkerCode], $descSpec, $pipesB, null, $workerEnv);
+fclose($pipesA[0]);
+fclose($pipesB[0]);
+$outA = trim((string)stream_get_contents($pipesA[1]));
+$errA = (string)stream_get_contents($pipesA[2]);
+$outB = trim((string)stream_get_contents($pipesB[1]));
+$errB = (string)stream_get_contents($pipesB[2]);
+fclose($pipesA[1]);
+fclose($pipesA[2]);
+fclose($pipesB[1]);
+fclose($pipesB[2]);
+$rcA = proc_close($pA);
+$rcB = proc_close($pB);
+
+// Also race 2 concurrent OS processes on AntiSpamGate::claimSingleUseNonce()
+$sharedRaceNonceHash = hash('sha256', 'r2_med_race_nonce_' . bin2hex(random_bytes(8)));
+$barrierAt2 = microtime(true) + 0.22;
+$nonceWorkerCode = sprintf(
+    '$target = %.6f; while (microtime(true) < $target) { usleep(1000); } ' .
+    'require %s; ' .
+    '$pdo = \BusherianBiasharas\Config\Database::getConnection(); ' .
+    '$claimed = \BusherianBiasharas\Services\AntiSpamGate::claimSingleUseNonce($pdo, %s, time() + 300); ' .
+    'echo $claimed ? "1" : "0";',
+    $barrierAt2,
+    var_export($bootstrapPath, true),
+    var_export($sharedRaceNonceHash, true)
+);
+$pN1 = proc_open([$workerPhpBin, '-r', $nonceWorkerCode], $descSpec, $pipesN1, null, $workerEnv);
+$pN2 = proc_open([$workerPhpBin, '-r', $nonceWorkerCode], $descSpec, $pipesN2, null, $workerEnv);
+fclose($pipesN1[0]);
+fclose($pipesN2[0]);
+$nOut1 = trim((string)stream_get_contents($pipesN1[1]));
+$nOut2 = trim((string)stream_get_contents($pipesN2[1]));
+fclose($pipesN1[1]);
+fclose($pipesN1[2]);
+fclose($pipesN2[1]);
+fclose($pipesN2[2]);
+$nRc1 = proc_close($pN1);
+$nRc2 = proc_close($pN2);
+
+$verifyWorkerCode = sprintf(
+    'require %s; ' .
+    '$pdo = \BusherianBiasharas\Config\Database::getConnection(); ' .
+    '$st = $pdo->prepare("SELECT status, attempts, lease_until FROM email_outbox WHERE id = :id"); ' .
+    '$st->execute([\':id\' => %d]); ' .
+    'echo json_encode($st->fetch());',
+    var_export($bootstrapPath, true),
+    $raceOutboxId
+);
+$pVer = proc_open([$workerPhpBin, '-r', $verifyWorkerCode], $descSpec, $pipesVer, null, $workerEnv);
+fclose($pipesVer[0]);
+$raceRowAfter = json_decode((string)stream_get_contents($pipesVer[1]), true) ?: [];
+fclose($pipesVer[1]);
+fclose($pipesVer[2]);
+proc_close($pVer);
+
+if ($initialDriver === 'sqlite') {
+    @unlink($raceTempSqlite);
+    @unlink($raceTempSqlite . '-wal');
+    @unlink($raceTempSqlite . '-shm');
+} else {
+    $pdo->prepare("DELETE FROM email_outbox WHERE id = :id")->execute([':id' => $raceOutboxId]);
+}
+
+$raceBizId = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'R2 Med Race Fixture Co',
+    'tagline' => 'Multi-process concurrency test fixture',
+    'description' => 'Verifying exclusive email_outbox worker leases and single-use nonces across OS processes.',
+    'school_badge' => 'AHS',
+    'sector_id' => $validSecId,
+    'specialty_id' => $validSpecId,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254722211211',
+    'admin_provenance_note' => 'Concurrency unit fixture',
+]);
+
+assertTrue(
+    $seedRc === 0 && $raceOutboxId > 0 &&
+    $rcA === 0 && $rcB === 0 &&
+    ((int)$outA + (int)$outB) === 1 &&
+    (int)($raceRowAfter['attempts'] ?? 0) === 1 &&
+    (string)($raceRowAfter['status'] ?? '') === 'simulated' &&
+    ($raceRowAfter['lease_until'] ?? null) === null &&
+    $nRc1 === 0 && $nRc2 === 0 &&
+    ((int)$nOut1 + (int)$nOut2) === 1,
+    'Real 2-process proc_open concurrency: exclusive email_outbox worker lease dispatches queued message exactly once (1 winner, 1 loser) and claimSingleUseNonce admits exactly 1 winner (#211, #212, #223)'
+);
+
+// 42b. R2-MED-03 (#211) & R2-MED-04 (#212): Superseded/expired OTP outbox suppression, central mail quota, and mutex self-healing
+$otpRaceEmail = 'superseded.otp211@busherian-test.co.ke';
+$otp1 = OwnerAuth::issuePasswordOtp($pdo, $otpRaceEmail);
+$pdo->prepare("
+    INSERT INTO email_outbox (business_id, recipient_email, subject, body_html, status, attempts, expires_at)
+    VALUES (:bid, :em, :subj, '<p>OTP 1</p>', 'queued', 0, :exp)
+")->execute([
+    ':bid' => $raceBizId,
+    ':em' => $otpRaceEmail,
+    ':subj' => $otp1['code'] . ' is your Busherian Biasharas 6-Digit Verification Code',
+    ':exp' => time() + 600,
+]);
+$supersededOutboxId = (int)$pdo->lastInsertId();
+
+// Issue a newer OTP for the same recipient -> supersedes $otp1!
+$otp2 = OwnerAuth::issuePasswordOtp($pdo, $otpRaceEmail);
+
+// Also insert a hard-expired auth email
+$pdo->prepare("
+    INSERT INTO email_outbox (business_id, recipient_email, subject, body_html, status, attempts, expires_at)
+    VALUES (:bid, :em, 'Expired Magic Link', '<p>Expired token</p>', 'queued', 0, :exp)
+")->execute([
+    ':bid' => $raceBizId,
+    ':em' => $otpRaceEmail,
+    ':exp' => time() - 30,
+]);
+$hardExpiredOutboxId = (int)$pdo->lastInsertId();
+
+$dispSuperseded = Mailer::dispatchOutboxRow($pdo, $supersededOutboxId);
+$dispExpired = Mailer::dispatchOutboxRow($pdo, $hardExpiredOutboxId);
+
+$stSupRow = $pdo->query("SELECT status, subject, body_html FROM email_outbox WHERE id = {$supersededOutboxId}")->fetch();
+$stExpRow = $pdo->query("SELECT status, subject, body_html FROM email_outbox WHERE id = {$hardExpiredOutboxId}")->fetch();
+
+// Central dispatch-time quota ceiling (#212 M-04)
+$pdo->exec("DELETE FROM rate_limits WHERE action_type = 'central_mail_dispatch'");
+putenv('BBIZ_MAX_DISPATCH_PER_HOUR=2');
+$_ENV['BBIZ_MAX_DISPATCH_PER_HOUR'] = '2';
+$qMail1 = Mailer::enqueueAndSend($pdo, 'quota1@busherian-test.co.ke', 'Quota Test 1', '<p>1</p>', null, $raceBizId);
+$qMail2 = Mailer::enqueueAndSend($pdo, 'quota2@busherian-test.co.ke', 'Quota Test 2', '<p>2</p>', null, $raceBizId);
+$qMail3 = Mailer::enqueueAndSend($pdo, 'quota3@busherian-test.co.ke', 'Quota Test 3', '<p>3</p>', null, $raceBizId);
+putenv('BBIZ_MAX_DISPATCH_PER_HOUR=');
+unset($_ENV['BBIZ_MAX_DISPATCH_PER_HOUR']);
+$pdo->exec("DELETE FROM rate_limits WHERE action_type = 'central_mail_dispatch'");
+
+$qRow1 = $pdo->query("SELECT status FROM email_outbox WHERE id = {$qMail1}")->fetchColumn();
+$qRow2 = $pdo->query("SELECT status FROM email_outbox WHERE id = {$qMail2}")->fetchColumn();
+$qRow3 = $pdo->query("SELECT status, next_retry_at FROM email_outbox WHERE id = {$qMail3}")->fetch();
+
+// Mutex self-healing when rate_limit_mutex row is missing
+$pdo->exec("DELETE FROM business_sequences WHERE seq_key = 'rate_limit_mutex'");
+AntiSpamGate::acquireRateLimitSerializationLock($pdo);
+$mutexValAfter = (int)$pdo->query("SELECT current_val FROM business_sequences WHERE seq_key = 'rate_limit_mutex'")->fetchColumn();
+
+assertTrue(
+    $dispSuperseded === false &&
+    $dispExpired === false &&
+    (string)($stSupRow['status'] ?? '') === 'expired' &&
+    (string)($stExpRow['status'] ?? '') === 'expired' &&
+    str_contains((string)($stSupRow['body_html'] ?? ''), '[EXPIRED OR SUPERSEDED') &&
+    $qRow1 === 'simulated' &&
+    $qRow2 === 'simulated' &&
+    (string)($qRow3['status'] ?? '') === 'queued' &&
+    (int)($qRow3['next_retry_at'] ?? 0) > time() &&
+    $mutexValAfter >= 1,
+    'Mailer suppresses expired/superseded OTP challenges, enforces central dispatch-time hourly ceiling across callers, and self-heals rate_limit_mutex (#211, #212)'
+);
+VettingPurger::deleteBusiness($pdo, $raceBizId, 'unit_cleanup', 'system');
+VettingPurger::flushDeferredMediaDeletions();
+
+// 42c. R2-MED-05 (#213): Per-IP + per-account auth throttles prevent global cross-user DoS while blocking targeted brute force
+for ($i = 1; $i <= 18; $i++) {
+    $resSpray = AntiSpamGate::checkAuthAttemptAllowed($pdo, "198.51.100.{$i}", 'unit_auth_dos_probe', "user{$i}@alumni.test", 10, 30, 3, 10);
+    if (!$resSpray['allowed']) {
+        assertTrue(false, "Unexpected global DoS block on distinct IP/account #{$i}");
+        break;
+    }
+}
+$legitUser19 = AntiSpamGate::checkAuthAttemptAllowed($pdo, '198.51.100.250', 'unit_auth_dos_probe', 'legit19@alumni.test', 10, 30, 3, 10);
+
+// Targeted attack against a single victim account across rotating botnet IPs
+AntiSpamGate::checkAuthAttemptAllowed($pdo, '203.0.113.10', 'unit_auth_acct_lock', 'target.victim@alumni.test', 10, 30, 3, 10);
+AntiSpamGate::checkAuthAttemptAllowed($pdo, '203.0.113.11', 'unit_auth_acct_lock', 'target.victim@alumni.test', 10, 30, 3, 10);
+AntiSpamGate::checkAuthAttemptAllowed($pdo, '203.0.113.12', 'unit_auth_acct_lock', 'target.victim@alumni.test', 10, 30, 3, 10);
+$fourthAgainstVictim = AntiSpamGate::checkAuthAttemptAllowed($pdo, '203.0.113.13', 'unit_auth_acct_lock', 'target.victim@alumni.test', 10, 30, 3, 10);
+
+assertTrue(
+    $legitUser19['allowed'] === true &&
+    $fourthAgainstVictim['allowed'] === false &&
+    $fourthAgainstVictim['reason'] === 'auth_account_rate_limit_15m',
+    'checkAuthAttemptAllowed isolates unrelated users from global auth DoS while blocking distributed brute-force per account (#213)'
+);
+
+// 42d. R2-MED-01 (#209) & R2-MED-16 (#224): Separate claim verification from publication consent + adult-only (18+) enforcement
+$noConsentCuratedId = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'R2 Med01 Unconsented Claim Probe',
+    'tagline' => 'Ownership verification alone must not manufacture consent',
+    'description' => 'Verifying separation between ownership link and publication consent.',
+    'school_badge' => 'AGHS',
+    'sector_id' => $validSecId,
+    'specialty_id' => $validSpecId,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254722209209',
+    'owner_email' => 'noconsent209@busherian-test.co.ke',
+    'admin_provenance_basis' => 'public_alumni_business_registry',
+    'admin_provenance_note' => 'Curated from public chapter directory',
+]);
+$owner209 = OwnerAuth::upsertOwner($pdo, 'noconsent209@busherian-test.co.ke', 'Owner 209');
+$invUrl209 = OwnerAuth::generateClaimInviteUrl($noConsentCuratedId, time() + 3600, 'noconsent209@busherian-test.co.ke');
+parse_str((string)parse_url($invUrl209, PHP_URL_QUERY), $q209);
+$redeemedWithoutConsent = OwnerAuth::redeemVerifiedClaimInvite(
+    $pdo,
+    (int)$owner209['id'],
+    'noconsent209@busherian-test.co.ke',
+    $noConsentCuratedId,
+    (int)$q209['exp'],
+    (string)$q209['sig'],
+    'noconsent209@busherian-test.co.ke',
+    false,
+    false
+);
+$row209 = $pdo->query("SELECT listing_provenance, consent_recorded_at, age_attested_at FROM businesses WHERE id = {$noConsentCuratedId}")->fetch();
+
+// Adult attestation required when require_adult_attestation => true (#224)
+$threwMissingAdult224 = false;
+try {
+    VettingPurger::createBusinessDirectly($pdo, [
+        'name' => 'Missing Adult Attestation Probe',
+        'tagline' => 'Must reject unattested admin curation',
+        'description' => 'Testing Kenya DPA s. 33 adult-only ingestion gate.',
+        'school_badge' => 'AHS',
+        'sector_id' => $validSecId,
+        'specialty_id' => $validSpecId,
+        'service_mode' => 'physical',
+        'country' => 'Kenya',
+        'city_county' => 'Nairobi',
+        'phone_primary' => '+254722224224',
+        'admin_provenance_note' => 'Missing checkbox test',
+        'require_adult_attestation' => true,
+    ]);
+} catch (\InvalidArgumentException $e) {
+    $threwMissingAdult224 = true;
+}
+
+$attestedCuratedId224 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Attested Adult Curation Probe',
+    'tagline' => 'Adult attestation recorded cleanly',
+    'description' => 'Testing Kenya DPA s. 33 adult-only ingestion timestamp.',
+    'school_badge' => 'AHS',
+    'sector_id' => $validSecId,
+    'specialty_id' => $validSpecId,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254722224225',
+    'admin_provenance_note' => 'Verified adult founder',
+    'admin_adult_subject_attested' => '1',
+    'require_adult_attestation' => true,
+]);
+$ageAttestedVal224 = $pdo->query("SELECT age_attested_at FROM businesses WHERE id = {$attestedCuratedId224}")->fetchColumn();
+$takedownSrc224 = (string)file_get_contents(dirname(__DIR__) . '/public/takedown.php');
+
+assertTrue(
+    $redeemedWithoutConsent === true &&
+    (string)($row209['listing_provenance'] ?? '') === 'claimed' &&
+    $row209['consent_recorded_at'] === null &&
+    $row209['age_attested_at'] === null &&
+    $threwMissingAdult224 === true &&
+    !empty($ageAttestedVal224) &&
+    str_contains($takedownSrc224, 'minor_data_s33'),
+    'redeemVerifiedClaimInvite never manufactures consent_recorded_at without explicit consent, require_adult_attestation enforces 18+ gate, and takedown.php supports urgent minor_data_s33 escalation (#209, #224)'
+);
+VettingPurger::deleteBusiness($pdo, $noConsentCuratedId, 'unit_cleanup', 'system');
+VettingPurger::deleteBusiness($pdo, $attestedCuratedId224, 'unit_cleanup', 'system');
+VettingPurger::flushDeferredMediaDeletions();
+
+// 42e. R2-MED-13 (#221): Exact column & URL length boundary alignment (tagline <= 180, website_url <= 350, social_* <= 255)
+$hours221 = (string)json_encode(['mon' => [['08:00', '17:00']]]);
+$exact180Tagline = str_repeat('é', 180);
+$over181Tagline = str_repeat('é', 181);
+$exact350Url = 'https://example.co.ke/' . str_repeat('a', 350 - strlen('https://example.co.ke/'));
+$over351Url = $exact350Url . 'x';
+$exact255Social = 'https://instagram.com/' . str_repeat('b', 255 - strlen('https://instagram.com/'));
+$over256Social = $exact255Social . 'y';
+
+$acceptedValidBoundary221 = true;
+try {
+    VettingPurger::validateListingWritePayload($pdo, [
+        'name' => 'Boundary Alignment 221 Co',
+        'tagline' => $exact180Tagline,
+        'description' => 'Exact boundary validation check.',
+        'sector_id' => $validSecId,
+        'specialty_id' => $validSpecId,
+        'website_url' => $exact350Url,
+        'social_instagram' => $exact255Social,
+    ], null, null, $hours221);
+} catch (\Throwable $e) {
+    $acceptedValidBoundary221 = false;
+}
+
+$threw181Tagline = false;
+try {
+    VettingPurger::validateListingWritePayload($pdo, [
+        'name' => 'Over Tagline Co',
+        'tagline' => $over181Tagline,
+        'description' => 'Should fail 181 chars.',
+        'sector_id' => $validSecId,
+        'specialty_id' => $validSpecId,
+    ], null, null, $hours221);
+} catch (\InvalidArgumentException $e) {
+    $threw181Tagline = true;
+}
+
+$threw351Url = false;
+try {
+    VettingPurger::validateListingWritePayload($pdo, [
+        'name' => 'Over Website URL Co',
+        'tagline' => 'Short tagline',
+        'description' => 'Should fail 351 URL chars.',
+        'sector_id' => $validSecId,
+        'specialty_id' => $validSpecId,
+        'website_url' => $over351Url,
+    ], null, null, $hours221);
+} catch (\InvalidArgumentException $e) {
+    $threw351Url = true;
+}
+
+$threw256Social = false;
+try {
+    VettingPurger::validateListingWritePayload($pdo, [
+        'name' => 'Over Social URL Co',
+        'tagline' => 'Short tagline',
+        'description' => 'Should fail 256 social URL chars.',
+        'sector_id' => $validSecId,
+        'specialty_id' => $validSpecId,
+        'social_instagram' => $over256Social,
+    ], null, null, $hours221);
+} catch (\InvalidArgumentException $e) {
+    $threw256Social = true;
+}
+
+assertTrue(
+    $acceptedValidBoundary221 === true &&
+    $threw181Tagline === true &&
+    $threw351Url === true &&
+    $threw256Social === true,
+    'validateListingWritePayload enforces exact schema column & URL length ceilings (tagline 180, website_url 350, social_* 255) (#221)'
+);
+
+// 42f. R2-MED-06 (#214) & R2-MED-07 (#215): Comprehensive retention sweep + Owner JSON Data Export & Co-Owner-Safe Erasure
+$old35d = gmdate('Y-m-d H:i:s', time() - (35 * 86400));
+$old95d = gmdate('Y-m-d H:i:s', time() - (95 * 86400));
+$old190d = gmdate('Y-m-d H:i:s', time() - (190 * 86400));
+$old370d = gmdate('Y-m-d H:i:s', time() - (370 * 86400));
+
+$pdo->prepare("
+    INSERT INTO email_outbox (recipient_email, reply_to, subject, body_html, status, attempts, created_at)
+    VALUES ('old214@retention-test.co.ke', 'reply214@retention-test.co.ke', 'Sensitive Subject 214', '<p>Sensitive Body</p>', 'sent', 1, :ca)
+")->execute([':ca' => $old35d]);
+$retOutboxId214 = (int)$pdo->lastInsertId();
+
+$pdo->prepare("
+    INSERT INTO owner_auth_tokens (email, token_hash, expires_at, created_at)
+    VALUES ('oldtok214@retention-test.co.ke', :th, :exp, :ca)
+")->execute([
+    ':th' => hash('sha256', 'ret_tok_214_' . bin2hex(random_bytes(8))),
+    ':exp' => time() - (9 * 86400),
+    ':ca' => gmdate('Y-m-d H:i:s', time() - (9 * 86400)),
+]);
+$retTokId214 = (int)$pdo->lastInsertId();
+
+$pdo->prepare("
+    INSERT INTO takedown_requests (business_id, requester_name, requester_email, reason, status, ip_hmac, created_at, resolved_at)
+    VALUES (:bid, 'Old Requester 214', 'oldtd214@retention-test.co.ke', 'Resolved 95 days ago', 'dismissed', 'deadbeef214', :ca, :ra)
+")->execute([':bid' => $approvedBizId201, ':ca' => $old95d, ':ra' => $old95d]);
+$retTdId214 = (int)$pdo->lastInsertId();
+
+$catSlug214 = 'ret-cat-214-' . substr(bin2hex(random_bytes(4)), 0, 6);
+$pdo->prepare("
+    INSERT INTO categories (parent_id, name, slug, status, submitted_by_email, created_at)
+    VALUES (:pid, :nm, :sl, 'approved', 'submitter214@retention-test.co.ke', :ca)
+")->execute([':pid' => $validSecId, ':nm' => 'Ret Cat ' . $catSlug214, ':sl' => $catSlug214, ':ca' => $old35d]);
+$retCatId214 = (int)$pdo->lastInsertId();
+
+$pdo->prepare("
+    INSERT INTO click_events (business_id, event_type, created_at)
+    VALUES (:bid, 'website_click', :ca)
+")->execute([':bid' => $approvedBizId201, ':ca' => $old190d]);
+$retClickId214 = (int)$pdo->lastInsertId();
+
+$pdo->prepare("
+    INSERT INTO moderation_audit_log (business_id, action, channel, actor_identifier, ip_hash, previous_status, new_status, created_at)
+    VALUES (:bid, 'edit', 'owner_portal', 'oldactor214@retention-test.co.ke', 'iphash214', 'approved', 'approved', :ca)
+")->execute([':bid' => $approvedBizId201, ':ca' => $old370d]);
+$retAuditId214 = (int)$pdo->lastInsertId();
+
+$sweepStats214 = VettingPurger::enforceRetentionCeilings($pdo, 30);
+
+$afterOutbox214 = $pdo->query("SELECT recipient_email, reply_to, subject, body_html FROM email_outbox WHERE id = {$retOutboxId214}")->fetch();
+$afterTok214 = $pdo->query("SELECT COUNT(*) FROM owner_auth_tokens WHERE id = {$retTokId214}")->fetchColumn();
+$afterTd214 = $pdo->query("SELECT requester_name, requester_email, ip_hmac FROM takedown_requests WHERE id = {$retTdId214}")->fetch();
+$afterCatEmail214 = $pdo->query("SELECT submitted_by_email FROM categories WHERE id = {$retCatId214}")->fetchColumn();
+$afterClick214 = $pdo->query("SELECT COUNT(*) FROM click_events WHERE id = {$retClickId214}")->fetchColumn();
+$afterAudit214 = $pdo->query("SELECT actor_identifier, ip_hash FROM moderation_audit_log WHERE id = {$retAuditId214}")->fetch();
+
+$pdo->exec("DELETE FROM categories WHERE id = {$retCatId214}");
+$pdo->exec("DELETE FROM takedown_requests WHERE id = {$retTdId214}");
+
+assertTrue(
+    (string)($afterOutbox214['recipient_email'] ?? '') === 'redacted@retention.invalid' &&
+    $afterOutbox214['reply_to'] === null &&
+    (string)($afterOutbox214['subject'] ?? '') === '[REDACTED PER 30-DAY RETENTION POLICY]' &&
+    (int)$afterTok214 === 0 &&
+    (string)($afterTd214['requester_email'] ?? '') === 'redacted@retention.invalid' &&
+    $afterTd214['ip_hmac'] === null &&
+    $afterCatEmail214 === null &&
+    (int)$afterClick214 === 0 &&
+    (string)($afterAudit214['actor_identifier'] ?? '') === 'redacted_actor' &&
+    $afterAudit214['ip_hash'] === null,
+    'enforceRetentionCeilings scrubs 30d outbox headers/subjects, 7d auth tokens, 90d resolved takedowns, approved category emails, 180d click_events, and 365d audit PII (#214)'
+);
+
+// Subject-level Owner Export & Co-Owner-Safe Erasure (#215 M-07)
+$owner215A = OwnerAuth::upsertOwner($pdo, 'ownera215@erasure-test.co.ke', 'Owner Alpha 215', '+254722215001');
+$owner215B = OwnerAuth::upsertOwner($pdo, 'ownerb215@erasure-test.co.ke', 'Owner Beta 215', '+254722215002');
+$coBizId215 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'R2 Med07 CoOwned Partnership LLP',
+    'tagline' => 'Must survive when one co-owner erases personal account',
+    'description' => 'Co-owned venture testing subject-level erasure.',
+    'school_badge' => 'AHS',
+    'sector_id' => $validSecId,
+    'specialty_id' => $validSpecId,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254722215100',
+    'owner_email' => 'ownera215@erasure-test.co.ke',
+    'admin_provenance_note' => 'Co-owned unit fixture',
+]);
+OwnerAuth::linkOwnerToBusiness($pdo, (int)$owner215A['id'], $coBizId215, 'admin_verified');
+OwnerAuth::linkOwnerToBusiness($pdo, (int)$owner215B['id'], $coBizId215, 'admin_verified');
+
+$soleBizId215 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'R2 Med07 Sole Venture Ltd',
+    'tagline' => 'Deleted cleanly with disk media verification on sole-owner erasure',
+    'description' => 'Sole-owned venture with uploaded photo.',
+    'school_badge' => 'AGHS',
+    'sector_id' => $validSecId,
+    'specialty_id' => $validSpecId,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254722215200',
+    'owner_email' => 'ownera215@erasure-test.co.ke',
+    'business_photos_data_json' => (string)json_encode([$dataUri208A]),
+    'admin_provenance_note' => 'Sole-owned unit fixture',
+]);
+OwnerAuth::linkOwnerToBusiness($pdo, (int)$owner215A['id'], $soleBizId215, 'admin_verified');
+OwnerAuth::issuePasswordOtp($pdo, 'ownera215@erasure-test.co.ke');
+Mailer::enqueueAndSend($pdo, 'ownera215@erasure-test.co.ke', 'Welcome Owner A 215', '<p>Hello Owner A</p>', null, $soleBizId215);
+
+$exportBundle215 = OwnerAuth::exportOwnerPersonalData($pdo, (int)$owner215A['id']);
+$erasureReport215 = OwnerAuth::deleteOwnerAccountAndData($pdo, (int)$owner215A['id'], true, '127.0.0.1');
+
+$coBizAfter215 = $pdo->query("SELECT status, owner_email FROM businesses WHERE id = {$coBizId215}")->fetch();
+$soleBizAfter215 = $pdo->query("SELECT COUNT(*) FROM businesses WHERE id = {$soleBizId215}")->fetchColumn();
+$ownerAAfter215 = OwnerAuth::findOwnerByEmail($pdo, 'ownera215@erasure-test.co.ke');
+
+assertTrue(
+    ($exportBundle215['privacy_notice_version'] ?? '') === VettingPurger::PRIVACY_NOTICE_VERSION && ($exportBundle215['owner_profile']['email'] ?? '') === 'ownera215@erasure-test.co.ke' &&
+    count($exportBundle215['linked_businesses'] ?? []) === 2 &&
+    $erasureReport215['owner_deleted'] === true &&
+    in_array($soleBizId215, $erasureReport215['sole_listings_deleted'], true) &&
+    in_array($coBizId215, $erasureReport215['co_owned_listings_preserved'], true) &&
+    $erasureReport215['incomplete_media_biz_ids'] === [] &&
+    $ownerAAfter215 === null &&
+    (int)$soleBizAfter215 === 0 &&
+    (string)($coBizAfter215['status'] ?? '') === 'approved' &&
+    (string)($coBizAfter215['owner_email'] ?? '') === 'ownerb215@erasure-test.co.ke' &&
+    OwnerAuth::canOwnerEditBusiness($pdo, (int)$owner215B['id'], $coBizId215) === true,
+    'exportOwnerPersonalData exports full DPA bundle and deleteOwnerAccountAndData erases sole listings + media while preserving co-owned businesses & rotating owner_email to co-owner (#215)'
+);
+VettingPurger::deleteBusiness($pdo, $coBizId215, 'unit_cleanup', 'system');
+VettingPurger::flushDeferredMediaDeletions();
+
+// 42g. R2-MED-14 (#222): Post-commit media deletion queue preserves uploaded photos if enclosing DB transaction rolls back
+$rollbackBizId222 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'R2 Med14 Rollback Media Guard Co',
+    'tagline' => 'Disk media must survive rolled-back DB deletes',
+    'description' => 'Verifying deferred post-commit media unlink queue.',
+    'school_badge' => 'AHS',
+    'sector_id' => $validSecId,
+    'specialty_id' => $validSpecId,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254722222222',
+    'business_photos_data_json' => (string)json_encode([$dataUri208A]),
+    'admin_provenance_note' => 'Rollback media test',
+]);
+$rbPhotosJson = (string)$pdo->query("SELECT photos_json FROM businesses WHERE id = {$rollbackBizId222}")->fetchColumn();
+$rbPhotoUrls = PhotoUploader::decodePhotosJson($rbPhotosJson);
+$rbDiskPathBefore = !empty($rbPhotoUrls[0]) ? PhotoUploader::resolveSafeUploadFilePath($rbPhotoUrls[0], true) : null;
+
+$pdo->beginTransaction();
+VettingPurger::deleteBusiness($pdo, $rollbackBizId222, 'unit_tx_test', 'system');
+$existsDuringOpenTx = ($rbDiskPathBefore !== null && is_file($rbDiskPathBefore));
+$pdo->rollBack();
+VettingPurger::clearDeferredMediaDeletions();
+
+$existsAfterRollback = ($rbDiskPathBefore !== null && is_file($rbDiskPathBefore));
+$dbRowAfterRollback = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE id = {$rollbackBizId222}")->fetchColumn();
+
+// Now commit a real delete outside an outer transaction -> media MUST be unlinked post-commit
+VettingPurger::deleteBusiness($pdo, $rollbackBizId222, 'unit_cleanup', 'system');
+$existsAfterCommittedDelete = ($rbDiskPathBefore !== null && is_file($rbDiskPathBefore));
+
+assertTrue(
+    $existsDuringOpenTx === true &&
+    $existsAfterRollback === true &&
+    $dbRowAfterRollback === 1 &&
+    $existsAfterCommittedDelete === false,
+    'deleteBusiness defers disk media unlink until DB transaction commits, preserving live photos across rollbacks (#222)'
+);
+
+// 42h. R2-MED-17 (#225), R2-MED-12 (#220), R2-MED-02 (#210), R2-MED-08 (#216), R2-MED-09 (#217), R2-MED-10 (#218)
+AdminAuth::establishAdminSession($pdo);
+$authBeforeRevoke225 = AdminAuth::isAuthenticated($pdo);
+$savedAdminSessionSnap = $_SESSION;
+AdminAuth::revokeAllAdminSessions($pdo);
+$_SESSION = $savedAdminSessionSnap;
+$authAfterServerRevoke225 = AdminAuth::isAuthenticated($pdo);
+
+// Re-establish and verify credential rotation invalidates session immediately
+AdminAuth::establishAdminSession($pdo);
+$authFresh225 = AdminAuth::isAuthenticated($pdo);
+$origAdminTok = getenv('ADMIN_ACCESS_TOKEN') ?: 'test_admin_token_secret_12345';
+putenv('ADMIN_ACCESS_TOKEN=rotated_admin_secret_token_99999');
+$_ENV['ADMIN_ACCESS_TOKEN'] = 'rotated_admin_secret_token_99999';
+$authAfterCredRotate225 = AdminAuth::isAuthenticated($pdo);
+putenv('ADMIN_ACCESS_TOKEN=' . $origAdminTok);
+$_ENV['ADMIN_ACCESS_TOKEN'] = $origAdminTok;
+
+$envExampleSrc220 = (string)file_get_contents(dirname(__DIR__) . '/.env.example');
+$dbPhpSrc220 = (string)file_get_contents(dirname(__DIR__) . '/src/Config/Database.php');
+$formEnhSrc210 = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/form-enhancements.js');
+$trackMetricSrc217 = (string)file_get_contents(dirname(__DIR__) . '/public/api/track-metric.php');
+$consentJsSrc217 = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/consent-metrics.js');
+$dirJsSrc217 = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+$apiBizSrc218 = (string)file_get_contents(dirname(__DIR__) . '/public/api/businesses.php');
+
+assertTrue(
+    $authBeforeRevoke225 === true &&
+    $authAfterServerRevoke225 === false &&
+    $authFresh225 === true &&
+    $authAfterCredRotate225 === false &&
+    str_contains($envExampleSrc220, 'BBIZ_DISABLE_WEB_AUTO_MIGRATE=true') &&
+    str_contains($dbPhpSrc220, "GET_LOCK('bbiz_schema_migrate', 15)") &&
+    str_contains($formEnhSrc210, 'sessionStorage') &&
+    str_contains($formEnhSrc210, 'bbiz_submit_draft_v2') &&
+    str_contains($formEnhSrc210, "'house_name'") &&
+    str_contains($trackMetricSrc217, '[redacted-email]') &&
+    str_contains($consentJsSrc217, 'pseudonymous') &&
+    !str_contains($dirJsSrc217, 'enableOsmMap(false); // auto-load on analytics') &&
+    str_contains($apiBizSrc218, '6371.0 * ACOS') &&
+    str_contains($apiBizSrc218, 'LIMIT 500'),
+    'AdminAuth revokes sessions server-side & on credential rotation (#225), web auto-migrate defaults off with GET_LOCK (#220), drafts use 2h sessionStorage without vetting PII (#210), metrics scrub PII & unbundle OSM tiles (#217), and API paginates Haversine in SQL (#218)'
+);
 
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);

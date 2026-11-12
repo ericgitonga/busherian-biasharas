@@ -35,7 +35,15 @@ if (!in_array($eventType, $allowedTypes, true)) {
 
 $pagePath   = mb_substr(trim((string)($data['page_path'] ?? '')), 0, 160) ?: null;
 $businessId = isset($data['business_id']) && (int)$data['business_id'] > 0 ? (int)$data['business_id'] : null;
-$metaLabel  = mb_substr(trim((string)($data['meta_label'] ?? '')), 0, 120) ?: null;
+$rawMeta    = trim((string)($data['meta_label'] ?? ''));
+if ($rawMeta !== '') {
+    // Minimize search/filter labels before storage (#217 M-09): strip emails, URLs, and phone/ID digit sequences
+    $rawMeta = (string)preg_replace('/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i', '[redacted-email]', $rawMeta);
+    $rawMeta = (string)preg_replace('#https?://\S+#i', '[redacted-url]', $rawMeta);
+    $rawMeta = (string)preg_replace('/\+?\d[\d\s\-()]{6,}\d/', '[redacted-number]', $rawMeta);
+    $rawMeta = trim((string)preg_replace('/\s+/', ' ', $rawMeta));
+}
+$metaLabel  = $rawMeta !== '' ? mb_substr($rawMeta, 0, 80) : null;
 
 try {
     $pdo = Database::getConnection();

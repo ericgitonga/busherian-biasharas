@@ -37,6 +37,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
         $flashErr = 'Invalid security token (CSRF). Please try again.';
+    } elseif ($adminAction === 'revoke_all_admin_sessions') {
+        AdminAuth::revokeAllAdminSessions($pdo);
+        AdminAuth::logout();
+        header('Location: /admin/login.php?revoked_all=1');
+        exit;
     } elseif ($adminAction === 'save_google_sso') {
         $gClientId = trim((string)($_POST['google_client_id'] ?? ''));
         $gClientSecret = trim((string)($_POST['google_client_secret'] ?? ''));
@@ -202,6 +207,11 @@ $retryableOutboxCount = (int)$pdo->query("
           <a href="<?= htmlspecialchars(\BusherianBiasharas\Services\PreprodSandbox::generateProdToPreprodHandoffUrl('/'), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline-light">🧪 Pre-Prod Preview</a>
         <?php endif; ?>
         <a href="/admin/metrics.php" class="btn btn-outline-light">📊 Usage Metrics</a>
+        <form method="POST" action="/admin/index.php" style="margin:0;display:inline;">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="admin_action" value="revoke_all_admin_sessions">
+          <button type="submit" data-testid="admin-revoke-all-sessions-btn" class="btn btn-outline-light" style="cursor:pointer;" title="Immediately sign out every active Administrator session across all browsers">Revoke All Admin Sessions</button>
+        </form>
         <form method="POST" action="/admin/login.php" style="margin:0;display:inline;">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="action" value="logout">

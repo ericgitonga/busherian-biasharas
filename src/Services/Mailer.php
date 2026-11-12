@@ -134,15 +134,16 @@ final class Mailer
         string $subject,
         string $bodyHtml,
         ?string $replyTo = null,
-        ?int $businessId = null
+        ?int $businessId = null,
+        ?int $expiresAt = null
     ): int {
         $cleanReply = ($replyTo !== null && filter_var($replyTo, FILTER_VALIDATE_EMAIL))
             ? AntiSpamGate::sanitizeHeaderValue($replyTo)
             : null;
 
         $stmt = $pdo->prepare("
-            INSERT INTO email_outbox (business_id, recipient_email, reply_to, subject, body_html, status, attempts, sent_at)
-            VALUES (:bid, :to, :rto, :subj, :body, 'queued', 0, NULL)
+            INSERT INTO email_outbox (business_id, recipient_email, reply_to, subject, body_html, status, attempts, lease_until, next_retry_at, expires_at, sent_at)
+            VALUES (:bid, :to, :rto, :subj, :body, 'queued', 0, NULL, NULL, :exp, NULL)
         ");
         $stmt->execute([
             ':bid' => ($businessId !== null && $businessId > 0) ? $businessId : null,
@@ -150,6 +151,7 @@ final class Mailer
             ':rto' => $cleanReply,
             ':subj' => AntiSpamGate::sanitizeHeaderValue($subject),
             ':body' => $bodyHtml,
+            ':exp' => ($expiresAt !== null && $expiresAt > 0) ? $expiresAt : null,
         ]);
         $outboxId = (int)$pdo->lastInsertId();
 
@@ -167,19 +169,104 @@ final class Mailer
     /**
      * Dispatch a single `email_outbox` row outside any DB transaction (#188).
      */
+    /**
+     * Atomically lease, verify auth-challenge freshness & central mail quota, and dispatch an outbox row (#211, #212).
+     * Note: If the PHP process crashes after the remote SMTP server accepts `DATA` (250) and before the local DB
+     * updates `status = 'sent'`, at-least-once delivery may re-send after `lease_until` (60s) expires.
+     */
     public static function dispatchOutboxRow(PDO $pdo, int $outboxId): bool
     {
         if ($pdo->inTransaction()) {
             return false;
         }
+        $now = time();
+
+        // Step 1: Atomic worker lease acquisition — rejects already 'sent', 'simulated', 'expired', or actively leased rows!
+        $leaseStmt = $pdo->prepare("
+            UPDATE email_outbox
+            SET status = 'sending',
+                lease_until = :lu
+            WHERE id = :id
+              AND (
+                  status IN ('queued', 'failed')
+                  OR (status = 'sending' AND (lease_until IS NULL OR lease_until < :now1))
+              )
+              AND (next_retry_at IS NULL OR next_retry_at <= :now2)
+              AND body_html NOT LIKE '[REDACTED%'
+              AND body_html NOT LIKE '[EXPIRED%'
+        ");
+        $leaseStmt->execute([
+            ':lu' => $now + 60,
+            ':id' => $outboxId,
+            ':now1' => $now,
+            ':now2' => $now,
+        ]);
+        if ($leaseStmt->rowCount() !== 1) {
+            return false;
+        }
+
         $stmt = $pdo->prepare("SELECT * FROM email_outbox WHERE id = :id LIMIT 1");
         $stmt->execute([':id' => $outboxId]);
         $row = $stmt->fetch();
         if (!$row) {
             return false;
         }
+
         $bodyHtml = (string)($row['body_html'] ?? '');
-        if (str_starts_with($bodyHtml, '[REDACTED')) {
+        $rawSubject = (string)($row['subject'] ?? '');
+        $recipient = trim((string)($row['recipient_email'] ?? ''));
+        $expiresAt = isset($row['expires_at']) && $row['expires_at'] !== null ? (int)$row['expires_at'] : 0;
+
+        // Step 2 (#211 M-03): Never dispatch expired or superseded authentication challenges (OTPs / magic links)
+        $isExpiredChallenge = ($expiresAt > 0 && $expiresAt < $now);
+        if (!$isExpiredChallenge && str_contains($rawSubject, '6-Digit Verification Code') && $recipient !== '') {
+            $activeTokStmt = $pdo->prepare("
+                SELECT id FROM owner_auth_tokens
+                WHERE email = :em AND used_at IS NULL AND expires_at >= :now
+                LIMIT 1
+            ");
+            $activeTokStmt->execute([':em' => strtolower($recipient), ':now' => $now]);
+            if (!$activeTokStmt->fetchColumn()) {
+                $isExpiredChallenge = true;
+            } elseif (preg_match('/(\d{6})/', $rawSubject, $mCode)) {
+                $codeCandidate = $mCode[1];
+                $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
+                $expectedOtpHash = hash_hmac('sha256', 'otp6|' . strtolower($recipient) . '|' . $codeCandidate, $secret);
+                $exactTokStmt = $pdo->prepare("
+                    SELECT id FROM owner_auth_tokens
+                    WHERE token_hash = :th AND used_at IS NULL AND expires_at >= :now
+                    LIMIT 1
+                ");
+                $exactTokStmt->execute([':th' => $expectedOtpHash, ':now' => $now]);
+                if (!$exactTokStmt->fetchColumn()) {
+                    $isExpiredChallenge = true;
+                }
+            }
+        }
+
+        if ($isExpiredChallenge) {
+            $pdo->prepare("
+                UPDATE email_outbox
+                SET status = 'expired',
+                    lease_until = NULL,
+                    next_retry_at = NULL,
+                    subject = '[EXPIRED AUTH EMAIL]',
+                    body_html = '[EXPIRED OR SUPERSEDED AUTH CHALLENGE NOT DISPATCHED]'
+                WHERE id = :id
+            ")->execute([':id' => $outboxId]);
+            return false;
+        }
+
+        // Step 3 (#212 M-04): Enforce central delivery-wide hourly quota across all callers & retry workers
+        $centralQuota = AntiSpamGate::consumeCentralDispatchQuota($pdo);
+        if (!$centralQuota['allowed']) {
+            $pdo->prepare("
+                UPDATE email_outbox
+                SET status = 'queued',
+                    lease_until = NULL,
+                    next_retry_at = :nra
+                WHERE id = :id AND status = 'sending'
+            ")->execute([':nra' => $now + 300, ':id' => $outboxId]);
             return false;
         }
 
@@ -190,14 +277,17 @@ final class Mailer
         if ($simulate) {
             $pdo->prepare("
                 UPDATE email_outbox
-                SET status = 'simulated', attempts = :att, sent_at = CURRENT_TIMESTAMP
-                WHERE id = :id
+                SET status = 'simulated',
+                    attempts = :att,
+                    lease_until = NULL,
+                    next_retry_at = NULL,
+                    sent_at = CURRENT_TIMESTAMP
+                WHERE id = :id AND status = 'sending'
             ")->execute([':att' => $attempts, ':id' => $outboxId]);
             return true;
         }
 
-        $recipient = trim((string)($row['recipient_email'] ?? ''));
-        $cleanSubject = AntiSpamGate::sanitizeHeaderValue((string)($row['subject'] ?? ''));
+        $cleanSubject = AntiSpamGate::sanitizeHeaderValue($rawSubject);
         $fromEmail = Database::env('SMTP_FROM_EMAIL', 'noreply@busherianbiasharas.com');
         $fromName  = Database::env('SMTP_FROM_NAME', 'Busherian Biasharas');
         $replyRaw  = trim((string)($row['reply_to'] ?? ''));
@@ -232,17 +322,29 @@ final class Mailer
         if ($ok) {
             $pdo->prepare("
                 UPDATE email_outbox
-                SET status = 'sent', attempts = :att, sent_at = CURRENT_TIMESTAMP
-                WHERE id = :id
+                SET status = 'sent',
+                    attempts = :att,
+                    lease_until = NULL,
+                    next_retry_at = NULL,
+                    sent_at = CURRENT_TIMESTAMP
+                WHERE id = :id AND status = 'sending'
             ")->execute([':att' => $attempts, ':id' => $outboxId]);
             return true;
         }
 
+        $backoffSeconds = min(3600, 60 * (1 << min(6, $attempts)));
         $pdo->prepare("
             UPDATE email_outbox
-            SET status = 'failed', attempts = :att
-            WHERE id = :id
-        ")->execute([':att' => $attempts, ':id' => $outboxId]);
+            SET status = 'failed',
+                attempts = :att,
+                lease_until = NULL,
+                next_retry_at = :nra
+            WHERE id = :id AND status = 'sending'
+        ")->execute([
+            ':att' => $attempts,
+            ':nra' => time() + $backoffSeconds,
+            ':id' => $outboxId,
+        ]);
         return false;
     }
 
@@ -300,16 +402,22 @@ final class Mailer
     {
         $limit = max(1, min(100, $maxBatch));
         $cap = max(1, min(10, $maxAttempts));
+        $now = time();
         $stmt = $pdo->prepare("
             SELECT id
             FROM email_outbox
-            WHERE status IN ('queued', 'failed')
+            WHERE (
+                  status IN ('queued', 'failed')
+                  OR (status = 'sending' AND (lease_until IS NULL OR lease_until < :now1))
+              )
+              AND (next_retry_at IS NULL OR next_retry_at <= :now2)
               AND attempts < :cap
               AND body_html NOT LIKE '[REDACTED%'
+              AND body_html NOT LIKE '[EXPIRED%'
             ORDER BY id ASC
             LIMIT {$limit}
         ");
-        $stmt->execute([':cap' => $cap]);
+        $stmt->execute([':now1' => $now, ':now2' => $now, ':cap' => $cap]);
         $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
 
         $delivered = 0;
@@ -458,7 +566,7 @@ final class Mailer
             </div>
         ";
 
-        return self::enqueueAndSend($pdo, $ownerEmail, $subject, $bodyHtml);
+        return self::enqueueAndSend($pdo, $ownerEmail, $subject, $bodyHtml, null, null, time() + 900);
     }
 
     /**
@@ -513,7 +621,7 @@ final class Mailer
             </div>
         ";
 
-        return self::enqueueAndSend($pdo, $ownerEmail, $subject, $bodyHtml);
+        return self::enqueueAndSend($pdo, $ownerEmail, $subject, $bodyHtml, null, null, time() + 1800);
     }
 
     /**
@@ -606,7 +714,7 @@ final class Mailer
                 <p style='font-size:12px;color:#6B7280;'>If you did not submit this request, ignore this email and your listing will remain unchanged.</p>
             </div>
         ";
-        return self::enqueueAndSend($pdo, $ownerEmail, $subject, $bodyHtml, null, $bizId);
+        return self::enqueueAndSend($pdo, $ownerEmail, $subject, $bodyHtml, null, $bizId, time() + 7200);
     }
 
     /**

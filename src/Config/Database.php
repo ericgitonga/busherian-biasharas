@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v16-high';
+    public const SCHEMA_INIT_VERSION = '2026-11-v17-med';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -170,6 +170,7 @@ final class Database
         ]);
         self::$pdo->exec('PRAGMA foreign_keys = ON;');
         self::$pdo->exec('PRAGMA journal_mode = WAL;');
+        self::$pdo->exec('PRAGMA busy_timeout = 15000;');
         self::registerSqliteMathFunctions(self::$pdo);
         self::$activeDriver = 'sqlite';
         self::ensureInitialized(self::$pdo, 'sqlite');
@@ -228,6 +229,36 @@ final class Database
     public static function migrateAndSeed(PDO $pdo, bool $runExternalPinBackfill = false): array
     {
         $driver = strtolower((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        $mysqlLockHeld = false;
+        if ($driver === 'mysql') {
+            $lockStmt = $pdo->query("SELECT GET_LOCK('bbiz_schema_migrate', 15)");
+            $gotLock = $lockStmt ? $lockStmt->fetchColumn() : 0;
+            if ((int)$gotLock !== 1) {
+                throw new DatabaseUnavailableException('Database schema migration lock is currently busy; retry shortly.');
+            }
+            $mysqlLockHeld = true;
+            if (!$runExternalPinBackfill) {
+                try {
+                    $vCheck = $pdo->prepare("SELECT setting_value FROM app_settings WHERE setting_key = 'schema_init_version' LIMIT 1");
+                    $vCheck->execute();
+                    if (trim((string)($vCheck->fetchColumn() ?: '')) === self::SCHEMA_INIT_VERSION) {
+                        $pdo->query("SELECT RELEASE_LOCK('bbiz_schema_migrate')");
+                        $catCountFast = (int)$pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
+                        $seqStmtFast = $pdo->prepare("SELECT current_val FROM business_sequences WHERE seq_key = 'business_number' LIMIT 1");
+                        $seqStmtFast->execute();
+                        return [
+                            'driver' => $driver,
+                            'schema_version' => self::SCHEMA_INIT_VERSION,
+                            'categories_count' => $catCountFast,
+                            'next_business_seq' => (int)($seqStmtFast->fetchColumn() ?: 0),
+                            'backfill' => null,
+                        ];
+                    }
+                } catch (\Throwable $ignoredPreInit) {
+                }
+            }
+        }
+        try {
         if ($driver === 'mysql') {
             $hasCat = $pdo->query("SHOW TABLES LIKE 'categories'")->fetchColumn();
             if (!$hasCat) {
@@ -439,6 +470,14 @@ final class Database
             'next_business_seq' => $seqVal,
             'backfill' => $bfSummary,
         ];
+        } finally {
+            if ($mysqlLockHeld) {
+                try {
+                    $pdo->query("SELECT RELEASE_LOCK('bbiz_schema_migrate')");
+                } catch (\Throwable $ignoredUnlock) {
+                }
+            }
+        }
     }
 
     public static function syncBusinessSequenceFloor(PDO $pdo, ?string $driver = null): void
@@ -891,6 +930,16 @@ final class Database
             if (!$hasOutboxReplyTo) {
                 $pdo->exec("ALTER TABLE email_outbox ADD COLUMN reply_to TEXT NULL");
             }
+            $outboxColNames = array_map(static fn(array $r): string => (string)($r['name'] ?? ''), $outboxCols);
+            if (!in_array('lease_until', $outboxColNames, true)) {
+                $pdo->exec("ALTER TABLE email_outbox ADD COLUMN lease_until INTEGER NULL");
+            }
+            if (!in_array('next_retry_at', $outboxColNames, true)) {
+                $pdo->exec("ALTER TABLE email_outbox ADD COLUMN next_retry_at INTEGER NULL");
+            }
+            if (!in_array('expires_at', $outboxColNames, true)) {
+                $pdo->exec("ALTER TABLE email_outbox ADD COLUMN expires_at INTEGER NULL");
+            }
             $pdo->exec("CREATE INDEX IF NOT EXISTS idx_outbox_business ON email_outbox (business_id)");
 
             $pdo->exec("
@@ -939,6 +988,18 @@ final class Database
             }
             if (!$hasOutboxReplyTo) {
                 $pdo->exec("ALTER TABLE email_outbox ADD COLUMN reply_to VARCHAR(190) NULL AFTER recipient_email");
+            }
+            $pdo->exec("ALTER TABLE businesses MODIFY COLUMN regulator_name VARCHAR(120) NULL, MODIFY COLUMN regulator_license VARCHAR(120) NULL");
+            $pdo->exec("ALTER TABLE email_outbox MODIFY COLUMN status ENUM('queued', 'sending', 'sent', 'simulated', 'failed', 'expired') NOT NULL DEFAULT 'queued'");
+            $mysqlOutboxColNames = array_map(static fn(array $r): string => (string)($r['Field'] ?? ''), $outboxCols);
+            if (!in_array('lease_until', $mysqlOutboxColNames, true)) {
+                $pdo->exec("ALTER TABLE email_outbox ADD COLUMN lease_until INT UNSIGNED NULL AFTER attempts");
+            }
+            if (!in_array('next_retry_at', $mysqlOutboxColNames, true)) {
+                $pdo->exec("ALTER TABLE email_outbox ADD COLUMN next_retry_at INT UNSIGNED NULL AFTER lease_until");
+            }
+            if (!in_array('expires_at', $mysqlOutboxColNames, true)) {
+                $pdo->exec("ALTER TABLE email_outbox ADD COLUMN expires_at INT UNSIGNED NULL AFTER next_retry_at");
             }
 
             $pdo->exec("

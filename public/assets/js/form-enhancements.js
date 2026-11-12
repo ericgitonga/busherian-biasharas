@@ -283,23 +283,21 @@
   });
 
   updateSummaryAndHiddenField();
-  // Keep photo hidden JSON synced with draft storage
-  if (hiddenJsonInput) {
-    const origUpdate = updateSummaryAndHiddenField;
-    updateSummaryAndHiddenField = function () {
-      origUpdate();
-      if (typeof scheduleSaveDraft === 'function') scheduleSaveDraft();
-    };
-  }
 
   // =========================================================================
-  // Registration Form Draft Auto-Save & Restoration (#95)
+  // Registration Form Draft Auto-Save & Restoration (#95, #210 M-02)
+  // Ephemeral sessionStorage (2-hour TTL), strictly excluding vetting PII, photos & consent checkboxes.
   // =========================================================================
-  const DRAFT_KEY = 'bbiz_submit_draft_v1';
+  const LEGACY_DRAFT_KEY = 'bbiz_submit_draft_v1';
+  const DRAFT_KEY = 'bbiz_submit_draft_v2';
+  const DRAFT_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
   const submitForm = document.getElementById('business-submit-form');
   const restoredBanner = document.getElementById('draft-restored-banner');
   const clearDraftBtn = document.getElementById('btn-clear-draft');
   const autosaveIndicator = document.getElementById('draft-autosave-indicator');
+
+  // Always purge any legacy indefinite localStorage draft on load (#210 M-02)
+  try { localStorage.removeItem(LEGACY_DRAFT_KEY); } catch (_) {}
 
   const EXCLUDED_DRAFT_NAMES = new Set([
     'csrf_token',
@@ -308,11 +306,18 @@
     'form_sig',
     'js_interaction_token',
     'website',
-    'business_photos[]'
+    'business_photos[]',
+    'business_photos_data_json',
+    'house_name',
+    'house_custom',
+    'year_left',
+    'school_number',
+    'age_attestation_18',
+    'dpa_consent_directory'
   ]);
 
   if (window.BBIZ_SUBMIT_SUCCESS === true) {
-    try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
+    try { sessionStorage.removeItem(DRAFT_KEY); } catch (_) {}
   }
 
   function collectSubmitDraft() {
@@ -338,10 +343,9 @@
     if (!draft || typeof draft !== 'object') return false;
     const checkKeys = [
       'name', 'tagline', 'description', 'submitter_name', 'submitter_email',
-      'submitter_phone', 'year_left', 'school_number', 'phone_primary',
-      'whatsapp_number', 'email_public', 'website_url', 'building_name',
-      'street_road', 'area_neighborhood', 'alumni_perk', 'regulator_license',
-      'business_photos_data_json'
+      'submitter_phone', 'phone_primary', 'whatsapp_number', 'email_public',
+      'website_url', 'building_name', 'street_road', 'area_neighborhood',
+      'alumni_perk', 'regulator_license'
     ];
     return checkKeys.some(k => typeof draft[k] === 'string' && draft[k].trim() !== '');
   }
@@ -353,13 +357,14 @@
     if (!draft) return;
     try {
       if (hasMeaningfulDraft(draft)) {
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
           saved_at: Date.now(),
+          expires_at: Date.now() + DRAFT_TTL_MS,
           fields: draft
         }));
         if (autosaveIndicator) {
           const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          autosaveIndicator.textContent = `💾 Draft saved automatically at ${nowStr} on this device.`;
+          autosaveIndicator.textContent = `💾 Non-sensitive draft saved for this tab at ${nowStr} (expires in 2 hours; vetting details & photos are not stored).`;
         }
       }
     } catch (_) {}
@@ -432,16 +437,11 @@
       }
     });
 
-    // 4. Restore queued client-resized photos if present
-    if (typeof fields.business_photos_data_json === 'string' && fields.business_photos_data_json.trim() !== '') {
-      try {
-        const parsedPhotos = JSON.parse(fields.business_photos_data_json);
-        if (Array.isArray(parsedPhotos) && parsedPhotos.length > 0) {
-          queuedDataUrls = parsedPhotos.slice(0, MAX_PHOTOS);
-          updateSummaryAndHiddenField();
-        }
-      } catch (_) {}
-    }
+    // 4. Require fresh consent checkboxes on every draft restoration (#210 M-02)
+    ['age_attestation_18', 'dpa_consent_directory'].forEach(cName => {
+      const cEl = submitForm.querySelector(`[name="${cName}"]`);
+      if (cEl) cEl.checked = false;
+    });
   }
 
   if (submitForm && window.BBIZ_SUBMIT_SUCCESS !== true) {
@@ -450,10 +450,14 @@
       restoredFields = window.BBIZ_SUBMIT_POST_DRAFT;
     } else {
       try {
-        const raw = localStorage.getItem(DRAFT_KEY);
+        const raw = sessionStorage.getItem(DRAFT_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (parsed && parsed.fields && hasMeaningfulDraft(parsed.fields)) {
+          const savedAt = Number(parsed && parsed.saved_at ? parsed.saved_at : 0);
+          const isFresh = savedAt > 0 && (Date.now() - savedAt) <= DRAFT_TTL_MS;
+          if (!isFresh) {
+            sessionStorage.removeItem(DRAFT_KEY);
+          } else if (parsed && parsed.fields && hasMeaningfulDraft(parsed.fields)) {
             restoredFields = parsed.fields;
           }
         }
@@ -473,7 +477,7 @@
 
     if (clearDraftBtn) {
       clearDraftBtn.addEventListener('click', () => {
-        try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
+        try { sessionStorage.removeItem(DRAFT_KEY); localStorage.removeItem(LEGACY_DRAFT_KEY); } catch (_) {}
         submitForm.reset();
         queuedDataUrls = [];
         updateSummaryAndHiddenField();

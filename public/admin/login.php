@@ -11,7 +11,9 @@ bbiz_send_security_headers(false);
 
 $pdo = Database::getConnection();
 $loginError = '';
-$loginNotice = !empty($_GET['logged_out']) ? 'You have been signed out of the Admin Console.' : '';
+$loginNotice = !empty($_GET['revoked_all'])
+    ? 'All administrator sessions across all devices have been revoked.'
+    : (!empty($_GET['logged_out']) ? 'You have been signed out of the Admin Console.' : '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logout') {
     $csrf = trim((string)($_POST['csrf_token'] ?? ''));

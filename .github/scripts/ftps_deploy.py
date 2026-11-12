@@ -26,6 +26,7 @@ import secrets
 import socket
 import ssl
 import sys
+import time
 from typing import Iterable
 
 FORBIDDEN_PREFIXES = (
@@ -150,6 +151,44 @@ def manifest_remote_path(app_root: str, mode: str) -> str:
     raise ValueError(f"Unsupported deploy mode: {mode!r}")
 
 
+def maintenance_gate_remote_path(app_root: str, mode: str) -> str:
+    clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
+    if mode == "prod":
+        return f"{clean_root}/.maintenance_deploy.json"
+    if mode == "preprod":
+        return f"{clean_root}/preprod_app/.maintenance_deploy.json"
+    raise ValueError(f"Unsupported deploy mode: {mode!r}")
+
+
+def extract_retired_paths_from_name_status(diff_text: str) -> list[str]:
+    """Extract deleted (`D`) AND rename-source (`R*`) repo-relative paths from `git diff -M --name-status` (#219 M-11)."""
+    seen: set[str] = set()
+    retired: list[str] = []
+    for raw_line in diff_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split("\t")
+        status = parts[0].strip().upper()
+        candidate: str | None = None
+        if status == "D" and len(parts) >= 2:
+            candidate = parts[1].strip()
+        elif status.startswith("R") and len(parts) >= 3:
+            old_p = parts[1].strip()
+            new_p = parts[2].strip()
+            if old_p and old_p != new_p:
+                candidate = old_p
+        if not candidate:
+            continue
+        norm = candidate.replace("\\", "/").lstrip("/")
+        if norm.startswith("uploads/") or norm.startswith("public/uploads/"):
+            continue
+        if norm not in seen:
+            seen.add(norm)
+            retired.append(norm)
+    return retired
+
+
 def connect_verified_ftps(
     host: str,
     user: str,
@@ -171,13 +210,16 @@ def connect_verified_ftps(
     return ftp
 
 
-def _atomic_upload_bytes(
+def _stage_and_verify_bytes(
     ftp: ftplib.FTP,
     ensure_remote_dir_fn,
     remote_full: str,
     payload_bytes: bytes,
     label: str,
-) -> None:
+    *,
+    allow_unverified_size: bool = False,
+) -> tuple[str, str, str]:
+    """Upload bytes to `.bbiz_stage_*` and verify remote SIZE WITHOUT touching the live target yet (#219 M-11)."""
     remote_dir = posixpath.dirname(remote_full)
     remote_filename = posixpath.basename(remote_full)
     ensure_remote_dir_fn(remote_dir)
@@ -189,20 +231,54 @@ def _atomic_upload_bytes(
         try:
             remote_size = ftp.size(stage_name)
         except ftplib.error_perm as sz_err:
-            # 500/502 when SIZE is unsupported by a minimal daemon; any other perm error is raised
             msg = str(sz_err)
             if not (msg.startswith("500") or msg.startswith("502")):
                 raise
             remote_size = None
 
-        if remote_size is not None and int(remote_size) != expected_size:
+        if remote_size is None:
+            if not allow_unverified_size:
+                raise ValueError(
+                    f"FTPS daemon did not return a verified SIZE for staged file {label}; "
+                    f"refusing unverified promotion (pass --allow-unverified-size only if SIZE is unsupported)."
+                )
+        elif int(remote_size) != expected_size:
             raise ValueError(
                 f"Staged FTPS upload size mismatch for {label}: expected {expected_size} bytes, got {remote_size}"
             )
 
+        return (remote_dir, stage_name, remote_filename)
+    except Exception:
+        try:
+            ftp.delete(stage_name)
+        except Exception:
+            pass
+        raise
+
+
+def _atomic_upload_bytes(
+    ftp: ftplib.FTP,
+    ensure_remote_dir_fn,
+    remote_full: str,
+    payload_bytes: bytes,
+    label: str,
+    *,
+    allow_unverified_size: bool = False,
+) -> None:
+    remote_dir, stage_name, remote_filename = _stage_and_verify_bytes(
+        ftp,
+        ensure_remote_dir_fn,
+        remote_full,
+        payload_bytes,
+        label,
+        allow_unverified_size=allow_unverified_size,
+    )
+    try:
+        ensure_remote_dir_fn(remote_dir)
         ftp.rename(stage_name, remote_filename)
     except Exception:
         try:
+            ensure_remote_dir_fn(remote_dir)
             ftp.delete(stage_name)
         except Exception:
             pass
@@ -223,6 +299,7 @@ def deploy_items(
     tls_servername: str | None = None,
     release_sha: str | None = None,
     write_manifest: bool = True,
+    allow_unverified_size: bool = False,
 ) -> int:
     materialized = [(lp, map_remote_path(rel, app_root, mode), rel) for lp, rel in items]
     deleted_targets = [(map_remote_delete_path(rel, app_root, mode), rel) for rel in deleted_rel_paths]
@@ -266,36 +343,130 @@ def deploy_items(
         except Exception:
             pass
 
-        for local_path, remote_full, rel_label in materialized:
-            data = local_path.read_bytes()
-            _atomic_upload_bytes(ftp, ensure_remote_dir, remote_full, data, rel_label)
-            print(f"Uploaded (atomic stage->rename): {rel_label} -> {remote_full} ({len(data)}B)")
-            uploaded += 1
+        effective_sha = (release_sha or os.environ.get("GITHUB_SHA") or "unknown").strip()
 
-        for remote_del, rel_del in deleted_targets:
+        # Phase 1 (#219 M-11): Stage & SIZE-verify the ENTIRE release BEFORE touching any live file!
+        staged_plan: list[tuple[str, str, str, str, int]] = []
+        try:
+            for local_path, remote_full, rel_label in materialized:
+                data = local_path.read_bytes()
+                r_dir, stg_name, dst_name = _stage_and_verify_bytes(
+                    ftp,
+                    ensure_remote_dir,
+                    remote_full,
+                    data,
+                    rel_label,
+                    allow_unverified_size=allow_unverified_size,
+                )
+                staged_plan.append((r_dir, stg_name, dst_name, rel_label, len(data)))
+        except Exception:
+            for r_dir, stg_name, _, _, _ in staged_plan:
+                try:
+                    ensure_remote_dir(r_dir)
+                    ftp.delete(stg_name)
+                except Exception:
+                    pass
+            raise
+
+        # Phase 2 (#219 M-11): Activate brief maintenance gate, promote staged files with backup/rollback, retire old paths
+        gate_full = maintenance_gate_remote_path(app_root, mode)
+        gate_payload = json.dumps(
+            {
+                "active": True,
+                "mode": mode,
+                "release_sha": effective_sha,
+                "started_at_ts": int(time.time()),
+            }
+        ).encode("utf-8")
+        _atomic_upload_bytes(
+            ftp,
+            ensure_remote_dir,
+            gate_full,
+            gate_payload,
+            ".maintenance_deploy.json",
+            allow_unverified_size=allow_unverified_size,
+        )
+
+        promoted_backups: list[tuple[str, str | None, str]] = []
+        try:
             try:
-                ftp.delete(remote_del)
-                print(f"Retired deleted file: {rel_del} -> {remote_del}")
-                deleted += 1
-            except ftplib.error_perm as exc:
-                if str(exc).startswith("550"):
-                    print(f"Retired file already absent (idempotent): {rel_del} -> {remote_del}")
-                else:
-                    raise
+                for r_dir, stg_name, dst_name, rel_label, byte_len in staged_plan:
+                    ensure_remote_dir(r_dir)
+                    backup_name = f".bbiz_prev_{os.getpid()}_{secrets.token_hex(4)}_{dst_name}"
+                    has_backup = False
+                    try:
+                        ftp.rename(dst_name, backup_name)
+                        has_backup = True
+                    except (ftplib.error_perm, KeyError):
+                        has_backup = False
+                    ftp.rename(stg_name, dst_name)
+                    promoted_backups.append((r_dir, backup_name if has_backup else None, dst_name))
+                    print(f"Promoted staged file: {rel_label} -> {r_dir}/{dst_name} ({byte_len}B)")
+                    uploaded += 1
+            except Exception:
+                # Roll back already-promoted files from `.bbiz_prev_*` backups & remove unpromoted `.bbiz_stage_*`
+                for r_dir, bkp_name, dst_name in reversed(promoted_backups):
+                    try:
+                        ensure_remote_dir(r_dir)
+                        if bkp_name is not None:
+                            ftp.rename(bkp_name, dst_name)
+                        else:
+                            ftp.delete(dst_name)
+                    except Exception:
+                        pass
+                for r_dir, stg_name, _, _, _ in staged_plan[len(promoted_backups):]:
+                    try:
+                        ensure_remote_dir(r_dir)
+                        ftp.delete(stg_name)
+                    except Exception:
+                        pass
+                raise
 
-        if write_manifest:
-            manifest_payload = json.dumps(
-                {
-                    "mode": mode,
-                    "release_sha": (release_sha or os.environ.get("GITHUB_SHA") or "unknown").strip(),
-                    "deployed_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "uploaded_count": uploaded,
-                    "deleted_count": deleted,
-                },
-                indent=2,
-            ).encode("utf-8")
-            m_path = manifest_remote_path(app_root, mode)
-            _atomic_upload_bytes(ftp, ensure_remote_dir, m_path, manifest_payload, ".deploy_manifest.json")
+            # Clean up `.bbiz_prev_*` backups now that all files in the release promoted cleanly
+            for r_dir, bkp_name, _ in promoted_backups:
+                if bkp_name is not None:
+                    try:
+                        ensure_remote_dir(r_dir)
+                        ftp.delete(bkp_name)
+                    except Exception:
+                        pass
+
+            for remote_del, rel_del in deleted_targets:
+                try:
+                    ftp.delete(remote_del)
+                    print(f"Retired deleted/renamed file: {rel_del} -> {remote_del}")
+                    deleted += 1
+                except ftplib.error_perm as exc:
+                    if str(exc).startswith("550"):
+                        print(f"Retired file already absent (idempotent): {rel_del} -> {remote_del}")
+                    else:
+                        raise
+
+            if write_manifest:
+                manifest_payload = json.dumps(
+                    {
+                        "mode": mode,
+                        "release_sha": effective_sha,
+                        "deployed_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "uploaded_count": uploaded,
+                        "deleted_count": deleted,
+                    },
+                    indent=2,
+                ).encode("utf-8")
+                m_path = manifest_remote_path(app_root, mode)
+                _atomic_upload_bytes(
+                    ftp,
+                    ensure_remote_dir,
+                    m_path,
+                    manifest_payload,
+                    ".deploy_manifest.json",
+                    allow_unverified_size=allow_unverified_size,
+                )
+        finally:
+            try:
+                ftp.delete(gate_full)
+            except Exception:
+                pass
     finally:
         try:
             ftp.quit()
@@ -360,6 +531,11 @@ def main(argv: list[str] | None = None) -> int:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--files-list", help="Newline-delimited file of repo-relative paths to upload")
     group.add_argument("--stage-dir", help="Directory containing staged files to upload")
+    group.add_argument(
+        "--extract-retired-from-stdin",
+        action="store_true",
+        help="Parse `git diff -M --name-status` from stdin and print retired (`D` + `R*` old) paths",
+    )
     parser.add_argument(
         "--deleted-files-list",
         help="Optional newline-delimited file of retired repo-relative paths to delete remotely",
@@ -375,7 +551,17 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("FTP_TLS_SERVERNAME", "").strip() or None,
         help="Expected X.509 SAN hostname when connecting to shared-hosting FTPS via vanity domain/IP",
     )
+    parser.add_argument(
+        "--allow-unverified-size",
+        action="store_true",
+        help="Explicitly permit promotion if an FTPS server does not implement the SIZE command",
+    )
     args = parser.parse_args(argv)
+
+    if args.extract_retired_from_stdin:
+        for rel in extract_retired_paths_from_name_status(sys.stdin.read()):
+            print(rel)
+        return 0
 
     items = collect_items_from_args(args)
     deleted_rels = collect_deleted_from_args(args)
@@ -400,6 +586,7 @@ def main(argv: list[str] | None = None) -> int:
             port=args.port,
             tls_servername=args.tls_servername,
             release_sha=args.release_sha,
+            allow_unverified_size=args.allow_unverified_size,
         )
     except (ssl.SSLError, socket.error, *ftplib.all_errors, ValueError) as exc:
         print(f"CRITICAL FTPS DEPLOY ERROR: {exc}", file=sys.stderr)

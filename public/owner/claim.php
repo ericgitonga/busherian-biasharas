@@ -44,28 +44,12 @@ $devPreviewOtpCode = null;
 $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
 
 $currentOwner = OwnerAuth::getCurrentOwner($pdo);
+$isEligibleAuthenticatedOwner = false;
 if ($currentOwner !== null) {
     $currentEmail = strtolower(trim((string)($currentOwner['email'] ?? '')));
     if (OwnerAuth::isEmailEligibleForClaim($pdo, $bizId, $currentEmail, $invitedEmail)) {
-        $pdo->beginTransaction();
-        try {
-            $freshCurrentOwner = OwnerAuth::getOwnerById($pdo, (int)$currentOwner['id']) ?? $currentOwner;
-            if (OwnerAuth::redeemVerifiedClaimInvite($pdo, (int)$freshCurrentOwner['id'], $currentEmail, $bizId, $exp, $sig, $invitedEmail)) {
-                OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$freshCurrentOwner['id'], $currentEmail);
-                $pdo->commit();
-                header("Location: /owner/edit-business.php?id={$bizId}&claimed=1");
-                exit;
-            }
-            $pdo->rollBack();
-            header('Location: /owner/login.php?err=invalid_link');
-            exit;
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            error_log('[claim.php] Authenticated claim redemption failed: ' . $e->getMessage());
-            $errorMsg = 'Could not complete claim linking right now. Please try again.';
-        }
+        // Never auto-redeem on GET (#209 M-01): require explicit POST with publication consent & 18+ attestation.
+        $isEligibleAuthenticatedOwner = true;
     } else {
         $errorMsg = "You are currently signed in as {$currentEmail}, which does not match the designated owner email for this invitation. Please sign out first or verify the invited owner email below.";
     }
@@ -81,20 +65,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stickyEmail = $email;
     $fullName = trim((string)($_POST['full_name'] ?? ''));
     $phone = trim((string)($_POST['phone'] ?? ''));
+    $ageAttested = (string)($_POST['claim_age_attestation_18'] ?? '') === '1';
+    $pubConsent = (string)($_POST['claim_publication_consent'] ?? '') === '1';
 
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
         $errorMsg = 'Invalid security token. Please reload the page and try again.';
+    } elseif ($claimStep === 'authenticated_claim') {
+        if (!$isEligibleAuthenticatedOwner || $currentOwner === null) {
+            $errorMsg = 'Your signed-in account is not eligible for this claim invitation.';
+        } elseif (!$ageAttested || !$pubConsent) {
+            $errorMsg = 'Please confirm both the 18+ Adult Data Attestation and Directory Publication Consent checkboxes to complete claiming.';
+        } else {
+            $currentEmail = strtolower(trim((string)($currentOwner['email'] ?? '')));
+            $pdo->beginTransaction();
+            try {
+                $freshCurrentOwner = OwnerAuth::getOwnerById($pdo, (int)$currentOwner['id']) ?? $currentOwner;
+                if (OwnerAuth::redeemVerifiedClaimInvite($pdo, (int)$freshCurrentOwner['id'], $currentEmail, $bizId, $exp, $sig, $invitedEmail, true, true)) {
+                    OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$freshCurrentOwner['id'], $currentEmail);
+                    $pdo->commit();
+                    header("Location: /owner/edit-business.php?id={$bizId}&claimed=1");
+                    exit;
+                }
+                $pdo->rollBack();
+                header('Location: /owner/login.php?err=invalid_link');
+                exit;
+            } catch (\Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                error_log('[claim.php] Authenticated claim redemption failed: ' . $e->getMessage());
+                $errorMsg = 'Could not complete claim linking right now. Please try again.';
+            }
+        }
     } elseif ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $errorMsg = 'Please enter a valid email address for your Owner Account.';
     } elseif (!OwnerAuth::isEmailEligibleForClaim($pdo, $bizId, $email, $invitedEmail)) {
         $errorMsg = 'This claim invitation is restricted to the designated owner email on file for this business.';
     } elseif ($claimStep === 'password_claim') {
         $currentPw = (string)($_POST['current_password'] ?? '');
-        $rate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'claim_pw_auth', 5, 15, 40);
+        $rate = AntiSpamGate::checkAuthAttemptAllowed($pdo, $clientIp, 'claim_pw_auth', $email, 10, 30, 5, 15);
         if (!$rate['allowed']) {
             $errorMsg = 'Too many sign-in attempts. Please wait 15 minutes or request a 6-digit verification code.';
         } elseif ($currentPw === '') {
             $errorMsg = 'Please enter your current Owner Password, or request a 6-digit email verification code.';
+        } elseif (!$ageAttested || !$pubConsent) {
+            $errorMsg = 'Please confirm both the 18+ Adult Data Attestation and Directory Publication Consent checkboxes to claim this listing.';
         } else {
             $pdo->beginTransaction();
             try {
@@ -104,7 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $errorMsg = 'Incorrect password for that Owner Account. Enter your current password or request a 6-digit email verification code.';
                 } else {
                     $freshOwner = OwnerAuth::getOwnerById($pdo, (int)$authOwner['id']) ?? $authOwner;
-                    if (!OwnerAuth::redeemVerifiedClaimInvite($pdo, (int)$freshOwner['id'], $email, $bizId, $exp, $sig, $invitedEmail)) {
+                    if (!OwnerAuth::redeemVerifiedClaimInvite($pdo, (int)$freshOwner['id'], $email, $bizId, $exp, $sig, $invitedEmail, true, true)) {
                         $pdo->rollBack();
                         header('Location: /owner/login.php?err=invalid_link');
                         exit;
@@ -129,13 +144,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newPw = (string)($_POST['new_password'] ?? '');
         $confirmPw = (string)($_POST['confirm_password'] ?? '');
 
-        $rate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'claim_otp_verify', 5, 15, 40);
+        $rate = AntiSpamGate::checkAuthAttemptAllowed($pdo, $clientIp, 'claim_otp_verify', $email, 10, 30, 5, 15);
         if (!$rate['allowed']) {
             $errorMsg = 'Too many code attempts. Please wait 15 minutes before trying again.';
         } elseif (mb_strlen($newPw) < 8) {
             $errorMsg = 'Please choose an Owner Password of at least 8 characters so you can sign in anytime on any browser.';
         } elseif ($confirmPw !== '' && !hash_equals($newPw, $confirmPw)) {
             $errorMsg = 'The two password fields do not match. Please re-enter them.';
+        } elseif (!$ageAttested || !$pubConsent) {
+            $errorMsg = 'Please confirm both the 18+ Adult Data Attestation and Directory Publication Consent checkboxes to complete verification.';
         } else {
             $pdo->beginTransaction();
             try {
@@ -155,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ]);
                     }
                     $freshOwner = OwnerAuth::getOwnerById($pdo, (int)$verifiedOwner['id']) ?? $verifiedOwner;
-                    if (!OwnerAuth::redeemVerifiedClaimInvite($pdo, (int)$freshOwner['id'], $email, $bizId, $exp, $sig, $invitedEmail)) {
+                    if (!OwnerAuth::redeemVerifiedClaimInvite($pdo, (int)$freshOwner['id'], $email, $bizId, $exp, $sig, $invitedEmail, true, true)) {
                         $pdo->rollBack();
                         header('Location: /owner/login.php?err=invalid_link');
                         exit;
@@ -297,7 +314,32 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
         </div>
       <?php endif; ?>
 
-      <?php if ($viewMode === 'verify_otp'): ?>
+      <?php if ($isEligibleAuthenticatedOwner && $currentOwner !== null && $viewMode !== 'verify_otp'): ?>
+        <form method="POST" action="/owner/claim.php" data-testid="authenticated-claim-form">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="claim_step" value="authenticated_claim">
+          <input type="hidden" name="biz_id" value="<?= $bizId ?>">
+          <input type="hidden" name="exp" value="<?= $exp ?>">
+          <input type="hidden" name="sig" value="<?= htmlspecialchars($sig, ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="em" value="<?= htmlspecialchars($invitedEmail, ENT_QUOTES, 'UTF-8') ?>">
+          <div style="background:#ECFDF5;border:1px solid #A7F3D0;border-radius:10px;padding:0.85rem;margin-bottom:0.9rem;font-size:0.84rem;color:#065F46;">
+            Signed in as <strong><?= htmlspecialchars((string)$currentOwner['email'], ENT_QUOTES, 'UTF-8') ?></strong>. Confirm your publication consent below to link and manage <strong><?= htmlspecialchars((string)$biz['name'], ENT_QUOTES, 'UTF-8') ?></strong>.
+          </div>
+          <div style="background:#F9FAFB;border:1px solid #D1D5DB;border-radius:10px;padding:0.85rem;margin-bottom:1rem;font-size:0.81rem;color:#1F2937;">
+            <label style="display:flex;align-items:flex-start;gap:0.5rem;margin-bottom:0.55rem;cursor:pointer;">
+              <input type="checkbox" name="claim_age_attestation_18" data-testid="claim-age-18-checkbox" value="1" required style="margin-top:0.2rem;">
+              <span><strong>Adult-Only Attestation (Kenya DPA s. 33):</strong> I confirm that I am 18 years or older, authorized to manage this business, and that this listing and its media contain no personal data or identifiable images of minors under 18. *</span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:0.5rem;cursor:pointer;">
+              <input type="checkbox" name="claim_publication_consent" data-testid="claim-consent-checkbox" value="1" required style="margin-top:0.2rem;">
+              <span><strong>Directory Publication Consent:</strong> I have read the <a href="/privacy.php" target="_blank" style="color:#7B1113;text-decoration:underline;">Privacy Notice</a> and explicitly consent to publishing this business's profile, location, and public contact details in the Busherian Biasharas directory. *</span>
+            </label>
+          </div>
+          <button type="submit" data-testid="authenticated-claim-submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.94rem;">
+            ✓ Confirm Consent &amp; Claim <?= htmlspecialchars((string)$biz['name'], ENT_QUOTES, 'UTF-8') ?>
+          </button>
+        </form>
+      <?php elseif ($viewMode === 'verify_otp'): ?>
         <form method="POST" action="/owner/claim.php">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="claim_step" value="verify_otp">
@@ -336,7 +378,18 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
             </div>
           </div>
 
-          <button type="submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.94rem;">
+          <div style="background:#F9FAFB;border:1px solid #D1D5DB;border-radius:10px;padding:0.85rem;margin-bottom:1rem;font-size:0.81rem;color:#1F2937;">
+            <label style="display:flex;align-items:flex-start;gap:0.5rem;margin-bottom:0.55rem;cursor:pointer;">
+              <input type="checkbox" name="claim_age_attestation_18" data-testid="claim-age-18-checkbox" value="1" required style="margin-top:0.2rem;">
+              <span><strong>Adult-Only Attestation (Kenya DPA s. 33):</strong> I confirm that I am 18 years or older, authorized to manage this business, and that this listing and its media contain no personal data or identifiable images of minors under 18. *</span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:0.5rem;cursor:pointer;">
+              <input type="checkbox" name="claim_publication_consent" data-testid="claim-consent-checkbox" value="1" required style="margin-top:0.2rem;">
+              <span><strong>Directory Publication Consent:</strong> I have read the <a href="/privacy.php" target="_blank" style="color:#7B1113;text-decoration:underline;">Privacy Notice</a> and explicitly consent to publishing this business's profile, location, and public contact details in the Busherian Biasharas directory. *</span>
+            </label>
+          </div>
+
+          <button type="submit" data-testid="claim-verify-otp-submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.94rem;">
             ✓ Verify Code, Save Password &amp; Edit <?= htmlspecialchars((string)$biz['name'], ENT_QUOTES, 'UTF-8') ?>
           </button>
         </form>
@@ -394,9 +447,19 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
 
               <div style="font-size:0.83rem;font-weight:800;color:#114B3E;margin-bottom:0.45rem;">Already have an Owner Password? Sign in directly to claim:</div>
               <input type="hidden" name="owner_email" value="<?= htmlspecialchars($suggestedEmail, ENT_QUOTES, 'UTF-8') ?>">
+          <div style="background:#F9FAFB;border:1px solid #D1D5DB;border-radius:10px;padding:0.85rem;margin-bottom:1rem;font-size:0.81rem;color:#1F2937;">
+            <label style="display:flex;align-items:flex-start;gap:0.5rem;margin-bottom:0.55rem;cursor:pointer;">
+              <input type="checkbox" name="claim_age_attestation_18" data-testid="claim-age-18-checkbox" value="1" required style="margin-top:0.2rem;">
+              <span><strong>Adult-Only Attestation (Kenya DPA s. 33):</strong> I confirm that I am 18 years or older, authorized to manage this business, and that this listing and its media contain no personal data or identifiable images of minors under 18. *</span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:0.5rem;cursor:pointer;">
+              <input type="checkbox" name="claim_publication_consent" data-testid="claim-consent-checkbox" value="1" required style="margin-top:0.2rem;">
+              <span><strong>Directory Publication Consent:</strong> I have read the <a href="/privacy.php" target="_blank" style="color:#7B1113;text-decoration:underline;">Privacy Notice</a> and explicitly consent to publishing this business's profile, location, and public contact details in the Busherian Biasharas directory. *</span>
+            </label>
+          </div>
               <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
                 <input type="password" name="current_password" class="input-control" style="flex:1;min-width:190px;" autocomplete="current-password" placeholder="Enter your current password..." required>
-                <button type="submit" class="btn btn-outline" style="font-weight:700;">Sign In &amp; Claim</button>
+                <button type="submit" data-testid="claim-password-submit" class="btn btn-outline" style="font-weight:700;">Sign In &amp; Claim</button>
               </div>
             </form>
           </div>

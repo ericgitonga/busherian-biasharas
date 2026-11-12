@@ -116,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errorMsg = 'Professional Regulator is required for regulated industries.';
     } else {
         try {
-            $newId = VettingPurger::createBusinessDirectly($pdo, array_merge($_POST, $form, ['require_provenance_basis' => true]));
+            $newId = VettingPurger::createBusinessDirectly($pdo, array_merge($_POST, $form, ['require_provenance_basis' => true, 'require_adult_attestation' => true]));
             header('Location: /admin/index.php?added=' . $newId);
             exit;
         } catch (\Throwable $e) {
@@ -367,6 +367,10 @@ $tokens = AntiSpamGate::generateFormTokens();
               placeholder="e.g. Confirmed with founder via WhatsApp / email on 2026-11-12" required>
           </div>
         </div>
+        <label style="display:flex;align-items:flex-start;gap:0.5rem;margin-top:0.75rem;font-size:0.82rem;color:#065F46;cursor:pointer;">
+          <input type="checkbox" name="admin_adult_subject_attested" data-testid="admin-adult-attestation-checkbox" value="1" <?= !empty($_POST['admin_adult_subject_attested']) ? 'checked' : '' ?> required style="margin-top:0.2rem;">
+          <span><strong>Adult-Only Data Attestation (Kenya DPA s. 33):</strong> I confirm that this curated listing and its uploaded media contain only adult (18+) business contacts/subjects and zero personal data or identifiable images of minors under 18. *</span>
+        </label>
       </div>
 
       <div style="margin-top:1.35rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">

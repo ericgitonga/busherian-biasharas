@@ -39,8 +39,8 @@ CREATE TABLE IF NOT EXISTS businesses (
     alumni_perk VARCHAR(190) NULL,
     b2b_ready TINYINT(1) NOT NULL DEFAULT 0,
     accepts_lpo TINYINT(1) NOT NULL DEFAULT 0,
-    regulator_name VARCHAR(60) NULL,
-    regulator_license VARCHAR(80) NULL,
+    regulator_name VARCHAR(120) NULL,
+    regulator_license VARCHAR(120) NULL,
 
     -- Location & Pin
     branch_name VARCHAR(120) NULL,
@@ -134,8 +134,11 @@ CREATE TABLE IF NOT EXISTS email_outbox (
     reply_to VARCHAR(190) NULL,
     subject VARCHAR(255) NOT NULL,
     body_html MEDIUMTEXT NOT NULL,
-    status ENUM('queued', 'sent', 'simulated', 'failed') NOT NULL DEFAULT 'queued',
+    status ENUM('queued', 'sending', 'sent', 'simulated', 'failed', 'expired') NOT NULL DEFAULT 'queued',
     attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    lease_until INT UNSIGNED NULL,
+    next_retry_at INT UNSIGNED NULL,
+    expires_at INT UNSIGNED NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     sent_at TIMESTAMP NULL,
     INDEX idx_outbox_business (business_id)

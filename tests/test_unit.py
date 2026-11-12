@@ -385,3 +385,140 @@ def test_ftps_deploy_atomic_staging_manifest_and_deleted_files(tmp_path: Path, m
     assert manifest["release_sha"] == "cafebabe181"
     assert manifest["uploaded_count"] == 1
     assert manifest["deleted_count"] == 1
+
+
+
+def test_ftps_deploy_two_phase_staging_rename_retire_and_strict_size(tmp_path: Path, monkeypatch):
+    """R2-MED-11 (#219): Whole-release 2-phase staging, .maintenance_deploy.json gate, R* rename retirement, and strict SIZE check."""
+    ftps_mod = _load_ftps_deploy_module()
+    import ftplib
+
+    # 1. git diff -M --name-status parser retires both D and R* source paths while ignoring uploads/
+    diff_sample = (
+        "M\tpublic/index.php\n"
+        "D\tpublic/legacy-old.php\n"
+        "R100\tpublic/old-handler.php\tpublic/new-handler.php\n"
+        "R092\tpublic/uploads/biz1/a.jpg\tpublic/uploads/biz1/b.jpg\n"
+    )
+    retired = ftps_mod.extract_retired_paths_from_name_status(diff_sample)
+    assert retired == ["public/legacy-old.php", "public/old-handler.php"]
+
+    # 2. Multi-file Phase 1 failure on file #2 MUST leave live file #1 untouched and remove file #1's .bbiz_stage_*
+    class _PhaseFtpClient:
+        def __init__(self, fail_second_size: bool = False, size_unsupported: bool = False):
+            self.cwd_dir = "/"
+            self.files: dict[str, bytes] = {
+                "/busherianbiasharas.com/www/html/first.php": b"LIVE_FIRST_V1",
+                "/busherianbiasharas.com/www/html/second.php": b"LIVE_SECOND_V1",
+            }
+            self.dirs: set[str] = {
+                "/",
+                "/busherianbiasharas.com",
+                "/busherianbiasharas.com/www",
+                "/busherianbiasharas.com/www/html",
+            }
+            self.saw_maintenance_gate = False
+            self.fail_second_size = fail_second_size
+            self.size_unsupported = size_unsupported
+
+        def voidcmd(self, cmd: str) -> str:
+            return "200 OK"
+
+        def cwd(self, d: str) -> None:
+            if d not in self.dirs:
+                raise ftplib.error_perm("550 Directory not found")
+            self.cwd_dir = d
+
+        def mkd(self, d: str) -> str:
+            self.dirs.add(d)
+            return d
+
+        def storbinary(self, cmd: str, fp) -> str:
+            fname = cmd[5:]
+            full = f"{self.cwd_dir.rstrip('/')}/{fname}"
+            self.files[full] = fp.read()
+            return "226 OK"
+
+        def size(self, fname: str) -> int:
+            if self.size_unsupported:
+                raise ftplib.error_perm("502 Command SIZE not implemented")
+            full = f"{self.cwd_dir.rstrip('/')}/{fname}"
+            actual = len(self.files[full])
+            if self.fail_second_size and fname.endswith("_second.php"):
+                return actual + 99
+            return actual
+
+        def rename(self, src_name: str, dst_name: str) -> str:
+            src_full = f"{self.cwd_dir.rstrip('/')}/{src_name}"
+            dst_full = f"{self.cwd_dir.rstrip('/')}/{dst_name}"
+            if src_full not in self.files:
+                raise ftplib.error_perm("550 Missing source")
+            if dst_name == ".maintenance_deploy.json":
+                self.saw_maintenance_gate = True
+            self.files[dst_full] = self.files.pop(src_full)
+            return "250 Renamed"
+
+        def delete(self, path_or_name: str) -> str:
+            full = path_or_name if path_or_name.startswith("/") else f"{self.cwd_dir.rstrip('/')}/{path_or_name}"
+            if full not in self.files:
+                raise ftplib.error_perm("550 No such file")
+            del self.files[full]
+            return "250 Deleted"
+
+        def quit(self) -> str:
+            return "221 Bye"
+
+        def close(self) -> None:
+            pass
+
+    f1 = tmp_path / "first.php"
+    f2 = tmp_path / "second.php"
+    f1.write_bytes(b"<?php echo 'FIRST_V2';\n")
+    f2.write_bytes(b"<?php echo 'SECOND_V2';\n")
+
+    ftp_phase1_fail = _PhaseFtpClient(fail_second_size=True)
+    monkeypatch.setattr(ftps_mod, "connect_verified_ftps", lambda *a, **kw: ftp_phase1_fail)
+    with pytest.raises(ValueError, match="size mismatch"):
+        ftps_mod.deploy_items(
+            [(f1, "public/first.php"), (f2, "public/second.php")],
+            host="ftp.example.test",
+            user="u",
+            password="p",
+            app_root="/busherianbiasharas.com/www",
+            mode="prod",
+            release_sha="sha219fail",
+        )
+    assert ftp_phase1_fail.files["/busherianbiasharas.com/www/html/first.php"] == b"LIVE_FIRST_V1"
+    assert ftp_phase1_fail.files["/busherianbiasharas.com/www/html/second.php"] == b"LIVE_SECOND_V1"
+    assert not any(".bbiz_stage_" in k for k in ftp_phase1_fail.files)
+
+    # 3. Unverified SIZE (502) refuses promotion by default, and succeeds only with allow_unverified_size=True
+    ftp_nosize_strict = _PhaseFtpClient(size_unsupported=True)
+    monkeypatch.setattr(ftps_mod, "connect_verified_ftps", lambda *a, **kw: ftp_nosize_strict)
+    with pytest.raises(ValueError, match="refusing unverified promotion"):
+        ftps_mod.deploy_items(
+            [(f1, "public/first.php")],
+            host="ftp.example.test",
+            user="u",
+            password="p",
+            app_root="/busherianbiasharas.com/www",
+            mode="prod",
+            release_sha="sha219strict",
+        )
+
+    ftp_good = _PhaseFtpClient(size_unsupported=True)
+    monkeypatch.setattr(ftps_mod, "connect_verified_ftps", lambda *a, **kw: ftp_good)
+    count = ftps_mod.deploy_items(
+        [(f1, "public/first.php"), (f2, "public/second.php")],
+        host="ftp.example.test",
+        user="u",
+        password="p",
+        app_root="/busherianbiasharas.com/www",
+        mode="prod",
+        release_sha="sha219ok",
+        allow_unverified_size=True,
+    )
+    assert count == 2
+    assert ftp_good.saw_maintenance_gate is True
+    assert "/busherianbiasharas.com/www/.maintenance_deploy.json" not in ftp_good.files
+    assert not any(".bbiz_prev_" in k for k in ftp_good.files)

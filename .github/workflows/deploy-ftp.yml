@@ -49,8 +49,8 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$SYNC_ALL" = "true" ]; then
             git ls-files public src bin VERSION > /tmp/changed_files.txt
           elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
-            git diff --name-only --diff-filter=ACMRT "$BEFORE_SHA" "$AFTER_SHA" -- public src bin VERSION > /tmp/changed_files.txt
-            git diff --name-only --diff-filter=D "$BEFORE_SHA" "$AFTER_SHA" -- public src bin | grep -vE '^(public/)?uploads/' > /tmp/deleted_files.txt || true
+            git diff -M --name-only --diff-filter=ACMRT "$BEFORE_SHA" "$AFTER_SHA" -- public src bin VERSION > /tmp/changed_files.txt
+            git diff -M --name-status "$BEFORE_SHA" "$AFTER_SHA" -- public src bin | python3 .github/scripts/ftps_deploy.py --mode prod --extract-retired-from-stdin > /tmp/deleted_files.txt
           else
             git ls-files public src bin VERSION > /tmp/changed_files.txt
           fi

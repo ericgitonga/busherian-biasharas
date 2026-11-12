@@ -22,13 +22,15 @@ if ($targetBizId > 0) {
 $currentOwner = OwnerAuth::getCurrentOwner($pdo);
 if ($currentOwner !== null) {
     OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$currentOwner['id'], (string)($currentOwner['email'] ?? ''));
-    $redeemedClaimId = OwnerAuth::redeemVerifiedClaimFromSession(
-        $pdo,
-        (int)$currentOwner['id'],
-        (string)($currentOwner['email'] ?? '')
-    );
-    if ($redeemedClaimId !== null && $redeemedClaimId > 0) {
-        header("Location: /owner/edit-business.php?id={$redeemedClaimId}&claimed=1");
+    $pendingSessionClaim = OwnerAuth::getVerifiedClaimFromSession($pdo);
+    if ($pendingSessionClaim !== null) {
+        $claimQs = http_build_query([
+            'biz_id' => $pendingSessionClaim['biz_id'],
+            'exp' => $pendingSessionClaim['exp'],
+            'sig' => $pendingSessionClaim['sig'],
+            'em' => $pendingSessionClaim['em'],
+        ]);
+        header("Location: /owner/claim.php?{$claimQs}");
         exit;
     }
     if ($targetBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$currentOwner['id'], $targetBizId)) {
@@ -109,7 +111,9 @@ $flashSuccess = '';
 $flashError = '';
 $devPreviewOtpCode = null;
 
-if (isset($_GET['logged_out_all'])) {
+if (isset($_GET['account_erased'])) {
+    $flashSuccess = 'Your Owner Account, sessions, authentication tokens, and personal correspondence records have been permanently erased.';
+} elseif (isset($_GET['logged_out_all'])) {
     $flashSuccess = 'You have been signed out on this browser and all other active devices.';
 } elseif (isset($_GET['logged_out'])) {
     $flashSuccess = 'You have been signed out of your Owner session.';
@@ -195,7 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newPw = (string)($_POST['new_password'] ?? '');
         $confirmPw = (string)($_POST['confirm_password'] ?? '');
 
-        $rate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'owner_otp_verify', 8, 15);
+        $rate = AntiSpamGate::checkAuthAttemptAllowed($pdo, $clientIp, 'owner_otp_verify', $email, 10, 30, 5, 15);
         if (!$rate['allowed']) {
             $flashError = 'Too many code attempts. Please wait 15 minutes before trying again.';
         } elseif (mb_strlen($newPw) < 8) {
@@ -209,10 +213,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $flashError = 'Invalid or expired 6-digit code. Please double-check the code in your email or request a new one.';
                 } else {
                     OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$verifiedOwner['id'], $email);
-                    $redeemedClaimId = OwnerAuth::redeemVerifiedClaimFromSession($pdo, (int)$verifiedOwner['id'], $email);
+                    $pendingSessionClaim = OwnerAuth::getVerifiedClaimFromSession($pdo);
                     OwnerAuth::establishOwnerSession($verifiedOwner, true, $pdo);
-                    if ($redeemedClaimId !== null && $redeemedClaimId > 0) {
-                        header("Location: /owner/edit-business.php?id={$redeemedClaimId}&claimed=1");
+                    if ($pendingSessionClaim !== null) {
+                        $claimQs = http_build_query([
+                            'biz_id' => $pendingSessionClaim['biz_id'],
+                            'exp' => $pendingSessionClaim['exp'],
+                            'sig' => $pendingSessionClaim['sig'],
+                            'em' => $pendingSessionClaim['em'],
+                        ]);
+                        header("Location: /owner/claim.php?{$claimQs}");
                         exit;
                     }
                     if ($targetBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$verifiedOwner['id'], $targetBizId)) {
@@ -230,7 +240,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         // Primary Sign-In: Email + Password
         $password = (string)($_POST['password'] ?? '');
-        $rate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'owner_pw_login', 10, 15);
+        $rate = AntiSpamGate::checkAuthAttemptAllowed($pdo, $clientIp, 'owner_pw_login', $email, 12, 40, 6, 20);
         if (!$rate['allowed']) {
             $flashError = 'Too many sign-in attempts. Please wait 15 minutes or reset your password.';
         } else {
@@ -247,10 +257,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $authOwner = OwnerAuth::authenticateWithPassword($pdo, $email, $password);
                 if ($authOwner !== null) {
                     OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$authOwner['id'], $email);
-                    $redeemedClaimId = OwnerAuth::redeemVerifiedClaimFromSession($pdo, (int)$authOwner['id'], $email);
+                    $pendingSessionClaim = OwnerAuth::getVerifiedClaimFromSession($pdo);
                     OwnerAuth::establishOwnerSession($authOwner, true, $pdo);
-                    if ($redeemedClaimId !== null && $redeemedClaimId > 0) {
-                        header("Location: /owner/edit-business.php?id={$redeemedClaimId}&claimed=1");
+                    if ($pendingSessionClaim !== null) {
+                        $claimQs = http_build_query([
+                            'biz_id' => $pendingSessionClaim['biz_id'],
+                            'exp' => $pendingSessionClaim['exp'],
+                            'sig' => $pendingSessionClaim['sig'],
+                            'em' => $pendingSessionClaim['em'],
+                        ]);
+                        header("Location: /owner/claim.php?{$claimQs}");
                         exit;
                     }
                     if ($targetBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$authOwner['id'], $targetBizId)) {
