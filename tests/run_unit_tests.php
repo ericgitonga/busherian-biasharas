@@ -2189,7 +2189,7 @@ $pendStmt201 = $pdo->prepare("
         name, slug, tagline, description, school_badge, sector_id, specialty_id, service_mode,
         city_county, operating_hours_json, phone_primary, email_public, owner_email, status
     ) VALUES (
-        'Unpublished Stealth Venture 201', 'unpublished-stealth-201', 'Stealth', 'Pending listing', 'AHS', :sec, :spec, 'both',
+        'Unpublished Stealth Venture 201', 'unpublished-stealth-201', 'Stealth', 'Pending listing', 'AHS', :sec, :spec, 'hybrid',
         'Nairobi', '{\"mon\":[[\"08:00\",\"17:00\"]]}', '+254700201201', 'info@stealth201.co.ke', 'founder@stealth201.co.ke', 'pending'
     )
 ");
