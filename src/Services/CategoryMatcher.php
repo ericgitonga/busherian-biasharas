@@ -312,6 +312,379 @@ final class CategoryMatcher
     ];
 
 
+
+    /**
+     * Conversational English & Swahili stopwords stripped from natural-language descriptions (#276).
+     */
+    public const NL_STOPWORDS = [
+        'i', 'im', 'iam', 'am', 'a', 'an', 'the', 'me', 'my', 'mine', 'myself',
+        'we', 'our', 'ours', 'us', 'you', 'your', 'he', 'she', 'they', 'their', 'it', 'its',
+        'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having',
+        'do', 'does', 'did', 'doing', 'can', 'could', 'will', 'would', 'shall', 'should',
+        'in', 'on', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through',
+        'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'of', 'off',
+        'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where',
+        'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some',
+        'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very',
+        'and', 'but', 'or', 'as', 'if', 'while', 'who', 'whom', 'which', 'what', 'that', 'this', 'these', 'those',
+        'offer', 'offers', 'offering', 'provide', 'provides', 'providing', 'run', 'runs', 'running',
+        'make', 'makes', 'making', 'build', 'builds', 'building_verb', 'sell', 'sells', 'selling',
+        'help', 'helps', 'helping', 'work', 'works', 'working', 'specialize', 'specializes', 'specializing',
+        'specialist', 'specialists', 'professional', 'professionals', 'expert', 'experts',
+        'business', 'businesses', 'biashara', 'company', 'companies', 'firm', 'firms', 'enterprise',
+        'agency', 'practice', 'group', 'limited', 'ltd', 'inc', 'co', 'founder', 'owner',
+        'service', 'services', 'solution', 'solutions', 'product', 'products', 'client', 'clients',
+        'based', 'located', 'around', 'across', 'within', 'near', 'nairobi', 'kenya', 'kenyan', 'east', 'africa',
+        'looking', 'need', 'needs', 'want', 'wants', 'seeking', 'find', 'someone', 'people',
+        'mimi', 'sisi', 'ni', 'wa', 'ya', 'za', 'la', 'kwa', 'na', 'katika', 'hapa', 'wenye',
+        'tunafanya', 'ninafanya', 'tunauza', 'ninauza', 'tunatoa', 'kampuni', 'huduma', 'biasharas',
+    ];
+
+    /**
+     * Irregular & occupational root normalization map (#276) so agent nouns ("photographer",
+     * "dentist", "architect", "baker", "accountant") match specialty nouns ("Photography",
+     * "Dental", "Architecture", "Bakery", "Accounting").
+     */
+    public const OCCUPATION_STEM_MAP = [
+        'photographer' => 'photograph', 'photographers' => 'photograph', 'photography' => 'photograph',
+        'photographic' => 'photograph', 'photographed' => 'photograph', 'photo' => 'photograph', 'photos' => 'photograph',
+        'videographer' => 'videograph', 'videographers' => 'videograph', 'videography' => 'videograph',
+        'video' => 'videograph', 'videos' => 'videograph',
+        'dentist' => 'dent', 'dentists' => 'dent', 'dentistry' => 'dent', 'dental' => 'dent',
+        'orthodontist' => 'orthodont', 'orthodontists' => 'orthodont', 'orthodontics' => 'orthodont', 'orthodontic' => 'orthodont',
+        'optometrist' => 'optometr', 'optometrists' => 'optometr', 'optometry' => 'optometr', 'optician' => 'optometr', 'optical' => 'optometr',
+        'pharmacist' => 'pharmac', 'pharmacists' => 'pharmac', 'pharmacy' => 'pharmac', 'pharmacies' => 'pharmac', 'pharmaceutical' => 'pharmac',
+        'pediatrician' => 'pediatr', 'paediatrician' => 'pediatr', 'pediatrics' => 'pediatr', 'paediatrics' => 'pediatr', 'pediatric' => 'pediatr', 'paediatric' => 'pediatr',
+        'physiotherapist' => 'physiotherap', 'physiotherapists' => 'physiotherap', 'physiotherapy' => 'physiotherap', 'physio' => 'physiotherap',
+        'psychologist' => 'psycholog', 'psychologists' => 'psycholog', 'psychology' => 'psycholog', 'psychiatrist' => 'psycholog', 'psychiatry' => 'psycholog',
+        'therapist' => 'counsel', 'therapists' => 'counsel', 'therapy' => 'counsel', 'counsellor' => 'counsel', 'counselor' => 'counsel', 'counselling' => 'counsel', 'counseling' => 'counsel',
+        'doctor' => 'medic', 'doctors' => 'medic', 'physician' => 'medic', 'medical' => 'medic', 'medicine' => 'medic', 'clinician' => 'medic',
+        'advocate' => 'advocat', 'advocates' => 'advocat', 'lawyer' => 'advocat', 'lawyers' => 'advocat', 'attorney' => 'advocat', 'attorneys' => 'advocat', 'solicitor' => 'advocat',
+        'accountant' => 'account', 'accountants' => 'account', 'accounting' => 'account', 'bookkeeper' => 'account', 'bookkeeping' => 'account',
+        'auditor' => 'audit', 'auditors' => 'audit', 'auditing' => 'audit', 'audit' => 'audit',
+        'actuary' => 'actuar', 'actuaries' => 'actuar', 'actuarial' => 'actuar',
+        'arbitrator' => 'arbitrat', 'arbitrators' => 'arbitrat', 'arbitration' => 'arbitrat', 'mediator' => 'mediat', 'mediation' => 'mediat',
+        'architect' => 'architect', 'architects' => 'architect', 'architecture' => 'architect', 'architectural' => 'architect',
+        'surveyor' => 'survey', 'surveyors' => 'survey', 'surveying' => 'survey',
+        'valuer' => 'valuat', 'valuers' => 'valuat', 'valuation' => 'valuat', 'valuations' => 'valuat',
+        'plumber' => 'plumb', 'plumbers' => 'plumb', 'plumbing' => 'plumb',
+        'electrician' => 'electr', 'electricians' => 'electr', 'electrical' => 'electr',
+        'contractor' => 'contract', 'contractors' => 'contract', 'contracting' => 'contract',
+        'baker' => 'bak', 'bakers' => 'bak', 'baking' => 'bak', 'bakery' => 'bak', 'bakeries' => 'bak',
+        'caterer' => 'cater', 'caterers' => 'cater', 'catering' => 'cater',
+        'butcher' => 'butcher', 'butchers' => 'butcher', 'butchery' => 'butcher',
+        'tailor' => 'tailor', 'tailors' => 'tailor', 'tailoring' => 'tailor', 'seamstress' => 'tailor',
+        'jeweler' => 'jewel', 'jeweller' => 'jewel', 'jewelry' => 'jewel', 'jewellery' => 'jewel',
+        'beautician' => 'beaut', 'beauty' => 'beaut', 'hairdresser' => 'salon', 'barber' => 'salon',
+        'farmer' => 'farm', 'farmers' => 'farm', 'farming' => 'farm',
+        'veterinarian' => 'veterinar', 'veterinarians' => 'veterinar', 'veterinary' => 'veterinar', 'vet' => 'veterinar', 'vets' => 'veterinar',
+        'beekeeper' => 'beekeep', 'beekeepers' => 'beekeep', 'beekeeping' => 'beekeep', 'apiarist' => 'beekeep', 'apiculture' => 'beekeep',
+        'mechanic' => 'mechan', 'mechanics' => 'mechan', 'mechanical' => 'mechan',
+        'chauffeur' => 'chauffeur', 'driver' => 'chauffeur', 'drivers' => 'chauffeur',
+        'mover' => 'mov', 'movers' => 'mov', 'moving' => 'mov', 'relocation' => 'mov',
+        'tutor' => 'tutor', 'tutors' => 'tutor', 'tutoring' => 'tutor', 'teacher' => 'tutor', 'teachers' => 'tutor', 'teaching' => 'tutor',
+        'coach' => 'coach', 'coaches' => 'coach', 'coaching' => 'coach', 'mentor' => 'coach', 'mentoring' => 'coach', 'mentorship' => 'coach',
+        'trainer' => 'train', 'trainers' => 'train', 'training' => 'train',
+        'publisher' => 'publish', 'publishers' => 'publish', 'publishing' => 'publish', 'publish' => 'publish', 'published' => 'publish',
+        'editor' => 'edit', 'editors' => 'edit', 'editing' => 'edit', 'editorial' => 'edit', 'proofreader' => 'proofread', 'proofreading' => 'proofread',
+        'ghostwriter' => 'ghostwrit', 'ghostwriters' => 'ghostwrit', 'ghostwriting' => 'ghostwrit',
+        'author' => 'author', 'authors' => 'author', 'writer' => 'writ', 'writers' => 'writ', 'writing' => 'writ', 'poet' => 'poet', 'poetry' => 'poet',
+        'printer' => 'print', 'printers' => 'print', 'printing' => 'print', 'print' => 'print', 'prints' => 'print',
+        'podcaster' => 'podcast', 'podcasters' => 'podcast', 'podcasting' => 'podcast', 'podcast' => 'podcast', 'podcasts' => 'podcast',
+        'illustrator' => 'illustrat', 'illustrators' => 'illustrat', 'illustration' => 'illustrat', 'illustrations' => 'illustrat',
+        'animator' => 'animat', 'animators' => 'animat', 'animation' => 'animat', 'animations' => 'animat',
+        'sculptor' => 'sculpt', 'sculptors' => 'sculpt', 'sculpture' => 'sculpt', 'sculptures' => 'sculpt', 'potter' => 'potter', 'pottery' => 'potter',
+        'musician' => 'music', 'musicians' => 'music', 'musical' => 'music', 'music' => 'music', 'singer' => 'music', 'vocalist' => 'music',
+        'filmmaker' => 'film', 'filmmakers' => 'film', 'filmmaking' => 'film', 'cinema' => 'film', 'film' => 'film', 'films' => 'film',
+        'painter' => 'paint', 'painters' => 'paint', 'painting' => 'paint', 'paintings' => 'paint',
+        'curator' => 'curat', 'curators' => 'curat', 'curatorial' => 'curat',
+        'welder' => 'weld', 'welders' => 'weld', 'welding' => 'weld', 'fabricator' => 'fabricat', 'fabrication' => 'fabricat',
+        'cleaner' => 'clean', 'cleaners' => 'clean', 'cleaning' => 'clean',
+        'gardener' => 'garden', 'gardeners' => 'garden', 'gardening' => 'garden', 'landscaper' => 'landscap', 'landscaping' => 'landscap',
+        'fumigator' => 'fumigat', 'fumigation' => 'fumigat',
+        'developer' => 'develop', 'developers' => 'develop', 'development' => 'develop', 'programmer' => 'develop', 'coder' => 'develop',
+        'designer' => 'design', 'designers' => 'design', 'designing' => 'design', 'design' => 'design',
+        'consultant' => 'consult', 'consultants' => 'consult', 'consulting' => 'consult', 'consultancy' => 'consult',
+        'advisor' => 'advis', 'advisors' => 'advis', 'advisory' => 'advis',
+        'broker' => 'broker', 'brokers' => 'broker', 'brokerage' => 'broker',
+        'insurer' => 'insur', 'insurance' => 'insur',
+        'customs' => 'customs_duty', 'machining' => 'cnc_machin', 'machinist' => 'cnc_machin', 'refrigerator' => 'fridg', 'refrigerators' => 'fridg', 'fridge' => 'fridg', 'fridges' => 'fridg',
+    ];
+
+    /**
+     * Natural-language concept & domain keyword map across all 116 Level 2 Specialties (#276).
+     * Enables conversational first-person descriptions (e.g. "I am an arthropod macro photographer",
+     * "We do root canals and braces", "I clear cargo at Mombasa port") to match instantaneously.
+     */
+    public const SPECIALTY_CONCEPT_KEYWORDS = [
+        // 1. Legal, Accounting & Advisory
+        'Advocates & Law Firm' => 'lawyer attorney litigation conveyancing contracts commercial law commissioner oaths notary wills probate court dispute legal wakili sheria',
+        'Audit, Tax & Accounting (CPA)' => 'accountant bookkeeping kra tax returns vat paye payroll tax financial statements statutory audit cpa icpak ushuru',
+        'Company Secretarial & Governance' => 'company secretary board governance compliance registrar companies annual returns cr12 incorporation icpsk',
+        'Management & Strategy Consulting' => 'business consultant strategy turnaround organizational advisory operations consulting feasibility study transformation',
+        'HR Recruitment & Payroll' => 'human resources headhunting talent acquisition staffing hiring outsourcing payroll processing employee training ihrm',
+        'Actuarial & Risk Advisory' => 'actuary risk modeling enterprise risk solvency valuation insurance math task',
+        'Arbitration & Mediation' => 'arbitrator mediator dispute resolution adr commercial mediation conciliation ciarb',
+        'Intellectual Property & Trademarks' => 'patent copyright trademark brand protection kipi kecobo licensing ip law',
+
+        // 2. Health, Medical & Wellness
+        'General Medical & Family Clinic' => 'doctor physician outpatient gp consultation family medicine healthcare hospital checkup vaccination daktari hospitali',
+        'Dental Clinic & Orthodontics' => 'dentist orthodontist teeth tooth root canal braces aligners whitening implants oral surgery dental hygiene meno',
+        'Optometry & Eye Care' => 'optometrist optician eyeglasses spectacles contact lenses vision eye exam cataract ophthalmology macho',
+        'Pharmacy & Chemist' => 'pharmacist prescription medicine drugs supplements over counter chemist dispensary dawa',
+        'Diagnostic Lab & Imaging' => 'laboratory blood test pathology xray ultrasound mri ct scan radiology diagnostics medical lab',
+        'Physiotherapy & Rehabilitation' => 'physiotherapist physio sports injury chiropractor occupational therapy back pain stroke rehab mobility',
+        'Mental Health & Counselling' => 'psychologist psychiatrist therapist counsellor counseling mental wellness trauma anxiety depression marriage family therapy',
+        'Pediatric & Maternal Care' => 'pediatrician paediatrician children health baby clinic immunisation antenatal postnatal obstetrics gynaecology obgyn midwife',
+        'Gym, Fitness & Yoga Studio' => 'personal trainer workout CrossFit pilates yoga aerobics strength conditioning weight loss wellness studio',
+
+        // 3. Technology, Software & Digital
+        'Custom Software & Mobile App Dev' => 'software engineer developer mobile app android ios flutter react python php saas platform api coding bespoke software',
+        'Web Design & E-Commerce' => 'website builder wordpress shopify online store woocommerce mpesa checkout landing page ui ux frontend web developer',
+        'Cybersecurity & IT Audit' => 'penetration testing pentest infosec soc vulnerability assessment iso27001 data protection cyber defense ethical hacking',
+        'Cloud, DevOps & Hosting' => 'aws azure gcp linux servers domain registration web hosting kubernetes docker ci cd sysadmin cloud migration',
+        'Data Analytics & AI Solutions' => 'machine learning artificial intelligence llm data science business intelligence powerbi tableau predictive modeling automation',
+        'IT Hardware & Networking' => 'laptops computers servers structured cabling wifi routers switches printers pos hardware IT support',
+        'Fintech & Payment Integration' => 'mpesa daraja payment gateway digital wallet lending platform remittance tech banking api',
+        'ERP & Business Automation' => 'sap odoo dynamics erp crm inventory system pos software school management hospital management workflow',
+        'Bulk SMS, Voice, USSD & Communications APIs' => 'shortcodes sender id otp sms gateway whatsapp api ussd code ivr call center airtime disbursement',
+
+        // 4. Real Estate, Construction & Architecture
+        'Architecture & Urban Planning' => 'architect blueprints building design 3d renders masterplan town planning sustainable architecture boraqs',
+        'Civil & Structural Engineering' => 'structural engineer civil works roads bridges drainage steel concrete design geotechnical ebk',
+        'Building & General Contractor' => 'construction company house builder commercial building renovation masonry site contractor nca mjengo',
+        'Quantity Surveying' => 'quantity surveyor bill of quantities boq construction cost estimation project costing tendering',
+        'Interior Design & Fit-Outs' => 'interior designer office fitout home makeover cabinetry gypsum ceiling lighting curtains space planning',
+        'Property Sales, Letting & Management' => 'real estate agent realtor apartments houses plots commercial space rent lease property manager earb',
+        'Land Surveying & Valuation' => 'land surveyor beacon subdivision title deed property valuer appraisal gis mapping shamba',
+        'Hardware, Timber & Building Materials' => 'cement steel bars roofing sheets mabati tiles paint timber mbao plumbing supplies hardware store',
+        'Plumbing, Electrical & Solar Installation' => 'plumber electrician wiring sockets lighting solar water heater piping leak repair fundi stima',
+
+        // 5. Food, Beverage & Hospitality
+        'Restaurant, Nyama Choma & Bistro' => 'dining eatery cafe swahili dishes grill steakhouse lunch dinner takeaway nyama choma chakula',
+        'Coffee Shop, Bakery & Pastry' => 'baker cakes wedding cake birthday cake sourdough bread croissants pastries espresso barista kahawa keki',
+        'Event & Corporate Catering' => 'outside catering buffet corporate lunch wedding food private chef cocktailbites chafing dishes',
+        'Hotel, Boutique Resort & Airbnb' => 'accommodation guest house bed breakfast serviced apartment staycation conference rooms country lodge',
+        'Specialty Coffee, Tea & Honey Brand' => 'coffee roaster loose leaf tea raw organic honey artisanal food brand gourmet',
+        'Butchery & Fresh Farm Produce' => 'fresh meat beef goat chicken pork organic vegetables fruits groceries farm to table',
+        'Bar, Lounge & Wines/Spirits' => 'wine shop liquor store craft beer cocktails lounge wines spirits distributor',
+        'Food Processing & Packaging' => 'milling flour spices sauces snacks canningjuices value added food manufacturer',
+
+        // 6. Finance, Insurance & Investment
+        'Insurance Agency & Brokerage' => 'medical cover motor insurance life policytravel insurance underwriter claims broker bima',
+        'Wealth Management & Investment Advisory' => 'portfolio manager unit trusts money market fund offshore investing financial planner high net worth',
+        'SACCO, Microfinance & Credit' => 'loans savings credit cooperative sme financing logbook loan asset finance microcredit',
+        'Forex, Remittances & Treasury' => 'foreign exchange bureau currency exchange cross border money transfer hedging',
+        'Venture Capital & Private Equity' => 'angel investor startup funding growth equity seed capital impact investment deal advisory',
+        'Pension & Retirement Planning' => 'pension scheme provident fund umbrella retirement annuity rba',
+        'Stockbrokerage & Capital Markets' => 'nse shares equities treasury bills infrastructure bonds investment bank stockbroker',
+        'Mortgages & Property Finance' => 'home loan construction finance equity release mortgage broker',
+
+        // 7. Retail, Fashion & Consumer Goods
+        'Bespoke Tailoring, Suits & Bridal' => 'tailor custom suits tuxedo wedding gown bridesmaids ankara kitenge dressmaker alterations nguo',
+        'Apparel, Footwear & Streetwear' => 'clothing brand boutique tshirts hoodies sneakers shoes menswear womenswear fashion line',
+        'Jewelry, Leather & African Crafts' => 'handcrafted bags wallets belts beadwork silver gold rings necklaces Maasai crafts curios',
+        'Beauty, Cosmetics & Hair Salon' => 'salon barbershop kinyozi braids locs skincare makeup artist nail bar spa facials massage',
+        'Home Decor, Furniture & Appliances' => 'sofas beds dining tables office furniture kitchenware electronics rugs curtains',
+        'Bookshop, Stationery & Gifts' => 'bookstore textbooks novels notebooks office stationery corporate hampers gift shop vitabu',
+        'Supermarket & Minimart' => 'retail store household essentials groceries convenience shop minimart',
+        'Baby, Kids & Maternity Store' => 'infant clothing toys strollers car seats diapers nursery maternity wear',
+
+        // 8. Agriculture & Agribusiness
+        'Dairy, Poultry & Livestock Farming' => 'milk cows layers broilers eggs pigs goats sheep cattle ranching kuku maziwa',
+        'Horticulture & Fresh Export' => 'avocados french beans flowers herbs macadamia mangoes export farming packhouse',
+        'Agrovet, Seeds & Crop Protection' => 'fertilizers pesticides herbicides hybrid seeds crop nutrition agronomy mbegu dawa',
+        'Farm Machinery, Irrigation & Greenhouses' => 'drip irrigation solar water pumps tractors dam liners shade nets greenhouse construction',
+        'Animal Feeds & Veterinary Services' => 'vet doctor livestock vaccination artificial insemination dairy meal poultry feed pet clinic',
+        'Agri-Processing & Value Addition' => 'cold pressed oil dried fruit nut butter dairy processing grain drying',
+        'Beekeeping & Apiculture' => 'honeybees hives langstroth beeswax propolis pollination entomology insects apiary',
+
+        // 9. Automotive, Logistics & Transport
+        'Auto Garage, Service & Body Shop' => 'car mechanic panel beating spray painting wheel alignment engine diagnostics gearbox service gari',
+        'Car Dealership & Import Financing' => 'used cars japan uk car imports showroom trade in vehicle sales',
+        'Auto Spares, Tyres & Batteries' => 'spare parts brake pads shock absorbers tyres rims car battery lubricants',
+        'Car Hire, Chauffeur & Executive Transfer' => 'self drive car rental vip chauffeur suv hire wedding cars shuttle',
+        'Courier, Last-Mile & Freight Logistics' => 'parcel delivery rider fleet trucking haulage cold chain distribution warehousing',
+        'Clearing, Forwarding & Customs' => 'customs agent cargo container containers port clearing airfreight sea freight import export documentation kra icd mombasa',
+        'Moving, Relocation & Storage' => 'house movers office relocation international moving self storage units packing',
+
+        // 10. Education, Training & Coaching
+        'Kindergarten, Primary & High School' => 'montessori creche daycare preschool primary secondary international school shule',
+        'Academic Tutoring & Exam Prep (CBC/IGCSE)' => 'private tutor homeschooling math science languages sat ielts igcse kcpe kcse cbc mwalimu',
+        'Corporate Training & Executive Coaching' => 'leadership coach career coach life coach team facilitation public speaking board training',
+        'Music, Arts & Coding Academy' => 'piano guitar violin lessons ballet swimming lessons robotics coding for kids stem camp',
+        'Study Abroad & University Placement' => 'overseas university admissions student visa scholarships uk usa canada australia',
+        'Driving School & Technical TVET' => 'learner driver license vocational college hospitality plumbing electrical trade school',
+        'Author Coaching & Manuscript Advisory' => 'writing coach book coach memoir coaching non fiction book proposal self publishing mentor developmental guidance mwandishi',
+
+        // 11. Creative, Media, Marketing & Events
+        'Branding, Graphic Design & PR Agency' => 'logo design brand identity corporate communications public relations media buying creative agency',
+        'Digital Marketing, SEO & Social Media' => 'social media manager google ads meta ads influencer marketing content creator email marketing',
+        'Commercial Photography & Videography' => 'photographer videographer macro photography arthropod insect wildlife nature bird aerial drone portrait headshot product wedding event documentary studio camera lens picha',
+        'Event Planning, Tent/Sound & Decor' => 'event planner wedding planner mc dj pa sound stage lighting floral decor tents chairs harusi',
+        'Printing, Signage & Branded Merchandise' => 'commercial printer offset digital print fine art prints posters banners 3d signage mugs tshirts promotional merchandise',
+        'Book, Academic & Digital Publishing' => 'book publisher publishing house textbooks children books ebooks audiobooks isbn distribution royalties mchapishaji uchapishaji vitabu',
+        'Editorial, Ghostwriting & Author Services' => 'copyediting proofreading ghostwriter manuscript editing typesetting book cover layout indexing',
+        'Podcast, Broadcast & Content Studio' => 'podcast studio audio recording voiceover livestreaming youtube studio radio production',
+
+        // 12. Arts, Visual & Performing Arts
+        'Visual Arts, Fine Art & Galleries' => 'fine artist painter canvas gallery exhibition wildlife art nature photography arthropod botanical prints art collector sanaa',
+        'Performing Arts, Theatre & Dance' => 'stage play theatre troupe choreographer contemporary traditional dance drama',
+        'Music, Live Bands, DJs & Sound Production' => 'live band wedding band jazz acoustic dj music producer recording studio mastering mziki',
+        'Film, Cinema, Animation & Directing' => 'film director screenwriter documentary filmmaker 2d 3d animation vfx color grading',
+        'Sculpture, Ceramics, Pottery & Crafts' => 'sculptor wood carving stone bronze ceramicist pottery wheel handmade tableware',
+        'Illustration, Comics & Digital Art' => 'illustrator children book illustration comic book storyboard character design concept art',
+        'Literary Arts, Poetry & Creative Writing' => 'poet spoken word novelist creative writing workshop storytelling anthology',
+        'Cultural Heritage, Curatorial & Museums' => 'museum curator archival preservation cultural festival heritage tour oral history',
+
+        // 13. Manufacturing, Energy & Industrial
+        'Solar PV, Inverters & Clean Energy' => 'solar panels hybrid inverter lithium battery off grid commercial solar clean energy epra',
+        'Water Borehole Drilling & Treatment' => 'hydrogeological survey borehole drilling reverse osmosis water purifier desalination tanks maji',
+        'Metal Fabrication, Welding & Machining' => 'steel gates grills structural steel cnc machining lathe stainless steel fabrication welder',
+        'Chemical, Soap & Detergent Manufacturing' => 'industrial chemicals liquid detergent sanitizer cosmetics formulation cleaning products',
+        'Plastics, Packaging & Paper Products' => 'corrugated cartons biodegradable packaging paper bags bottles labels flexible packaging',
+        'Industrial Safety (PPE) & Fire Equipment' => 'fire extinguishers fire alarm safety boots helmets reflective vests osh compliance',
+
+        // 14. Travel, Tours & Safari
+        'Safari Operator & Tour Packages' => 'maasai mara amboseli tsavo wildlife safari bush tour holiday packages travel agent',
+        'Flight Ticketing & Visa Assistance' => 'air tickets flight booking schengen us visa application passport travel desk',
+        'Team Building & Bush Expeditions' => 'corporate retreat mount kenya kilimanjaro hiking camping overland adventure',
+        'Eco-Camp & Safari Lodge' => 'tented camp bush lodge conservancy eco tourism wildlife photography camp',
+        'Travel Insurance & Concierge' => 'vip travel concierge itinerary planning emergency medical evacuation travel cover',
+        'Airport Transfers & VIP Meet-and-Greet' => 'jkia sgr transfer airport pickup fast track vip lounge chauffeur',
+        'Conference & MICE Tourism' => 'international conference delegate management exhibition organizer retreat venue sourcing',
+
+        // 15. Home, Security & Facility Services
+        'CCTV, Electric Fencing & Guarding' => 'security guards alarm response access control biometrics razor wire cctv cameras psra',
+        'Commercial & Residential Cleaning' => 'office cleaning post construction cleaning carpet sofa upholstery wash window cleaning',
+        'Pest Control & Fumigation' => 'termites bedbugs cockroaches rodents mosquito control disinfection fumigator',
+        'Landscaping & Gardening' => 'lawn care garden design tree pruning paving cabro outdoor Pergola nursery plants',
+        'Laundry & Dry Cleaning' => 'dry cleaner wash fold ironing duvet curtains laundry pickup delivery',
+        'Appliance Repair & Handyman' => 'fridge refrigerator freezer washing machine dishwasher oven cooker microwave television tv repair fix broken appliances carpentry odd jobs handyman',
+        'Moving, Packing & Storage' => 'household packing fragile crating furniture assembly storage facility',
+        'borehole Pump Servicing & Plumbing' => 'submersible pump repair booster pump water tank cleaning blocked drain plumber',
+    ];
+
+    /**
+     * Normalize an English/Swahili word to its morphological/occupational stem (#276).
+     */
+    public static function stemWord(string $word): string
+    {
+        $w = strtolower(trim(preg_replace('/[^a-z0-9]/i', '', $word) ?? ''));
+        if ($w === '') {
+            return '';
+        }
+        if (isset(self::OCCUPATION_STEM_MAP[$w])) {
+            return self::OCCUPATION_STEM_MAP[$w];
+        }
+        $len = strlen($w);
+        if ($len <= 4) {
+            return $w;
+        }
+        $suffixes = [
+            'ographer' => 'ograph',
+            'ographers' => 'ograph',
+            'ography' => 'ograph',
+            'ographic' => 'ograph',
+            'ologist' => 'olog',
+            'ologists' => 'olog',
+            'ology' => 'olog',
+            'iatrician' => 'iatr',
+            'iatrics' => 'iatr',
+            'ications' => 'ic',
+            'ication' => 'ic',
+            'ations' => 'at',
+            'ation' => 'at',
+            'ments' => '',
+            'ment' => '',
+            'nesses' => '',
+            'ness' => '',
+            'ings' => '',
+            'ing' => '',
+            'ists' => '',
+            'ist' => '',
+            'ers' => '',
+            'er' => '',
+            'ors' => '',
+            'or' => '',
+            'ies' => 'y',
+            'es' => '',
+            's' => '',
+        ];
+        foreach ($suffixes as $suf => $rep) {
+            $sLen = strlen($suf);
+            if ($len - $sLen >= 4 && str_ends_with($w, $suf)) {
+                return substr($w, 0, $len - $sLen) . $rep;
+            }
+        }
+        return $w;
+    }
+
+    /**
+     * Extract meaningful content tokens from a natural-language sentence (stripping stopwords).
+     *
+     * @return list<string>
+     */
+    public static function extractMeaningfulTokens(string $rawQuery): array
+    {
+        $clean = strtolower(trim(mb_substr($rawQuery, 0, 180)));
+        if ($clean === '') {
+            return [];
+        }
+        $rawTokens = preg_split('/[^a-z0-9]+/i', $clean) ?: [];
+        $stopMap = array_fill_keys(self::NL_STOPWORDS, true);
+        $kept = [];
+        foreach ($rawTokens as $tok) {
+            if ($tok === '' || strlen($tok) < 2) {
+                continue;
+            }
+            if (isset($stopMap[$tok])) {
+                continue;
+            }
+            $kept[] = $tok;
+        }
+        // Fallback: if the entire query consisted of stopwords (e.g. "it", "co"), keep non-empty raw tokens >= 2 chars
+        if ($kept === []) {
+            foreach ($rawTokens as $tok) {
+                if (strlen($tok) >= 2) {
+                    $kept[] = $tok;
+                }
+            }
+        }
+        return array_values(array_unique($kept));
+    }
+
+    /**
+     * Sørensen–Dice character-bigram similarity (0.0..1.0) for typo tolerance on content words (#276).
+     */
+    public static function diceBigramSimilarity(string $a, string $b): float
+    {
+        $s1 = strtolower(trim($a));
+        $s2 = strtolower(trim($b));
+        if ($s1 === $s2) {
+            return $s1 === '' ? 0.0 : 1.0;
+        }
+        $l1 = strlen($s1);
+        $l2 = strlen($s2);
+        if ($l1 < 2 || $l2 < 2) {
+            return 0.0;
+        }
+        $bg1 = [];
+        for ($i = 0; $i < $l1 - 1; $i++) {
+            $k = substr($s1, $i, 2);
+            $bg1[$k] = ($bg1[$k] ?? 0) + 1;
+        }
+        $intersection = 0;
+        for ($j = 0; $j < $l2 - 1; $j++) {
+            $k = substr($s2, $j, 2);
+            if (($bg1[$k] ?? 0) > 0) {
+                $intersection++;
+                $bg1[$k]--;
+            }
+        }
+        return (2.0 * $intersection) / (($l1 - 1) + ($l2 - 1));
+    }
+
     /**
      * Server-side hierarchy check (#186):
      * - $sectorId MUST exist and be a top-level sector (`parent_id IS NULL`).
@@ -358,17 +731,23 @@ final class CategoryMatcher
         if ($clean === '') {
             return [];
         }
-        $terms = [$rawQuery];
-        $tokens = preg_split('/\s+/', $clean) ?: [];
-        foreach ($tokens as $tok) {
-            $tok = preg_replace('/[^a-z0-9]/', '', $tok) ?? '';
+        $terms = [trim($rawQuery)];
+        $contentTokens = self::extractMeaningfulTokens($rawQuery);
+        foreach ($contentTokens as $tok) {
+            if (strlen($tok) >= 3) {
+                $terms[] = $tok;
+            }
+            $stem = self::stemWord($tok);
+            if (strlen($stem) >= 4 && $stem !== $tok) {
+                $terms[] = $stem;
+            }
             if (isset(self::SYNONYM_LEXICON[$tok])) {
                 foreach (self::SYNONYM_LEXICON[$tok] as $mapped) {
                     $terms[] = $mapped;
                 }
             }
         }
-        return array_values(array_unique($terms));
+        return array_slice(array_values(array_unique($terms)), 0, 14);
     }
 
     /**
@@ -453,49 +832,21 @@ final class CategoryMatcher
      */
     public static function suggestCategoryFromText(PDO $pdo, string $text): ?array
     {
-        $rawTrim = trim($text);
-        if ($rawTrim === '') {
+        $ranked = self::searchSpecialties($pdo, mb_substr(trim($text), 0, 300), 1, false);
+        if ($ranked === []) {
             return null;
         }
-        $expandedPhrases = self::expandSearchTerms($rawTrim);
-        $haystack = strtolower(implode(' ', $expandedPhrases));
-
-        $stmt = $pdo->query("
-            SELECT c.id AS specialty_id, c.name AS specialty_name,
-                   p.id AS sector_id, p.name AS sector_name
-            FROM categories c
-            INNER JOIN categories p ON p.id = c.parent_id
-            WHERE c.status = 'approved'
-        ");
-        $specialties = $stmt->fetchAll();
-
-        $best = null;
-        $bestScore = 0.0;
-
-        foreach ($specialties as $spec) {
-            $score = 0.0;
-            $words = preg_split('/[^a-z0-9]+/i', strtolower($spec['specialty_name'] . ' ' . $spec['sector_name'])) ?: [];
-            foreach ($words as $w) {
-                if (strlen($w) < 3 || in_array($w, ['and', 'the', 'for', 'care', 'services'], true)) {
-                    continue;
-                }
-                if (str_contains($haystack, $w)) {
-                    $score += (strlen($w) >= 6) ? 2.5 : 1.5;
-                }
-            }
-            if ($score > $bestScore) {
-                $bestScore = $score;
-                $best = [
-                    'sector_id' => (int)$spec['sector_id'],
-                    'sector_name' => $spec['sector_name'],
-                    'specialty_id' => (int)$spec['specialty_id'],
-                    'specialty_name' => $spec['specialty_name'],
-                    'confidence' => min(0.99, round($score / 6.0, 2)),
-                ];
-            }
+        $top = $ranked[0];
+        if ($top['score'] < 5.0) {
+            return null;
         }
-
-        return ($bestScore >= 1.5) ? $best : null;
+        return [
+            'sector_id' => $top['sector_id'],
+            'sector_name' => $top['sector_name'],
+            'specialty_id' => $top['specialty_id'],
+            'specialty_name' => $top['specialty_name'],
+            'confidence' => min(0.99, round($top['score'] / 24.0, 2)),
+        ];
     }
 
 
@@ -507,30 +858,31 @@ final class CategoryMatcher
      */
     public static function searchSpecialties(PDO $pdo, string $rawQuery, int $limit = 8, bool $includePending = false): array
     {
-        $clean = strtolower(trim(mb_substr($rawQuery, 0, 100)));
+        $clean = strtolower(trim(mb_substr($rawQuery, 0, 180)));
         if ($clean === '') {
             return [];
         }
 
-        $tokens = array_values(array_filter(
-            preg_split('/[^a-z0-9]+/i', $clean) ?: [],
-            static fn(string $t): bool => $t !== ''
-        ));
+        $tokens = self::extractMeaningfulTokens($clean);
         if ($tokens === []) {
             return [];
         }
 
+        $tokenStems = [];
         $synonymPhrases = [];
         foreach ($tokens as $tok) {
+            $st = self::stemWord($tok);
+            if ($st !== '') {
+                $tokenStems[$tok] = $st;
+            }
             if (isset(self::SYNONYM_LEXICON[$tok])) {
                 foreach (self::SYNONYM_LEXICON[$tok] as $mapped) {
                     $synonymPhrases[] = strtolower($mapped);
                 }
             }
-            // Prefix match on lexicon keys >= 4 chars (e.g. "publish" -> "publishing", "proofread" -> "proofreading")
             if (strlen($tok) >= 4) {
                 foreach (self::SYNONYM_LEXICON as $lexKey => $mappedList) {
-                    if (str_starts_with($lexKey, $tok)) {
+                    if (str_starts_with($lexKey, $tok) || self::stemWord($lexKey) === $st) {
                         foreach ($mappedList as $mapped) {
                             $synonymPhrases[] = strtolower($mapped);
                         }
@@ -539,6 +891,7 @@ final class CategoryMatcher
             }
         }
         $synonymPhrases = array_values(array_unique($synonymPhrases));
+        $meaningfulPhrase = implode(' ', $tokens);
 
         $tree = self::getTaxonomyTree($pdo, $includePending);
         $scored = [];
@@ -547,42 +900,110 @@ final class CategoryMatcher
             $secId = (int)$sec['id'];
             $secName = (string)$sec['name'];
             $secLower = strtolower($secName);
+            $secWords = preg_split('/[^a-z0-9]+/i', $secLower) ?: [];
+            $secStems = array_values(array_filter(array_map([self::class, 'stemWord'], $secWords)));
 
             foreach ($sec['specialties'] as $sp) {
                 $specName = (string)$sp['name'];
                 $specLower = strtolower($specName);
-                $combined = $specLower . ' ' . $secLower;
-                $score = 0.0;
+                $specWords = array_values(array_filter(preg_split('/[^a-z0-9]+/i', $specLower) ?: []));
+                $specStems = array_values(array_filter(array_map([self::class, 'stemWord'], $specWords)));
 
-                if ($specLower === $clean) {
-                    $score += 30.0;
-                } elseif (str_starts_with($specLower, $clean)) {
-                    $score += 18.0;
-                } elseif (str_contains($specLower, $clean)) {
-                    $score += 14.0;
-                } elseif (str_contains($secLower, $clean)) {
-                    $score += 6.0;
+                $conceptRaw = strtolower((string)(self::SPECIALTY_CONCEPT_KEYWORDS[$specName] ?? ''));
+                $conceptWords = array_values(array_filter(preg_split('/[^a-z0-9]+/i', $conceptRaw) ?: []));
+                $conceptStems = array_values(array_filter(array_map([self::class, 'stemWord'], $conceptWords)));
+
+                $score = 0.0;
+                $matchedSignals = [];
+
+                if ($specLower === $clean || ($meaningfulPhrase !== '' && $specLower === $meaningfulPhrase)) {
+                    $score += 36.0;
+                } elseif (strlen($meaningfulPhrase) >= 3 && str_starts_with($specLower, $meaningfulPhrase)) {
+                    $score += 20.0;
+                } elseif (strlen($meaningfulPhrase) >= 3 && str_contains($specLower, $meaningfulPhrase)) {
+                    $score += 15.0;
+                } elseif (strlen($meaningfulPhrase) >= 4 && $conceptRaw !== '' && str_contains($conceptRaw, $meaningfulPhrase)) {
+                    $score += 13.0;
                 }
 
                 foreach ($tokens as $tok) {
-                    if (strlen($tok) < 2) {
-                        continue;
+                    $st = $tokenStems[$tok] ?? $tok;
+                    $tokMatched = false;
+
+                    // 1. Direct word / prefix match on specialty title
+                    if (in_array($tok, $specWords, true)) {
+                        $score += 14.0;
+                        $tokMatched = true;
+                    } elseif (strlen($tok) >= 3 && preg_match('/\b' . preg_quote($tok, '/') . '/i', $specName)) {
+                        $score += 11.0;
+                        $tokMatched = true;
+                    } elseif (strlen($st) >= 3 && in_array($st, $specStems, true)) {
+                        // Morphological / occupational root match ("photographer" -> "photograph" == "Photography")
+                        $score += 12.5;
+                        $tokMatched = true;
                     }
-                    if (preg_match('/\b' . preg_quote($tok, '/') . '/i', $specName)) {
-                        $score += 7.0;
-                    } elseif (str_contains($specLower, $tok)) {
-                        $score += 4.5;
-                    } elseif (preg_match('/\b' . preg_quote($tok, '/') . '/i', $secName)) {
-                        $score += 2.5;
+
+                    // 2. Concept & domain keyword match ("macro", "arthropod", "root canal", "mombasa", etc.)
+                    if (in_array($tok, $conceptWords, true)) {
+                        $score += 9.5;
+                        $tokMatched = true;
+                    } elseif (strlen($tok) >= 5 && $conceptRaw !== '' && preg_match('/\b' . preg_quote($tok, '/') . '/i', $conceptRaw)) {
+                        $score += 7.5;
+                        $tokMatched = true;
+                    } elseif (strlen($st) >= 4 && in_array($st, $conceptStems, true)) {
+                        $score += 8.0;
+                        $tokMatched = true;
+                    }
+
+                    // 3. Parent sector word / stem match (lighter weight)
+                    if (!$tokMatched) {
+                        if (in_array($tok, $secWords, true) || (strlen($st) >= 4 && in_array($st, $secStems, true))) {
+                            $score += 3.0;
+                            $tokMatched = true;
+                        }
+                    }
+
+                    // 4. Typo-tolerant character-bigram fallback (e.g. "photografer", "ortodontist")
+                    if (!$tokMatched && strlen($tok) >= 5) {
+                        $bestDice = 0.0;
+                        foreach (array_merge($specWords, $conceptWords) as $candW) {
+                            if (strlen($candW) < 4 || abs(strlen($candW) - strlen($tok)) > 3) {
+                                continue;
+                            }
+                            $d = self::diceBigramSimilarity($tok, $candW);
+                            if ($d > $bestDice) {
+                                $bestDice = $d;
+                            }
+                        }
+                        if ($bestDice >= 0.76) {
+                            $score += round($bestDice * 7.5, 2);
+                            $tokMatched = true;
+                        }
+                    }
+
+                    if ($tokMatched) {
+                        $matchedSignals[] = $tok;
                     }
                 }
 
                 foreach ($synonymPhrases as $syn) {
-                    if ($syn !== '' && str_contains($specLower, $syn)) {
-                        $score += 5.5;
-                    } elseif ($syn !== '' && str_contains($combined, $syn)) {
+                    if ($syn === '') {
+                        continue;
+                    }
+                    $synStem = self::stemWord($syn);
+                    if (str_contains($specLower, $syn) || ($synStem !== '' && in_array($synStem, $specStems, true))) {
+                        $score += 6.5;
+                    } elseif ($conceptRaw !== '' && str_contains($conceptRaw, $syn)) {
+                        $score += 4.0;
+                    } elseif (str_contains($secLower, $syn)) {
                         $score += 2.0;
                     }
+                }
+
+                // Multi-signal synergy bonus when 2+ distinct content words match the same specialty
+                $uniqueSignals = array_values(array_unique($matchedSignals));
+                if (count($uniqueSignals) >= 2) {
+                    $score += (count($uniqueSignals) - 1) * 4.0;
                 }
 
                 if ($score > 0.0) {
@@ -592,6 +1013,7 @@ final class CategoryMatcher
                         'sector_id' => $secId,
                         'sector_name' => $secName,
                         'is_regulated' => !empty($sp['is_regulated']),
+                        'matched_terms' => $uniqueSignals,
                         'score' => round($score, 2),
                     ];
                 }
