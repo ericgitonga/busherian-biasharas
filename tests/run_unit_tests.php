@@ -306,11 +306,17 @@ assertTrue(
     'Owner signing in with @branfoot.com is NOT automatically granted edit access (#164), and receives informational claim guidance instead'
 );
 
-$bustaniOwner = OwnerAuth::upsertOwner($pdo, 'bustanibistro@gmail.com', 'Bustani Owner');
 $bustaniBizId = (int)$pdo->query("SELECT id FROM businesses WHERE slug = 'bustani-bistro' LIMIT 1")->fetchColumn();
+$bustaniOwner = OwnerAuth::upsertOwner($pdo, 'bustanibistro@gmail.com', 'Bustani Owner');
 assertTrue(
-    $bustaniBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$bustaniOwner['id'], $bustaniBizId),
-    'Owner signing in with bustanibistro@gmail.com is automatically linked via public_email_match'
+    $bustaniBizId > 0 && !OwnerAuth::canOwnerEditBusiness($pdo, (int)$bustaniOwner['id'], $bustaniBizId),
+    'Owner signing in with public contact email (email_public) is NOT auto-linked when owner_email is unset (#207)'
+);
+$pdo->prepare("UPDATE businesses SET owner_email = 'bustanibistro@gmail.com' WHERE id = :id")->execute([':id' => $bustaniBizId]);
+OwnerAuth::autoLinkMatchingBusinesses($pdo, (int)$bustaniOwner['id'], 'bustanibistro@gmail.com');
+assertTrue(
+    OwnerAuth::canOwnerEditBusiness($pdo, (int)$bustaniOwner['id'], $bustaniBizId),
+    'Owner signing in with designated owner_email IS automatically linked via admin_or_submitter_email (#207)'
 );
 assertTrue(
     !OwnerAuth::canOwnerEditBusiness($pdo, (int)$bustaniOwner['id'], $branfootBizId),
@@ -964,11 +970,10 @@ OwnerAuth::linkOwnerToBusiness($pdo, (int)$palmOwner['id'], $palmBizId, 'approve
 
 $hints = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $palmBizId);
 assertTrue(
-    count($hints) === 2 &&
+    count($hints) === 1 &&
     str_contains($hints[0], '@yahoo.com') &&
-    str_contains($hints[1], '@gmail.com') &&
     !in_array('justina.test@yahoo.com', $hints, true),
-    'OwnerAuth::getMaskedOwnerEmailHintsForBusiness returns masked submitter and public emails without leaking raw PII (#152, #154)'
+    'OwnerAuth::getMaskedOwnerEmailHintsForBusiness returns masked designated owner email only (excluding email_public) without leaking raw PII (#152, #207)'
 );
 
 $otpIssued = OwnerAuth::issuePasswordOtp($pdo, 'justina.test@yahoo.com', $palmBizId);
@@ -1149,11 +1154,11 @@ VettingPurger::deleteBusiness($pdo, $critUnclaimedBizId);
 
 // 37. Verify Adversarial HIGH-01..HIGH-06 (#164, #165, #166, #167, #168, #169)
 
-// 37a. HIGH-01 (#164): Legacy 'corporate_domain_match' links are revoked unless exact public email matches
+// 37a. HIGH-01 (#164) & R2-HIGH-03 (#207): Legacy corporate_domain_match AND public_email_match links are revoked unless owner_email matches
 $corpTestBizId = VettingPurger::createBusinessDirectly($pdo, [
     'name' => 'High01 Corp Domain Audit Ltd',
     'tagline' => 'Corporate domain link audit test',
-    'description' => 'Only exact public email or verified claim should retain ownership.',
+    'description' => 'Only explicit designated owner_email or verified claim should retain ownership.',
     'school_badge' => 'AHS',
     'sector_id' => 1,
     'specialty_id' => 2,
@@ -1161,26 +1166,32 @@ $corpTestBizId = VettingPurger::createBusinessDirectly($pdo, [
     'country' => 'Kenya',
     'city_county' => 'Nairobi',
     'phone_primary' => '+254711000164',
-    'email_public' => 'founder@high01corp.co.ke',
+    'email_public' => 'reception@high01corp.co.ke',
+    'owner_email' => 'founder@high01corp.co.ke',
     'website_url' => 'https://www.high01corp.co.ke',
 ]);
 $colleagueOwner = OwnerAuth::upsertOwner($pdo, 'random.intern@high01corp.co.ke', 'Random Intern');
-$exactPubOwner = OwnerAuth::upsertOwner($pdo, 'founder@high01corp.co.ke', 'Exact Founder');
-// Simulate legacy pre-#164 rows with linked_via = 'corporate_domain_match'
+$receptionOwner = OwnerAuth::upsertOwner($pdo, 'reception@high01corp.co.ke', 'Front Desk Reception');
+$designatedFounderOwner = OwnerAuth::upsertOwner($pdo, 'founder@high01corp.co.ke', 'Designated Founder');
+
 OwnerAuth::linkOwnerToBusiness($pdo, (int)$colleagueOwner['id'], $corpTestBizId, 'corporate_domain_match');
+OwnerAuth::linkOwnerToBusiness($pdo, (int)$receptionOwner['id'], $corpTestBizId, 'public_email_match');
 $pdo->prepare("UPDATE business_owner_links SET linked_via = 'corporate_domain_match' WHERE owner_id = :oid AND business_id = :bid")
-    ->execute([':oid' => (int)$exactPubOwner['id'], ':bid' => $corpTestBizId]);
+    ->execute([':oid' => (int)$designatedFounderOwner['id'], ':bid' => $corpTestBizId]);
 
 $revokedLegacyCount = OwnerAuth::revokeUnverifiedCorporateDomainLinks($pdo);
+$revokedPubEmailCount = OwnerAuth::revokeUnverifiedPublicEmailAutoLinks($pdo);
 $upgradedVia = (string)$pdo->query(
-    "SELECT linked_via FROM business_owner_links WHERE owner_id = " . (int)$exactPubOwner['id'] . " AND business_id = {$corpTestBizId}"
+    "SELECT linked_via FROM business_owner_links WHERE owner_id = " . (int)$designatedFounderOwner['id'] . " AND business_id = {$corpTestBizId}"
 )->fetchColumn();
 assertTrue(
     $revokedLegacyCount >= 1 &&
+    $revokedPubEmailCount >= 1 &&
     !OwnerAuth::canOwnerEditBusiness($pdo, (int)$colleagueOwner['id'], $corpTestBizId) &&
-    OwnerAuth::canOwnerEditBusiness($pdo, (int)$exactPubOwner['id'], $corpTestBizId) &&
-    $upgradedVia === 'public_email_match',
-    'OwnerAuth::revokeUnverifiedCorporateDomainLinks revokes unverified corporate-domain links while preserving exact public_email_match (#164)'
+    !OwnerAuth::canOwnerEditBusiness($pdo, (int)$receptionOwner['id'], $corpTestBizId) &&
+    OwnerAuth::canOwnerEditBusiness($pdo, (int)$designatedFounderOwner['id'], $corpTestBizId) &&
+    $upgradedVia === 'admin_or_submitter_email',
+    'Revocation migrations remove both corporate_domain_match and public_email_match links while preserving explicit owner_email (#164, #207)'
 );
 VettingPurger::deleteBusiness($pdo, $corpTestBizId);
 
@@ -1539,7 +1550,7 @@ $tmpScript169 = sys_get_temp_dir() . '/bbiz_test_169_' . getmypid() . '.php';
 file_put_contents($tmpScript169, $prodFailClosedScript);
 
 $cmd169 = sprintf(
-    'APP_ENV=production DB_DRIVER=mysql DB_DRIVER_FALLBACK=sqlite DB_HOST=127.0.0.1 DB_PORT=1 DB_NAME=nonexistent_169 DB_USER=nonexistent_u169 DB_PASS=invalid_p169 DB_SQLITE_PATH=%s APP_HMAC_SECRET=%s IP_HASH_SECRET=%s CSRF_SECRET=%s php %s %s 2>/dev/null',
+    'APP_ENV=production SIMULATE_EMAILS=no DB_DRIVER=mysql DB_DRIVER_FALLBACK=sqlite DB_HOST=127.0.0.1 DB_PORT=1 DB_NAME=nonexistent_169 DB_USER=nonexistent_u169 DB_PASS=invalid_p169 DB_SQLITE_PATH=%s APP_HMAC_SECRET=%s IP_HASH_SECRET=%s CSRF_SECRET=%s php %s %s 2>/dev/null',
     escapeshellarg($forbiddenFallbackSqlite),
     escapeshellarg((string)getenv('APP_HMAC_SECRET')),
     escapeshellarg((string)getenv('IP_HASH_SECRET')),
@@ -1571,7 +1582,7 @@ echo "CATS={$cats};BIZ={$biz}";
 PHP;
 file_put_contents($tmpScript169, $prodSeedScript);
 $cmdSeed169 = sprintf(
-    'APP_ENV=production DB_DRIVER=sqlite DB_SQLITE_PATH=%s APP_HMAC_SECRET=%s IP_HASH_SECRET=%s CSRF_SECRET=%s php %s %s 2>/dev/null',
+    'APP_ENV=production SIMULATE_EMAILS=no DB_DRIVER=sqlite DB_SQLITE_PATH=%s APP_HMAC_SECRET=%s IP_HASH_SECRET=%s CSRF_SECRET=%s php %s %s 2>/dev/null',
     escapeshellarg($prodEmptySqlite),
     escapeshellarg((string)getenv('APP_HMAC_SECRET')),
     escapeshellarg((string)getenv('IP_HASH_SECRET')),
@@ -2196,7 +2207,7 @@ $pendStmt201 = $pdo->prepare("
 $pendStmt201->execute([':sec' => $validSecId, ':spec' => $validSpecId]);
 $pendBizId201 = (int)$pdo->lastInsertId();
 
-$approvedBizStmt201 = $pdo->query("SELECT id FROM businesses WHERE status = 'approved' AND (owner_email IS NOT NULL OR email_public IS NOT NULL) LIMIT 1");
+$approvedBizStmt201 = $pdo->query("SELECT id FROM businesses WHERE status = 'approved' AND owner_email IS NOT NULL LIMIT 1");
 $approvedBizId201 = (int)$approvedBizStmt201->fetchColumn();
 
 $anonHintsPending201 = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $pendBizId201, true);
@@ -2281,6 +2292,176 @@ assertTrue(
     !str_contains($adminIndexSrc203, '/admin/login.php?logout=1'),
     'Owner and Admin logout routes require POST + valid session CSRF token and all navigation Sign Out controls submit POST forms (#203)'
 );
+
+// =========================================================================
+// 41. Pass-2 R2-HIGH-01..04 (#205, #206, #207, #208) Regression Suite
+// =========================================================================
+
+// 41a. R2-HIGH-01 (#205): APP_ENV=production fails closed when SIMULATE_EMAILS=yes and never enables canRenderDevOtpPreview()
+$prodOtpProbeCmd = sprintf(
+    'APP_ENV=production SIMULATE_EMAILS=yes APP_HMAC_SECRET=%s IP_HASH_SECRET=%s CSRF_SECRET=%s php -r %s 2>&1',
+    escapeshellarg(str_repeat('a', 64)),
+    escapeshellarg(str_repeat('b', 64)),
+    escapeshellarg(str_repeat('c', 64)),
+    escapeshellarg(
+        'require ' . var_export(dirname(__DIR__) . '/src/bootstrap.php', true) . ';' .
+        'echo "PREVIEW=" . (\BusherianBiasharas\Services\OwnerAuth::canRenderDevOtpPreview() ? "1" : "0") . "\n";' .
+        'try { \BusherianBiasharas\Config\Database::validateProductionSecrets(); echo "NO_THROW\n"; }' .
+        'catch (\RuntimeException $e) { echo "THREW:" . $e->getMessage() . "\n"; }'
+    )
+);
+$prodOtpOut = [];
+$prodOtpRc = 0;
+exec($prodOtpProbeCmd, $prodOtpOut, $prodOtpRc);
+$prodOtpJoined = implode("\n", $prodOtpOut);
+
+$prodNoSimProbeCmd = sprintf(
+    'APP_ENV=production SIMULATE_EMAILS=no APP_HMAC_SECRET=%s IP_HASH_SECRET=%s CSRF_SECRET=%s php -r %s 2>&1',
+    escapeshellarg(str_repeat('a', 64)),
+    escapeshellarg(str_repeat('b', 64)),
+    escapeshellarg(str_repeat('c', 64)),
+    escapeshellarg(
+        'require ' . var_export(dirname(__DIR__) . '/src/bootstrap.php', true) . ';' .
+        'echo "PREVIEW_NOSIM=" . (\BusherianBiasharas\Services\OwnerAuth::canRenderDevOtpPreview() ? "1" : "0") . "\n";' .
+        '\BusherianBiasharas\Config\Database::validateProductionSecrets(); echo "PROD_OK\n";'
+    )
+);
+$prodNoSimOut = [];
+exec($prodNoSimProbeCmd, $prodNoSimOut);
+$prodNoSimJoined = implode("\n", $prodNoSimOut);
+
+assertTrue(
+    str_contains($prodOtpJoined, 'PREVIEW=0') &&
+    str_contains($prodOtpJoined, 'THREW:FATAL: SIMULATE_EMAILS cannot be enabled when APP_ENV=production') &&
+    str_contains($prodNoSimJoined, 'PREVIEW_NOSIM=0') &&
+    str_contains($prodNoSimJoined, 'PROD_OK'),
+    'APP_ENV=production rejects SIMULATE_EMAILS=yes at startup and OwnerAuth::canRenderDevOtpPreview() is strictly false in production (#205)'
+);
+
+// 41b. R2-HIGH-02 (#206): bbiz_json_for_html_script escapes </script>, &, ', and ", and submit.php / edit-business.php eliminate unsafe sinks
+$xssPayload206 = '</script><script>window.__xss206=1</script>&"\'';
+$encodedScriptJson206 = bbiz_json_for_html_script(['reg' => $xssPayload206]);
+$ownerEditSrc206 = (string)file_get_contents(dirname(__DIR__) . '/public/owner/edit-business.php');
+$submitSrc206 = (string)file_get_contents(dirname(__DIR__) . '/public/submit.php');
+
+assertTrue(
+    !str_contains($encodedScriptJson206, '</script>') &&
+    !str_contains($encodedScriptJson206, '<script>') &&
+    str_contains($encodedScriptJson206, '\u003C') &&
+    (json_decode($encodedScriptJson206, true)['reg'] ?? '') === $xssPayload206 &&
+    str_contains($ownerEditSrc206, 'bbiz_json_for_html_script($taxonomyTree)') &&
+    str_contains($ownerEditSrc206, 'bbiz_json_for_html_script((string)($biz[\'regulator_name\']') &&
+    !str_contains($submitSrc206, 'fuzzyBox.innerHTML = `') &&
+    !str_contains($submitSrc206, 'statusBox.innerHTML = `'),
+    'bbiz_json_for_html_script hex-escapes HTML tags/quotes cleanly and owner/edit-business.php + submit.php use safe serialization & DOM textContent (#206)'
+);
+
+// 41c. R2-HIGH-03 (#207): Public contact email (email_public) is NOT recognized as owner email and cannot hijack designated owner listing
+$h03BizId = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'R2 High03 Public Email Boundary Co',
+    'tagline' => 'Front desk email must never grant ownership',
+    'description' => 'Testing strict separation between email_public and owner_email.',
+    'school_badge' => 'AGHS',
+    'sector_id' => $validSecId,
+    'specialty_id' => $validSpecId,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254722207207',
+    'email_public' => 'frontdesk@r2high03.co.ke',
+    'owner_email' => 'true.founder@r2high03.co.ke',
+    'admin_provenance_note' => 'Verified founder authorization',
+]);
+$recogPublic = OwnerAuth::isRecognizedOwnerEmail($pdo, 'frontdesk@r2high03.co.ke');
+$recogFounder = OwnerAuth::isRecognizedOwnerEmail($pdo, 'true.founder@r2high03.co.ke');
+$eligPublicUnscoped = OwnerAuth::isEmailEligibleForClaim($pdo, $h03BizId, 'frontdesk@r2high03.co.ke', '');
+$eligPublicExplicitInvite = OwnerAuth::isEmailEligibleForClaim($pdo, $h03BizId, 'frontdesk@r2high03.co.ke', 'frontdesk@r2high03.co.ke');
+$frontDeskAcct = OwnerAuth::upsertOwner($pdo, 'frontdesk@r2high03.co.ke', 'Front Desk');
+$suggestions207 = OwnerAuth::getCorporateDomainClaimSuggestions($pdo, 'frontdesk@r2high03.co.ke', (int)$frontDeskAcct['id']);
+$suggestedBizIds207 = array_map(static fn(array $s): int => (int)$s['id'], $suggestions207);
+
+assertTrue(
+    $recogPublic === false &&
+    $recogFounder === true &&
+    $eligPublicUnscoped === false &&
+    $eligPublicExplicitInvite === true &&
+    !OwnerAuth::canOwnerEditBusiness($pdo, (int)$frontDeskAcct['id'], $h03BizId) &&
+    in_array($h03BizId, $suggestedBizIds207, true),
+    'email_public is never auto-linked or treated as a recognized/unscoped-claim owner email, and surfaces only as informational claim guidance (#207)'
+);
+VettingPurger::deleteBusiness($pdo, $h03BizId, 'unit_cleanup', 'system');
+
+// 41d. R2-HIGH-04 (#208): Editing a quarantined_dpa business (owner or admin) immediately quarantines newly uploaded replacement photos, and failed quarantine moves fail closed
+$gdImg208 = imagecreatetruecolor(16, 16);
+ob_start();
+imagepng($gdImg208);
+$pngBytes208 = (string)ob_get_clean();
+imagedestroy($gdImg208);
+$dataUri208A = 'data:image/png;base64,' . base64_encode((string)$pngBytes208);
+$dataUri208B = 'data:image/png;base64,' . base64_encode((string)$pngBytes208);
+
+$qBizId208 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'R2 High04 Quarantine Edit Vault Co',
+    'tagline' => 'Quarantined media must never leak on edit',
+    'description' => 'Verifying state-aware media quarantine on owner edits.',
+    'school_badge' => 'AHS',
+    'sector_id' => $validSecId,
+    'specialty_id' => $validSpecId,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254722208208',
+    'owner_email' => 'owner208@quarantinevault.co.ke',
+    'business_photos_data_json' => (string)json_encode([$dataUri208A]),
+    'admin_provenance_note' => 'Unit test fixture',
+]);
+$owner208 = OwnerAuth::upsertOwner($pdo, 'owner208@quarantinevault.co.ke', 'Owner 208');
+VettingPurger::quarantineBusinessDpa($pdo, $qBizId208, 'owner_portal', 'owner:208');
+
+$qRowBeforeEdit = $pdo->query("SELECT * FROM businesses WHERE id = {$qBizId208}")->fetch();
+$oldPhotoUrls208 = PhotoUploader::decodePhotosJson((string)($qRowBeforeEdit['photos_json'] ?? ''));
+$editPayload208 = (array)$qRowBeforeEdit;
+$editPayload208['remove_photos'] = $oldPhotoUrls208;
+$editPayload208['business_photos_data_json'] = (string)json_encode([$dataUri208B]);
+
+$afterOwnerEdit208 = VettingPurger::updateBusinessByOwner($pdo, $qBizId208, $owner208, $editPayload208);
+$newPhotoUrls208 = PhotoUploader::decodePhotosJson((string)($afterOwnerEdit208['business']['photos_json'] ?? ''));
+$newPubPath208 = !empty($newPhotoUrls208[0]) ? PhotoUploader::resolveSafeUploadFilePath($newPhotoUrls208[0], true) : 'unexpected';
+$expectedRelFile208 = !empty($newPhotoUrls208[0]) ? basename((string)PhotoUploader::resolveSafeUploadFilePath($newPhotoUrls208[0], false)) : '';
+$quarantinedCopyExists208 = $expectedRelFile208 !== '' && is_file(PhotoUploader::quarantineDirRoot() . '/' . $qBizId208 . '/' . $expectedRelFile208);
+
+VettingPurger::restoreQuarantinedBusiness($pdo, $qBizId208, 'admin_dashboard', 'admin_test');
+$restoredPubPath208 = !empty($newPhotoUrls208[0]) ? PhotoUploader::resolveSafeUploadFilePath($newPhotoUrls208[0], true) : null;
+
+// Also verify fail-closed rollback when quarantine target path is blocked by a regular file
+$blockerDirParent = PhotoUploader::quarantineDirRoot();
+if (!is_dir($blockerDirParent)) {
+    @mkdir($blockerDirParent, 0750, true);
+}
+$blockerFile208 = $blockerDirParent . '/' . $qBizId208;
+if (is_dir($blockerFile208)) {
+    @rmdir($blockerFile208);
+}
+file_put_contents($blockerFile208, 'not_a_directory');
+$failedMoveThrew208 = false;
+try {
+    VettingPurger::quarantineBusinessDpa($pdo, $qBizId208, 'admin_dashboard', 'admin_test');
+} catch (\RuntimeException $e) {
+    $failedMoveThrew208 = true;
+}
+@unlink($blockerFile208);
+$statusAfterFailedQuarantine208 = (string)$pdo->query("SELECT status FROM businesses WHERE id = {$qBizId208}")->fetchColumn();
+
+assertTrue(
+    count($newPhotoUrls208) === 1 &&
+    $newPubPath208 === null &&
+    $quarantinedCopyExists208 === true &&
+    $restoredPubPath208 !== null && is_file($restoredPubPath208) &&
+    $failedMoveThrew208 === true &&
+    $statusAfterFailedQuarantine208 === 'approved',
+    'Editing a quarantined_dpa business immediately quarantines replacement uploads out of public webroot, restores on unquarantine, and rolls back DB status if quarantine file move fails (#208)'
+);
+VettingPurger::deleteBusiness($pdo, $qBizId208, 'unit_cleanup', 'system');
 
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);

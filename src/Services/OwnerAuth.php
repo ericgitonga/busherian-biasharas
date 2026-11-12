@@ -218,12 +218,26 @@ final class OwnerAuth
     }
 
     /**
-     * Post-Registration Auto-Linker (#164):
-     * Links a business ONLY when verified mailbox ownership matches an explicit full address on the listing:
-     * 1. LOWER(businesses.owner_email) === LOWER($email) (Admin pre-assigned or verified submitter email)
-     * 2. LOWER(businesses.email_public) === LOWER($email) (exact public contact email on the listing)
+     * Strict environment guard for simulated OTP preview banners (#205):
+     * Returns true ONLY outside production AND when SIMULATE_EMAILS is explicitly enabled.
+     */
+    public static function canRenderDevOtpPreview(): bool
+    {
+        $appEnv = strtolower(trim(Database::env('APP_ENV', 'production')));
+        if ($appEnv === 'production' && !PreprodSandbox::isPreprod()) {
+            return false;
+        }
+        $sim = strtolower(trim(Database::env('SIMULATE_EMAILS', 'no')));
+        return $appEnv !== 'production' && in_array($sim, ['yes', 'true', '1'], true);
+    }
+
+    /**
+     * Post-Registration Auto-Linker (#164, #207):
+     * Links a business ONLY when verified mailbox ownership matches the explicit designated owner_email
+     * (`LOWER(businesses.owner_email) === LOWER($email)`).
      *
-     * Corporate website/email domain similarity alone NEVER grants write/delete privileges (#164).
+     * Public contact addresses (`email_public` such as `info@`, `sales@`, `bookings@`) and corporate
+     * domain similarity NEVER automatically grant write/delete privileges (#207).
      */
     public static function autoLinkMatchingBusinesses(PDO $pdo, int $ownerId, string $email): array
     {
@@ -232,29 +246,19 @@ final class OwnerAuth
             return [];
         }
 
-        $rows = $pdo->query("
-            SELECT id, email_public, owner_email
+        $stmt = $pdo->prepare("
+            SELECT id, owner_email
             FROM businesses
-            WHERE status IN ('approved', 'pending')
-        ")->fetchAll();
+            WHERE status IN ('approved', 'pending', 'quarantined_dpa')
+              AND LOWER(owner_email) = :em
+        ");
+        $stmt->execute([':em' => $normEmail]);
 
         $linkedIds = [];
-        foreach ($rows as $row) {
+        foreach ($stmt->fetchAll() as $row) {
             $bid = (int)$row['id'];
-            $pubEmail = strtolower(trim((string)($row['email_public'] ?? '')));
-            $ownEmail = strtolower(trim((string)($row['owner_email'] ?? '')));
-
-            $via = null;
-            if ($ownEmail !== '' && $ownEmail === $normEmail) {
-                $via = 'admin_or_submitter_email';
-            } elseif ($pubEmail !== '' && $pubEmail === $normEmail) {
-                $via = 'public_email_match';
-            }
-
-            if ($via !== null) {
-                self::linkOwnerToBusiness($pdo, $ownerId, $bid, $via);
-                $linkedIds[] = $bid;
-            }
+            self::linkOwnerToBusiness($pdo, $ownerId, $bid, 'admin_or_submitter_email');
+            $linkedIds[] = $bid;
         }
 
         return $linkedIds;
@@ -269,10 +273,11 @@ final class OwnerAuth
     public static function getCorporateDomainClaimSuggestions(PDO $pdo, string $email, int $excludeOwnerId = 0): array
     {
         $normEmail = strtolower(trim($email));
-        $emailDomain = self::extractEmailDomain($normEmail);
-        if ($emailDomain === null || self::isFreemailDomain($emailDomain)) {
+        if ($normEmail === '' || !filter_var($normEmail, FILTER_VALIDATE_EMAIL)) {
             return [];
         }
+        $emailDomain = self::extractEmailDomain($normEmail);
+        $isCorpDomain = ($emailDomain !== null && !self::isFreemailDomain($emailDomain));
 
         $alreadyLinked = [];
         if ($excludeOwnerId > 0) {
@@ -298,23 +303,26 @@ final class OwnerAuth
             }
             $pubEmail = strtolower(trim((string)($row['email_public'] ?? '')));
             $ownEmail = strtolower(trim((string)($row['owner_email'] ?? '')));
-            if (($ownEmail !== '' && $ownEmail === $normEmail) || ($pubEmail !== '' && $pubEmail === $normEmail)) {
+            if ($ownEmail !== '' && $ownEmail === $normEmail) {
                 continue;
             }
 
-            $webDomain = self::extractWebsiteDomain($row['website_url'] ?? null);
-            $pubEmailDomain = $pubEmail !== '' ? self::extractEmailDomain($pubEmail) : null;
-            if (
+            $exactPubMatch = ($pubEmail !== '' && $pubEmail === $normEmail);
+            $webDomain = $isCorpDomain ? self::extractWebsiteDomain($row['website_url'] ?? null) : null;
+            $pubEmailDomain = ($isCorpDomain && $pubEmail !== '') ? self::extractEmailDomain($pubEmail) : null;
+            $corpDomainMatch = $isCorpDomain && (
                 ($webDomain !== null && $webDomain === $emailDomain) ||
                 ($pubEmailDomain !== null && !self::isFreemailDomain($pubEmailDomain) && $pubEmailDomain === $emailDomain)
-            ) {
+            );
+
+            if ($exactPubMatch || $corpDomainMatch) {
                 $suggestions[] = [
                     'id' => $bid,
                     'business_number' => (int)($row['business_number'] ?? 0),
                     'name' => (string)$row['name'],
                     'slug' => (string)$row['slug'],
                     'school_badge' => (string)($row['school_badge'] ?? 'AHS'),
-                    'matched_domain' => $emailDomain,
+                    'matched_domain' => $exactPubMatch ? $normEmail : (string)$emailDomain,
                 ];
             }
         }
@@ -323,8 +331,8 @@ final class OwnerAuth
     }
 
     /**
-     * Audit and revoke any pre-existing business_owner_links granted solely via 'corporate_domain_match' (#164).
-     * Preserves links where the owner email exactly matches businesses.email_public (upgrading linked_via).
+     * Audit and revoke any pre-existing business_owner_links granted via 'corporate_domain_match' (#164, #207).
+     * Preserves links ONLY when the owner email explicitly matches businesses.owner_email.
      */
     public static function revokeUnverifiedCorporateDomainLinks(PDO $pdo): int
     {
@@ -345,24 +353,56 @@ final class OwnerAuth
         $revoked = 0;
         $upgStmt = $pdo->prepare("UPDATE business_owner_links SET linked_via = :via WHERE id = :id");
         $delStmt = $pdo->prepare("DELETE FROM business_owner_links WHERE id = :id");
-        $clrOwnEmail = $pdo->prepare("UPDATE businesses SET owner_email = NULL WHERE id = :bid AND LOWER(owner_email) = :em");
 
         foreach ($rows as $r) {
             $linkId = (int)$r['link_id'];
-            $bid = (int)$r['business_id'];
             $acctEmail = strtolower(trim((string)($r['owner_account_email'] ?? '')));
-            $pubEmail = strtolower(trim((string)($r['email_public'] ?? '')));
+            $ownEmail = strtolower(trim((string)($r['owner_email'] ?? '')));
 
-            if ($acctEmail !== '' && $pubEmail !== '' && $acctEmail === $pubEmail) {
-                $upgStmt->execute([':via' => 'public_email_match', ':id' => $linkId]);
+            if ($acctEmail !== '' && $ownEmail !== '' && $acctEmail === $ownEmail) {
+                $upgStmt->execute([':via' => 'admin_or_submitter_email', ':id' => $linkId]);
                 continue;
             }
 
             $delStmt->execute([':id' => $linkId]);
-            if ($acctEmail !== '' && $bid > 0) {
-                // Clear owner_email if it had been auto-populated by the legacy corporate_domain_match link
-                $clrOwnEmail->execute([':bid' => $bid, ':em' => $acctEmail]);
+            $revoked++;
+        }
+
+        return $revoked;
+    }
+
+    /**
+     * Audit and revoke legacy auto-links (`public_email_match` / `auto_match`) where the owner account
+     * matched only `email_public` rather than an explicit `owner_email` (#207).
+     */
+    public static function revokeUnverifiedPublicEmailAutoLinks(PDO $pdo): int
+    {
+        $rows = $pdo->query("
+            SELECT
+                l.id AS link_id,
+                l.business_id,
+                o.email AS owner_account_email,
+                b.owner_email
+            FROM business_owner_links l
+            LEFT JOIN business_owners o ON o.id = l.owner_id
+            LEFT JOIN businesses b ON b.id = l.business_id
+            WHERE l.linked_via IN ('public_email_match', 'auto_match')
+        ")->fetchAll();
+
+        $revoked = 0;
+        $upgStmt = $pdo->prepare("UPDATE business_owner_links SET linked_via = 'admin_or_submitter_email' WHERE id = :id");
+        $delStmt = $pdo->prepare("DELETE FROM business_owner_links WHERE id = :id");
+
+        foreach ($rows as $r) {
+            $linkId = (int)$r['link_id'];
+            $acctEmail = strtolower(trim((string)($r['owner_account_email'] ?? '')));
+            $ownEmail = strtolower(trim((string)($r['owner_email'] ?? '')));
+
+            if ($acctEmail !== '' && $ownEmail !== '' && $acctEmail === $ownEmail) {
+                $upgStmt->execute([':id' => $linkId]);
+                continue;
             }
+            $delStmt->execute([':id' => $linkId]);
             $revoked++;
         }
 
@@ -574,9 +614,8 @@ final class OwnerAuth
         }
 
         if (!empty($designated)) {
-            $pubEm = strtolower(trim((string)($biz['email_public'] ?? '')));
-            if ($pubEm !== '' && filter_var($pubEm, FILTER_VALIDATE_EMAIL)) {
-                $designated[$pubEm] = true;
+            if ($normInvited !== '' && hash_equals($normInvited, $normEmail)) {
+                return true;
             }
             return isset($designated[$normEmail]);
         }
@@ -1216,11 +1255,9 @@ final class OwnerAuth
             }
         }
 
-        foreach (['owner_email', 'email_public'] as $col) {
-            $val = strtolower(trim((string)($bRow[$col] ?? '')));
-            if ($val !== '' && filter_var($val, FILTER_VALIDATE_EMAIL)) {
-                $rawEmails[] = $val;
-            }
+        $ownVal = strtolower(trim((string)($bRow['owner_email'] ?? '')));
+        if ($ownVal !== '' && filter_var($ownVal, FILTER_VALIDATE_EMAIL)) {
+            $rawEmails[] = $ownVal;
         }
 
         $seen = [];
@@ -1388,11 +1425,11 @@ final class OwnerAuth
         $stmt = $pdo->prepare("
             SELECT 1
             FROM businesses
-            WHERE status IN ('approved', 'pending')
-              AND (LOWER(owner_email) = :em1 OR LOWER(email_public) = :em2)
+            WHERE status IN ('approved', 'pending', 'quarantined_dpa')
+              AND LOWER(owner_email) = :em
             LIMIT 1
         ");
-        $stmt->execute([':em1' => $norm, ':em2' => $norm]);
+        $stmt->execute([':em' => $norm]);
         return (bool)$stmt->fetchColumn();
     }
 

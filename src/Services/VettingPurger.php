@@ -360,30 +360,44 @@ final class VettingPurger
         if ($curStatus === '') {
             return;
         }
-        if ($curStatus !== 'quarantined_dpa') {
-            $pdo->prepare("
-                UPDATE businesses
-                SET quarantine_prev_status = :prev,
-                    status = 'quarantined_dpa',
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = :id
-            ")->execute([
-                ':prev' => $curStatus,
-                ':id' => $businessId,
-            ]);
-            self::recordModerationAudit(
-                $pdo,
-                $businessId,
-                'quarantine',
-                $channel,
-                $actorIdentifier,
-                $curStatus,
-                'quarantined_dpa',
-                null,
-                $clientIp
-            );
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
         }
-        PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+        try {
+            if ($curStatus !== 'quarantined_dpa') {
+                $pdo->prepare("
+                    UPDATE businesses
+                    SET quarantine_prev_status = :prev,
+                        status = 'quarantined_dpa',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :id
+                ")->execute([
+                    ':prev' => $curStatus,
+                    ':id' => $businessId,
+                ]);
+                self::recordModerationAudit(
+                    $pdo,
+                    $businessId,
+                    'quarantine',
+                    $channel,
+                    $actorIdentifier,
+                    $curStatus,
+                    'quarantined_dpa',
+                    null,
+                    $clientIp
+                );
+            }
+            PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+            if ($ownTx) {
+                $pdo->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     public static function restoreQuarantinedBusiness(
@@ -919,6 +933,9 @@ final class VettingPurger
         if (in_array($targetStatus, ['approved', 'rejected'], true)) {
             $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")->execute([':id' => $businessId]);
         }
+        if ($targetStatus === 'quarantined_dpa') {
+            PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+        }
         if ($ownTx) {
             $pdo->commit();
         }
@@ -927,17 +944,17 @@ final class VettingPurger
                 $pdo->rollBack();
             }
             if ($newlyWrittenPhotoUrls !== []) {
-                PhotoUploader::deleteRemovedPhotoUrls($newlyWrittenPhotoUrls, []);
+                PhotoUploader::deleteRemovedBusinessPhotos($businessId, $newlyWrittenPhotoUrls, []);
             }
             throw $e;
         }
-        if ($targetStatus === 'quarantined_dpa') {
-            PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
-        } elseif ($targetStatus === 'approved') {
+        if (in_array($targetStatus, ['approved', 'pending'], true)) {
             PhotoUploader::restoreQuarantinedBusinessPhotos($businessId, $photosJson);
+        } elseif ($targetStatus === 'rejected') {
+            PhotoUploader::deleteAllBusinessMedia($businessId, $photosJson);
         }
         if ($ownTx) {
-            PhotoUploader::deleteRemovedPhotoUrls($previousPhotoUrls, $keptPhotoUrls);
+            PhotoUploader::deleteRemovedBusinessPhotos($businessId, $previousPhotoUrls, $keptPhotoUrls);
         }
     }
 
@@ -1061,7 +1078,7 @@ final class VettingPurger
                 area_neighborhood, country, city_county, landmark_directions,
                 plus_code, latitude, longitude, google_maps_url,
                 operating_hours_json, photos_json, phone_primary, whatsapp_number,
-                email_public, website_url, social_instagram, social_linkedin,
+                email_public, owner_email, website_url, social_instagram, social_linkedin,
                 social_x, social_facebook, social_tiktok, social_youtube,
                 status, privacy_notice_version, listing_provenance, admin_provenance_note,
                 verified_at, last_confirmed_at
@@ -1073,7 +1090,7 @@ final class VettingPurger
                 :area_neighborhood, :country, :city_county, :landmark_directions,
                 :plus_code, :latitude, :longitude, :google_maps_url,
                 :operating_hours_json, :photos_json, :phone_primary, :whatsapp_number,
-                :email_public, :website_url, :social_instagram, :social_linkedin,
+                :email_public, :owner_email, :website_url, :social_instagram, :social_linkedin,
                 :social_x, :social_facebook, :social_tiktok, :social_youtube,
                 :status, :pver, 'admin_curated', :pnote,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -1113,6 +1130,7 @@ final class VettingPurger
             ':phone_primary' => trim((string)($data['phone_primary'] ?? '')),
             ':whatsapp_number' => trim((string)($data['whatsapp_number'] ?? '')) ?: null,
             ':email_public' => trim((string)($data['email_public'] ?? '')) ?: null,
+            ':owner_email' => strtolower(trim((string)($data['owner_email'] ?? ''))) ?: null,
             ':website_url' => trim((string)($data['website_url'] ?? '')) ?: null,
             ':social_instagram' => trim((string)($data['social_instagram'] ?? '')) ?: null,
             ':social_linkedin' => trim((string)($data['social_linkedin'] ?? '')) ?: null,
@@ -1126,6 +1144,11 @@ final class VettingPurger
         ]);
 
         $newId = (int)$pdo->lastInsertId();
+        $assignedOwnerEmail = strtolower(trim((string)($data['owner_email'] ?? '')));
+        if ($assignedOwnerEmail !== '' && filter_var($assignedOwnerEmail, FILTER_VALIDATE_EMAIL)) {
+            $ownerRec = OwnerAuth::upsertOwner($pdo, $assignedOwnerEmail);
+            OwnerAuth::linkOwnerToBusiness($pdo, (int)$ownerRec['id'], $newId, 'admin_assigned');
+        }
         if ($status === 'quarantined_dpa') {
             PhotoUploader::quarantineBusinessPhotos($newId, $photosJson);
         }
@@ -1310,6 +1333,9 @@ final class VettingPurger
             ':social_youtube' => trim((string)($data['social_youtube'] ?? '')) ?: null,
             ':id' => $businessId,
         ]);
+        if (strtolower(trim((string)($oldBiz['status'] ?? ''))) === 'quarantined_dpa') {
+            PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+        }
         if ($ownTx) {
             $pdo->commit();
         }
@@ -1318,13 +1344,13 @@ final class VettingPurger
                 $pdo->rollBack();
             }
             if ($newlyWrittenPhotoUrls !== []) {
-                PhotoUploader::deleteRemovedPhotoUrls($newlyWrittenPhotoUrls, []);
+                PhotoUploader::deleteRemovedBusinessPhotos($businessId, $newlyWrittenPhotoUrls, []);
             }
             throw $e;
         }
 
         if ($ownTx) {
-            PhotoUploader::deleteRemovedPhotoUrls($previousPhotoUrls, $keptPhotoUrls);
+            PhotoUploader::deleteRemovedBusinessPhotos($businessId, $previousPhotoUrls, $keptPhotoUrls);
         }
 
         $newStmt = $pdo->prepare("

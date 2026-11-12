@@ -401,9 +401,9 @@ $vettingRow = $vetStmt->fetch() ?: null;
 
   <script>
     (function () {
-      const SECTORS = <?= json_encode($taxonomyTree, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
+      const SECTORS = <?= bbiz_json_for_html_script($taxonomyTree) ?>;
       const INITIAL_SPEC_ID = <?= (int)$biz['specialty_id'] ?>;
-      const INITIAL_REGULATOR = <?= json_encode((string)($biz['regulator_name'] ?? ''), JSON_HEX_TAG) ?>;
+      const INITIAL_REGULATOR = <?= bbiz_json_for_html_script((string)($biz['regulator_name'] ?? '')) ?>;
       const sectorSel = document.getElementById('sector_id');
       const specSel = document.getElementById('specialty_id');
       const regulatedWrap = document.getElementById('regulated-fields-wrap');

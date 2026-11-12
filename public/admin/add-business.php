@@ -378,7 +378,7 @@ $tokens = AntiSpamGate::generateFormTokens();
 
   <script>
     (function () {
-      const SECTORS = <?= json_encode($taxonomyTree, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
+      const SECTORS = <?= bbiz_json_for_html_script($taxonomyTree) ?>;
       const INITIAL_SPEC_ID = <?= (int)$form['specialty_id'] ?>;
       const sectorSel = document.getElementById('sector_id');
       const specSel = document.getElementById('specialty_id');
