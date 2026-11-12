@@ -77,6 +77,11 @@ CREATE TABLE IF NOT EXISTS businesses (
     photos_json TEXT NULL,
     status ENUM('pending', 'approved', 'rejected', 'quarantined_dpa') NOT NULL DEFAULT 'pending',
     quarantine_prev_status VARCHAR(24) NULL,
+    consent_recorded_at DATETIME NULL,
+    privacy_notice_version VARCHAR(32) NULL,
+    age_attested_at DATETIME NULL,
+    listing_provenance VARCHAR(32) NOT NULL DEFAULT 'admin_curated',
+    admin_provenance_note VARCHAR(255) NULL,
     verified_at TIMESTAMP NULL,
     last_confirmed_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -232,6 +237,7 @@ CREATE TABLE IF NOT EXISTS owner_auth_tokens (
     claim_business_id INT UNSIGNED NULL,
     expires_at INT UNSIGNED NOT NULL,
     used_at INT UNSIGNED NULL,
+    failed_attempts INT UNSIGNED NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_token_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -262,6 +268,6 @@ CREATE TABLE IF NOT EXISTS moderation_audit_log (
 -- 14. Atomic Sequence & Rate-Limit Serialization Locks (#173, #183)
 CREATE TABLE IF NOT EXISTS business_sequences (
     seq_key VARCHAR(40) NOT NULL PRIMARY KEY,
-    last_value INT UNSIGNED NOT NULL DEFAULT 0,
+    current_val INT UNSIGNED NOT NULL DEFAULT 0,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

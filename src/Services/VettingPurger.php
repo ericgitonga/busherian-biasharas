@@ -25,9 +25,9 @@ final class VettingPurger
         }
         try {
             \BusherianBiasharas\Config\Database::syncBusinessSequenceFloor($pdo);
-            $pdo->prepare("UPDATE business_sequences SET last_value = last_value + 1 WHERE seq_key = 'business_number'")
+            $pdo->prepare("UPDATE business_sequences SET current_val = current_val + 1 WHERE seq_key = 'business_number'")
                 ->execute();
-            $stmt = $pdo->prepare("SELECT last_value FROM business_sequences WHERE seq_key = 'business_number' LIMIT 1");
+            $stmt = $pdo->prepare("SELECT current_val FROM business_sequences WHERE seq_key = 'business_number' LIMIT 1");
             $stmt->execute();
             $val = (int)($stmt->fetchColumn() ?: 1);
             if ($ownTx) {

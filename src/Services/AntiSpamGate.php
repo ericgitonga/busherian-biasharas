@@ -220,7 +220,7 @@ final class AntiSpamGate
     private static function acquireRateLimitSerializationLock(PDO $pdo): void
     {
         try {
-            $pdo->prepare("UPDATE business_sequences SET last_value = last_value + 1 WHERE seq_key = 'rate_limit_mutex'")
+            $pdo->prepare("UPDATE business_sequences SET current_val = current_val + 1 WHERE seq_key = 'rate_limit_mutex'")
                 ->execute();
         } catch (\Throwable $e) {
         }

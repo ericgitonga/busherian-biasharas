@@ -414,7 +414,7 @@ final class Database
         self::setSetting($pdo, 'schema_init_version', self::SCHEMA_INIT_VERSION);
 
         $catCount = (int)$pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
-        $seqStmt = $pdo->prepare("SELECT last_value FROM business_sequences WHERE seq_key = 'business_number' LIMIT 1");
+        $seqStmt = $pdo->prepare("SELECT current_val FROM business_sequences WHERE seq_key = 'business_number' LIMIT 1");
         $seqStmt->execute();
         $seqVal = (int)($seqStmt->fetchColumn() ?: 0);
 
@@ -432,16 +432,16 @@ final class Database
         $drv = $driver ?? strtolower((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
         $maxNum = (int)$pdo->query("SELECT COALESCE(MAX(business_number), 0) FROM businesses")->fetchColumn();
         if ($drv === 'sqlite') {
-            $pdo->exec("INSERT OR IGNORE INTO business_sequences (seq_key, last_value) VALUES ('rate_limit_mutex', 0)");
-            $pdo->prepare("INSERT OR IGNORE INTO business_sequences (seq_key, last_value) VALUES ('business_number', :v)")
+            $pdo->exec("INSERT OR IGNORE INTO business_sequences (seq_key, current_val) VALUES ('rate_limit_mutex', 0)");
+            $pdo->prepare("INSERT OR IGNORE INTO business_sequences (seq_key, current_val) VALUES ('business_number', :v)")
                 ->execute([':v' => $maxNum]);
-            $pdo->prepare("UPDATE business_sequences SET last_value = :v, updated_at = CURRENT_TIMESTAMP WHERE seq_key = 'business_number' AND last_value < :v")
+            $pdo->prepare("UPDATE business_sequences SET current_val = :v, updated_at = CURRENT_TIMESTAMP WHERE seq_key = 'business_number' AND current_val < :v")
                 ->execute([':v' => $maxNum]);
         } else {
-            $pdo->exec("INSERT IGNORE INTO business_sequences (seq_key, last_value) VALUES ('rate_limit_mutex', 0)");
-            $pdo->prepare("INSERT IGNORE INTO business_sequences (seq_key, last_value) VALUES ('business_number', :v)")
+            $pdo->exec("INSERT IGNORE INTO business_sequences (seq_key, current_val) VALUES ('rate_limit_mutex', 0)");
+            $pdo->prepare("INSERT IGNORE INTO business_sequences (seq_key, current_val) VALUES ('business_number', :v)")
                 ->execute([':v' => $maxNum]);
-            $pdo->prepare("UPDATE business_sequences SET last_value = :v WHERE seq_key = 'business_number' AND last_value < :v")
+            $pdo->prepare("UPDATE business_sequences SET current_val = :v WHERE seq_key = 'business_number' AND current_val < :v")
                 ->execute([':v' => $maxNum]);
         }
     }
@@ -493,7 +493,7 @@ final class Database
                 CREATE INDEX IF NOT EXISTS idx_mod_audit_biz ON moderation_audit_log (business_id, created_at);
                 CREATE TABLE IF NOT EXISTS business_sequences (
                     seq_key TEXT PRIMARY KEY,
-                    last_value INTEGER NOT NULL DEFAULT 0,
+                    current_val INTEGER NOT NULL DEFAULT 0,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
             ");
@@ -545,7 +545,7 @@ final class Database
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS business_sequences (
                     seq_key VARCHAR(40) NOT NULL PRIMARY KEY,
-                    last_value INT UNSIGNED NOT NULL DEFAULT 0,
+                    current_val INT UNSIGNED NOT NULL DEFAULT 0,
                     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
