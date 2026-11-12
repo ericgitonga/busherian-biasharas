@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.14.1] - 2026-11-12
+
+### Fixed
+- **Angryhosting Explicit FTPS Let's Encrypt Generation Y Chain & Shared-Host SAN Verification (`[Adversarial HIGH-07]` Follow-up)**: Supplied Let's Encrypt's subordinate Generation Y cross-signed intermediates (`.github/scripts/letsencrypt_geny_intermediates.pem` — `ISRG Root YE`/`YR` cross-signed by `ISRG Root X1`/`X2` + `YE1`/`YE2`/`YR1`/`YR2`, zero self-signed roots) in `build_verified_tls_context()` for FTPS servers like Angryhosting (`:21`) that omit intermediate stapling in `ServerHello`, added `--tls-servername` SAN alignment (`angryhosting.com` when `FTP_SERVER` is a vanity domain/IP on Angryhosting) across control and passive data channels, and unpacked `*ftplib.all_errors` in `ftps_deploy.py` `main()` error handling (closes #192, part of #160).
+- tag: `v0.14.1`
+
 ## [0.14.0] - 2026-11-12
 
 ### Security

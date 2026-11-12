@@ -85,4 +85,10 @@ jobs:
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           FTP_APP_ROOT: ${{ secrets.FTP_SERVER_DIR }}
-        run: python3 .github/scripts/ftps_deploy.py --mode preprod --stage-dir /tmp/preprod_stage
+        run: |
+          set -euo pipefail
+          TLS_ARG=()
+          if [[ "${FTP_SERVER}" != "angryhosting.com" && "${FTP_SERVER}" != *.angryhosting.com ]]; then
+            TLS_ARG=(--tls-servername "angryhosting.com")
+          fi
+          python3 .github/scripts/ftps_deploy.py --mode preprod --stage-dir /tmp/preprod_stage "${TLS_ARG[@]}"

@@ -11,6 +11,7 @@ on:
       - 'VERSION'
       - '.github/workflows/deploy-ftp.yml'
       - '.github/scripts/ftps_deploy.py'
+      - '.github/scripts/letsencrypt_geny_intermediates.pem'
   workflow_dispatch:
     inputs:
       sync_all:
@@ -64,4 +65,10 @@ jobs:
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           FTP_APP_ROOT: ${{ secrets.FTP_SERVER_DIR }}
-        run: python3 .github/scripts/ftps_deploy.py --mode prod --files-list /tmp/changed_files.txt
+        run: |
+          set -euo pipefail
+          TLS_ARG=()
+          if [[ "${FTP_SERVER}" != "angryhosting.com" && "${FTP_SERVER}" != *.angryhosting.com ]]; then
+            TLS_ARG=(--tls-servername "angryhosting.com")
+          fi
+          python3 .github/scripts/ftps_deploy.py --mode prod --files-list /tmp/changed_files.txt "${TLS_ARG[@]}"
