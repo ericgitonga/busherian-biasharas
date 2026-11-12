@@ -72,3 +72,70 @@ jobs:
           CSRF_SECRET: 5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e
           SIMULATE_EMAILS: "yes"
         run: pytest -v
+
+      - name: Run MySQL 8.0 HTTP runtime smoke (#251)
+        env:
+          APP_ENV: testing
+          DB_DRIVER: mysql
+          DB_DRIVER_FALLBACK: none
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_NAME: busherian_test
+          DB_USER: root
+          DB_PASS: root_test_password_123
+          APP_HMAC_SECRET: 9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e
+          IP_HASH_SECRET: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b
+          CSRF_SECRET: 5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e
+          SIMULATE_EMAILS: "yes"
+        run: |
+          set -euo pipefail
+          php bin/migrate-and-seed.php
+          php -S 127.0.0.1:18090 -t public >/tmp/mysql_http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+          python3 - << 'PYEOF'
+          import json, time, urllib.request
+
+          base = "http://127.0.0.1:18090"
+          for _ in range(25):
+              try:
+                  with urllib.request.urlopen(base + "/api/health.php?verify_schema=1", timeout=3) as r:
+                      if r.status == 200:
+                          break
+              except Exception:
+                  time.sleep(0.2)
+
+          with urllib.request.urlopen(base + "/api/health.php?verify_schema=1", timeout=5) as r:
+              h = json.loads(r.read().decode())
+              assert h["status"] == "ok" and h["driver"] == "mysql" and h["schema_ready"] is True, h
+
+          for path in [
+              "/api/businesses.php?lat=-1.2647&lng=36.8021&radius_km=50&page=1&per_page=5",
+              "/api/businesses.php?open_now=1&lat=-1.2647&lng=36.8021&page=1&per_page=5",
+          ]:
+              with urllib.request.urlopen(base + path, timeout=10) as r:
+                  b = json.loads(r.read().decode())
+                  assert r.status == 200 and b["status"] == "ok", b
+
+          vid = "mysqlhttpvid00112233"
+          creq = urllib.request.Request(
+              base + "/api/consent.php",
+              data=json.dumps({"decision": "accepted"}).encode(),
+              headers={"Content-Type": "application/json", "Cookie": f"bbiz_vid={vid}"},
+              method="POST",
+          )
+          with urllib.request.urlopen(creq, timeout=5) as r:
+              c = json.loads(r.read().decode())
+              assert c["status"] == "ok" and c["decision"] == "accepted", c
+
+          treq = urllib.request.Request(
+              base + "/api/track-metric.php",
+              data=json.dumps({"event_type": "page_view", "page_path": "/submit.php?token=secret&email=a@b.com"}).encode(),
+              headers={"Content-Type": "application/json", "Cookie": f"bbiz_consent=accepted; bbiz_vid={vid}"},
+              method="POST",
+          )
+          with urllib.request.urlopen(treq, timeout=5) as r:
+              t = json.loads(r.read().decode())
+              assert t["status"] == "ok", t
+          print("MySQL 8.0 HTTP runtime smoke passed cleanly.")
+          PYEOF

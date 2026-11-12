@@ -343,6 +343,7 @@ assertTrue(
 
 // Verify Owner self-service edit: normal edit goes live immediately without admin alert; name/category edit alerts admin
 $sasaBefore = $pdo->query("SELECT * FROM businesses WHERE id = {$sasaBizId}")->fetch();
+$sasaBefore['owner_adult_attestation_18'] = '1';
 $sasaBefore['tagline'] = 'Updated by Owner Without Admin Delay';
 $editRes1 = VettingPurger::updateBusinessByOwner($pdo, $sasaBizId, $consumed1['owner'], $sasaBefore);
 assertTrue(
@@ -2424,6 +2425,7 @@ VettingPurger::quarantineBusinessDpa($pdo, $qBizId208, 'owner_portal', 'owner:20
 $qRowBeforeEdit = $pdo->query("SELECT * FROM businesses WHERE id = {$qBizId208}")->fetch();
 $oldPhotoUrls208 = PhotoUploader::decodePhotosJson((string)($qRowBeforeEdit['photos_json'] ?? ''));
 $editPayload208 = (array)$qRowBeforeEdit;
+$editPayload208['owner_adult_attestation_18'] = '1';
 $editPayload208['remove_photos'] = $oldPhotoUrls208;
 $editPayload208['business_photos_data_json'] = (string)json_encode([$dataUri208B]);
 
@@ -3074,7 +3076,7 @@ assertTrue(
     str_contains($consentJsSrc217, 'pseudonymous') &&
     !str_contains($dirJsSrc217, 'enableOsmMap(false); // auto-load on analytics') &&
     str_contains($apiBizSrc218, '6371.0 * ACOS') &&
-    str_contains($apiBizSrc218, 'LIMIT 500'),
+    str_contains($apiBizSrc218, 'LIMIT 250 OFFSET'),
     'AdminAuth revokes sessions server-side & on credential rotation (#225), web auto-migrate defaults off with GET_LOCK (#220), drafts use 2h sessionStorage without vetting PII (#210), metrics scrub PII & unbundle OSM tiles (#217), and API paginates Haversine in SQL (#218)'
 );
 
@@ -3387,6 +3389,7 @@ $wasPrivatelyStaged239 = ($directRel239 !== '') && is_file($directPriv239) && !i
 // 2) Full VettingPurger::updateBusinessByOwner check when quarantine lands before owner edit executes:
 VettingPurger::quarantineBusinessDpa($pdo, $biz239, 'admin_dashboard', 'admin_239', '127.0.0.1');
 $updRes239 = VettingPurger::updateBusinessByOwner($pdo, $biz239, (array)$ownerRec239, [
+    'owner_adult_attestation_18' => '1',
     'name' => 'R3 High04 Quarantine Race Studio',
     'tagline' => 'Edited while quarantine landed',
     'description' => 'Quarantined listings must never leak staged photos to public uploads.',
@@ -3480,6 +3483,331 @@ assertTrue(
     $reportedIncomplete240 === true &&
     $drainedClean240 === true,
     'Durable pending_media_deletions journal tracks failed disk unlinks honestly and drains residual media on retry (#240)'
+);
+
+
+// =========================================================================
+// 45. Pass-3 MEDIUM Remediations (#241–#251)
+// =========================================================================
+
+// 45a. M-01 (#241) & M-02 (#242): Uncapped subject export with admin correspondence + third-party redaction,
+//      subject PII erasure inside admin-addressed mail, and locked co-owner-safe erasure classification
+$owner241 = OwnerAuth::upsertOwner($pdo, 'subject241@busherian-dpa.co.ke', 'Subject TwoFourOne', '+254741241241');
+$ownerId241 = (int)$owner241['id'];
+$coOwner242 = OwnerAuth::upsertOwner($pdo, 'coowner242@busherian-dpa.co.ke', 'CoOwner TwoFourTwo', '+254742242242');
+$coOwnerId242 = (int)$coOwner242['id'];
+
+$bizCo242 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'R3 Med02 CoOwned Legal Chambers',
+    'tagline' => 'Shared alumni chambers preserved when one co-owner erases account',
+    'description' => 'Testing locked co-owner classification inside deleteOwnerAccountAndData.',
+    'school_badge' => 'AHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'online',
+    'country' => 'Kenya',
+    'phone_primary' => '+254741241241',
+    'owner_email' => 'subject241@busherian-dpa.co.ke',
+]);
+OwnerAuth::linkOwnerToBusiness($pdo, $ownerId241, $bizCo242, 'primary_owner');
+OwnerAuth::linkOwnerToBusiness($pdo, $coOwnerId242, $bizCo242, 'co_owner');
+
+// Insert 106 direct correspondence rows + 1 admin-addressed complaint containing BOTH subject PII & third-party reporter email
+$insMail241 = $pdo->prepare("
+    INSERT INTO email_outbox (business_id, recipient_email, reply_to, subject, body_html, status)
+    VALUES (:bid, :rec, :rep, :sub, :body, 'simulated')
+");
+for ($mi = 1; $mi <= 106; $mi++) {
+    $insMail241->execute([
+        ':bid' => null,
+        ':rec' => 'subject241@busherian-dpa.co.ke',
+        ':rep' => null,
+        ':sub' => "Correspondence #{$mi}",
+        ':body' => "<p>Notice #{$mi} for subject241@busherian-dpa.co.ke</p>",
+    ]);
+}
+$adminEmail241 = Database::env('ADMIN_EMAIL', 'admin@busherianbiasharas.com');
+$insMail241->execute([
+    ':bid' => null,
+    ':rec' => $adminEmail241,
+    ':rep' => 'whistleblower.thirdparty@external.org',
+    ':sub' => 'Complaint naming subject241@busherian-dpa.co.ke from whistleblower.thirdparty@external.org',
+    ':body' => '<p>Reporter whistleblower.thirdparty@external.org cited Subject TwoFourOne (subject241@busherian-dpa.co.ke, +254741241241).</p>',
+]);
+$adminMailId241 = (int)$pdo->lastInsertId();
+
+$pdo->prepare("
+    INSERT INTO takedown_requests (business_id, requester_name, requester_email, reason, status)
+    VALUES (:bid, 'Third Party Complainant', 'whistleblower.thirdparty@external.org', 'Third party privacy note on linked listing', 'pending_review')
+")->execute([':bid' => $bizCo242]);
+
+$export241 = OwnerAuth::exportOwnerPersonalData($pdo, $ownerId241);
+$corrCount241 = count($export241['correspondence_metadata']);
+$exportedJsonStr241 = (string)json_encode($export241);
+$adminRowExported241 = false;
+foreach ($export241['correspondence_metadata'] as $cmRow) {
+    if ((int)$cmRow['id'] === $adminMailId241) {
+        $adminRowExported241 = true;
+        break;
+    }
+}
+
+$erase241 = OwnerAuth::deleteOwnerAccountAndData($pdo, $ownerId241, true, '198.51.100.241');
+$adminMailAfter241 = $pdo->query("SELECT subject, body_html, reply_to FROM email_outbox WHERE id = {$adminMailId241}")->fetch();
+$coBizStillExists242 = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE id = {$bizCo242}")->fetchColumn() === 1;
+$coOwnerStillLinked242 = OwnerAuth::canOwnerEditBusiness($pdo, $coOwnerId242, $bizCo242);
+
+assertTrue(
+    $corrCount241 >= 107 &&
+    $adminRowExported241 === true &&
+    !str_contains($exportedJsonStr241, 'whistleblower.thirdparty@external.org') &&
+    str_contains($exportedJsonStr241, '[redacted-third-party-email]') &&
+    count($export241['takedown_requests']) >= 1 &&
+    !str_contains((string)($adminMailAfter241['body_html'] ?? ''), 'subject241@busherian-dpa.co.ke') &&
+    !str_contains((string)($adminMailAfter241['body_html'] ?? ''), 'Subject TwoFourOne') &&
+    !str_contains((string)($adminMailAfter241['body_html'] ?? ''), '+254741241241') &&
+    !str_contains((string)($adminMailAfter241['subject'] ?? ''), 'subject241@busherian-dpa.co.ke') &&
+    $coBizStillExists242 === true &&
+    $coOwnerStillLinked242 === true &&
+    in_array($bizCo242, $erase241['co_owned_listings_preserved'], true),
+    'Owner export returns >100 correspondence rows + admin-addressed mail with third-party redaction, erasure scrubs subject PII from admin mail (#241), and co-owned listings remain protected under lock (#242)'
+);
+VettingPurger::deleteBusiness($pdo, $bizCo242, 'admin_dashboard', 'admin_cleanup_242');
+OwnerAuth::deleteOwnerAccountAndData($pdo, $coOwnerId242, true, '198.51.100.242');
+
+// 45b. M-03 (#243): Open-Now API scans beyond 500 candidates in 250-row batches without silent truncation
+$pdo->prepare("INSERT INTO categories (parent_id, name, slug, status) VALUES (1, 'R3 Open506 Batch Spec', 'r3-open506-batch-spec', 'approved')")->execute();
+$specId243 = (int)$pdo->lastInsertId();
+$closedHours243 = json_encode([
+    'mon' => [], 'tue' => [], 'wed' => [], 'thu' => [], 'fri' => [], 'sat' => [], 'sun' => [],
+]);
+$open247Hours243 = json_encode([
+    'mon' => [['00:00', '24:00']], 'tue' => [['00:00', '24:00']], 'wed' => [['00:00', '24:00']],
+    'thu' => [['00:00', '24:00']], 'fri' => [['00:00', '24:00']], 'sat' => [['00:00', '24:00']],
+    'sun' => [['00:00', '24:00']],
+]);
+$pdo->beginTransaction();
+$bulkStmt243 = $pdo->prepare("
+    INSERT INTO businesses (
+        business_id, business_number, name, slug, tagline, description,
+        school_badge, sector_id, specialty_id, service_mode, country, city_county,
+        operating_hours_json, phone_primary, status, listing_provenance, admin_provenance_note
+    ) VALUES (
+        :bid, :bnum, :nm, :sl, 'Batch scan test', 'Batch scan test',
+        'AHS', 1, :spid, 'online', 'Kenya', 'Nairobi',
+        :hrs, '+254700243000', 'approved', 'admin_curated', 'Unit test #243'
+    )
+");
+for ($bi = 1; $bi <= 505; $bi++) {
+    $bnum243 = 80000 + $bi;
+    $bulkStmt243->execute([
+        ':bid' => "BBIZ-{$bnum243}",
+        ':bnum' => $bnum243,
+        ':nm' => "Closed Candidate {$bi}",
+        ':sl' => "closed-candidate-243-{$bi}",
+        ':spid' => $specId243,
+        ':hrs' => $closedHours243,
+    ]);
+}
+$bulkStmt243->execute([
+    ':bid' => 'BBIZ-80506',
+    ':bnum' => 80506,
+    ':nm' => 'Open Candidate 506 Beyond Cap',
+    ':sl' => 'open-candidate-506-beyond-cap',
+    ':spid' => $specId243,
+    ':hrs' => $open247Hours243,
+]);
+$pdo->commit();
+$pdo = null;
+Database::resetConnection();
+
+$apiRunner243 = sprintf(
+    '$_SERVER["REQUEST_METHOD"]="GET"; $_SERVER["REMOTE_ADDR"]="127.0.0.1"; $_GET=["specialty_id"=>"%d","open_now"=>"1","page"=>"1","per_page"=>"10"]; require %s;',
+    $specId243,
+    var_export(dirname(__DIR__) . '/public/api/businesses.php', true)
+);
+$cmd243 = 'php -r ' . escapeshellarg($apiRunner243);
+$rawJson243 = (string)shell_exec($cmd243);
+$decoded243 = json_decode($rawJson243, true);
+$pdo = Database::getConnection();
+$pdo->prepare("DELETE FROM businesses WHERE specialty_id = :sp")->execute([':sp' => $specId243]);
+$pdo->prepare("DELETE FROM categories WHERE id = :sp")->execute([':sp' => $specId243]);
+
+assertTrue(
+    is_array($decoded243) &&
+    ($decoded243['status'] ?? '') === 'ok' &&
+    (int)($decoded243['total_count'] ?? 0) === 1 &&
+    (($decoded243['businesses'][0]['name'] ?? '') === 'Open Candidate 506 Beyond Cap'),
+    'public/api/businesses.php open_now=1 evaluates candidate #506 across 250-row batches without truncating at 500 (#243)'
+);
+
+// 45c. M-04 (#244) & M-05 (#245): Server-side analytics_consents provenance (non-rolling), revocation purge, and page_path sanitization
+$vid245 = 'unitvid245provenance99';
+$runHttpScript = static function (string $phpFile, array $cookies, array $payload): array {
+    $tmpIn = tempnam(sys_get_temp_dir(), 'bbiz_in_');
+    file_put_contents($tmpIn, json_encode($payload));
+    $wrapper = sprintf(
+        '$_SERVER["REQUEST_METHOD"]="POST"; $_SERVER["REMOTE_ADDR"]="127.0.0.1"; $_COOKIE=%s; $_POST=%s; require %s;',
+        var_export($cookies, true),
+        var_export($payload, true),
+        var_export($phpFile, true)
+    );
+    $out = (string)shell_exec('php -r ' . escapeshellarg($wrapper) . ' < ' . escapeshellarg($tmpIn));
+    @unlink($tmpIn);
+    return json_decode($out, true) ?: ['raw' => $out];
+};
+
+$pdo = null;
+Database::resetConnection();
+$trackFile245 = dirname(__DIR__) . '/public/api/track-metric.php';
+$consentFile245 = dirname(__DIR__) . '/public/api/consent.php';
+
+// 1) Forged cookie WITHOUT server-side consent row MUST be ignored!
+$noProvRes245 = $runHttpScript($trackFile245, ['bbiz_consent' => 'accepted', 'bbiz_vid' => $vid245], [
+    'event_type' => 'page_view',
+    'page_path' => '/submit.php?token=secret123',
+]);
+// 2) Record server-side consent & verify non-rolling expiry across repeat call
+$cRes1 = $runHttpScript($consentFile245, ['bbiz_vid' => $vid245], ['decision' => 'accepted']);
+sleep(1);
+$cRes2 = $runHttpScript($consentFile245, ['bbiz_vid' => $vid245], ['decision' => 'accepted']);
+// 3) Track metrics with sensitive query/fragment and arbitrary PII path
+$tResAllowed1 = $runHttpScript($trackFile245, ['bbiz_consent' => 'accepted', 'bbiz_vid' => $vid245], [
+    'event_type' => 'page_view',
+    'page_path' => '/submit.php?token=secret_oauth_code&email=leak@example.com#step2',
+]);
+$tResAllowed2 = $runHttpScript($trackFile245, ['bbiz_consent' => 'accepted', 'bbiz_vid' => $vid245], [
+    'event_type' => 'page_view',
+    'page_path' => '/profile/jane.doe@example.com/+254711999888',
+]);
+$pdo = Database::getConnection();
+$salt245 = Database::env('IP_HASH_SECRET', 'bbiz_default_metric_salt');
+$vhash245 = hash_hmac('sha256', $vid245, $salt245);
+$storedPaths245 = $pdo->prepare("SELECT page_path FROM usage_metrics WHERE visitor_hash = :vh ORDER BY id ASC");
+$storedPaths245->execute([':vh' => $vhash245]);
+$pathsArr245 = $storedPaths245->fetchAll(PDO::FETCH_COLUMN);
+$storedPaths245 = null;
+$pdo = null;
+Database::resetConnection();
+
+// 4) Revoke consent -> deletes both analytics_consents and usage_metrics rows for visitor_hash
+$cRevoke245 = $runHttpScript($consentFile245, ['bbiz_vid' => $vid245], ['decision' => 'revoked']);
+$pdo = Database::getConnection();
+$remConsent245 = (int)$pdo->query("SELECT COUNT(*) FROM analytics_consents WHERE visitor_hash = " . $pdo->quote($vhash245))->fetchColumn();
+$remMetrics245 = (int)$pdo->query("SELECT COUNT(*) FROM usage_metrics WHERE visitor_hash = " . $pdo->quote($vhash245))->fetchColumn();
+
+assertTrue(
+    ($noProvRes245['status'] ?? '') === 'ignored_no_consent' &&
+    ($cRes1['status'] ?? '') === 'ok' &&
+    ($cRes1['expires_at_utc'] ?? '') !== '' &&
+    ($cRes1['expires_at_utc'] ?? 'a') === ($cRes2['expires_at_utc'] ?? 'b') &&
+    ($tResAllowed1['status'] ?? '') === 'ok' &&
+    ($tResAllowed2['status'] ?? '') === 'ok' &&
+    $pathsArr245 === ['/submit.php', '/[other]'] &&
+    ($cRevoke245['status'] ?? '') === 'ok' &&
+    $remConsent245 === 0 &&
+    $remMetrics245 === 0,
+    'Analytics tracking requires active non-rolling server-side consent provenance, strips query/PII paths to allowlisted routes, and purges on revocation (#244, #245)'
+);
+
+// 45d. M-06 (#246): Adult-only (18+) boundary enforced on VettingPurger::updateBusinessByOwner and Google first-time onboarding
+$owner246 = OwnerAuth::upsertOwner($pdo, 'owner246@adultgate.co.ke', 'Adult Gate Owner');
+$biz246 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'R3 Med06 Adult Gate Venture',
+    'tagline' => 'Testing 18+ attestation on owner updates',
+    'description' => 'Owner edits must reject missing 18+ attestation.',
+    'school_badge' => 'AGHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'online',
+    'country' => 'Kenya',
+    'phone_primary' => '+254746246246',
+    'owner_email' => 'owner246@adultgate.co.ke',
+]);
+OwnerAuth::linkOwnerToBusiness($pdo, (int)$owner246['id'], $biz246, 'primary_owner');
+$rejectedMissing18 = false;
+try {
+    VettingPurger::updateBusinessByOwner($pdo, $biz246, $owner246, [
+        'name' => 'R3 Med06 Adult Gate Venture',
+        'tagline' => 'Attempt without 18+ checkbox',
+        'description' => 'Should fail closed.',
+        'sector_id' => 1,
+        'specialty_id' => 2,
+        'phone_primary' => '+254746246246',
+    ]);
+} catch (\InvalidArgumentException $e246) {
+    $rejectedMissing18 = str_contains($e246->getMessage(), '18+');
+}
+$googleCbSrc246 = (string)file_get_contents(dirname(__DIR__) . '/public/owner/google-callback.php');
+VettingPurger::deleteBusiness($pdo, $biz246, 'admin_dashboard', 'admin_cleanup_246');
+OwnerAuth::deleteOwnerAccountAndData($pdo, (int)$owner246['id'], true, '198.51.100.246');
+
+assertTrue(
+    $rejectedMissing18 === true &&
+    str_contains($googleCbSrc246, 'bbiz_pending_google_onboarding') &&
+    str_contains($googleCbSrc246, 'age_attestation_18'),
+    'Owner listing edits reject missing 18+ attestation and first-time Google OAuth gates persistence on 18+ confirmation (#246)'
+);
+
+// 45e. M-07 (#247): DPA Cross-Border Transfer Register & Notice Version 2026-11-v4 alignment
+$dpaRegPath247 = dirname(__DIR__) . '/docs/DPA_TRANSFER_REGISTER.md';
+$dpaRegTxt247 = is_file($dpaRegPath247) ? (string)file_get_contents($dpaRegPath247) : '';
+$privTxt247 = (string)file_get_contents(dirname(__DIR__) . '/public/privacy.php');
+assertTrue(
+    $dpaRegTxt247 !== '' &&
+    str_contains($dpaRegTxt247, '48') &&
+    str_contains($dpaRegTxt247, 'oauth2.googleapis.com') &&
+    str_contains($dpaRegTxt247, 'openidconnect.googleapis.com') &&
+    str_contains($dpaRegTxt247, 'nominatim.openstreetmap.org') &&
+    str_contains($privTxt247, VettingPurger::PRIVACY_NOTICE_VERSION) &&
+    str_contains($privTxt247, 'oauth2.googleapis.com') &&
+    !str_contains($privTxt247, '<code'),
+    'docs/DPA_TRANSFER_REGISTER.md and public/privacy.php document Kenya DPA ss. 48-50 transfer grounds and match active notice version (#247)'
+);
+
+// 45f. M-08 (#248), M-09 (#249), M-10 (#250): Lease-token fencing, 15/h central quota ceiling, and TLS-only prod SMTP without mail() fallback
+$pdo->prepare("
+    INSERT INTO email_outbox (business_id, recipient_email, subject, body_html, status, attempts, lease_until, lease_token)
+    VALUES (NULL, 'lease248@example.com', 'Lease Fence Test', '<p>Test</p>', 'sending', 1, :lu, 'active-worker-token-2')
+")->execute([':lu' => time() + 120]);
+$leaseRowId248 = (int)$pdo->lastInsertId();
+$staleFinalized248 = Mailer::finalizeLeasedOutboxRow($pdo, $leaseRowId248, 'stale-worker-token-1', 'sent', 1, null);
+$validFinalized248 = Mailer::finalizeLeasedOutboxRow($pdo, $leaseRowId248, 'active-worker-token-2', 'sent', 1, null);
+$finalStatus248 = (string)$pdo->query("SELECT status FROM email_outbox WHERE id = {$leaseRowId248}")->fetchColumn();
+putenv('SMTP_DISABLE_MAIL_FALLBACK');
+putenv('ALLOW_PHP_MAIL_FALLBACK');
+unset($_ENV['SMTP_DISABLE_MAIL_FALLBACK'], $_ENV['ALLOW_PHP_MAIL_FALLBACK']);
+
+assertTrue(
+    AntiSpamGate::CENTRAL_DISPATCH_MAIL_LIMIT_1H === 15 &&
+    Mailer::OUTBOX_LEASE_SECONDS >= 120 &&
+    Mailer::SMTP_TOTAL_DEADLINE_SECONDS <= 30 &&
+    Mailer::SMTP_TOTAL_DEADLINE_SECONDS < Mailer::OUTBOX_LEASE_SECONDS &&
+    $staleFinalized248 === false &&
+    $validFinalized248 === true &&
+    $finalStatus248 === 'sent' &&
+    Mailer::isSmtpSecurityAllowed('none', 'production', false) === false &&
+    Mailer::isSmtpSecurityAllowed('plain', 'production', false) === false &&
+    Mailer::isSmtpSecurityAllowed('ssl', 'production', false) === true &&
+    Mailer::isSmtpSecurityAllowed('tls', 'production', false) === true &&
+    Mailer::isPhpMailFallbackEnabled() === false,
+    'Outbox completion fences updates by lease_token (#248), central dispatch enforces 15/h (#249), and production SMTP enforces TLS with PHP mail() fallback disabled (#250)'
+);
+
+// 45g. M-11 (#251): Database::getSchemaReadiness() detects version drift and recovers cleanly on migrateAndSeed()
+$readyInitial251 = Database::getSchemaReadiness($pdo);
+Database::setSetting($pdo, 'schema_init_version', '2026-11-v18-stale');
+$readyStale251 = Database::getSchemaReadiness($pdo);
+$migRes251 = Database::migrateAndSeed($pdo, false);
+$readyRestored251 = Database::getSchemaReadiness($pdo);
+
+assertTrue(
+    $readyInitial251['schema_ready'] === true &&
+    $readyStale251['schema_ready'] === false &&
+    $migRes251['schema_version'] === Database::SCHEMA_INIT_VERSION &&
+    $readyRestored251['schema_ready'] === true &&
+    $readyRestored251['missing_tables'] === [],
+    'Database::getSchemaReadiness detects pending schema version drift and migrateAndSeed restores full readiness (#251)'
 );
 
 if ($initialDriver === 'sqlite') {

@@ -11,7 +11,7 @@ final class AntiSpamGate
     private const MIN_FILL_SECONDS = 4;
     private const MAX_FORM_AGE_SECONDS = 7200; // 2 hours
     public const GLOBAL_OUTBOUND_MAIL_LIMIT_1H = 15;
-    public const CENTRAL_DISPATCH_MAIL_LIMIT_1H = 25;
+    public const CENTRAL_DISPATCH_MAIL_LIMIT_1H = 15;
     public const OTP_RECIPIENT_COOLDOWN_SECONDS = 60;
     public const OTP_RECIPIENT_LIMIT_1H = 4;
 

@@ -174,18 +174,105 @@ final class Mailer
      * Note: If the PHP process crashes after the remote SMTP server accepts `DATA` (250) and before the local DB
      * updates `status = 'sent'`, at-least-once delivery may re-send after `lease_until` (60s) expires.
      */
+    public const OUTBOX_LEASE_SECONDS = 120;
+    public const SMTP_TOTAL_DEADLINE_SECONDS = 25;
+
+    /**
+     * Check whether the configured SMTP security mode is permitted for the given environment (#250 M-10).
+     * Production requires encrypted 'ssl' (SMTPS) or 'tls' (STARTTLS) and rejects plaintext modes.
+     */
+    public static function isSmtpSecurityAllowed(string $smtpSecure, string $appEnv, bool $simulate = false): bool
+    {
+        if ($simulate) {
+            return true;
+        }
+        $normSec = strtolower(trim($smtpSecure));
+        $normEnv = strtolower(trim($appEnv));
+        if ($normEnv === 'production') {
+            return in_array($normSec, ['ssl', 'tls'], true);
+        }
+        return in_array($normSec, ['ssl', 'tls', 'none', ''], true);
+    }
+
+    /**
+     * Check whether local unauthenticated PHP `mail()` fallback is enabled (#250 M-10: disabled by default).
+     */
+    public static function isPhpMailFallbackEnabled(): bool
+    {
+        $disableFallback = strtolower(trim(Database::env('SMTP_DISABLE_MAIL_FALLBACK', 'yes')));
+        $allowLegacy = strtolower(trim(Database::env('ALLOW_PHP_MAIL_FALLBACK', 'no')));
+        if ($allowLegacy === 'yes' && $disableFallback === 'no') {
+            return true;
+        }
+        return $disableFallback === 'no' && strtolower(trim(Database::env('APP_ENV', 'production'))) !== 'production';
+    }
+
+    /**
+     * Atomically finalize a leased `email_outbox` row ONLY when the caller still holds `lease_token` (#248 M-08).
+     */
+    public static function finalizeLeasedOutboxRow(
+        PDO $pdo,
+        int $outboxId,
+        string $leaseToken,
+        string $newStatus,
+        int $attempts,
+        ?int $nextRetryAt = null
+    ): bool {
+        if ($leaseToken === '') {
+            return false;
+        }
+        if (in_array($newStatus, ['sent', 'simulated'], true)) {
+            $stmt = $pdo->prepare("
+                UPDATE email_outbox
+                SET status = :st,
+                    attempts = :att,
+                    lease_until = NULL,
+                    lease_token = NULL,
+                    next_retry_at = NULL,
+                    sent_at = CURRENT_TIMESTAMP
+                WHERE id = :id AND status = 'sending' AND lease_token = :ltok
+            ");
+            $stmt->execute([
+                ':st' => $newStatus,
+                ':att' => $attempts,
+                ':id' => $outboxId,
+                ':ltok' => $leaseToken,
+            ]);
+            return $stmt->rowCount() === 1;
+        }
+        $stmt = $pdo->prepare("
+            UPDATE email_outbox
+            SET status = :st,
+                attempts = :att,
+                lease_until = NULL,
+                lease_token = NULL,
+                next_retry_at = :nra
+            WHERE id = :id AND status = 'sending' AND lease_token = :ltok
+        ");
+        $stmt->execute([
+            ':st' => $newStatus,
+            ':att' => $attempts,
+            ':nra' => $nextRetryAt,
+            ':id' => $outboxId,
+            ':ltok' => $leaseToken,
+        ]);
+        return $stmt->rowCount() === 1;
+    }
+
     public static function dispatchOutboxRow(PDO $pdo, int $outboxId): bool
     {
         if ($pdo->inTransaction()) {
             return false;
         }
         $now = time();
+        $leaseToken = bin2hex(random_bytes(16));
 
-        // Step 1: Atomic worker lease acquisition — rejects already 'sent', 'simulated', 'expired', or actively leased rows!
+        // Step 1 (#248 M-08): Atomic worker lease acquisition fenced by unique `lease_token` (120s lease >= ~5x 25s SMTP deadline)
         $leaseStmt = $pdo->prepare("
             UPDATE email_outbox
             SET status = 'sending',
-                lease_until = :lu
+                lease_until = :lu,
+                lease_token = :ltok
             WHERE id = :id
               AND (
                   status IN ('queued', 'failed')
@@ -196,7 +283,8 @@ final class Mailer
               AND body_html NOT LIKE '[EXPIRED%'
         ");
         $leaseStmt->execute([
-            ':lu' => $now + 60,
+            ':lu' => $now + self::OUTBOX_LEASE_SECONDS,
+            ':ltok' => $leaseToken,
             ':id' => $outboxId,
             ':now1' => $now,
             ':now2' => $now,
@@ -205,8 +293,8 @@ final class Mailer
             return false;
         }
 
-        $stmt = $pdo->prepare("SELECT * FROM email_outbox WHERE id = :id LIMIT 1");
-        $stmt->execute([':id' => $outboxId]);
+        $stmt = $pdo->prepare("SELECT * FROM email_outbox WHERE id = :id AND lease_token = :ltok LIMIT 1");
+        $stmt->execute([':id' => $outboxId, ':ltok' => $leaseToken]);
         $row = $stmt->fetch();
         if (!$row) {
             return false;
@@ -249,24 +337,19 @@ final class Mailer
                 UPDATE email_outbox
                 SET status = 'expired',
                     lease_until = NULL,
+                    lease_token = NULL,
                     next_retry_at = NULL,
                     subject = '[EXPIRED AUTH EMAIL]',
                     body_html = '[EXPIRED OR SUPERSEDED AUTH CHALLENGE NOT DISPATCHED]'
-                WHERE id = :id
-            ")->execute([':id' => $outboxId]);
+                WHERE id = :id AND status = 'sending' AND lease_token = :ltok
+            ")->execute([':id' => $outboxId, ':ltok' => $leaseToken]);
             return false;
         }
 
-        // Step 3 (#212 M-04): Enforce central delivery-wide hourly quota across all callers & retry workers
+        // Step 3 (#212 M-04, #249 M-09): Enforce central delivery-wide 15/h quota across all callers & retry workers
         $centralQuota = AntiSpamGate::consumeCentralDispatchQuota($pdo);
         if (!$centralQuota['allowed']) {
-            $pdo->prepare("
-                UPDATE email_outbox
-                SET status = 'queued',
-                    lease_until = NULL,
-                    next_retry_at = :nra
-                WHERE id = :id AND status = 'sending'
-            ")->execute([':nra' => $now + 300, ':id' => $outboxId]);
+            self::finalizeLeasedOutboxRow($pdo, $outboxId, $leaseToken, 'queued', (int)($row['attempts'] ?? 0), $now + 300);
             return false;
         }
 
@@ -275,16 +358,7 @@ final class Mailer
 
         $attempts = ((int)($row['attempts'] ?? 0)) + 1;
         if ($simulate) {
-            $pdo->prepare("
-                UPDATE email_outbox
-                SET status = 'simulated',
-                    attempts = :att,
-                    lease_until = NULL,
-                    next_retry_at = NULL,
-                    sent_at = CURRENT_TIMESTAMP
-                WHERE id = :id AND status = 'sending'
-            ")->execute([':att' => $attempts, ':id' => $outboxId]);
-            return true;
+            return self::finalizeLeasedOutboxRow($pdo, $outboxId, $leaseToken, 'simulated', $attempts);
         }
 
         $cleanSubject = AntiSpamGate::sanitizeHeaderValue($rawSubject);
@@ -296,12 +370,11 @@ final class Mailer
             : null;
 
         $smtpHost = trim(Database::env('SMTP_HOST', ''));
-        $disablePhpMailFallback = strtolower(Database::env('SMTP_DISABLE_MAIL_FALLBACK', 'no')) === 'yes';
         $ok = false;
         if ($smtpHost !== '') {
             $ok = self::sendViaAuthenticatedSmtp($recipient, $cleanSubject, $bodyHtml, $fromEmail, $fromName, $cleanReply);
         }
-        if (!$ok && !$disablePhpMailFallback && function_exists('mail')) {
+        if (!$ok && self::isPhpMailFallbackEnabled() && function_exists('mail')) {
             $msgId = '<' . bin2hex(random_bytes(12)) . '@busherianbiasharas.com>';
             $headers = [
                 'MIME-Version: 1.0',
@@ -320,31 +393,11 @@ final class Mailer
         }
 
         if ($ok) {
-            $pdo->prepare("
-                UPDATE email_outbox
-                SET status = 'sent',
-                    attempts = :att,
-                    lease_until = NULL,
-                    next_retry_at = NULL,
-                    sent_at = CURRENT_TIMESTAMP
-                WHERE id = :id AND status = 'sending'
-            ")->execute([':att' => $attempts, ':id' => $outboxId]);
-            return true;
+            return self::finalizeLeasedOutboxRow($pdo, $outboxId, $leaseToken, 'sent', $attempts);
         }
 
         $backoffSeconds = min(3600, 60 * (1 << min(6, $attempts)));
-        $pdo->prepare("
-            UPDATE email_outbox
-            SET status = 'failed',
-                attempts = :att,
-                lease_until = NULL,
-                next_retry_at = :nra
-            WHERE id = :id AND status = 'sending'
-        ")->execute([
-            ':att' => $attempts,
-            ':nra' => time() + $backoffSeconds,
-            ':id' => $outboxId,
-        ]);
+        self::finalizeLeasedOutboxRow($pdo, $outboxId, $leaseToken, 'failed', $attempts, time() + $backoffSeconds);
         return false;
     }
 
@@ -454,21 +507,45 @@ final class Mailer
         $port = (int)Database::env('SMTP_PORT', '465');
         $user = trim(Database::env('SMTP_USER', ''));
         $pass = Database::env('SMTP_PASS', '');
-        $sec  = strtolower(trim(Database::env('SMTP_SECURE', $port === 465 ? 'ssl' : 'tls')));
-        if ($host === '' || $port <= 0) {
+        $rawSec = trim(Database::env('SMTP_ENCRYPTION', Database::env('SMTP_SECURE', $port === 465 ? 'ssl' : 'tls')));
+        $sec = strtolower($rawSec);
+        $appEnv = strtolower(trim(Database::env('APP_ENV', 'production')));
+        if ($host === '' || $port <= 0 || !self::isSmtpSecurityAllowed($sec, $appEnv, false)) {
+            error_log('[Mailer::sendViaAuthenticatedSmtp] Refusing unencrypted or invalid SMTP transport configuration in ' . $appEnv);
             return false;
         }
 
-        $remote = ($sec === 'ssl' ? 'ssl://' : '') . $host . ':' . $port;
-        $fp = @stream_socket_client($remote, $errno, $errstr, 8);
+        $deadline = microtime(true) + (float)self::SMTP_TOTAL_DEADLINE_SECONDS;
+        $verifyPeer = strtolower(trim(Database::env('SMTP_VERIFY_TLS_PEER', 'yes'))) !== 'no';
+        $sslCtx = stream_context_create([
+            'ssl' => [
+                'verify_peer' => $verifyPeer,
+                'verify_peer_name' => $verifyPeer,
+                'SNI_enabled' => true,
+                'peer_name' => $host,
+            ],
+        ]);
+        $remote = ($sec === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port;
+        $fp = @stream_socket_client($remote, $errno, $errstr, 8.0, STREAM_CLIENT_CONNECT, $sslCtx);
         if (!is_resource($fp)) {
             return false;
         }
-        stream_set_timeout($fp, 8);
 
-        $readResp = static function () use ($fp): string {
+        $applyRemainingTimeout = static function () use ($fp, $deadline): bool {
+            $rem = $deadline - microtime(true);
+            if ($rem <= 0.05) {
+                return false;
+            }
+            $secPart = (int)floor($rem);
+            $usecPart = (int)(($rem - $secPart) * 1000000);
+            stream_set_timeout($fp, max(0, $secPart), max(1000, $usecPart));
+            return true;
+        };
+        $applyRemainingTimeout();
+
+        $readResp = static function () use ($fp, $applyRemainingTimeout): string {
             $out = '';
-            while (($line = fgets($fp, 515)) !== false) {
+            while ($applyRemainingTimeout() && ($line = fgets($fp, 515)) !== false) {
                 $out .= $line;
                 if (isset($line[3]) && $line[3] === ' ') {
                     break;
@@ -476,8 +553,13 @@ final class Mailer
             }
             return $out;
         };
-        $sendCmd = static function (string $cmd, string $expectPrefix) use ($fp, $readResp): bool {
-            fwrite($fp, $cmd . "\r\n");
+        $sendCmd = static function (string $cmd, string $expectPrefix) use ($fp, $readResp, $applyRemainingTimeout): bool {
+            if (!$applyRemainingTimeout()) {
+                return false;
+            }
+            if (@fwrite($fp, $cmd . "\r\n") === false) {
+                return false;
+            }
             $resp = $readResp();
             return str_starts_with($resp, $expectPrefix);
         };

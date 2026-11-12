@@ -1070,6 +1070,7 @@ def test_playwright_high_01_02_05_browser_security_regressions():
             }""",
             xss_reg_payload,
         )
+        p1.get_by_test_id("owner-edit-adult-checkbox").check()
         p1.locator("form button[type='submit']").first.click()
         p1.wait_for_load_state("networkidle")
         p1.goto(f"{BASE_URL}/owner/edit-business.php?id={non_corp_id}", wait_until="networkidle")
@@ -1370,6 +1371,17 @@ def test_playwright_r2_medium_regressions():
     assert st_long_cat == 200
     assert len(json.loads(body_long_cat)["custom_input"]) == 80, "Expected check_custom bounded to 80 chars (#218)"
 
+    st_cons_217, body_cons_217, _ = _request(
+        "/api/consent.php",
+        method="POST",
+        data=json.dumps({"decision": "accepted"}).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Cookie": "bbiz_vid=e2evid2170001",
+        },
+    )
+    assert st_cons_217 == 200, f"Expected 200 from /api/consent.php, got {st_cons_217}: {body_cons_217}"
+
     st_tm, body_tm, _ = _request(
         "/api/track-metric.php",
         method="POST",
@@ -1643,6 +1655,80 @@ def test_playwright_r3_high_regressions():
         ctx_pub.close()
         ctx_adm.close()
 
+def test_playwright_r3_medium_regressions():
+    """Browser & HTTP E2E regressions for Pass-3 MEDIUM (#244, #245, #246, #247, #251)."""
+    # 1. M-11 (#251): /api/health.php reports schema_ready: True and active schema_version
+    st_hlth, body_hlth, _ = _request("/api/health.php?verify_schema=1")
+    assert st_hlth == 200, f"Expected 200 from /api/health.php, got {st_hlth}: {body_hlth}"
+    hlth_json = json.loads(body_hlth)
+    assert hlth_json.get("status") == "ok" and hlth_json.get("schema_ready") is True, hlth_json
+    assert hlth_json.get("schema_version") == "2026-11-v19-med", hlth_json
+
+    # 2. M-04 (#244) & M-05 (#245): Unconsented metric rejected; consented metric strips query/fragment & enforces non-rolling cookie TTL
+    st_uncons, body_uncons, _ = _request(
+        "/api/track-metric.php",
+        method="POST",
+        data=json.dumps({"event_type": "page_view", "page_path": "/privacy.php?secret=1"}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Cookie": "bbiz_consent=accepted; bbiz_vid=unconsentedvid245999"},
+    )
+    assert st_uncons == 200 and json.loads(body_uncons).get("status") == "ignored_no_consent", body_uncons
+
+    ctx_c = _new_browser_context()
+    try:
+        pc = ctx_c.new_page()
+        pc.goto(f"{BASE_URL}/", wait_until="networkidle")
+        with pc.expect_response(lambda r: "/api/consent.php" in r.url and r.status == 200, timeout=5000):
+            pc.get_by_test_id("cookie-accept-btn").click()
+        pc.wait_for_timeout(300)
+
+        ck1 = {c["name"]: c for c in ctx_c.cookies()}
+        assert "bbiz_consent" in ck1 and ck1["bbiz_consent"]["value"] == "accepted"
+        exp1 = float(ck1["bbiz_consent"].get("expires", 0))
+        vid_browser = ck1["bbiz_vid"]["value"]
+
+        time.sleep(1.2)
+        pc.goto(f"{BASE_URL}/privacy.php", wait_until="networkidle")
+        ck2 = {c["name"]: c for c in ctx_c.cookies()}
+        exp2 = float(ck2["bbiz_consent"].get("expires", 0))
+        assert exp2 <= exp1 + 0.5, f"M-05 (#245) regression: consent cookie rolled forward on page load ({exp1} -> {exp2})!"
+
+        # Post a dirty page_path using the consented browser visitor cookie -> query & fragment must be stripped in DB!
+        st_dirty, body_dirty, _ = _request(
+            "/api/track-metric.php",
+            method="POST",
+            data=json.dumps({
+                "event_type": "route_request",
+                "page_path": "/takedown.php?token=topsecret999&email=person@example.com#section",
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Cookie": f"bbiz_consent=accepted; bbiz_vid={vid_browser}"},
+        )
+        assert st_dirty == 200 and json.loads(body_dirty).get("status") == "ok", body_dirty
+
+        sqlite_env = os.environ.get("DB_SQLITE_PATH", "").strip()
+        if sqlite_env:
+            db_file = Path(sqlite_env) if os.path.isabs(sqlite_env) else (Path(__file__).resolve().parent.parent / sqlite_env)
+            if db_file.is_file():
+                with sqlite3.connect(str(db_file)) as conn:
+                    r_dirty = conn.execute(
+                        "SELECT page_path FROM usage_metrics WHERE event_type = 'route_request' ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                assert r_dirty is not None and r_dirty[0] == "/takedown.php", f"M-04 (#244) unsanitized page_path stored: {r_dirty}"
+
+        # Outdated notice_version in localStorage must clear stale consent and re-prompt banner (#245)!
+        pc.evaluate(
+            """() => {
+                const raw = localStorage.getItem('bbiz_cookie_consent_meta');
+                const meta = raw ? JSON.parse(raw) : {};
+                meta.notice_version = '2026-11-v3';
+                localStorage.setItem('bbiz_cookie_consent_meta', JSON.stringify(meta));
+            }"""
+        )
+        pc.reload(wait_until="networkidle")
+        pc.get_by_test_id("cookie-banner").wait_for(state="visible", timeout=5000)
+    finally:
+        ctx_c.close()
+
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -1656,4 +1742,5 @@ TESTS = [
     test_playwright_med_04_08_09_12_14_15_regressions,
     test_playwright_r2_medium_regressions,
     test_playwright_r3_high_regressions,
+    test_playwright_r3_medium_regressions,
 ]

@@ -1825,10 +1825,7 @@ final class OwnerAuth
         $sessions = $sessStmt->fetchAll() ?: [];
 
         $bizStmt = $pdo->prepare("
-            SELECT b.id, b.business_id, b.business_number, b.name, b.status,
-                   b.listing_provenance, b.consent_recorded_at, b.privacy_notice_version,
-                   b.age_attested_at, b.email_public, b.owner_email, b.phone_primary,
-                   l.linked_via, l.created_at AS linked_at
+            SELECT b.*, l.linked_via, l.created_at AS linked_at
             FROM business_owner_links l
             INNER JOIN businesses b ON b.id = l.business_id
             WHERE l.owner_id = :oid
@@ -1837,24 +1834,106 @@ final class OwnerAuth
         $bizStmt->execute([':oid' => $ownerId]);
         $linkedBusinesses = $bizStmt->fetchAll() ?: [];
 
-        $tdStmt = $pdo->prepare("
-            SELECT id, business_id, requester_name, requester_email, reason, status, created_at, resolved_at
-            FROM takedown_requests
-            WHERE LOWER(requester_email) = :em
-            ORDER BY id DESC
-        ");
-        $tdStmt->execute([':em' => $normEmail]);
-        $takedowns = $tdStmt->fetchAll() ?: [];
+        $linkedBizIdsForExport = array_values(array_unique(array_map(
+            static fn(array $r): int => (int)($r['id'] ?? 0),
+            $linkedBusinesses
+        )));
+        $adminEmailNorm = strtolower(trim(Database::env('ADMIN_EMAIL', 'admin@busherianbiasharas.com')));
+        $redactThirdPartyEmails = static function (?string $text) use ($normEmail, $adminEmailNorm): ?string {
+            if ($text === null || $text === '') {
+                return $text;
+            }
+            return (string)preg_replace_callback(
+                '/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i',
+                static function (array $m) use ($normEmail, $adminEmailNorm): string {
+                    $found = strtolower($m[0]);
+                    if ($found === $normEmail || $found === $adminEmailNorm) {
+                        return $m[0];
+                    }
+                    return '[redacted-third-party-email]';
+                },
+                $text
+            );
+        };
 
-        $mailStmt = $pdo->prepare("
-            SELECT id, business_id, recipient_email, subject, status, created_at, sent_at
-            FROM email_outbox
-            WHERE LOWER(recipient_email) = :em
-            ORDER BY id DESC
-            LIMIT 100
-        ");
-        $mailStmt->execute([':em' => $normEmail]);
-        $correspondence = $mailStmt->fetchAll() ?: [];
+        if ($linkedBizIdsForExport !== []) {
+            $inTd = implode(',', array_map('intval', $linkedBizIdsForExport));
+            $tdStmt = $pdo->prepare("
+                SELECT id, business_id, requester_name, requester_email, reason, status, created_at, resolved_at
+                FROM takedown_requests
+                WHERE LOWER(requester_email) = :em OR business_id IN ({$inTd})
+                ORDER BY id DESC
+            ");
+        } else {
+            $tdStmt = $pdo->prepare("
+                SELECT id, business_id, requester_name, requester_email, reason, status, created_at, resolved_at
+                FROM takedown_requests
+                WHERE LOWER(requester_email) = :em
+                ORDER BY id DESC
+            ");
+        }
+        $tdStmt->execute([':em' => $normEmail]);
+        $rawTakedowns = $tdStmt->fetchAll() ?: [];
+        $takedowns = [];
+        foreach ($rawTakedowns as $tdRow) {
+            $reqEm = strtolower(trim((string)($tdRow['requester_email'] ?? '')));
+            if ($reqEm !== '' && $reqEm !== $normEmail) {
+                $tdRow['requester_name'] = '[redacted-third-party]';
+                $tdRow['requester_email'] = '[redacted-third-party-email]';
+                $tdRow['reason'] = '[third-party report text redacted per Kenya DPA s. 38]';
+            }
+            $takedowns[] = $tdRow;
+        }
+
+        $likePattern = '%' . str_replace(['%', '_'], ['\%', '\_'], $normEmail) . '%';
+        if ($linkedBizIdsForExport !== []) {
+            $inMail = implode(',', array_map('intval', $linkedBizIdsForExport));
+            $mailStmt = $pdo->prepare("
+                SELECT id, business_id, recipient_email, reply_to, subject, body_html, status, created_at, sent_at
+                FROM email_outbox
+                WHERE LOWER(recipient_email) = :em1
+                   OR LOWER(reply_to) = :em2
+                   OR business_id IN ({$inMail})
+                   OR (LOWER(recipient_email) = :adm AND (LOWER(body_html) LIKE :lk1 OR LOWER(subject) LIKE :lk2))
+                ORDER BY id DESC
+            ");
+            $mailStmt->execute([
+                ':em1' => $normEmail,
+                ':em2' => $normEmail,
+                ':adm' => $adminEmailNorm,
+                ':lk1' => $likePattern,
+                ':lk2' => $likePattern,
+            ]);
+        } else {
+            $mailStmt = $pdo->prepare("
+                SELECT id, business_id, recipient_email, reply_to, subject, body_html, status, created_at, sent_at
+                FROM email_outbox
+                WHERE LOWER(recipient_email) = :em1
+                   OR LOWER(reply_to) = :em2
+                   OR (LOWER(recipient_email) = :adm AND (LOWER(body_html) LIKE :lk1 OR LOWER(subject) LIKE :lk2))
+                ORDER BY id DESC
+            ");
+            $mailStmt->execute([
+                ':em1' => $normEmail,
+                ':em2' => $normEmail,
+                ':adm' => $adminEmailNorm,
+                ':lk1' => $likePattern,
+                ':lk2' => $likePattern,
+            ]);
+        }
+        $rawCorrespondence = $mailStmt->fetchAll() ?: [];
+        $correspondence = [];
+        foreach ($rawCorrespondence as $mRow) {
+            $mRow['recipient_email'] = $redactThirdPartyEmails((string)($mRow['recipient_email'] ?? ''));
+            $mRow['reply_to'] = isset($mRow['reply_to']) ? $redactThirdPartyEmails((string)$mRow['reply_to']) : null;
+            $mRow['subject'] = $redactThirdPartyEmails((string)($mRow['subject'] ?? ''));
+            $bodySanitized = $redactThirdPartyEmails((string)($mRow['body_html'] ?? ''));
+            if ($bodySanitized !== null && $bodySanitized !== '') {
+                $bodySanitized = (string)preg_replace('/([?&](?:token|sig|code)=)[^&"\'\s<>]+/i', '$1[redacted-token]', $bodySanitized);
+            }
+            $mRow['body_html'] = $bodySanitized;
+            $correspondence[] = $mRow;
+        }
 
         $catStmt = $pdo->prepare("
             SELECT id, name, slug, status, created_at
@@ -1905,14 +1984,6 @@ final class OwnerAuth
         }
         $normEmail = strtolower(trim((string)$owner['email']));
 
-        $linksStmt = $pdo->prepare("
-            SELECT business_id
-            FROM business_owner_links
-            WHERE owner_id = :oid
-        ");
-        $linksStmt->execute([':oid' => $ownerId]);
-        $linkedBizIds = array_map('intval', array_column($linksStmt->fetchAll() ?: [], 'business_id'));
-
         $soleBizIds = [];
         $coOwnedBizIds = [];
         $solePhotosCheck = [];
@@ -1928,26 +1999,39 @@ final class OwnerAuth
         ");
         $phStmt = $pdo->prepare("SELECT photos_json FROM businesses WHERE id = :id LIMIT 1");
 
-        foreach ($linkedBizIds as $bid) {
-            $cntStmt->execute([':bid' => $bid, ':oid' => $ownerId]);
-            $otherOwnersCount = (int)$cntStmt->fetchColumn();
-            if ($otherOwnersCount > 0) {
-                $coOwnedBizIds[] = $bid;
-            } else {
-                $soleBizIds[] = $bid;
-                if ($deleteSoleOwnedListings) {
-                    $phStmt->execute([':id' => $bid]);
-                    $pRow = $phStmt->fetch();
-                    $solePhotosCheck[$bid] = is_array($pRow) && is_string($pRow['photos_json'] ?? null) ? $pRow['photos_json'] : null;
-                }
-            }
-        }
-
         $ownTx = !$pdo->inTransaction();
         if ($ownTx) {
             $pdo->beginTransaction();
         }
         try {
+            // Serialize concurrent claim/detach & business edits BEFORE classifying sole-owned vs co-owned (#242 M-02)
+            VettingPurger::acquireNamedSequenceLock($pdo, 'owner_erasure_lock');
+            $linksStmt = $pdo->prepare("
+                SELECT business_id
+                FROM business_owner_links
+                WHERE owner_id = :oid
+                ORDER BY business_id ASC
+            ");
+            $linksStmt->execute([':oid' => $ownerId]);
+            $linkedBizIds = array_values(array_unique(array_map('intval', array_column($linksStmt->fetchAll() ?: [], 'business_id'))));
+            sort($linkedBizIds);
+            foreach ($linkedBizIds as $bid) {
+                VettingPurger::acquireBusinessLifecycleLock($pdo, $bid);
+            }
+            foreach ($linkedBizIds as $bid) {
+                $cntStmt->execute([':bid' => $bid, ':oid' => $ownerId]);
+                $otherOwnersCount = (int)$cntStmt->fetchColumn();
+                if ($otherOwnersCount > 0) {
+                    $coOwnedBizIds[] = $bid;
+                } else {
+                    $soleBizIds[] = $bid;
+                    if ($deleteSoleOwnedListings) {
+                        $phStmt->execute([':id' => $bid]);
+                        $pRow = $phStmt->fetch();
+                        $solePhotosCheck[$bid] = is_array($pRow) && is_string($pRow['photos_json'] ?? null) ? $pRow['photos_json'] : null;
+                    }
+                }
+            }
             // 1. Co-owned businesses: preserve listing & co-owner rights, detach this owner, rotate owner_email if matching
             foreach ($coOwnedBizIds as $coBid) {
                 $coEmailStmt->execute([':bid' => $coBid, ':oid' => $ownerId]);
@@ -2005,7 +2089,7 @@ final class OwnerAuth
             $updCat->execute([':em' => $normEmail]);
             $categoriesScrubbed = $updCat->rowCount();
 
-            // 6. Redact email_outbox correspondence addressed to or from this subject
+            // 6. Redact email_outbox correspondence addressed to/from this subject AND scrub subject PII inside admin-addressed notifications (#241 M-01)
             $updMail = $pdo->prepare("
                 UPDATE email_outbox
                 SET recipient_email = CASE WHEN LOWER(recipient_email) = :em1 THEN 'erased@subject-erasure.invalid' ELSE recipient_email END,
@@ -2021,6 +2105,42 @@ final class OwnerAuth
                 ':em4' => $normEmail,
             ]);
             $outboxScrubbed = $updMail->rowCount();
+
+            $subjectTokens = [$normEmail];
+            $ownerFullName = trim((string)($owner['full_name'] ?? ''));
+            $ownerPhone = trim((string)($owner['phone'] ?? ''));
+            if (mb_strlen($ownerFullName) >= 3) {
+                $subjectTokens[] = $ownerFullName;
+                $subjectTokens[] = htmlspecialchars($ownerFullName, ENT_QUOTES, 'UTF-8');
+            }
+            if (strlen($ownerPhone) >= 6) {
+                $subjectTokens[] = $ownerPhone;
+                $subjectTokens[] = htmlspecialchars($ownerPhone, ENT_QUOTES, 'UTF-8');
+            }
+            $subjectTokens[] = htmlspecialchars($normEmail, ENT_QUOTES, 'UTF-8');
+            $subjectTokens = array_values(array_unique(array_filter($subjectTokens, static fn(string $v): bool => $v !== '')));
+
+            $emLikeScrub = '%' . str_replace(['%', '_'], ['\%', '\_'], $normEmail) . '%';
+            $admScanStmt = $pdo->prepare("
+                SELECT id, subject, body_html
+                FROM email_outbox
+                WHERE LOWER(body_html) LIKE :lk1 OR LOWER(subject) LIKE :lk2
+            ");
+            $admScanStmt->execute([':lk1' => $emLikeScrub, ':lk2' => $emLikeScrub]);
+            $admRows = $admScanStmt->fetchAll() ?: [];
+            if ($admRows !== []) {
+                $admUpdStmt = $pdo->prepare("UPDATE email_outbox SET subject = :subj, body_html = :bhtml WHERE id = :id");
+                foreach ($admRows as $ar) {
+                    $newSubj = str_ireplace($subjectTokens, '[ERASED-SUBJECT]', (string)($ar['subject'] ?? ''));
+                    $newBody = str_ireplace($subjectTokens, '[ERASED-SUBJECT]', (string)($ar['body_html'] ?? ''));
+                    $admUpdStmt->execute([
+                        ':subj' => mb_substr($newSubj, 0, 255),
+                        ':bhtml' => $newBody,
+                        ':id' => (int)$ar['id'],
+                    ]);
+                    $outboxScrubbed++;
+                }
+            }
 
             // 7. Redact requester PII on takedown_requests
             $pdo->prepare("
