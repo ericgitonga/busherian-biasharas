@@ -207,3 +207,67 @@ def test_ftps_deploy_aborts_before_login_on_untrusted_or_mismatched_tls_cert(tmp
     combined_2 = b"".join(srv2.received_cleartext + srv2.received_tls_post_handshake)
     assert secret_pw.encode("utf-8") not in combined_2
     assert b"PASS " not in combined_2
+
+
+def test_ftps_deploy_cli_clean_error_and_geny_intermediates_non_root(tmp_path: Path, monkeypatch, capsys):
+    ftps_mod = _load_ftps_deploy_module()
+    assert ftps_mod.DEFAULT_INTERMEDIATES_PEM.is_file()
+
+    # Verify bundled Let's Encrypt Gen-Y intermediates contain ZERO self-signed root certificates
+    pem_text = ftps_mod.DEFAULT_INTERMEDIATES_PEM.read_text(encoding="utf-8")
+    import re
+    certs = re.findall(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", pem_text, re.S)
+    assert len(certs) >= 6
+    for cert_pem in certs:
+        res = subprocess.run(
+            ["openssl", "x509", "-noout", "-subject", "-issuer"],
+            input=cert_pem,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        lines = [ln.strip() for ln in res.stdout.strip().splitlines() if ln.strip()]
+        assert len(lines) == 2
+        subj = lines[0].removeprefix("subject=")
+        iss = lines[1].removeprefix("issuer=")
+        assert subj != iss, f"Bundled intermediate must not be a self-signed root: {subj}"
+
+    # Verify main() catches SSL/FTPS failures cleanly without TypeError on ftplib.all_errors (#192)
+    cert_untrusted, key_untrusted = _generate_self_signed_cert(tmp_path, "localhost", "localhost")
+    srv = _MockExplicitFtpsServer(cert_untrusted, key_untrusted)
+    srv.start()
+
+    monkeypatch.chdir(tmp_path)
+    staged_file = tmp_path / "VERSION"
+    staged_file.write_text("0.14.1\n", encoding="utf-8")
+    files_list = tmp_path / "changed.txt"
+    files_list.write_text("VERSION\n", encoding="utf-8")
+
+    monkeypatch.setenv("FTP_SERVER", "localhost")
+    monkeypatch.setenv("FTP_USERNAME", "deploy_user")
+    monkeypatch.setenv("FTP_PASSWORD", "SecretPass#192")
+    monkeypatch.setenv("FTP_APP_ROOT", "/busherianbiasharas.com/www")
+
+    rc = ftps_mod.main(["--mode", "prod", "--files-list", str(files_list), "--port", str(srv.port)])
+    srv.join()
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "CRITICAL FTPS DEPLOY ERROR:" in captured.err
+
+    # Verify --tls-servername still rejects certificates whose SAN does not match tls_servername
+    cert_shared, key_shared = _generate_self_signed_cert(
+        tmp_path, "angryhosting.com", "angryhosting.com"
+    )
+    srv_mismatch = _MockExplicitFtpsServer(cert_shared, key_shared)
+    srv_mismatch.start()
+    with pytest.raises(ssl.SSLCertVerificationError):
+        ftps_mod.connect_verified_ftps(
+            host="127.0.0.1",
+            user="deploy_user",
+            password="SecretPass#192",
+            port=srv_mismatch.port,
+            timeout=5,
+            cafile=str(cert_shared),
+            tls_servername="attacker-host.example.invalid",
+        )
+    srv_mismatch.join()
