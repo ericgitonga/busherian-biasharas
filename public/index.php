@@ -295,11 +295,11 @@ $initialPagination = [
   </footer>
 
   <script>
-    window.INITIAL_SECTORS = <?= json_encode($taxonomyTree, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
-    window.PLACE_HIERARCHY = <?= json_encode($placeHierarchy, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
-    window.PLACE_UNIT_LABELS = <?= json_encode(LocationEngine::getPlaceUnitLabels(), JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
-    window.INITIAL_BUSINESSES = <?= json_encode($initialBusinesses, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
-    window.INITIAL_PAGINATION = <?= json_encode($initialPagination, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
+    window.INITIAL_SECTORS = <?= bbiz_json_for_html_script($taxonomyTree) ?>;
+    window.PLACE_HIERARCHY = <?= bbiz_json_for_html_script($placeHierarchy) ?>;
+    window.PLACE_UNIT_LABELS = <?= bbiz_json_for_html_script(LocationEngine::getPlaceUnitLabels()) ?>;
+    window.INITIAL_BUSINESSES = <?= bbiz_json_for_html_script($initialBusinesses) ?>;
+    window.INITIAL_PAGINATION = <?= bbiz_json_for_html_script($initialPagination) ?>;
   </script>
   <script src="/assets/vendor/leaflet/leaflet.js"></script>
   <script src="/assets/js/consent-metrics.js"></script>

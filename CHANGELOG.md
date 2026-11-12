@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.16.0] - 2026-11-12
+
+### Security
+- **Fail-Closed Production Email Simulation Prohibition & Strict Non-Production OTP Preview Guard (`[Adversarial R2-HIGH-01]`)**: Added `OwnerAuth::canRenderDevOtpPreview()` requiring **both** `APP_ENV !== 'production'` (or isolated `/admin/preprod` sandbox) **and** `SIMULATE_EMAILS === 'yes'` before assigning or rendering `$devPreviewOtpCode` on `public/owner/login.php` and `public/owner/claim.php`, and updated `Database::validateProductionSecrets()` to fail closed (`RuntimeException` -> HTTP `503`) if a production environment ever leaves `SIMULATE_EMAILS` enabled (`yes`/`true`/`1`) (closes #205, part of #197).
+- **Safe `JSON_HEX_*` Inline Script Serialization & DOM-Built Category/Autofill Status Nodes (`[Adversarial R2-HIGH-02]`)**: Added `bbiz_json_for_html_script()` (`JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT`) across all inline `<script>` JSON payloads in `public/owner/edit-business.php`, `public/admin/edit-business.php`, `public/admin/add-business.php`, `public/index.php`, and `public/submit.php` so `</script>` sequences in co-owner regulator text or taxonomy payloads can never break out of `<script>` tags, and refactored `fuzzyBox` and `statusBox` in `public/submit.php` to construct DOM elements with `textContent` rather than `innerHTML` (closes #206, part of #197).
+- **Strict Separation of Public Contact Email (`email_public`) from Owner Privilege & One-Time Link Remediation (`[Adversarial R2-HIGH-03]`)**: Removed `email_public` from automatic owner linking (`OwnerAuth::autoLinkMatchingBusinesses()`), password-reset / sign-in recognition (`isRecognizedOwnerEmail()`), masked owner hints (`getMaskedOwnerEmailHintsForBusiness()`), and unscoped claim eligibility when designated owners exist (`isEmailEligibleForClaim()`), surfacing `email_public` matches strictly as non-authoritative claim suggestions (`getCorporateDomainClaimSuggestions()`) and executing a one-time `purged_public_email_links_v1` migration (`OwnerAuth::revokeUnverifiedPublicEmailAutoLinks()`) to revoke historical `email_public`-only links where a distinct `owner_email` exists (closes #207, part of #197).
+- **Fail-Closed Quarantine Media Relocation & State-Aware Quarantined Owner Editing (`[Adversarial R2-HIGH-04]`)**: Hardened `PhotoUploader::quarantineBusinessPhotos()` to verify off-webroot vault writes and public file removal before succeeding (throwing `RuntimeException` to roll back `quarantineBusinessDpa()` if any image remains in `public/uploads/`), added `PhotoUploader::deleteRemovedBusinessPhotos()`, and made `VettingPurger::updateBusiness()` and `updateBusinessByOwner()` state-aware and transactional so replacement photos uploaded onto a `quarantined_dpa` listing are immediately relocated into `storage/quarantined_media/<biz_id>/` inside the transaction (closes #208, part of #198).
+- tag: `v0.16.0`
+
 ## [0.15.1] - 2026-11-12
 
 ### Security

@@ -627,17 +627,57 @@ def test_adversarial_crit_01_and_crit_02_regressions():
     assert len(biz_with_email) >= 2, "Expected at least 2 businesses with email_public in test DB"
     victim_biz = biz_with_email[0]
     victim_biz_id = int(victim_biz["id"])
-    victim_email = victim_biz["email_public"].strip().lower()
+    victim_public_only_email = victim_biz["email_public"].strip().lower()
+    victim_email = f"designated.founder.{victim_biz_id}@busherian-e2e.co.ke"
     attacker_seed_biz = next(
-        b for b in biz_with_email if int(b["id"]) != victim_biz_id and b["email_public"].strip().lower() != victim_email
+        b for b in biz_with_email if int(b["id"]) != victim_biz_id and b["email_public"].strip().lower() != victim_public_only_email
     )
-    attacker_seed_email = attacker_seed_biz["email_public"].strip().lower()
     other_biz = next(
         b for b in all_biz
         if int(b["id"]) not in (victim_biz_id, int(attacker_seed_biz["id"]))
     )
     other_biz_id = int(other_biz["id"])
 
+    # Designate victim_email as explicit owner_email on victim_biz via Admin so Victim is a legitimate designated owner (#207)
+    assert ADMIN_ACCESS_TOKEN, "ADMIN_ACCESS_TOKEN required for E2E owner_email setup"
+    adm_jar: dict[str, str] = {}
+    _, adm_l_html, _, _ = _http_raw("/admin/login.php", cookie_jar=adm_jar)
+    adm_l_csrf = _extract_hidden(adm_l_html, "csrf_token")
+    st_al, _, _, _ = _http_raw(
+        "/admin/login.php",
+        method="POST",
+        form={"csrf_token": adm_l_csrf, "admin_token": ADMIN_ACCESS_TOKEN},
+        cookie_jar=adm_jar,
+    )
+    assert st_al == 302
+    _, adm_eb_html, _, _ = _http_raw(f"/admin/edit-business.php?id={victim_biz_id}", cookie_jar=adm_jar)
+    adm_eb_csrf = _extract_hidden(adm_eb_html, "csrf_token")
+    st_aeb, _, _, _ = _http_raw(
+        f"/admin/edit-business.php?id={victim_biz_id}",
+        method="POST",
+        form={
+            "csrf_token": adm_eb_csrf,
+            "post_action": "save",
+            "name": victim_biz["name"],
+            "school_badge": victim_biz.get("school_badge") or "AHS",
+            "status": "approved",
+            "service_mode": victim_biz.get("service_mode") or "physical",
+            "tagline": victim_biz.get("tagline") or "Verified Alumni Business",
+            "description": victim_biz.get("description") or "Verified Alumni Business description.",
+            "sector_id": str(victim_biz["sector_id"]),
+            "specialty_id": str(victim_biz["specialty_id"]),
+            "country": victim_biz.get("country") or "Kenya",
+            "city_county": victim_biz.get("city_county") or "Nairobi",
+            "phone_primary": victim_biz.get("phone_primary") or "+254700000001",
+            "email_public": victim_public_only_email,
+            "owner_email": victim_email,
+        },
+        cookie_jar=adm_jar,
+    )
+    assert st_aeb == 200
+
+    # Wait briefly or use a distinct X-Forwarded-For? Wait: /owner/login.php uses REMOTE_ADDR (127.0.0.1), which allows 2 owner_otp_send per 15m!
+    # Above used 1st slot (rejected before mail send, after AntiSpamGate), and below uses 2nd slot -> within 2/15m!
     # 1. Establish a real password-protected Victim Owner via verified 6-digit OTP (gated by 7-layer AntiSpamGate #173)
     #    Also pass forged ?claim=<attacker_seed_biz_id> during OTP verification to prove CRIT-02 blocks cross-business linking!
     attacker_seed_biz_id = int(attacker_seed_biz["id"])
@@ -894,7 +934,8 @@ def test_playwright_high_01_02_05_browser_security_regressions():
     corp_domain = ""
     for b in all_biz:
         w = (b.get("website_url") or "").strip()
-        if w:
+        em_pub = (b.get("email_public") or "").strip().lower()
+        if w and em_pub and int(b["id"]) != int(all_biz[0]["id"]):
             host = (urllib.parse.urlparse(w).hostname or "").lower().removeprefix("www.")
             if host and "." in host and host not in ("gmail.com", "yahoo.com", "instagram.com", "facebook.com"):
                 corp_biz = b
@@ -902,7 +943,8 @@ def test_playwright_high_01_02_05_browser_security_regressions():
                 break
     assert corp_biz is not None and corp_domain != ""
     corp_biz_id = int(corp_biz["id"])
-    corp_staff_email = f"unverified.staff.{int(time.time()) % 100000}@{corp_domain}"
+    # R2-HIGH-03 (#207) + HIGH-01 (#164): Test the exact email_public on corp_biz to prove neither corporate domain NOR email_public grants ownership!
+    corp_staff_email = (corp_biz.get("email_public") or f"unverified.staff.{int(time.time()) % 100000}@{corp_domain}").strip().lower()
     corp_pw = "CorpStaff#Pass164"
 
     # 1. HIGH-01 (#164): Verify corporate-domain email is NOT recognized on /owner/login.php and never auto-linkscorp_biz,
@@ -972,6 +1014,59 @@ def test_playwright_high_01_02_05_browser_security_regressions():
 
         p1.goto(f"{BASE_URL}/owner/edit-business.php?id={corp_biz_id}", wait_until="networkidle")
         assert "/owner/index.php" in p1.url and "edit-business.php" not in p1.url
+
+        # R2-HIGH-02 (#206): Stored XSS check on /owner/edit-business.php inline <script> CURRENT_REGULATOR + /submit.php fuzzy suggestion box
+        p1.goto(f"{BASE_URL}/owner/edit-business.php?id={non_corp_id}", wait_until="networkidle")
+        # Pick a regulated specialty if available or submit custom regulator payload and reload
+        xss_reg_payload = "</script><script>window.__bbizXssReg=1</script>"
+        p1.evaluate(
+            """(payload) => {
+                const sel = document.getElementById('regulator_name');
+                const cust = document.getElementById('regulator_name_custom');
+                if (sel && cust) {
+                    sel.disabled = false;
+                    let opt = Array.from(sel.options).find(o => o.value === 'Other Statutory Regulator');
+                    if (!opt) {
+                        opt = document.createElement('option');
+                        opt.value = 'Other Statutory Regulator';
+                        sel.appendChild(opt);
+                    }
+                    sel.value = 'Other Statutory Regulator';
+                    cust.disabled = false;
+                    cust.value = payload;
+                }
+            }""",
+            xss_reg_payload,
+        )
+        p1.locator("form button[type='submit']").first.click()
+        p1.wait_for_load_state("networkidle")
+        p1.goto(f"{BASE_URL}/owner/edit-business.php?id={non_corp_id}", wait_until="networkidle")
+        assert p1.evaluate("() => window.__bbizXssReg") is None, "R2-HIGH-02 (#206) XSS executed on /owner/edit-business.php!"
+
+        # Also test /submit.php fuzzy category suggestion box with malicious category name via route mock (#206)
+        xss_cat_payload = '"><img src=x onerror="window.__bbizXssCat=1">'
+        p1.goto(f"{BASE_URL}/submit.php", wait_until="networkidle")
+        p1.route(
+            "**/api/categories.php?check_custom=*",
+            lambda route: route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps({
+                    "status": "ok",
+                    "fuzzy_matches": [{"id": 2, "parent_id": 1, "name": xss_cat_payload, "similarity": 0.91}],
+                }),
+            ),
+        )
+        p1.evaluate("() => { const w = document.getElementById('custom-specialty-wrap'); if (w) w.style.display = 'block'; }")
+        p1.locator("#custom_specialty_name").fill("Malicious Specialty Probe")
+        p1.wait_for_function(
+            "() => (document.getElementById('fuzzy-suggestion-box')?.textContent || '').includes('Similar existing specialty found')",
+            timeout=5000,
+        )
+        assert p1.evaluate("() => window.__bbizXssCat") is None, "R2-HIGH-02 (#206) XSS executed in submit.php fuzzyBox!"
+        assert p1.locator("#fuzzy-suggestion-box img").count() == 0
+        p1.unroute("**/api/categories.php?check_custom=*")
+        p1.goto(f"{BASE_URL}/owner/index.php", wait_until="networkidle")
 
         # HIGH-02 (#165) assertions: Sign into Device 2 with the same owner account, then click "Sign Out All Devices" on Device 1
         p2 = ctx_dev2.new_page()

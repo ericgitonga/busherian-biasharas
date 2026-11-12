@@ -209,7 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $viewMode = 'verify_otp';
                 $successMsg = "We sent a 6-digit verification code to {$email}. Enter that code and set your Owner Password below to claim {$biz['name']}.";
-                if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
+                if (OwnerAuth::canRenderDevOtpPreview()) {
                     $devPreviewOtpCode = $otpInfo['code'];
                 }
             }
@@ -274,7 +274,7 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
     <?php if ($successMsg !== ''): ?>
       <div style="background:#ECFDF5;border:2px solid #059669;border-radius:12px;padding:1rem;margin-bottom:1.25rem;color:#065F46;font-weight:600;">
         ✓ <?= htmlspecialchars($successMsg, ENT_QUOTES, 'UTF-8') ?>
-        <?php if ($devPreviewOtpCode !== null): ?>
+        <?php if ($devPreviewOtpCode !== null && OwnerAuth::canRenderDevOtpPreview()): ?>
           <div style="margin-top:0.65rem;padding-top:0.65rem;border-top:1px dashed #059669;font-size:0.86rem;">
             🧪 Preview Verification Code: <strong style="font-size:1.15rem;letter-spacing:0.15em;"><?= htmlspecialchars($devPreviewOtpCode, ENT_QUOTES, 'UTF-8') ?></strong>
           </div>

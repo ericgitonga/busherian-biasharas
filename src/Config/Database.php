@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v15-med';
+    public const SCHEMA_INIT_VERSION = '2026-11-v16-high';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -79,6 +79,12 @@ final class Database
                 in_array($ipSalt, $placeholders, true) || strlen($ipSalt) < 32 ||
                 in_array($csrf, $placeholders, true) || strlen($csrf) < 32) {
                 throw new RuntimeException('FATAL: Production cryptographic secrets (APP_HMAC_SECRET, IP_HASH_SECRET, CSRF_SECRET) must be configured with high-entropy values.');
+            }
+            if (!\BusherianBiasharas\Services\PreprodSandbox::isPreprod()) {
+                $simEmails = strtolower(trim(self::env('SIMULATE_EMAILS', 'no')));
+                if (in_array($simEmails, ['yes', 'true', '1'], true)) {
+                    throw new RuntimeException('FATAL: SIMULATE_EMAILS cannot be enabled when APP_ENV=production (#205).');
+                }
             }
         }
     }
@@ -377,6 +383,14 @@ final class Database
                 self::setSetting($pdo, 'purged_corp_domain_links_v1', 'done');
             } catch (\Throwable $migErr) {
                 error_log('[Database::ensureInitialized] purged_corp_domain_links_v1 failed: ' . $migErr->getMessage());
+            }
+        }
+        if (self::getSetting($pdo, 'purged_public_email_links_v1') !== 'done') {
+            try {
+                \BusherianBiasharas\Services\OwnerAuth::revokeUnverifiedPublicEmailAutoLinks($pdo);
+                self::setSetting($pdo, 'purged_public_email_links_v1', 'done');
+            } catch (\Throwable $migErr) {
+                error_log('[Database::ensureInitialized] purged_public_email_links_v1 failed: ' . $migErr->getMessage());
             }
         }
         if (self::getSetting($pdo, 'scrubbed_outbox_vetting_pii_v1') !== 'done') {

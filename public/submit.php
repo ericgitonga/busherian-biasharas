@@ -821,9 +821,9 @@ $aghsHouses = Houses::AGHS_HOUSES;
 
   <script>
     (function () {
-      const AHS_HOUSES = <?= json_encode($ahsHouses, JSON_HEX_TAG) ?>;
-      const AGHS_HOUSES = <?= json_encode($aghsHouses, JSON_HEX_TAG) ?>;
-      const SECTORS = <?= json_encode($taxonomyTree, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
+      const AHS_HOUSES = <?= bbiz_json_for_html_script($ahsHouses) ?>;
+      const AGHS_HOUSES = <?= bbiz_json_for_html_script($aghsHouses) ?>;
+      const SECTORS = <?= bbiz_json_for_html_script($taxonomyTree) ?>;
 
       const schoolSel = document.getElementById('school_code');
       const houseSel = document.getElementById('house_name');
@@ -972,17 +972,27 @@ $aghsHouses = Houses::AGHS_HOUSES;
             const data = await res.json();
             if (data && Array.isArray(data.fuzzy_matches) && data.fuzzy_matches.length > 0) {
               const top = data.fuzzy_matches[0];
-              fuzzyBox.innerHTML = `💡 <strong>Similar existing specialty found:</strong> "${top.name}" (${Math.round(top.similarity * 100)}% match). <button type="button" id="btn-use-suggested-cat" class="btn btn-outline" style="padding:0.15rem 0.5rem;font-size:0.75rem;margin-left:0.4rem;">Use Existing Specialty</button>`;
-              const btnUse = document.getElementById('btn-use-suggested-cat');
-              if (btnUse) {
-                btnUse.addEventListener('click', () => {
-                  sectorSel.value = String(top.parent_id);
-                  populateSpecialties(top.parent_id, top.id);
-                  customWrap.style.display = 'none';
-                });
-              }
+              fuzzyBox.textContent = '';
+              fuzzyBox.appendChild(document.createTextNode('💡 '));
+              const strongEl = document.createElement('strong');
+              strongEl.textContent = 'Similar existing specialty found:';
+              fuzzyBox.appendChild(strongEl);
+              const pct = Math.round(Number(top.similarity || 0) * 100);
+              fuzzyBox.appendChild(document.createTextNode(` "${String(top.name || '')}" (${pct}% match). `));
+              const btnUse = document.createElement('button');
+              btnUse.type = 'button';
+              btnUse.id = 'btn-use-suggested-cat';
+              btnUse.className = 'btn btn-outline';
+              btnUse.style.cssText = 'padding:0.15rem 0.5rem;font-size:0.75rem;margin-left:0.4rem;';
+              btnUse.textContent = 'Use Existing Specialty';
+              btnUse.addEventListener('click', () => {
+                sectorSel.value = String(top.parent_id);
+                populateSpecialties(top.parent_id, top.id);
+                customWrap.style.display = 'none';
+              });
+              fuzzyBox.appendChild(btnUse);
             } else {
-              fuzzyBox.innerHTML = '✓ New specialty name looks unique — will be queued for admin approval.';
+              fuzzyBox.textContent = '✓ New specialty name looks unique — will be queued for admin approval.';
             }
           }, 250);
         });
@@ -1065,7 +1075,12 @@ $aghsHouses = Houses::AGHS_HOUSES;
             }
 
             statusBox.style.color = '#065F46';
-            statusBox.innerHTML = `✅ <strong>${payload.message}</strong> Review the highlighted fields below and complete Step 1 Vetting to submit.`;
+            statusBox.textContent = '';
+            statusBox.appendChild(document.createTextNode('✅ '));
+            const msgStrong = document.createElement('strong');
+            msgStrong.textContent = String(payload.message || '');
+            statusBox.appendChild(msgStrong);
+            statusBox.appendChild(document.createTextNode(' Review the highlighted fields below and complete Step 1 Vetting to submit.'));
             const submitFormEl = document.getElementById('business-submit-form');
             if (submitFormEl) submitFormEl.dispatchEvent(new Event('change', { bubbles: true }));
           } catch (err) {
@@ -1082,7 +1097,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
   <script>
     window.BBIZ_SUBMIT_SUCCESS = <?= $successMessage !== '' ? 'true' : 'false' ?>;
     window.BBIZ_SUBMIT_POST_DRAFT = <?= ($_SERVER['REQUEST_METHOD'] === 'POST' && $successMessage === '')
-      ? json_encode(array_diff_key($_POST, array_flip(['csrf_token', 'form_ts', 'form_nonce', 'form_sig', 'js_interaction_token', 'website', 'owner_password', 'owner_password_confirm'])), JSON_UNESCAPED_UNICODE)
+      ? bbiz_json_for_html_script(array_diff_key($_POST, array_flip(['csrf_token', 'form_ts', 'form_nonce', 'form_sig', 'js_interaction_token', 'website', 'owner_password', 'owner_password_confirm'])))
       : 'null' ?>;
   </script>
   <script src="/assets/js/form-enhancements.js"></script>

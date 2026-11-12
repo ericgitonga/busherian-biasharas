@@ -17,6 +17,21 @@ spl_autoload_register(static function (string $class): void {
 
 \BusherianBiasharas\Services\PreprodSandbox::boot();
 
+if (!function_exists('bbiz_json_for_html_script')) {
+    /**
+     * Safely encode data for embedding inside an inline HTML <script> block (#206).
+     * Escapes <, >, &, ', and " so '</script>' or HTML entities can never break out of script context.
+     */
+    function bbiz_json_for_html_script(mixed $value): string
+    {
+        $encoded = json_encode(
+            $value,
+            JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        );
+        return is_string($encoded) ? $encoded : 'null';
+    }
+}
+
 if (!function_exists('bbiz_render_maintenance_503')) {
     /**
      * Render a clean fail-closed HTTP 503 Maintenance response without leaking credentials or stack traces (#169).

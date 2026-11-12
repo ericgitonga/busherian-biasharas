@@ -308,9 +308,9 @@ $tokens = AntiSpamGate::generateFormTokens();
   </main>
 
   <script>
-    const TAXONOMY = <?= json_encode($taxonomyTree, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+    const TAXONOMY = <?= bbiz_json_for_html_script($taxonomyTree) ?>;
     const CURRENT_SPEC_ID = <?= (int)$biz['specialty_id'] ?>;
-    const CURRENT_REGULATOR = <?= json_encode((string)($biz['regulator_name'] ?? ''), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+    const CURRENT_REGULATOR = <?= bbiz_json_for_html_script((string)($biz['regulator_name'] ?? '')) ?>;
     const sectorSelect = document.getElementById('sector_id');
     const specSelect = document.getElementById('specialty_id');
     const regWrap = document.getElementById('regulated-fields-wrap');

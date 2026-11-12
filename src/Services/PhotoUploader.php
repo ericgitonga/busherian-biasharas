@@ -333,6 +333,10 @@ final class PhotoUploader
         return $deleted;
     }
 
+    /**
+     * Relocate all public business photos out of webroot into storage/quarantined_media/<businessId>/ (#177, #208).
+     * Fails closed with RuntimeException if any referenced public upload file cannot be removed from public webroot.
+     */
     public static function quarantineBusinessPhotos(int $businessId, ?string $photosJson): int
     {
         if ($businessId <= 0) {
@@ -343,9 +347,13 @@ final class PhotoUploader
             return 0;
         }
         $qDir = self::quarantineDirRoot() . '/' . $businessId;
-        if (!is_dir($qDir)) {
-            @mkdir($qDir, 0750, true);
+        if (!is_dir($qDir) && !@mkdir($qDir, 0750, true) && !is_dir($qDir)) {
+            throw new \RuntimeException("Failed to initialize quarantine media directory for business #{$businessId}.");
         }
+        if (is_link($qDir) || !is_writable($qDir)) {
+            throw new \RuntimeException("Quarantine media directory is not writable for business #{$businessId}.");
+        }
+
         $moved = 0;
         foreach ($urls as $url) {
             $srcPath = self::resolveSafeUploadFilePath($url, true);
@@ -353,13 +361,49 @@ final class PhotoUploader
                 continue;
             }
             $destPath = $qDir . '/' . basename($srcPath);
+            $movedOk = false;
             if (@rename($srcPath, $destPath)) {
-                $moved++;
+                $movedOk = true;
             } elseif (@copy($srcPath, $destPath) && @unlink($srcPath)) {
-                $moved++;
+                $movedOk = true;
             }
+            if (!$movedOk || file_exists($srcPath) || !is_file($destPath)) {
+                throw new \RuntimeException("Failed to quarantine public media file for business #{$businessId}.");
+            }
+            @chmod($destPath, 0640);
+            $moved++;
         }
         return $moved;
+    }
+
+    /**
+     * Delete removed photo files from BOTH public uploads and storage/quarantined_media/<businessId>/ (#208).
+     */
+    public static function deleteRemovedBusinessPhotos(int $businessId, array $previousUrls, array $keptUrls): int
+    {
+        $deleted = self::deleteRemovedPhotoUrls($previousUrls, $keptUrls);
+        if ($businessId <= 0) {
+            return $deleted;
+        }
+        $keptMap = array_fill_keys($keptUrls, true);
+        $qDir = self::quarantineDirRoot() . '/' . $businessId;
+        if (!is_dir($qDir) || is_link($qDir)) {
+            return $deleted;
+        }
+        foreach ($previousUrls as $oldUrl) {
+            if (!is_string($oldUrl) || isset($keptMap[$oldUrl])) {
+                continue;
+            }
+            $expectedPub = self::resolveSafeUploadFilePath($oldUrl, false);
+            if ($expectedPub === null) {
+                continue;
+            }
+            $qPath = $qDir . '/' . basename($expectedPub);
+            if (is_file($qPath) && !is_link($qPath) && @unlink($qPath)) {
+                $deleted++;
+            }
+        }
+        return $deleted;
     }
 
     public static function restoreQuarantinedBusinessPhotos(int $businessId, ?string $photosJson): int

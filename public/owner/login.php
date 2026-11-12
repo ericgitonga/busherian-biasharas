@@ -182,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         $viewStep = 'verify_otp';
                         $flashSuccess = "We sent a 6-digit verification code to {$email}. Enter the 6-digit code below and choose your password right here in this browser window.";
-                        if (strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes' || strtolower(Database::env('APP_ENV', 'development')) !== 'production') {
+                        if (OwnerAuth::canRenderDevOtpPreview()) {
                             $devPreviewOtpCode = $otpInfo['code'];
                         }
                     }
@@ -326,7 +326,7 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
     <?php if ($flashSuccess !== ''): ?>
       <div data-testid="owner-login-success" style="background:#ECFDF5;border:2px solid #059669;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;color:#065F46;font-weight:600;">
         ✓ <?= htmlspecialchars($flashSuccess, ENT_QUOTES, 'UTF-8') ?>
-        <?php if ($devPreviewOtpCode !== null): ?>
+        <?php if ($devPreviewOtpCode !== null && OwnerAuth::canRenderDevOtpPreview()): ?>
           <div style="margin-top:0.65rem;padding-top:0.65rem;border-top:1px dashed #059669;font-size:0.86rem;">
             🧪 Preview Verification Code: <strong data-testid="owner-dev-otp-code" style="font-size:1.15rem;letter-spacing:0.15em;"><?= htmlspecialchars($devPreviewOtpCode, ENT_QUOTES, 'UTF-8') ?></strong>
           </div>
@@ -468,7 +468,7 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
         <h3 style="margin:0 0 0.5rem 0;font-size:0.92rem;color:#114B3E;">🔑 How Owner Sign-In &amp; Business Linking Works</h3>
         <ol style="margin:0;padding-left:1.2rem;font-size:0.81rem;color:#374151;line-height:1.55;">
           <li style="margin-bottom:0.35rem;"><strong>Sign In with Email &amp; Password:</strong> Enter the email address linked to your listing and your password. Your session stays active for 30 days and can be signed out across all devices anytime.</li>
-          <li style="margin-bottom:0.35rem;"><strong>Verified Business Linking:</strong> Your account automatically links to any listing matching your exact registration email or your exact public business email, or via a single-use Owner Access Invitation Link.</li>
+          <li style="margin-bottom:0.35rem;"><strong>Verified Business Linking:</strong> Your account automatically links to any listing matching your exact verified registration/owner email, or via a single-use Owner Access Invitation Link.</li>
           <li style="margin-bottom:0.35rem;"><strong>First Time or Forgot Password?</strong> Use <em>Set or Reset Password with a 6-Digit Email Code</em> above — entering the 6-digit code right in this browser window keeps you signed in on Safari, Chrome, or desktop without getting stuck in an email app preview.</li>
           <li><strong>Direct "✏️ Edit My Business" Button:</strong> Once signed in, an <strong>✏️ Edit My Business</strong> button appears directly on your business card and details window in the public directory.</li>
         </ol>
