@@ -19,6 +19,15 @@ final class HoursEngine
         'sat' => 'fri',
         'sun' => 'sat',
     ];
+    private const NEXT_DAY_MAP = [
+        'mon' => 'tue',
+        'tue' => 'wed',
+        'wed' => 'thu',
+        'thu' => 'fri',
+        'fri' => 'sat',
+        'sat' => 'sun',
+        'sun' => 'mon',
+    ];
     private const DAY_LABELS = [
         'mon' => 'Monday',
         'tue' => 'Tuesday',
@@ -30,7 +39,7 @@ final class HoursEngine
     ];
 
     /**
-     * Strictly validate HH:MM in 24-hour range (00:00..23:59, plus 24:00 when $allow2400 is true) (#184).
+     * Strictly validate HH:MM in 24-hour range (00:00..23:59, plus 24:00 when $allow2400 is true) (#184, #202).
      */
     public static function parseTimeToMinutes(string $hhmm, bool $allow2400 = false): ?int
     {
@@ -49,7 +58,9 @@ final class HoursEngine
     }
 
     /**
-     * Validate operating_hours_json so out-of-range HH:MM values cannot be persisted (#184).
+     * Validate operating_hours_json so out-of-range HH:MM values and ambiguous equal-endpoint
+     * intervals (e.g. 08:00-08:00 or 00:00-00:00) cannot be persisted (#184, #202).
+     * Explicit 24-hour open days use ["00:00", "24:00"].
      */
     public static function validateScheduleJson(string $hoursJson): bool
     {
@@ -72,7 +83,9 @@ final class HoursEngine
                 if (!is_array($shift) || count($shift) < 2 || !is_string($shift[0] ?? null) || !is_string($shift[1] ?? null)) {
                     return false;
                 }
-                if (self::parseTimeToMinutes($shift[0], false) === null || self::parseTimeToMinutes($shift[1], true) === null) {
+                $openMin = self::parseTimeToMinutes($shift[0], false);
+                $closeMin = self::parseTimeToMinutes($shift[1], true);
+                if ($openMin === null || $closeMin === null || $openMin === $closeMin) {
                     return false;
                 }
             }
@@ -80,9 +93,28 @@ final class HoursEngine
         return true;
     }
 
+    private static function dayStartsAtMidnight(array $schedule, string $dayKey): bool
+    {
+        $shifts = $schedule[$dayKey] ?? [];
+        if (!is_array($shifts)) {
+            return false;
+        }
+        foreach ($shifts as $shift) {
+            if (!is_array($shift) || count($shift) < 2) {
+                continue;
+            }
+            $o = self::parseTimeToMinutes((string)$shift[0], false);
+            $c = self::parseTimeToMinutes((string)$shift[1], true);
+            if ($o === 0 && $c !== null && $c > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Evaluate operating status in Africa/Nairobi (EAT, UTC+3), including previous-day overnight
-     * carryover shifts after midnight (e.g. Mon 20:00-02:00 at Tue 01:00 and Sun 20:00-02:00 at Mon 01:00) (#184).
+     * carryover shifts after midnight and unambiguous ["00:00", "24:00"] 24-hour service (#184, #202).
      */
     public static function evaluateStatus(string|array $hoursJson, ?DateTimeImmutable $nowOverride = null): array
     {
@@ -95,6 +127,7 @@ final class HoursEngine
 
         $todayKey = strtolower($now->format('D'));
         $prevDayKey = self::PREV_DAY_MAP[$todayKey] ?? 'sun';
+        $nextDayKey = self::NEXT_DAY_MAP[$todayKey] ?? 'tue';
 
         if (!empty($schedule['by_appointment'])) {
             return [
@@ -117,7 +150,7 @@ final class HoursEngine
                 }
                 $openMin = self::parseTimeToMinutes((string)$shift[0], false);
                 $closeMin = self::parseTimeToMinutes((string)$shift[1], true);
-                if ($openMin === null || $closeMin === null) {
+                if ($openMin === null || $closeMin === null || $openMin === $closeMin) {
                     continue;
                 }
                 if ($closeMin > 0 && $closeMin < 1440 && $closeMin < $openMin && $nowMinutes < $closeMin) {
@@ -152,13 +185,32 @@ final class HoursEngine
                 }
                 $openMin = self::parseTimeToMinutes((string)$shift[0], false);
                 $closeMin = self::parseTimeToMinutes((string)$shift[1], true);
-                if ($openMin === null || $closeMin === null) {
+                if ($openMin === null || $closeMin === null || $openMin === $closeMin) {
                     continue;
                 }
-                if ($closeMin <= $openMin) {
+                $rawCloseMin = $closeMin;
+                if ($closeMin < $openMin) {
                     $closeMin += 24 * 60;
                 }
                 if ($nowMinutes >= $openMin && $nowMinutes < $closeMin) {
+                    if ($openMin === 0 && $rawCloseMin === 1440 && self::dayStartsAtMidnight($schedule, $nextDayKey)) {
+                        return [
+                            'state' => 'OPEN_NOW',
+                            'is_open' => true,
+                            'badge_text' => 'Open Now • Open 24 Hours',
+                            'today_key' => $todayKey,
+                            'schedule_table' => self::formatScheduleTable($schedule),
+                        ];
+                    }
+                    if ($rawCloseMin === 1440 && self::dayStartsAtMidnight($schedule, $nextDayKey)) {
+                        return [
+                            'state' => 'OPEN_NOW',
+                            'is_open' => true,
+                            'badge_text' => 'Open Now • Open Past Midnight',
+                            'today_key' => $todayKey,
+                            'schedule_table' => self::formatScheduleTable($schedule),
+                        ];
+                    }
                     $remaining = $closeMin - $nowMinutes;
                     $formattedClose = self::formatTime12h((string)$shift[1]);
                     if ($remaining <= 45) {
@@ -170,10 +222,13 @@ final class HoursEngine
                             'schedule_table' => self::formatScheduleTable($schedule),
                         ];
                     }
+                    $badge = ($openMin === 0 && $rawCloseMin === 1440)
+                        ? 'Open Now • Open 24 Hours (Closes 12:00 AM)'
+                        : "Open Now • Closes {$formattedClose}";
                     return [
                         'state' => 'OPEN_NOW',
                         'is_open' => true,
-                        'badge_text' => "Open Now • Closes {$formattedClose}",
+                        'badge_text' => $badge,
                         'today_key' => $todayKey,
                         'schedule_table' => self::formatScheduleTable($schedule),
                     ];
@@ -207,8 +262,12 @@ final class HoursEngine
                 if (is_array($s) && count($s) >= 2) {
                     $oMin = self::parseTimeToMinutes((string)$s[0], false);
                     $cMin = self::parseTimeToMinutes((string)$s[1], true);
-                    if ($oMin !== null && $cMin !== null) {
-                        $parts[] = self::formatTime12h((string)$s[0]) . ' – ' . self::formatTime12h((string)$s[1]);
+                    if ($oMin !== null && $cMin !== null && $oMin !== $cMin) {
+                        if ($oMin === 0 && $cMin === 1440) {
+                            $parts[] = 'Open 24 Hours';
+                        } else {
+                            $parts[] = self::formatTime12h((string)$s[0]) . ' – ' . self::formatTime12h((string)$s[1]);
+                        }
                     }
                 }
             }
@@ -259,14 +318,26 @@ final class HoursEngine
         $sunClose = trim((string)($post['hours_sun_close'] ?? ''));
         $sunClosed = !empty($post['hours_sun_closed']) || $sunOpen === '' || $sunClose === '';
 
-        if (!$weekdayClosed && (self::parseTimeToMinutes($weekdayOpen, false) === null || self::parseTimeToMinutes($weekdayClose, true) === null)) {
-            throw new \InvalidArgumentException('Weekday operating hours must use valid 24-hour HH:MM format (00:00–23:59).');
+        if (!$weekdayClosed) {
+            $wO = self::parseTimeToMinutes($weekdayOpen, false);
+            $wC = self::parseTimeToMinutes($weekdayClose, true);
+            if ($wO === null || $wC === null || $wO === $wC) {
+                throw new \InvalidArgumentException('Weekday operating hours must use valid 24-hour HH:MM format (use 00:00 to 24:00 for 24-hour service).');
+            }
         }
-        if (!$satClosed && (self::parseTimeToMinutes($satOpen, false) === null || self::parseTimeToMinutes($satClose, true) === null)) {
-            throw new \InvalidArgumentException('Saturday operating hours must use valid 24-hour HH:MM format (00:00–23:59).');
+        if (!$satClosed) {
+            $sO = self::parseTimeToMinutes($satOpen, false);
+            $sC = self::parseTimeToMinutes($satClose, true);
+            if ($sO === null || $sC === null || $sO === $sC) {
+                throw new \InvalidArgumentException('Saturday operating hours must use valid 24-hour HH:MM format (use 00:00 to 24:00 for 24-hour service).');
+            }
         }
-        if (!$sunClosed && (self::parseTimeToMinutes($sunOpen, false) === null || self::parseTimeToMinutes($sunClose, true) === null)) {
-            throw new \InvalidArgumentException('Sunday operating hours must use valid 24-hour HH:MM format (00:00–23:59).');
+        if (!$sunClosed) {
+            $uO = self::parseTimeToMinutes($sunOpen, false);
+            $uC = self::parseTimeToMinutes($sunClose, true);
+            if ($uO === null || $uC === null || $uO === $uC) {
+                throw new \InvalidArgumentException('Sunday operating hours must use valid 24-hour HH:MM format (use 00:00 to 24:00 for 24-hour service).');
+            }
         }
 
         $weekdayShift = $weekdayClosed ? [] : [[$weekdayOpen, $weekdayClose]];

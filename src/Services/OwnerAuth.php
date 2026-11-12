@@ -1193,11 +1193,22 @@ final class OwnerAuth
      *
      * @return list<string>
      */
-    public static function getMaskedOwnerEmailHintsForBusiness(PDO $pdo, int $businessId): array
+    public static function getMaskedOwnerEmailHintsForBusiness(PDO $pdo, int $businessId, bool $requireApproved = false): array
     {
         if ($businessId <= 0) {
             return [];
         }
+
+        $bStmt = $pdo->prepare("SELECT status, owner_email, email_public FROM businesses WHERE id = :id LIMIT 1");
+        $bStmt->execute([':id' => $businessId]);
+        $bRow = $bStmt->fetch();
+        if (!$bRow) {
+            return [];
+        }
+        if ($requireApproved && strtolower(trim((string)($bRow['status'] ?? ''))) !== 'approved') {
+            return [];
+        }
+
         $rawEmails = [];
         foreach (self::getOwnersForBusiness($pdo, $businessId) as $o) {
             if (!empty($o['email'])) {
@@ -1205,15 +1216,10 @@ final class OwnerAuth
             }
         }
 
-        $bStmt = $pdo->prepare("SELECT owner_email, email_public FROM businesses WHERE id = :id LIMIT 1");
-        $bStmt->execute([':id' => $businessId]);
-        $bRow = $bStmt->fetch();
-        if ($bRow) {
-            foreach (['owner_email', 'email_public'] as $col) {
-                $val = strtolower(trim((string)($bRow[$col] ?? '')));
-                if ($val !== '' && filter_var($val, FILTER_VALIDATE_EMAIL)) {
-                    $rawEmails[] = $val;
-                }
+        foreach (['owner_email', 'email_public'] as $col) {
+            $val = strtolower(trim((string)($bRow[$col] ?? '')));
+            if ($val !== '' && filter_var($val, FILTER_VALIDATE_EMAIL)) {
+                $rawEmails[] = $val;
             }
         }
 

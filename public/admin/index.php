@@ -202,7 +202,11 @@ $retryableOutboxCount = (int)$pdo->query("
           <a href="<?= htmlspecialchars(\BusherianBiasharas\Services\PreprodSandbox::generateProdToPreprodHandoffUrl('/'), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline-light">🧪 Pre-Prod Preview</a>
         <?php endif; ?>
         <a href="/admin/metrics.php" class="btn btn-outline-light">📊 Usage Metrics</a>
-        <a href="/admin/login.php?logout=1" class="btn btn-outline-light">Sign Out</a>
+        <form method="POST" action="/admin/login.php" style="margin:0;display:inline;">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="action" value="logout">
+          <button type="submit" data-testid="admin-logout-btn" class="btn btn-outline-light" style="cursor:pointer;">Sign Out</button>
+        </form>
         <a href="/" class="btn btn-outline-light">&larr; Public Directory</a>
       </nav>
     </div>

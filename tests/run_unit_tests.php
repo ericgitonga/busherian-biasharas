@@ -2179,6 +2179,109 @@ assertTrue(
 );
 
 
+// =========================================================================
+// 40. Pass-2 R2-LOW-01..03 (#201, #202, #203) Regression Suite
+// =========================================================================
+
+// 40a. R2-LOW-01 (#201): getMaskedOwnerEmailHintsForBusiness($pdo, $id, true) hides hints for non-approved listings
+$pendStmt201 = $pdo->prepare("
+    INSERT INTO businesses (
+        name, slug, tagline, description, school_badge, sector_id, specialty_id, service_mode,
+        city_county, operating_hours_json, phone_primary, email_public, owner_email, status
+    ) VALUES (
+        'Unpublished Stealth Venture 201', 'unpublished-stealth-201', 'Stealth', 'Pending listing', 'AHS', :sec, :spec, 'both',
+        'Nairobi', '{\"mon\":[[\"08:00\",\"17:00\"]]}', '+254700201201', 'info@stealth201.co.ke', 'founder@stealth201.co.ke', 'pending'
+    )
+");
+$pendStmt201->execute([':sec' => $validSecId, ':spec' => $validSpecId]);
+$pendBizId201 = (int)$pdo->lastInsertId();
+
+$approvedBizStmt201 = $pdo->query("SELECT id FROM businesses WHERE status = 'approved' AND (owner_email IS NOT NULL OR email_public IS NOT NULL) LIMIT 1");
+$approvedBizId201 = (int)$approvedBizStmt201->fetchColumn();
+
+$anonHintsPending201 = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $pendBizId201, true);
+$adminHintsPending201 = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $pendBizId201, false);
+$anonHintsApproved201 = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $approvedBizId201, true);
+
+$loginSrc201 = (string)file_get_contents(dirname(__DIR__) . '/public/owner/login.php');
+assertTrue(
+    $anonHintsPending201 === [] &&
+    count($adminHintsPending201) >= 1 &&
+    count($anonHintsApproved201) >= 1 &&
+    str_contains($loginSrc201, "status = 'approved'") &&
+    str_contains($loginSrc201, "'owner_biz_hint_lookup'"),
+    'Anonymous ?biz=<id> hint lookup returns empty hints for non-approved listings and throttles per-IP enumeration (#201)'
+);
+VettingPurger::deleteBusiness($pdo, $pendBizId201, 'unit_cleanup', 'system');
+
+// 40b. R2-LOW-02 (#202): HoursEngine rejects ambiguous equal endpoints (08:00-08:00, 00:00-00:00) and evaluates explicit 00:00-24:00 24/7 cleanly
+$ambiguousEqualJson = (string)json_encode(['mon' => [['08:00', '08:00']]]);
+$ambiguousMidnightJson = (string)json_encode(['mon' => [['00:00', '00:00']]]);
+$explicit24x7Schedule = [
+    'mon' => [['00:00', '24:00']],
+    'tue' => [['00:00', '24:00']],
+    'wed' => [['00:00', '24:00']],
+    'thu' => [['00:00', '24:00']],
+    'fri' => [['00:00', '24:00']],
+    'sat' => [['00:00', '24:00']],
+    'sun' => [['00:00', '24:00']],
+];
+$singleDay24hSchedule = [
+    'mon' => [['00:00', '24:00']],
+    'tue' => [],
+];
+$threwEqualBuild202 = false;
+try {
+    HoursEngine::buildScheduleJsonFromPost([
+        'hours_weekday_open' => '08:00',
+        'hours_weekday_close' => '08:00',
+    ]);
+} catch (\InvalidArgumentException $e) {
+    $threwEqualBuild202 = true;
+}
+$mon0005 = new DateTimeImmutable('2026-11-16 00:05:00', $eatTz);
+$mon2345 = new DateTimeImmutable('2026-11-16 23:45:00', $eatTz);
+$tue0130 = new DateTimeImmutable('2026-11-17 01:30:00', $eatTz);
+
+$eval24x7Start = HoursEngine::evaluateStatus($explicit24x7Schedule, $mon0005);
+$eval24x7Late = HoursEngine::evaluateStatus($explicit24x7Schedule, $mon2345);
+$eval24x7NextDay = HoursEngine::evaluateStatus($explicit24x7Schedule, $tue0130);
+$evalSingle24Late = HoursEngine::evaluateStatus($singleDay24hSchedule, $mon2345);
+$evalSingle24NextDay = HoursEngine::evaluateStatus($singleDay24hSchedule, $tue0130);
+$evalUnvalidatedEqual = HoursEngine::evaluateStatus($ambiguousEqualJson, $mon0005);
+
+assertTrue(
+    HoursEngine::validateScheduleJson($ambiguousEqualJson) === false &&
+    HoursEngine::validateScheduleJson($ambiguousMidnightJson) === false &&
+    HoursEngine::validateScheduleJson((string)json_encode($explicit24x7Schedule)) === true &&
+    $threwEqualBuild202 === true &&
+    $eval24x7Start['state'] === 'OPEN_NOW' &&
+    $eval24x7Late['state'] === 'OPEN_NOW' &&
+    $eval24x7NextDay['state'] === 'OPEN_NOW' &&
+    $evalSingle24Late['state'] === 'CLOSING_SOON' &&
+    $evalSingle24NextDay['state'] === 'CLOSED' &&
+    $evalUnvalidatedEqual['is_open'] === false &&
+    $eval24x7Start['schedule_table']['mon']['hours'] === 'Open 24 Hours',
+    'HoursEngine rejects ambiguous equal-endpoint intervals, requires explicit 00:00-24:00 for 24-hour service, and evaluates continuous 24/7 vs single-day 24h schedules consistently (#202)'
+);
+
+// 40c. R2-LOW-03 (#203): Owner and Admin logout endpoints require POST + valid CSRF token and navbars use POST forms
+$ownerLogoutSrc203 = (string)file_get_contents(dirname(__DIR__) . '/public/owner/logout.php');
+$adminLoginSrc203 = (string)file_get_contents(dirname(__DIR__) . '/public/admin/login.php');
+$ownerIndexSrc203 = (string)file_get_contents(dirname(__DIR__) . '/public/owner/index.php');
+$adminIndexSrc203 = (string)file_get_contents(dirname(__DIR__) . '/public/admin/index.php');
+$ownerClaimSrc203 = (string)file_get_contents(dirname(__DIR__) . '/public/owner/claim.php');
+
+assertTrue(
+    !str_contains($adminLoginSrc203, "\$_GET['logout']") &&
+    str_contains($adminLoginSrc203, "(\$_POST['action'] ?? '') === 'logout'") &&
+    str_contains($ownerLogoutSrc203, "AntiSpamGate::verifyCsrfToken") &&
+    !str_contains($ownerIndexSrc203, '<a href="/owner/logout.php"') &&
+    !str_contains($ownerClaimSrc203, '<a href="/owner/logout.php"') &&
+    !str_contains($adminIndexSrc203, '/admin/login.php?logout=1'),
+    'Owner and Admin logout routes require POST + valid session CSRF token and all navigation Sign Out controls submit POST forms (#203)'
+);
+
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);
 }

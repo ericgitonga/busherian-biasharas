@@ -13,19 +13,10 @@ bbiz_send_security_headers(false);
 OwnerAuth::startSecureSession();
 
 $pdo = Database::getConnection();
+$clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
 $targetBizId = (int)($_REQUEST['biz'] ?? ($_SESSION['bbiz_target_edit_biz_id'] ?? 0));
 if ($targetBizId > 0) {
     $_SESSION['bbiz_target_edit_biz_id'] = $targetBizId;
-}
-$targetBizName = null;
-$targetBizHints = [];
-if ($targetBizId > 0) {
-    $tbStmt = $pdo->prepare("SELECT name FROM businesses WHERE id = :id LIMIT 1");
-    $tbStmt->execute([':id' => $targetBizId]);
-    $targetBizName = $tbStmt->fetchColumn() ?: null;
-    if ($targetBizName !== null) {
-        $targetBizHints = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $targetBizId);
-    }
 }
 
 $currentOwner = OwnerAuth::getCurrentOwner($pdo);
@@ -47,6 +38,44 @@ if ($currentOwner !== null) {
     }
     header('Location: /owner/index.php');
     exit;
+}
+
+$targetBizName = null;
+$targetBizHints = [];
+if ($targetBizId > 0) {
+    $isAdminHintViewer = AdminAuth::isAuthenticated();
+    $sessionSubmittedIds = array_map('intval', (array)($_SESSION['bbiz_submitted_pending_biz_ids'] ?? []));
+    $isSessionSubmitter = in_array($targetBizId, $sessionSubmittedIds, true);
+
+    if ($isAdminHintViewer || $isSessionSubmitter) {
+        $tbStmt = $pdo->prepare("SELECT name FROM businesses WHERE id = :id LIMIT 1");
+        $tbStmt->execute([':id' => $targetBizId]);
+        $targetBizName = $tbStmt->fetchColumn() ?: null;
+        if ($targetBizName !== null) {
+            $targetBizHints = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $targetBizId, false);
+        }
+    } else {
+        // Security Boundary (#201): Restrict anonymous ?biz=<id> hint lookups strictly to approved listings and throttle scraping.
+        $hintAllowed = true;
+        if (isset($_GET['biz'])) {
+            $hintRate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'owner_biz_hint_lookup', 15, 60, 500);
+            $hintAllowed = $hintRate['allowed'];
+        }
+        if ($hintAllowed) {
+            $tbStmt = $pdo->prepare("SELECT name FROM businesses WHERE id = :id AND status = 'approved' LIMIT 1");
+            $tbStmt->execute([':id' => $targetBizId]);
+            $targetBizName = $tbStmt->fetchColumn() ?: null;
+            if ($targetBizName !== null) {
+                $targetBizHints = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $targetBizId, true);
+            }
+        }
+        if ($targetBizName === null) {
+            unset($_SESSION['bbiz_target_edit_biz_id']);
+            if (!isset($_POST['biz'])) {
+                $targetBizId = 0;
+            }
+        }
+    }
 }
 
 // Security Boundary (#163): Never accept unsigned claim query/body parameters on login.
@@ -79,7 +108,6 @@ $stickyEmail = strtolower(trim((string)($_REQUEST['email'] ?? '')));
 $flashSuccess = '';
 $flashError = '';
 $devPreviewOtpCode = null;
-$clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
 
 if (isset($_GET['logged_out_all'])) {
     $flashSuccess = 'You have been signed out on this browser and all other active devices.';
