@@ -1260,48 +1260,84 @@ final class OwnerAuth
      *
      * @return list<string>
      */
+    /**
+     * Batch-load privacy-masked owner email hints for multiple businesses in at most 2 SQL queries (#234 R3-LOW-02).
+     *
+     * @param int[] $businessIds
+     * @return array<int, list<string>>
+     */
+    public static function getMaskedOwnerEmailHintsForBusinesses(PDO $pdo, array $businessIds, bool $requireApproved = false): array
+    {
+        $cleanIds = array_values(array_unique(array_filter(array_map('intval', $businessIds), static fn(int $id): bool => $id > 0)));
+        if ($cleanIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($cleanIds), '?'));
+        $bStmt = $pdo->prepare("SELECT id, status, owner_email FROM businesses WHERE id IN ({$placeholders})");
+        $bStmt->execute($cleanIds);
+        $bizRows = [];
+        foreach ($bStmt->fetchAll() as $bRow) {
+            $bid = (int)$bRow['id'];
+            if ($requireApproved && strtolower(trim((string)($bRow['status'] ?? ''))) !== 'approved') {
+                continue;
+            }
+            $bizRows[$bid] = $bRow;
+        }
+        if ($bizRows === []) {
+            return [];
+        }
+
+        $eligibleIds = array_keys($bizRows);
+        $elPlaceholders = implode(',', array_fill(0, count($eligibleIds), '?'));
+        $lStmt = $pdo->prepare("
+            SELECT l.business_id, o.email
+            FROM business_owner_links l
+            INNER JOIN business_owners o ON o.id = l.owner_id
+            WHERE l.business_id IN ({$elPlaceholders})
+            ORDER BY l.id ASC
+        ");
+        $lStmt->execute($eligibleIds);
+        $linkedEmailsByBiz = [];
+        foreach ($lStmt->fetchAll() as $lr) {
+            $bid = (int)$lr['business_id'];
+            $em = strtolower(trim((string)($lr['email'] ?? '')));
+            if ($em !== '') {
+                $linkedEmailsByBiz[$bid][] = $em;
+            }
+        }
+
+        $out = [];
+        foreach ($bizRows as $bid => $bRow) {
+            $rawEmails = $linkedEmailsByBiz[$bid] ?? [];
+            $ownVal = strtolower(trim((string)($bRow['owner_email'] ?? '')));
+            if ($ownVal !== '' && filter_var($ownVal, FILTER_VALIDATE_EMAIL)) {
+                $rawEmails[] = $ownVal;
+            }
+            $seen = [];
+            $hints = [];
+            foreach ($rawEmails as $em) {
+                if (isset($seen[$em])) {
+                    continue;
+                }
+                $seen[$em] = true;
+                $masked = self::maskEmailAddress($em);
+                if ($masked !== '') {
+                    $hints[] = $masked;
+                }
+            }
+            $out[$bid] = $hints;
+        }
+        return $out;
+    }
+
     public static function getMaskedOwnerEmailHintsForBusiness(PDO $pdo, int $businessId, bool $requireApproved = false): array
     {
         if ($businessId <= 0) {
             return [];
         }
-
-        $bStmt = $pdo->prepare("SELECT status, owner_email, email_public FROM businesses WHERE id = :id LIMIT 1");
-        $bStmt->execute([':id' => $businessId]);
-        $bRow = $bStmt->fetch();
-        if (!$bRow) {
-            return [];
-        }
-        if ($requireApproved && strtolower(trim((string)($bRow['status'] ?? ''))) !== 'approved') {
-            return [];
-        }
-
-        $rawEmails = [];
-        foreach (self::getOwnersForBusiness($pdo, $businessId) as $o) {
-            if (!empty($o['email'])) {
-                $rawEmails[] = strtolower(trim((string)$o['email']));
-            }
-        }
-
-        $ownVal = strtolower(trim((string)($bRow['owner_email'] ?? '')));
-        if ($ownVal !== '' && filter_var($ownVal, FILTER_VALIDATE_EMAIL)) {
-            $rawEmails[] = $ownVal;
-        }
-
-        $seen = [];
-        $hints = [];
-        foreach ($rawEmails as $em) {
-            if (isset($seen[$em])) {
-                continue;
-            }
-            $seen[$em] = true;
-            $masked = self::maskEmailAddress($em);
-            if ($masked !== '') {
-                $hints[] = $masked;
-            }
-        }
-
-        return $hints;
+        $batch = self::getMaskedOwnerEmailHintsForBusinesses($pdo, [$businessId], $requireApproved);
+        return $batch[$businessId] ?? [];
     }
 
     /**

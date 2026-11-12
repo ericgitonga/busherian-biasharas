@@ -235,6 +235,9 @@ try {
     $editableBizIds = ($currentOwner !== null && $pageBizIds !== [])
         ? OwnerAuth::getEditableBusinessIdsForOwner($pdo, (int)$currentOwner['id'], $pageBizIds)
         : [];
+    $batchedOwnerHints = ($isAuthenticatedViewer && $pageBizIds !== [])
+        ? OwnerAuth::getMaskedOwnerEmailHintsForBusinesses($pdo, $pageBizIds)
+        : [];
 
     $results = [];
     foreach ($pagedRows as $row) {
@@ -300,7 +303,7 @@ try {
 
         // Privacy (#180): Omit owner_email_hints from unauthenticated public directory feeds
         if ($isAuthenticatedViewer) {
-            $item['owner_email_hints'] = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $bizId);
+            $item['owner_email_hints'] = $batchedOwnerHints[$bizId] ?? [];
         }
 
         $results[] = $item;

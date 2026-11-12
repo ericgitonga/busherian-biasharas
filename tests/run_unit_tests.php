@@ -3077,6 +3077,150 @@ assertTrue(
     'AdminAuth revokes sessions server-side & on credential rotation (#225), web auto-migrate defaults off with GET_LOCK (#220), drafts use 2h sessionStorage without vetting PII (#210), metrics scrub PII & unbundle OSM tiles (#217), and API paginates Haversine in SQL (#218)'
 );
 
+
+// =========================================================================
+// 43. Pass-3 LOW Remediations (#233 R3-LOW-01, #234 R3-LOW-02, #235 R3-LOW-03)
+// =========================================================================
+
+// 43a. R3-LOW-01 (#233): Submitter vetting identity bounds match exact MySQL schema widths (80, 30, 150, 190, 40)
+$exactEmail233 = str_repeat('a', 60) . '@' . str_repeat('b', 60) . '.' . str_repeat('c', 60) . '.co.ke'; // 188 chars <= 190
+VettingPurger::validateVettingIdentityPayload([
+    'school_code' => 'AHS',
+    'house_name' => 'Livingstone',
+    'year_left' => 2010,
+    'school_number' => str_repeat('9', 30),
+    'submitter_name' => str_repeat('N', 150),
+    'submitter_email' => $exactEmail233,
+    'raw_submitter_phone' => '+2547' . str_repeat('1', 8),
+    'submitter_phone' => '+254711111111',
+]);
+
+$vetBoundaryOverflows = [
+    ['school_number' => str_repeat('9', 31)],
+    ['submitter_name' => str_repeat('N', 151)],
+    ['submitter_email' => str_repeat('a', 64) . '@' . str_repeat('b', 63) . '.' . str_repeat('c', 63) . '.com'], // >190 chars
+    ['raw_submitter_phone' => '+' . str_repeat('2', 40), 'submitter_phone' => '+' . str_repeat('2', 40)],
+];
+$caughtAllVetOverflows233 = true;
+foreach ($vetBoundaryOverflows as $ovf) {
+    $caughtOne = false;
+    try {
+        VettingPurger::validateVettingIdentityPayload(array_merge([
+            'school_code' => 'AHS',
+            'house_name' => 'Livingstone',
+            'year_left' => 2012,
+            'school_number' => '12345',
+            'submitter_name' => 'Valid Alumni Name',
+            'submitter_email' => 'valid233@example.com',
+            'raw_submitter_phone' => '+254722000233',
+            'submitter_phone' => '+254722000233',
+        ], $ovf));
+    } catch (\InvalidArgumentException $e) {
+        $caughtOne = true;
+    }
+    if (!$caughtOne) {
+        $caughtAllVetOverflows233 = false;
+    }
+}
+assertTrue(
+    $caughtAllVetOverflows233,
+    'VettingPurger::validateVettingIdentityPayload enforces exact schema column bounds (school_number<=30, submitter_name<=150, submitter_email<=190, submitter_phone<=40) (#233)'
+);
+
+// 43b. R3-LOW-02 (#234): Batched getMaskedOwnerEmailHintsForBusinesses matches per-business output across multiple rows
+$sampleIds234 = array_map('intval', $pdo->query("SELECT id FROM businesses WHERE status = 'approved' ORDER BY id ASC LIMIT 6")->fetchAll(PDO::FETCH_COLUMN));
+$batchHints234 = OwnerAuth::getMaskedOwnerEmailHintsForBusinesses($pdo, $sampleIds234, true);
+$parityMatch234 = count($sampleIds234) >= 3;
+foreach ($sampleIds234 as $sid234) {
+    $singleHint234 = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $sid234, true);
+    if (($batchHints234[$sid234] ?? []) !== $singleHint234) {
+        $parityMatch234 = false;
+    }
+}
+assertTrue(
+    $parityMatch234,
+    'OwnerAuth::getMaskedOwnerEmailHintsForBusinesses returns identical masked hints across batched listings without per-row N+1 loops (#234)'
+);
+
+// 43c. R3-LOW-03 (#235): Concurrent CLI worker processes enforce OS flock() non-blocking overlap guard
+$cliLockDir235 = sys_get_temp_dir() . '/bbiz_cli_lock_' . getmypid() . '_' . mt_rand(1000, 9999);
+@mkdir($cliLockDir235, 0770, true);
+$cliLockDb235 = $cliLockDir235 . '/cli_lock_test.sqlite';
+$cliEnvBase235 = array_merge($_ENV, [
+    'APP_ENV' => 'testing',
+    'DB_DRIVER' => 'sqlite',
+    'DB_SQLITE_PATH' => $cliLockDb235,
+    'APP_HMAC_SECRET' => 'unit_test_cli_lock_secret_32_bytes_minimum_235',
+    'SIMULATE_EMAILS' => 'yes',
+    'BBIZ_CLI_LOCK_DIR' => $cliLockDir235,
+]);
+// Warm up isolated SQLite DB once before racing flock()
+$warmProc235 = proc_open(
+    [PHP_BINARY, dirname(__DIR__) . '/bin/process-email-outbox.php', '1', '2'],
+    [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+    $warmPipes235,
+    dirname(__DIR__),
+    $cliEnvBase235
+);
+@fclose($warmPipes235[0]);
+@stream_get_contents($warmPipes235[1]);
+@fclose($warmPipes235[1]);
+@stream_get_contents($warmPipes235[2]);
+@fclose($warmPipes235[2]);
+@proc_close($warmProc235);
+
+$holdEnv235 = array_merge($cliEnvBase235, ['BBIZ_CLI_TEST_HOLD_MS' => '500']);
+$fastEnv235 = array_merge($cliEnvBase235, ['BBIZ_CLI_TEST_HOLD_MS' => '0']);
+
+$pHold235 = proc_open(
+    [PHP_BINARY, dirname(__DIR__) . '/bin/process-email-outbox.php', '5', '3'],
+    [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+    $pipesHold235,
+    dirname(__DIR__),
+    $holdEnv235
+);
+usleep(120000); // 120ms so Worker 1 acquires flock() and holds for 500ms
+$pSkip235 = proc_open(
+    [PHP_BINARY, dirname(__DIR__) . '/bin/process-email-outbox.php', '5', '3'],
+    [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+    $pipesSkip235,
+    dirname(__DIR__),
+    $fastEnv235
+);
+
+@fclose($pipesSkip235[0]);
+$outSkip235 = trim((string)stream_get_contents($pipesSkip235[1]));
+@fclose($pipesSkip235[1]);
+@stream_get_contents($pipesSkip235[2]);
+@fclose($pipesSkip235[2]);
+$rcSkip235 = proc_close($pSkip235);
+
+@fclose($pipesHold235[0]);
+$outHold235 = trim((string)stream_get_contents($pipesHold235[1]));
+@fclose($pipesHold235[1]);
+@stream_get_contents($pipesHold235[2]);
+@fclose($pipesHold235[2]);
+$rcHold235 = proc_close($pHold235);
+
+$jsonHold235 = json_decode($outHold235, true) ?: [];
+$jsonSkip235 = json_decode($outSkip235, true) ?: [];
+
+@unlink($cliLockDir235 . '/process_email_outbox.lock');
+@unlink($cliLockDb235);
+@unlink($cliLockDb235 . '-wal');
+@unlink($cliLockDb235 . '-shm');
+@rmdir($cliLockDir235);
+
+$preprodWf235 = (string)file_get_contents(dirname(__DIR__) . '/.github/workflows/deploy-preprod.yml');
+assertTrue(
+    $rcHold235 === 0 &&
+    $rcSkip235 === 0 &&
+    ($jsonHold235['status'] ?? '') === 'ok' &&
+    ($jsonSkip235['status'] ?? '') === 'skipped_locked' &&
+    str_contains($preprodWf235, 'cancel-in-progress: false'),
+    'CLI workers enforce non-blocking OS flock() overlap guard across concurrent OS processes and deploy-preprod.yml prevents mid-promotion cancellation (#235)'
+);
+
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);
 }
