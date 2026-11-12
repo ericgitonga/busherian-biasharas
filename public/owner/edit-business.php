@@ -41,8 +41,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($typedConfirm === '' || $typedConfirm !== trim($currentBizNameForCheck)) {
             $errorMsg = 'Deletion cancelled: You must type the exact business name to confirm permanent deletion.';
         } else {
-            VettingPurger::deleteBusiness($pdo, $businessId, 'owner_portal', 'owner:' . (int)$owner['id'], (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'));
-            header('Location: /owner/index.php?deleted=1');
+            try {
+                VettingPurger::deleteBusiness($pdo, $businessId, 'owner_portal', 'owner:' . (int)$owner['id'], (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'));
+                header('Location: /owner/index.php?deleted=1');
+            } catch (\RuntimeException $delMediaEx) {
+                header('Location: /owner/index.php?deleted=1&media_cleanup_queued=1');
+            }
             exit;
         }
     } else {

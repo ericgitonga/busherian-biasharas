@@ -1566,6 +1566,83 @@ def test_playwright_r2_medium_regressions():
             ctx_adm1.close()
             ctx_adm2.close()
 
+
+def test_playwright_r3_high_regressions():
+    """Browser & HTTP E2E regressions for Pass-3 HIGH (#236, #237, #239, #240)."""
+    # 1. H-01 (#236): Invalid X-Admin-Token rejected (401); dedicated ADMIN_ACCESS_TOKEN accepted in testing
+    st_bad_hdr, _, _ = _request("/admin/index.php", headers={"X-Admin-Token": "wrong-automation-token-236"})
+    assert st_bad_hdr == 401, f"Expected 401 for wrong X-Admin-Token (#236), got {st_bad_hdr}"
+    st_good_hdr, _, _ = _request("/admin/index.php", headers={"X-Admin-Token": ADMIN_ACCESS_TOKEN})
+    assert st_good_hdr == 200, f"Expected 200 for dedicated ADMIN_ACCESS_TOKEN in testing (#236), got {st_good_hdr}"
+
+    # 2. H-02 (#237): Submitting takedown.php with public email_public (when distinct from owner_email) queues pending_review!
+    _, cat_body, _ = _request("/api/categories.php")
+    sectors = json.loads(cat_body)["sectors"]
+    sec_id = str(sectors[0]["id"])
+    spec_id = str(sectors[0]["specialties"][0]["id"])
+    ts237 = int(time.time() * 1000) % 1000000
+    biz_name_237 = f"E2E R3H02 PublicInbox {ts237}"
+    pub_inbox_237 = f"info.{ts237}@publicinbox237.co.ke"
+
+    ctx_adm = _new_browser_context()
+    ctx_pub = _new_browser_context()
+    try:
+        pa = ctx_adm.new_page()
+        pa.goto(f"{BASE_URL}/admin/login.php", wait_until="networkidle")
+        pa.locator("#admin_token").fill(ADMIN_ACCESS_TOKEN)
+        pa.locator("form button[type='submit']").click()
+        pa.wait_for_url("**/admin/index.php**", timeout=8000)
+
+        pa.goto(f"{BASE_URL}/admin/add-business.php", wait_until="networkidle")
+        pa.locator("input[name='name']").fill(biz_name_237)
+        pa.locator("input[name='tagline']").fill("Shared public inbox must not grant auto-quarantine authority")
+        pa.locator("textarea[name='description']").fill("Verifying Pass-3 H-02 (#237) takedown ownership boundary in Playwright.")
+        pa.locator("#sector_id").select_option(sec_id)
+        pa.locator("#specialty_id").select_option(spec_id)
+        pa.locator("input[name='phone_primary']").fill("+254722237237")
+        pa.locator("input[name='email_public']").fill(pub_inbox_237)
+        pa.locator("#admin_provenance_basis").select_option("alumni_direct_authorization")
+        pa.locator("#admin_provenance_note").fill("Authorized for E2E R3 H-02 verification")
+        pa.get_by_test_id("admin-adult-attestation-checkbox").check()
+        pa.locator("form button[type='submit']").click()
+        pa.wait_for_url("**/admin/index.php**", timeout=8000)
+
+        row_237 = next((b for b in _fetch_api_businesses() if b["name"] == biz_name_237), None)
+        assert row_237 is not None
+        id_237 = int(row_237["id"])
+
+        pp = ctx_pub.new_page()
+        t0 = time.monotonic()
+        pp.goto(f"{BASE_URL}/takedown.php", wait_until="networkidle")
+        if pp.get_by_test_id("cookie-reject-btn").is_visible():
+            pp.get_by_test_id("cookie-reject-btn").click()
+        pp.locator("#business_id").select_option(str(id_237))
+        pp.locator("#requester_name").fill("Shared Receptionist Inbox")
+        pp.locator("#requester_email").fill(pub_inbox_237)
+        pp.locator("#reason").fill("Shared info@ contact testing H-02 boundary — must queue pending_review.")
+        elapsed = time.monotonic() - t0
+        if elapsed < 4.3:
+            time.sleep(4.3 - elapsed)
+        pp.get_by_test_id("takedown-submit").click()
+        pp.get_by_test_id("takedown-success").wait_for(state="visible", timeout=8000)
+        banner_txt = pp.get_by_test_id("takedown-success").inner_text()
+        assert "Queued for Priority Admin Review" in banner_txt, (
+            f"H-02 (#237) regression: email_public matched designated owner takedown instead of pending_review! Banner={banner_txt}"
+        )
+        assert id_237 in {int(b["id"]) for b in _fetch_api_businesses()}
+
+        # Clean up disposable listing
+        pa.goto(f"{BASE_URL}/admin/edit-business.php?id={id_237}", wait_until="networkidle")
+        pa.locator("button[data-open-delete-modal='1']").click()
+        pa.locator("#btn-delete-step1-yes").click()
+        pa.locator("#delete-confirm-name-input").fill(biz_name_237)
+        pa.locator("#btn-delete-final-submit").click()
+        pa.wait_for_load_state("networkidle")
+        assert all(b["name"] != biz_name_237 for b in _fetch_api_businesses())
+    finally:
+        ctx_pub.close()
+        ctx_adm.close()
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -1578,4 +1655,5 @@ TESTS = [
     test_playwright_high_01_02_05_browser_security_regressions,
     test_playwright_med_04_08_09_12_14_15_regressions,
     test_playwright_r2_medium_regressions,
+    test_playwright_r3_high_regressions,
 ]

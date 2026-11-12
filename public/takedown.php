@@ -127,11 +127,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'confi
                         $designatedEmails[$lem] = true;
                     }
                 }
-                foreach (['owner_email', 'email_public'] as $col) {
-                    $cem = strtolower(trim((string)($bizRow[$col] ?? '')));
-                    if ($cem !== '' && filter_var($cem, FILTER_VALIDATE_EMAIL)) {
-                        $designatedEmails[$cem] = true;
-                    }
+                // Security Boundary (#237 H-02): Public contact mailboxes (email_public) MUST NOT grant unilateral
+                // immediate quarantine authority when distinct from verified owner_email / linked business_owners.
+                $cem = strtolower(trim((string)($bizRow['owner_email'] ?? '')));
+                if ($cem !== '' && filter_var($cem, FILTER_VALIDATE_EMAIL)) {
+                    $designatedEmails[$cem] = true;
                 }
                 $vEmStmt = $pdo->prepare("SELECT submitter_email FROM business_vetting_queue WHERE business_id = :bid LIMIT 1");
                 $vEmStmt->execute([':bid' => $bizId]);

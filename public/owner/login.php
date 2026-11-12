@@ -112,7 +112,11 @@ $flashError = '';
 $devPreviewOtpCode = null;
 
 if (isset($_GET['account_erased'])) {
-    $flashSuccess = 'Your Owner Account, sessions, authentication tokens, and personal correspondence records have been permanently erased.';
+    if (!empty($_GET['media_cleanup_queued'])) {
+        $flashSuccess = 'Your Owner Account, sessions, authentication tokens, and database records have been erased. One or more listing media files could not be removed immediately and have been durably queued for automated background deletion.';
+    } else {
+        $flashSuccess = 'Your Owner Account, sessions, authentication tokens, and personal correspondence records have been permanently erased.';
+    }
 } elseif (isset($_GET['logged_out_all'])) {
     $flashSuccess = 'You have been signed out on this browser and all other active devices.';
 } elseif (isset($_GET['logged_out'])) {

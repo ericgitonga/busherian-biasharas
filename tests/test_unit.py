@@ -522,3 +522,122 @@ def test_ftps_deploy_two_phase_staging_rename_retire_and_strict_size(tmp_path: P
     assert ftp_good.saw_maintenance_gate is True
     assert "/busherianbiasharas.com/www/.maintenance_deploy.json" not in ftp_good.files
     assert not any(".bbiz_prev_" in k for k in ftp_good.files)
+
+
+def test_ftps_deploy_mid_promotion_failure_restores_backup_and_rollback_failure_keeps_gate(tmp_path: Path, monkeypatch):
+    """R3-HIGH-03 (#238): Failure on stg->dst AFTER dst->backup restores live dst, and failed rollback retains locked maintenance gate."""
+    ftps_mod = _load_ftps_deploy_module()
+    import ftplib
+    import json
+
+    class _FaultInjectFtpClient:
+        def __init__(self, fail_promote_target: str | None = None, fail_rollback_restore: bool = False):
+            self.cwd_dir = "/"
+            self.files: dict[str, bytes] = {
+                "/busherianbiasharas.com/www/html/index.php": b"LIVE_INDEX_ORIGINAL",
+                "/busherianbiasharas.com/www/html/submit.php": b"LIVE_SUBMIT_ORIGINAL",
+            }
+            self.dirs: set[str] = {
+                "/",
+                "/busherianbiasharas.com",
+                "/busherianbiasharas.com/www",
+                "/busherianbiasharas.com/www/html",
+            }
+            self.fail_promote_target = fail_promote_target
+            self.fail_rollback_restore = fail_rollback_restore
+
+        def voidcmd(self, cmd: str) -> str:
+            return "200 OK"
+
+        def cwd(self, d: str) -> None:
+            if d not in self.dirs:
+                raise ftplib.error_perm("550 Directory not found")
+            self.cwd_dir = d
+
+        def mkd(self, d: str) -> str:
+            self.dirs.add(d)
+            return d
+
+        def storbinary(self, cmd: str, fp) -> str:
+            fname = cmd[5:]
+            full = f"{self.cwd_dir.rstrip('/')}/{fname}"
+            self.files[full] = fp.read()
+            return "226 OK"
+
+        def size(self, fname: str) -> int:
+            full = f"{self.cwd_dir.rstrip('/')}/{fname}"
+            return len(self.files[full])
+
+        def rename(self, src_name: str, dst_name: str) -> str:
+            # Simulate failure right AFTER dst->.bbiz_prev_* succeeded, when promoting .bbiz_stage_* -> dst_name!
+            if (
+                self.fail_promote_target is not None
+                and src_name.startswith(".bbiz_stage_")
+                and dst_name == self.fail_promote_target
+            ):
+                raise ftplib.error_temp("451 Simulated mid-promotion drop after backup rename")
+            # Simulate catastrophic rollback failure when restoring .bbiz_prev_* -> dst_name
+            if self.fail_rollback_restore and src_name.startswith(".bbiz_prev_"):
+                raise ftplib.error_temp("451 Simulated rollback restore failure")
+
+            src_full = f"{self.cwd_dir.rstrip('/')}/{src_name}"
+            dst_full = f"{self.cwd_dir.rstrip('/')}/{dst_name}"
+            if src_full not in self.files:
+                raise ftplib.error_perm("550 Missing source")
+            self.files[dst_full] = self.files.pop(src_full)
+            return "250 Renamed"
+
+        def delete(self, path_or_name: str) -> str:
+            full = path_or_name if path_or_name.startswith("/") else f"{self.cwd_dir.rstrip('/')}/{path_or_name}"
+            if full not in self.files:
+                raise ftplib.error_perm("550 No such file")
+            del self.files[full]
+            return "250 Deleted"
+
+        def quit(self) -> str:
+            return "221 Bye"
+
+        def close(self) -> None:
+            pass
+
+    f_idx = tmp_path / "index.php"
+    f_sub = tmp_path / "submit.php"
+    f_idx.write_bytes(b"<?php echo 'INDEX_NEW_V18';\n")
+    f_sub.write_bytes(b"<?php echo 'SUBMIT_NEW_V18';\n")
+
+    # Case A: index.php promotes, then submit.php fails AFTER submit.php -> .bbiz_prev_* succeeded.
+    # BOTH index.php AND submit.php MUST be restored to original bytes, with zero leftover .bbiz_prev_* or .bbiz_stage_*!
+    ftp_recover = _FaultInjectFtpClient(fail_promote_target="submit.php", fail_rollback_restore=False)
+    monkeypatch.setattr(ftps_mod, "connect_verified_ftps", lambda *a, **kw: ftp_recover)
+    with pytest.raises(ftplib.error_temp, match="mid-promotion drop"):
+        ftps_mod.deploy_items(
+            [(f_idx, "public/index.php"), (f_sub, "public/submit.php")],
+            host="ftp.example.test",
+            user="u",
+            password="p",
+            app_root="/busherianbiasharas.com/www",
+            mode="prod",
+            release_sha="sha238recover",
+        )
+    assert ftp_recover.files.get("/busherianbiasharas.com/www/html/index.php") == b"LIVE_INDEX_ORIGINAL"
+    assert ftp_recover.files.get("/busherianbiasharas.com/www/html/submit.php") == b"LIVE_SUBMIT_ORIGINAL"
+    assert not any(".bbiz_prev_" in k or ".bbiz_stage_" in k for k in ftp_recover.files)
+    assert "/busherianbiasharas.com/www/.maintenance_deploy.json" not in ftp_recover.files
+
+    # Case B: Rollback itself fails -> .maintenance_deploy.json MUST be retained with rollback_failed=True!
+    ftp_unrecov = _FaultInjectFtpClient(fail_promote_target="submit.php", fail_rollback_restore=True)
+    monkeypatch.setattr(ftps_mod, "connect_verified_ftps", lambda *a, **kw: ftp_unrecov)
+    with pytest.raises(ftplib.error_temp, match="mid-promotion drop"):
+        ftps_mod.deploy_items(
+            [(f_idx, "public/index.php"), (f_sub, "public/submit.php")],
+            host="ftp.example.test",
+            user="u",
+            password="p",
+            app_root="/busherianbiasharas.com/www",
+            mode="prod",
+            release_sha="sha238wedged",
+        )
+    gate_raw = ftp_unrecov.files.get("/busherianbiasharas.com/www/.maintenance_deploy.json")
+    assert gate_raw is not None, "Maintenance gate must remain active when rollback restoration fails"
+    gate_obj = json.loads(gate_raw.decode("utf-8"))
+    assert gate_obj.get("rollback_failed") is True

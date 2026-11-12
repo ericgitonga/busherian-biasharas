@@ -13,18 +13,159 @@ final class VettingPurger
     /** @var array<int, array{business_id:int, photos_json:?string}> */
     private static array $deferredPostCommitMediaDeletions = [];
 
-    public static function flushDeferredMediaDeletions(): void
+    public static function flushDeferredMediaDeletions(?PDO $pdo = null): void
     {
         $queue = self::$deferredPostCommitMediaDeletions;
         self::$deferredPostCommitMediaDeletions = [];
         foreach ($queue as $item) {
             PhotoUploader::deleteAllBusinessMedia((int)$item['business_id'], $item['photos_json']);
         }
+        if ($pdo !== null && !$pdo->inTransaction()) {
+            self::drainDurableMediaDeletions($pdo);
+        }
     }
 
     public static function clearDeferredMediaDeletions(): void
     {
         self::$deferredPostCommitMediaDeletions = [];
+    }
+
+    /**
+     * Acquire a database-level row lock in `business_sequences` inside the active transaction (#239 H-04).
+     */
+    public static function acquireNamedSequenceLock(PDO $pdo, string $lockKey): void
+    {
+        $safeKey = mb_substr(trim($lockKey), 0, 40);
+        if ($safeKey === '') {
+            return;
+        }
+        $driver = strtolower((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        if ($driver === 'sqlite') {
+            $pdo->prepare("INSERT OR IGNORE INTO business_sequences (seq_key, current_val) VALUES (:k, 0)")
+                ->execute([':k' => $safeKey]);
+        } else {
+            $pdo->prepare("INSERT IGNORE INTO business_sequences (seq_key, current_val) VALUES (:k, 0)")
+                ->execute([':k' => $safeKey]);
+        }
+        $pdo->prepare("UPDATE business_sequences SET current_val = current_val + 1, updated_at = CURRENT_TIMESTAMP WHERE seq_key = :k")
+            ->execute([':k' => $safeKey]);
+    }
+
+    public static function acquireBusinessLifecycleLock(PDO $pdo, int $businessId): void
+    {
+        if ($businessId <= 0) {
+            return;
+        }
+        self::acquireNamedSequenceLock($pdo, 'biz_lock_' . $businessId);
+    }
+
+    /**
+     * Persist a durable, non-PII media-deletion obligation inside the active DB transaction (#240 H-05).
+     */
+    public static function enqueueDurableMediaDeletion(PDO $pdo, int $businessId, ?string $photosJson): int
+    {
+        $hasPhotos = ($photosJson !== null && trim($photosJson) !== '' && trim($photosJson) !== '[]');
+        $hasQuarDir = ($businessId > 0 && is_dir(PhotoUploader::quarantineDirRoot() . '/' . $businessId));
+        if (!$hasPhotos && !$hasQuarDir) {
+            return 0;
+        }
+        $nowUtc = gmdate('Y-m-d H:i:s');
+        $ins = $pdo->prepare("
+            INSERT INTO pending_media_deletions (business_id, photos_json, attempts, last_error, created_at, updated_at)
+            VALUES (:bid, :pj, 0, NULL, :c_at, :u_at)
+        ");
+        $ins->execute([
+            ':bid' => max(0, $businessId),
+            ':pj' => $photosJson,
+            ':c_at' => $nowUtc,
+            ':u_at' => $nowUtc,
+        ]);
+        return (int)$pdo->lastInsertId();
+    }
+
+    /**
+     * Drain committed `pending_media_deletions` rows, retaining any row whose disk media could not be fully unlinked (#240 H-05).
+     *
+     * @return array{processed:int, completed:int, remaining:int, failed_business_ids:list<int>}
+     */
+    public static function drainDurableMediaDeletions(PDO $pdo, ?int $onlyBusinessId = null): array
+    {
+        if ($pdo->inTransaction()) {
+            return ['processed' => 0, 'completed' => 0, 'remaining' => 0, 'failed_business_ids' => []];
+        }
+        if ($onlyBusinessId !== null && $onlyBusinessId > 0) {
+            $stmt = $pdo->prepare("SELECT * FROM pending_media_deletions WHERE business_id = :bid ORDER BY id ASC LIMIT 100");
+            $stmt->execute([':bid' => $onlyBusinessId]);
+        } else {
+            $stmt = $pdo->query("SELECT * FROM pending_media_deletions ORDER BY id ASC LIMIT 100");
+        }
+        $rows = $stmt ? $stmt->fetchAll() : [];
+        $processed = 0;
+        $completed = 0;
+        $failedBizIds = [];
+        $delStmt = $pdo->prepare("DELETE FROM pending_media_deletions WHERE id = :id");
+        $failStmt = $pdo->prepare("
+            UPDATE pending_media_deletions
+            SET attempts = attempts + 1,
+                last_error = :err,
+                updated_at = :now
+            WHERE id = :id
+        ");
+        $nowUtc = gmdate('Y-m-d H:i:s');
+
+        foreach ($rows as $r) {
+            $processed++;
+            $rowId = (int)$r['id'];
+            $bid = (int)$r['business_id'];
+            $pj = isset($r['photos_json']) && is_string($r['photos_json']) ? $r['photos_json'] : null;
+            PhotoUploader::deleteAllBusinessMedia($bid, $pj);
+            if (!PhotoUploader::hasRemainingBusinessMediaOnDisk($bid, $pj)) {
+                $delStmt->execute([':id' => $rowId]);
+                $completed++;
+            } else {
+                $failStmt->execute([
+                    ':err' => 'One or more media files remained on disk after unlink attempt.',
+                    ':now' => $nowUtc,
+                    ':id' => $rowId,
+                ]);
+                $failedBizIds[] = $bid;
+            }
+        }
+
+        $remCount = (int)$pdo->query("SELECT COUNT(*) FROM pending_media_deletions")->fetchColumn();
+        return [
+            'processed' => $processed,
+            'completed' => $completed,
+            'remaining' => $remCount,
+            'failed_business_ids' => array_values(array_unique($failedBizIds)),
+        ];
+    }
+
+    /**
+     * Check whether an email is an authoritative owner/submitter for immediate takedown quarantine (#237 H-02).
+     * Explicitly excludes `email_public` unless it also matches `owner_email` or a linked `business_owners` account.
+     */
+    public static function isAuthoritativeOwnerEmailForTakedown(PDO $pdo, int $businessId, string $email): bool
+    {
+        $norm = strtolower(trim($email));
+        if ($businessId <= 0 || $norm === '' || !filter_var($norm, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+        foreach (OwnerAuth::getOwnersForBusiness($pdo, $businessId) as $lo) {
+            if (strtolower(trim((string)($lo['email'] ?? ''))) === $norm) {
+                return true;
+            }
+        }
+        $bStmt = $pdo->prepare("SELECT owner_email FROM businesses WHERE id = :id LIMIT 1");
+        $bStmt->execute([':id' => $businessId]);
+        $ownEm = strtolower(trim((string)($bStmt->fetchColumn() ?: '')));
+        if ($ownEm !== '' && $ownEm === $norm) {
+            return true;
+        }
+        $vStmt = $pdo->prepare("SELECT submitter_email FROM business_vetting_queue WHERE business_id = :id LIMIT 1");
+        $vStmt->execute([':id' => $businessId]);
+        $subEm = strtolower(trim((string)($vStmt->fetchColumn() ?: '')));
+        return ($subEm !== '' && $subEm === $norm);
     }
 
     public const ALLOWED_ADMIN_PROVENANCE_BASES = [
@@ -439,22 +580,29 @@ final class VettingPurger
         string $actorIdentifier = 'owner_or_admin',
         ?string $clientIp = null
     ): void {
-        $curStmt = $pdo->prepare("SELECT status, photos_json FROM businesses WHERE id = :id LIMIT 1");
-        $curStmt->execute([':id' => $businessId]);
-        $row = $curStmt->fetch();
-        if (!$row) {
-            return;
-        }
-        $curStatus = (string)($row['status'] ?? '');
-        $photosJson = is_string($row['photos_json'] ?? null) ? $row['photos_json'] : null;
-        if ($curStatus === '') {
-            return;
-        }
         $ownTx = !$pdo->inTransaction();
         if ($ownTx) {
             $pdo->beginTransaction();
         }
         try {
+            self::acquireBusinessLifecycleLock($pdo, $businessId);
+            $curStmt = $pdo->prepare("SELECT status, photos_json FROM businesses WHERE id = :id LIMIT 1");
+            $curStmt->execute([':id' => $businessId]);
+            $row = $curStmt->fetch();
+            if (!$row) {
+                if ($ownTx) {
+                    $pdo->commit();
+                }
+                return;
+            }
+            $curStatus = (string)($row['status'] ?? '');
+            $photosJson = is_string($row['photos_json'] ?? null) ? $row['photos_json'] : null;
+            if ($curStatus === '') {
+                if ($ownTx) {
+                    $pdo->commit();
+                }
+                return;
+            }
             if ($curStatus !== 'quarantined_dpa') {
                 $pdo->prepare("
                     UPDATE businesses
@@ -497,6 +645,12 @@ final class VettingPurger
         string $actorIdentifier = 'admin_console',
         ?string $clientIp = null
     ): string {
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+        self::acquireBusinessLifecycleLock($pdo, $businessId);
         $stmt = $pdo->prepare("SELECT status, quarantine_prev_status, verified_at, photos_json FROM businesses WHERE id = :id LIMIT 1");
         $stmt->execute([':id' => $businessId]);
         $row = $stmt->fetch();
@@ -540,10 +694,22 @@ final class VettingPurger
             $clientIp
         );
 
+        if ($targetStatus === 'rejected') {
+            self::enqueueDurableMediaDeletion($pdo, $businessId, is_string($row['photos_json'] ?? null) ? $row['photos_json'] : null);
+        }
+        if ($ownTx) {
+            $pdo->commit();
+        }
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
         if ($targetStatus !== 'rejected') {
             PhotoUploader::restoreQuarantinedBusinessPhotos($businessId, is_string($row['photos_json'] ?? null) ? $row['photos_json'] : null);
         } else {
-            PhotoUploader::deleteAllBusinessMedia($businessId, is_string($row['photos_json'] ?? null) ? $row['photos_json'] : null);
+            self::drainDurableMediaDeletions($pdo, $businessId);
         }
 
         return $targetStatus;
@@ -603,7 +769,7 @@ final class VettingPurger
         $tokenExp = null;
         $status = 'pending_review';
 
-        if ($matchesDesignatedOwnerEmail) {
+        if ($matchesDesignatedOwnerEmail && self::isAuthoritativeOwnerEmailForTakedown($pdo, $businessId, $cleanEmail)) {
             $rawToken = bin2hex(random_bytes(24));
             $tokenHash = hash('sha256', $rawToken);
             $tokenExp = gmdate('Y-m-d H:i:s', time() + 7200);
@@ -692,10 +858,22 @@ final class VettingPurger
             }
 
             $bizId = (int)$req['business_id'];
+            $reqEmail = strtolower(trim((string)($req['requester_email'] ?? '')));
+            if (!self::isAuthoritativeOwnerEmailForTakedown($pdo, $bizId, $reqEmail)) {
+                // Non-authoritative public contact email: escalate to admin review instead of auto-quarantining (#237 H-02)
+                $pdo->prepare("UPDATE takedown_requests SET status = 'pending_review', resolved_at = NULL WHERE id = :id")
+                    ->execute([':id' => (int)$req['id']]);
+                if ($ownTx) {
+                    $pdo->commit();
+                }
+                $req['status'] = 'pending_review';
+                return $req;
+            }
             self::quarantineBusinessDpa($pdo, $bizId);
             if ($ownTx) {
                 $pdo->commit();
             }
+            $req['status'] = 'owner_verified_quarantined';
             return $req;
         } catch (\Throwable $e) {
             if ($ownTx && $pdo->inTransaction()) {
@@ -864,9 +1042,12 @@ final class VettingPurger
               AND (actor_identifier LIKE '%@%' OR ip_hash IS NOT NULL)
         ")->execute([':acut' => $auditCutoff]);
 
+        $durableDrain = self::drainDurableMediaDeletions($pdo);
         $mediaSweep = PhotoUploader::sweepOrphanedMedia($pdo, 3600);
 
         return [
+            'pending_media_drained' => $durableDrain['completed'],
+            'pending_media_remaining' => $durableDrain['remaining'],
             'vetting_rows_purged' => $vettingPurged,
             'outbox_bodies_redacted' => $outboxRedacted,
             'auth_tokens_purged' => $authTokensPurged,
@@ -957,6 +1138,15 @@ final class VettingPurger
             $pdo->beginTransaction();
         }
         try {
+            self::acquireBusinessLifecycleLock($pdo, $businessId);
+            $lockedPhotoStmt = $pdo->prepare("SELECT status, photos_json FROM businesses WHERE id = :id LIMIT 1");
+            $lockedPhotoStmt->execute([':id' => $businessId]);
+            $lockedBizRow = $lockedPhotoStmt->fetch();
+            if (is_array($lockedBizRow)) {
+                $photosJson = is_string($lockedBizRow['photos_json'] ?? null) ? $lockedBizRow['photos_json'] : $photosJson;
+                $prevStatus = (string)($lockedBizRow['status'] ?? $prevStatus);
+            }
+            self::enqueueDurableMediaDeletion($pdo, $businessId, $photosJson);
             $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")->execute([':id' => $businessId]);
             $pdo->prepare("DELETE FROM email_outbox WHERE business_id = :id")->execute([':id' => $businessId]);
             $pdo->prepare("DELETE FROM takedown_requests WHERE business_id = :id")->execute([':id' => $businessId]);
@@ -982,11 +1172,11 @@ final class VettingPurger
             if ($ownTx) {
                 $pdo->commit();
                 if ($deleted) {
-                    PhotoUploader::deleteAllBusinessMedia($businessId, $photosJson);
-                    self::flushDeferredMediaDeletions();
-                    if (PhotoUploader::hasRemainingBusinessMediaOnDisk($businessId, $photosJson)) {
-                        error_log("[VettingPurger::deleteBusiness] Incomplete media removal on disk for business #{$businessId}");
-                        throw new RuntimeException("Listing record deleted, but one or more media files for Business #{$businessId} could not be removed from disk and remain queued for sweep retry.");
+                    $drainRes = self::drainDurableMediaDeletions($pdo, $businessId);
+                    self::flushDeferredMediaDeletions($pdo);
+                    if (in_array($businessId, $drainRes['failed_business_ids'], true) || PhotoUploader::hasRemainingBusinessMediaOnDisk($businessId, $photosJson)) {
+                        error_log("[VettingPurger::deleteBusiness] Incomplete media removal queued for retry on business #{$businessId}");
+                        throw new RuntimeException("Listing record deleted, but one or more media files for Business #{$businessId} could not be removed from disk and remain durably queued for retry.");
                     }
                 }
             } elseif ($deleted) {
@@ -1024,21 +1214,26 @@ final class VettingPurger
         $validationData['google_maps_url'] = $coordsMeta['google_maps_url'];
         self::validateListingWritePayload($pdo, $validationData, $resolvedLat, $resolvedLng, $hoursJson);
 
-        $previousPhotoUrls = PhotoUploader::decodePhotosJson(isset($existingRow['photos_json']) ? (string)$existingRow['photos_json'] : null);
-        $photosJson = PhotoUploader::processBusinessPhotos(
-            isset($existingRow['photos_json']) ? (string)$existingRow['photos_json'] : null,
-            isset($data['remove_photos']) && is_array($data['remove_photos']) ? $data['remove_photos'] : [],
-            $_FILES['business_photos'] ?? null,
-            isset($data['business_photos_data_json']) ? (string)$data['business_photos_data_json'] : null
-        );
-        $keptPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
-        $newlyWrittenPhotoUrls = array_values(array_diff($keptPhotoUrls, $previousPhotoUrls));
-
         $ownTx = !$pdo->inTransaction();
         if ($ownTx) {
             $pdo->beginTransaction();
         }
+        $newlyWrittenPhotoUrls = [];
         try {
+        self::acquireBusinessLifecycleLock($pdo, $businessId);
+        $lockedExistingStmt = $pdo->prepare("SELECT status, photos_json FROM businesses WHERE id = :id LIMIT 1");
+        $lockedExistingStmt->execute([':id' => $businessId]);
+        $lockedExisting = (array)($lockedExistingStmt->fetch() ?: $existingRow);
+        $previousPhotoUrls = PhotoUploader::decodePhotosJson(isset($lockedExisting['photos_json']) ? (string)$lockedExisting['photos_json'] : null);
+        $photosJson = PhotoUploader::processBusinessPhotos(
+            isset($lockedExisting['photos_json']) ? (string)$lockedExisting['photos_json'] : null,
+            isset($data['remove_photos']) && is_array($data['remove_photos']) ? $data['remove_photos'] : [],
+            $_FILES['business_photos'] ?? null,
+            isset($data['business_photos_data_json']) ? (string)$data['business_photos_data_json'] : null,
+            $businessId
+        );
+        $keptPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
+        $newlyWrittenPhotoUrls = array_values(array_diff($keptPhotoUrls, $previousPhotoUrls));
         $stmt = $pdo->prepare("
             UPDATE businesses SET
                 name = :name,
@@ -1446,21 +1641,32 @@ final class VettingPurger
         ]);
         self::validateListingWritePayload($pdo, $valPayload, $resolvedLat, $resolvedLng, $hoursJson);
 
-        $previousPhotoUrls = PhotoUploader::decodePhotosJson(isset($oldBiz['photos_json']) ? (string)$oldBiz['photos_json'] : null);
-        $photosJson = PhotoUploader::processBusinessPhotos(
-            isset($oldBiz['photos_json']) ? (string)$oldBiz['photos_json'] : null,
-            isset($data['remove_photos']) && is_array($data['remove_photos']) ? $data['remove_photos'] : [],
-            $_FILES['business_photos'] ?? null,
-            isset($data['business_photos_data_json']) ? (string)$data['business_photos_data_json'] : null
-        );
-        $keptPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
-        $newlyWrittenPhotoUrls = array_values(array_diff($keptPhotoUrls, $previousPhotoUrls));
-
         $ownTx = !$pdo->inTransaction();
         if ($ownTx) {
             $pdo->beginTransaction();
         }
+        $newlyWrittenPhotoUrls = [];
+        $lockedOwnerStatus = strtolower(trim((string)($oldBiz['status'] ?? 'approved')));
         try {
+        self::acquireBusinessLifecycleLock($pdo, $businessId);
+        $lockedOwnerStmt = $pdo->prepare("SELECT status, photos_json FROM businesses WHERE id = :id LIMIT 1");
+        $lockedOwnerStmt->execute([':id' => $businessId]);
+        $lockedOwnerRow = $lockedOwnerStmt->fetch();
+        if (!$lockedOwnerRow) {
+            throw new RuntimeException('Business record not found.');
+        }
+        $lockedOwnerStatus = strtolower(trim((string)($lockedOwnerRow['status'] ?? 'approved')));
+        $previousPhotoUrls = PhotoUploader::decodePhotosJson(isset($lockedOwnerRow['photos_json']) ? (string)$lockedOwnerRow['photos_json'] : null);
+        // Stage newly uploaded files inside private storage/quarantined_media/<id>/ BEFORE checking final status (#239 H-04)
+        $photosJson = PhotoUploader::processBusinessPhotos(
+            isset($lockedOwnerRow['photos_json']) ? (string)$lockedOwnerRow['photos_json'] : null,
+            isset($data['remove_photos']) && is_array($data['remove_photos']) ? $data['remove_photos'] : [],
+            $_FILES['business_photos'] ?? null,
+            isset($data['business_photos_data_json']) ? (string)$data['business_photos_data_json'] : null,
+            $businessId
+        );
+        $keptPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
+        $newlyWrittenPhotoUrls = array_values(array_diff($keptPhotoUrls, $previousPhotoUrls));
         $stmt = $pdo->prepare("
             UPDATE businesses SET
                 name = :name,
@@ -1543,8 +1749,10 @@ final class VettingPurger
             ':social_youtube' => trim((string)($data['social_youtube'] ?? '')) ?: null,
             ':id' => $businessId,
         ]);
-        if (strtolower(trim((string)($oldBiz['status'] ?? ''))) === 'quarantined_dpa') {
+        if ($lockedOwnerStatus === 'quarantined_dpa') {
             PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+        } elseif ($lockedOwnerStatus === 'rejected') {
+            self::enqueueDurableMediaDeletion($pdo, $businessId, $photosJson);
         }
         if ($ownTx) {
             $pdo->commit();
@@ -1560,6 +1768,11 @@ final class VettingPurger
         }
 
         if ($ownTx) {
+            if (in_array($lockedOwnerStatus, ['approved', 'pending'], true)) {
+                PhotoUploader::restoreQuarantinedBusinessPhotos($businessId, $photosJson);
+            } elseif ($lockedOwnerStatus === 'rejected') {
+                self::drainDurableMediaDeletions($pdo, $businessId);
+            }
             PhotoUploader::deleteRemovedBusinessPhotos($businessId, $previousPhotoUrls, $keptPhotoUrls);
         }
 

@@ -2049,7 +2049,7 @@ final class OwnerAuth
 
             if ($ownTx) {
                 $pdo->commit();
-                VettingPurger::flushDeferredMediaDeletions();
+                VettingPurger::flushDeferredMediaDeletions($pdo);
             }
         } catch (\Throwable $e) {
             VettingPurger::clearDeferredMediaDeletions();
@@ -2059,12 +2059,14 @@ final class OwnerAuth
             throw $e;
         }
 
-        $incompleteMediaBizIds = [];
+        $drainRes = VettingPurger::drainDurableMediaDeletions($pdo);
+        $incompleteMediaBizIds = $drainRes['failed_business_ids'];
         foreach ($deletedSoleIds as $dBid) {
             if (PhotoUploader::hasRemainingBusinessMediaOnDisk($dBid, $solePhotosCheck[$dBid] ?? null)) {
                 $incompleteMediaBizIds[] = $dBid;
             }
         }
+        $incompleteMediaBizIds = array_values(array_unique($incompleteMediaBizIds));
 
         if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_ACTIVE) {
             self::logoutOwner($pdo);
@@ -2079,6 +2081,7 @@ final class OwnerAuth
             'categories_scrubbed' => $categoriesScrubbed,
             'outbox_rows_scrubbed' => $outboxScrubbed,
             'incomplete_media_biz_ids' => $incompleteMediaBizIds,
+            'pending_media_obligations' => $drainRes['remaining'] ?? 0,
         ];
     }
 }

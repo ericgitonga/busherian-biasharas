@@ -116,7 +116,8 @@ final class PhotoUploader
         ?string $existingPhotosJson,
         array $removeUrls = [],
         ?array $uploadedFiles = null,
-        ?string $clientDataUrlsJson = null
+        ?string $clientDataUrlsJson = null,
+        int $stageQuarantineBusinessId = 0
     ): string {
         $current = self::decodePhotosJson($existingPhotosJson);
         if (!empty($removeUrls)) {
@@ -216,26 +217,21 @@ final class PhotoUploader
         $newlySavedUrls = [];
         try {
             foreach ($newBinaryImages as $rawBytes) {
-                $savedRelUrl = self::sanitizeAndSaveImageBytes($rawBytes);
+                $savedRelUrl = self::sanitizeAndSaveImageBytes($rawBytes, $stageQuarantineBusinessId);
                 if ($savedRelUrl !== null) {
                     $newlySavedUrls[] = $savedRelUrl;
                     $current[] = $savedRelUrl;
                 }
             }
         } catch (\Throwable $e) {
-            foreach ($newlySavedUrls as $u) {
-                $p = self::resolveSafeUploadFilePath($u, true);
-                if ($p !== null) {
-                    @unlink($p);
-                }
-            }
+            self::deleteRemovedBusinessPhotos($stageQuarantineBusinessId, $newlySavedUrls, []);
             throw $e;
         }
 
         return (string)json_encode(array_slice($current, 0, self::MAX_PHOTOS), JSON_UNESCAPED_SLASHES);
     }
 
-    public static function sanitizeAndSaveImageBytes(string $rawBytes): ?string
+    public static function sanitizeAndSaveImageBytes(string $rawBytes, int $stageQuarantineBusinessId = 0): ?string
     {
         if ($rawBytes === '') {
             return null;
@@ -261,7 +257,17 @@ final class PhotoUploader
             );
         }
 
-        $targetDir = self::uploadDir();
+        if ($stageQuarantineBusinessId > 0) {
+            $targetDir = self::quarantineDirRoot() . '/' . $stageQuarantineBusinessId;
+            if (!is_dir($targetDir) && !@mkdir($targetDir, 0750, true) && !is_dir($targetDir)) {
+                throw new \RuntimeException("Failed to initialize staging media directory for business #{$stageQuarantineBusinessId}.");
+            }
+            if (is_link($targetDir) || !is_writable($targetDir)) {
+                throw new \RuntimeException("Staging media directory is not writable for business #{$stageQuarantineBusinessId}.");
+            }
+        } else {
+            $targetDir = self::uploadDir();
+        }
         $fileId = 'bbiz_' . gmdate('Ymd_His') . '_' . bin2hex(random_bytes(5));
 
         if (function_exists('imagecreatefromstring')) {
@@ -299,7 +305,7 @@ final class PhotoUploader
             imagedestroy($dstImg);
 
             if ($ok && is_file($fullPath)) {
-                @chmod($fullPath, 0644);
+                @chmod($fullPath, $stageQuarantineBusinessId > 0 ? 0640 : 0644);
                 return '/uploads/businesses/' . $filename;
             }
         }
@@ -494,10 +500,16 @@ final class PhotoUploader
 
     public static function sweepOrphanedMedia(PDO $pdo, int $minAgeSeconds = 3600): array
     {
-        $referencedFiles = [];
-        $quarantinedBizIds = [];
+        $ownSweepTx = !$pdo->inTransaction();
+        if ($ownSweepTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            VettingPurger::acquireNamedSequenceLock($pdo, 'media_sweep_lock');
+            $referencedFiles = [];
+            $quarantinedBizIds = [];
 
-        $stmt = $pdo->query("SELECT id, status, photos_json FROM businesses");
+            $stmt = $pdo->query("SELECT id, status, photos_json FROM businesses");
         foreach ($stmt->fetchAll() as $row) {
             $bid = (int)($row['id'] ?? 0);
             $st = (string)($row['status'] ?? '');
@@ -550,17 +562,35 @@ final class PhotoUploader
                 if (!is_dir($bDir) || is_link($bDir)) {
                     continue;
                 }
+                $allRemovedInDir = true;
                 foreach (@scandir($bDir) ?: [] as $f) {
                     if ($f === '.' || $f === '..') {
                         continue;
                     }
                     $fp = $bDir . DIRECTORY_SEPARATOR . $f;
-                    if (is_file($fp) && !is_link($fp) && @unlink($fp)) {
+                    if (!is_file($fp) || is_link($fp)) {
+                        continue;
+                    }
+                    $qMtime = (int)(@filemtime($fp) ?: time());
+                    if ($qMtime <= $cutoff && @unlink($fp)) {
                         $quarDeleted++;
+                    } else {
+                        $allRemovedInDir = false;
                     }
                 }
-                @rmdir($bDir);
+                if ($allRemovedInDir) {
+                    @rmdir($bDir);
+                }
             }
+        }
+            if ($ownSweepTx) {
+                $pdo->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($ownSweepTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
         }
 
         return [

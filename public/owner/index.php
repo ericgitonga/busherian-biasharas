@@ -17,7 +17,9 @@ $owner = OwnerAuth::requireOwner($pdo);
 $profileSaved = '';
 $profileError = '';
 if (isset($_GET['deleted'])) {
-    $profileSaved = 'The business listing has been permanently deleted from the directory.';
+    $profileSaved = !empty($_GET['media_cleanup_queued'])
+        ? 'The business listing record has been deleted from the directory, and residual media file cleanup has been durably queued for automatic completion.'
+        : 'The business listing has been permanently deleted from the directory.';
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'export_personal_data') {
     $csrf = trim((string)($_POST['csrf_token'] ?? ''));
@@ -43,8 +45,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     } else {
         $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
         try {
-            OwnerAuth::deleteOwnerAccountAndData($pdo, (int)$owner['id'], $deleteSoleListings, $clientIp);
-            header('Location: /owner/login.php?account_erased=1');
+            $erasureRes = OwnerAuth::deleteOwnerAccountAndData($pdo, (int)$owner['id'], $deleteSoleListings, $clientIp);
+            if (!empty($erasureRes['incomplete_media_biz_ids']) || !empty($erasureRes['pending_media_obligations'])) {
+                error_log('[owner/index.php] Incomplete media removal queued for retry: ' . json_encode($erasureRes['incomplete_media_biz_ids'] ?? []));
+                header('Location: /owner/login.php?account_erased=1&media_cleanup_queued=1');
+            } else {
+                header('Location: /owner/login.php?account_erased=1');
+            }
             exit;
         } catch (\Throwable $e) {
             error_log('[owner/index.php] Owner erasure error: ' . $e->getMessage());

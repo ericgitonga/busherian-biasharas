@@ -1437,7 +1437,8 @@ $tdLiveBizId = VettingPurger::createBusinessDirectly($pdo, [
     'country' => 'Kenya',
     'city_county' => 'Nairobi',
     'phone_primary' => '+254711000168',
-    'email_public' => 'owner@resilient168.co.ke',
+    'email_public' => 'info@resilient168.co.ke',
+    'owner_email' => 'owner@resilient168.co.ke',
 ]);
 
 // 1) Unauthenticated third party submits takedown -> status stays 'approved', request queued as 'pending_review'
@@ -3219,6 +3220,266 @@ assertTrue(
     ($jsonSkip235['status'] ?? '') === 'skipped_locked' &&
     str_contains($preprodWf235, 'cancel-in-progress: false'),
     'CLI workers enforce non-blocking OS flock() overlap guard across concurrent OS processes and deploy-preprod.yml prevents mid-promotion cancellation (#235)'
+);
+
+
+// 44. Pass-3 Wave 2 HIGH Hardening (#236, #237, #239, #240)
+
+// 44a. H-01 (#236): HTTP_X_ADMIN_TOKEN enforces checkAuthAttemptAllowed, rejects ADMIN_PASSWORD_HASH, and disables in production unless ALLOW_ADMIN_HEADER_TOKEN=true
+$prevAdminHash236 = getenv('ADMIN_PASSWORD_HASH');
+$prevAdminTok236 = getenv('ADMIN_ACCESS_TOKEN');
+$prevAppEnv236 = getenv('APP_ENV');
+$prevAllowHdr236 = getenv('ALLOW_ADMIN_HEADER_TOKEN');
+$prevRemoteAddr236 = $_SERVER['REMOTE_ADDR'] ?? null;
+$prevHdr236 = $_SERVER['HTTP_X_ADMIN_TOKEN'] ?? null;
+
+$pw236 = 'StrongPass236!Aa';
+$hash236 = password_hash($pw236, PASSWORD_BCRYPT);
+$autoTok236 = 'automation-dedicated-token-236-secret';
+putenv('ADMIN_PASSWORD_HASH=' . $hash236);
+putenv('ADMIN_ACCESS_TOKEN=' . $autoTok236);
+putenv('APP_ENV=testing');
+putenv('ALLOW_ADMIN_HEADER_TOKEN=false');
+AdminAuth::logout();
+
+// Fresh IP: password in HTTP_X_ADMIN_TOKEN MUST be rejected; dedicated ADMIN_ACCESS_TOKEN works in testing
+$_SERVER['REMOTE_ADDR'] = '198.51.100.236';
+$_SERVER['HTTP_X_ADMIN_TOKEN'] = $pw236;
+$pwHeaderAccepted236 = AdminAuth::isAuthenticated();
+
+$_SERVER['HTTP_X_ADMIN_TOKEN'] = $autoTok236;
+$tokHeaderTesting236 = AdminAuth::isAuthenticated();
+
+// Production disables header token unless ALLOW_ADMIN_HEADER_TOKEN=true
+putenv('APP_ENV=production');
+putenv('ALLOW_ADMIN_HEADER_TOKEN=false');
+$tokHeaderProdDefault236 = AdminAuth::isAuthenticated();
+putenv('ALLOW_ADMIN_HEADER_TOKEN=true');
+$tokHeaderProdOptIn236 = AdminAuth::isAuthenticated();
+
+// Rate-limit exhaustion on IP MUST block HTTP_X_ADMIN_TOKEN too (reproducing Codex H-01 PoC!)
+putenv('APP_ENV=testing');
+$bruteIp236 = '198.51.100.237';
+$_SERVER['REMOTE_ADDR'] = $bruteIp236;
+unset($_SERVER['HTTP_X_ADMIN_TOKEN']);
+for ($i236 = 0; $i236 < 10; $i236++) {
+    AdminAuth::login($pdo, 'wrong-pass-' . $i236, $bruteIp236);
+}
+$resLogin236 = AdminAuth::login($pdo, $pw236, $bruteIp236);
+$formBlocked236 = empty($resLogin236['ok']);
+$_SERVER['HTTP_X_ADMIN_TOKEN'] = $autoTok236;
+$headerAfterLockout236 = AdminAuth::isAuthenticated();
+
+unset($_SERVER['HTTP_X_ADMIN_TOKEN']);
+if ($prevHdr236 !== null) {
+    $_SERVER['HTTP_X_ADMIN_TOKEN'] = $prevHdr236;
+}
+if ($prevRemoteAddr236 !== null) {
+    $_SERVER['REMOTE_ADDR'] = $prevRemoteAddr236;
+} else {
+    unset($_SERVER['REMOTE_ADDR']);
+}
+putenv($prevAdminHash236 !== false ? 'ADMIN_PASSWORD_HASH=' . $prevAdminHash236 : 'ADMIN_PASSWORD_HASH');
+putenv($prevAdminTok236 !== false ? 'ADMIN_ACCESS_TOKEN=' . $prevAdminTok236 : 'ADMIN_ACCESS_TOKEN');
+putenv($prevAppEnv236 !== false ? 'APP_ENV=' . $prevAppEnv236 : 'APP_ENV=testing');
+putenv($prevAllowHdr236 !== false ? 'ALLOW_ADMIN_HEADER_TOKEN=' . $prevAllowHdr236 : 'ALLOW_ADMIN_HEADER_TOKEN');
+
+assertTrue(
+    $pwHeaderAccepted236 === false &&
+    $tokHeaderTesting236 === true &&
+    $tokHeaderProdDefault236 === false &&
+    $tokHeaderProdOptIn236 === true &&
+    $formBlocked236 === true &&
+    $headerAfterLockout236 === false,
+    'AdminAuth enforces rate limiting on HTTP_X_ADMIN_TOKEN, rejects human passwords in header auth, and disables header token in production by default (#236)'
+);
+
+// 44b. H-02 (#237): email_public alone never grants owner auto-quarantine authority; confirmOwnerTakedownByToken re-verifies ownership
+$biz237 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'R3 High02 Authority Guard Ltd',
+    'tagline' => 'Separate public contact and authoritative owner email',
+    'description' => 'Shared info@ inbox must never auto-quarantine a listing.',
+    'school_badge' => 'AHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254711000237',
+    'email_public' => 'info@authority237.co.ke',
+    'owner_email' => 'founder@authority237.co.ke',
+]);
+$pubEmailAuth237 = VettingPurger::isAuthoritativeOwnerEmailForTakedown($pdo, $biz237, 'info@authority237.co.ke');
+$ownEmailAuth237 = VettingPurger::isAuthoritativeOwnerEmailForTakedown($pdo, $biz237, 'founder@authority237.co.ke');
+$pubSub237 = VettingPurger::submitTakedownRequest(
+    $pdo,
+    $biz237,
+    'Front Desk Info',
+    'info@authority237.co.ke',
+    'Shared inbox requesting pause.',
+    '198.51.100.238',
+    false,
+    true // even if caller claims match, service re-verifies!
+);
+
+// Also test ownership transfer AFTER token issuance: founder gets token, transfers both owner_email and business_owner_links away, then redeems old token -> escalates to pending_review!
+$rotSub237 = VettingPurger::submitTakedownRequest(
+    $pdo,
+    $biz237,
+    'Original Founder',
+    'founder@authority237.co.ke',
+    'Request before ownership transfer.',
+    '198.51.100.239',
+    false,
+    true
+);
+$pdo->prepare("DELETE FROM business_owner_links WHERE business_id = :bid")->execute([':bid' => $biz237]);
+$pdo->prepare("UPDATE businesses SET owner_email = 'new-owner@authority237.co.ke' WHERE id = :id")->execute([':id' => $biz237]);
+$rotConfirm237 = VettingPurger::confirmOwnerTakedownByToken($pdo, (string)$rotSub237['raw_token']);
+$liveStatus237 = (string)$pdo->query("SELECT status FROM businesses WHERE id = {$biz237}")->fetchColumn();
+$takedownSrc237 = (string)file_get_contents(dirname(__DIR__) . '/public/takedown.php');
+
+assertTrue(
+    $pubEmailAuth237 === false &&
+    $ownEmailAuth237 === true &&
+    $pubSub237['status'] === 'pending_review' &&
+    $pubSub237['raw_token'] === null &&
+    is_array($rotConfirm237) &&
+    $rotConfirm237['status'] === 'pending_review' &&
+    $liveStatus237 === 'approved' &&
+    !str_contains($takedownSrc237, "\$bizRow['email_public'],\n                    \$bizRow['owner_email']"),
+    'Public email_public never grants owner auto-quarantine authority and confirmOwnerTakedownByToken re-verifies ownership at redemption (#237)'
+);
+
+// 44c. H-04 (#239): Photo uploads stage privately in storage/quarantined_media/<id> and concurrent quarantine keeps media out of public uploads/
+$biz239 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'R3 High04 Quarantine Race Studio',
+    'tagline' => 'Private media staging before status lock',
+    'description' => 'Quarantined listings must never leak staged photos to public uploads.',
+    'school_badge' => 'AGHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254722000239',
+    'owner_email' => 'owner239@studio.co.ke',
+]);
+$ownerRec239 = OwnerAuth::findOwnerByEmail($pdo, 'owner239@studio.co.ke');
+
+$im239 = imagecreatetruecolor(16, 16);
+imagefill($im239, 0, 0, imagecolorallocate($im239, 17, 75, 62));
+ob_start();
+imagepng($im239);
+$pngBytes239 = (string)ob_get_clean();
+imagedestroy($im239);
+$dataUrl239 = 'data:image/png;base64,' . base64_encode($pngBytes239);
+
+// 1) Direct PhotoUploader staging check: stages privately into storage/quarantined_media/<id>/ without writing to public/uploads/businesses/
+$stagedJsonDirect239 = PhotoUploader::processBusinessPhotos(null, [], null, json_encode([$dataUrl239]), $biz239);
+$stagedArrDirect239 = PhotoUploader::decodePhotosJson($stagedJsonDirect239);
+$directRel239 = $stagedArrDirect239[0] ?? '';
+$directPriv239 = PhotoUploader::quarantineDirRoot() . '/' . $biz239 . '/' . basename($directRel239);
+$directPub239 = PhotoUploader::resolvePublicWebRoot() . '/' . $directRel239;
+$wasPrivatelyStaged239 = ($directRel239 !== '') && is_file($directPriv239) && !is_file($directPub239);
+@unlink($directPriv239);
+
+// 2) Full VettingPurger::updateBusinessByOwner check when quarantine lands before owner edit executes:
+VettingPurger::quarantineBusinessDpa($pdo, $biz239, 'admin_dashboard', 'admin_239', '127.0.0.1');
+$updRes239 = VettingPurger::updateBusinessByOwner($pdo, $biz239, (array)$ownerRec239, [
+    'name' => 'R3 High04 Quarantine Race Studio',
+    'tagline' => 'Edited while quarantine landed',
+    'description' => 'Quarantined listings must never leak staged photos to public uploads.',
+    'school_badge' => 'AGHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254722000239',
+    'business_photos_data_json' => json_encode([$dataUrl239]),
+]);
+$savedPhotos239 = PhotoUploader::decodePhotosJson((string)($updRes239['business']['photos_json'] ?? '[]'));
+$savedRel239 = $savedPhotos239[0] ?? '';
+$privFileAfterRace239 = PhotoUploader::quarantineDirRoot() . '/' . $biz239 . '/' . basename($savedRel239);
+$pubFileAfterRace239 = PhotoUploader::resolvePublicWebRoot() . '/' . $savedRel239;
+$dbStatusAfterRace239 = (string)$pdo->query("SELECT status FROM businesses WHERE id = {$biz239}")->fetchColumn();
+$stillPrivateAfterRace239 = ($savedRel239 !== '') && is_file($privFileAfterRace239) && !is_file($pubFileAfterRace239);
+
+// Restoring from quarantine promotes the private media back to public uploads, and deleting removes it cleanly!
+VettingPurger::restoreQuarantinedBusiness($pdo, $biz239, 'admin_dashboard', 'admin_239', '127.0.0.1');
+$promotedOnRestore239 = is_file($pubFileAfterRace239) && !is_file($privFileAfterRace239);
+VettingPurger::deleteBusiness($pdo, $biz239, 'admin_dashboard', 'admin_239', '127.0.0.1');
+
+assertTrue(
+    $wasPrivatelyStaged239 === true &&
+    $dbStatusAfterRace239 === 'quarantined_dpa' &&
+    $stillPrivateAfterRace239 === true &&
+    $promotedOnRestore239 === true &&
+    !is_file($pubFileAfterRace239),
+    'PhotoUploader stages uploads privately and VettingPurger serializes live status so quarantined listings never publish staged photos (#239)'
+);
+
+// 44d. H-05 (#240): Durable pending_media_deletions obligations survive unlink failures and drain cleanly on retry
+$ownerRec240 = OwnerAuth::upsertOwner($pdo, 'owner240@erasure-durable.co.ke', 'Durable Erasure Owner', '+254733000240');
+$ownerId240 = (int)$ownerRec240['id'];
+$biz240 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'R3 High05 Durable Media Erasure Biz',
+    'tagline' => 'Tracks unlinked media in pending_media_deletions',
+    'description' => 'Never claim complete erasure while disk media remains.',
+    'school_badge' => 'AHS',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'service_mode' => 'online',
+    'country' => 'Kenya',
+    'phone_primary' => '+254733000240',
+    'owner_email' => 'owner240@erasure-durable.co.ke',
+]);
+OwnerAuth::linkOwnerToBusiness($pdo, $ownerId240, $biz240, 'primary_owner');
+
+$relPhoto240 = '/uploads/businesses/biz240_locked_photo.webp';
+$absPhoto240 = PhotoUploader::resolvePublicWebRoot() . $relPhoto240;
+if (!is_dir(dirname($absPhoto240))) {
+    mkdir(dirname($absPhoto240), 0775, true);
+}
+file_put_contents($absPhoto240, 'LOCKED_PHOTO_BYTES_240');
+$pdo->prepare("UPDATE businesses SET photos_json = :pj WHERE id = :id")->execute([
+    ':pj' => json_encode([$relPhoto240]),
+    ':id' => $biz240,
+]);
+
+$uploadsBizDir240 = dirname($absPhoto240);
+$isRoot240 = function_exists('posix_geteuid') && posix_geteuid() === 0;
+if (!$isRoot240) {
+    @chmod($uploadsBizDir240, 0555);
+}
+try {
+    $erasureRes240 = OwnerAuth::deleteOwnerAccountAndData($pdo, $ownerId240, true, '198.51.100.240');
+} finally {
+    if (!$isRoot240) { @chmod($uploadsBizDir240, 0775); }
+}
+if (!$isRoot240) {
+    @chmod($uploadsBizDir240, 0775);
+    $queuedBeforeDrain240 = (int)$pdo->query("SELECT COUNT(*) FROM pending_media_deletions")->fetchColumn();
+    $reportedIncomplete240 = !empty($erasureRes240['incomplete_media_biz_ids']) && (int)$erasureRes240['pending_media_obligations'] > 0 && is_file($absPhoto240);
+    $drainRes240 = VettingPurger::drainDurableMediaDeletions($pdo, null);
+    $drainedClean240 = $queuedBeforeDrain240 >= 1 && $drainRes240['completed'] >= 1 && $drainRes240['remaining'] === 0 && !is_file($absPhoto240);
+} else {
+    file_put_contents($absPhoto240, 'SYNTHETIC_ROOT_OBLIGATION');
+    $pdo->prepare("
+        INSERT INTO pending_media_deletions (business_id, photos_json, attempts, created_at, updated_at)
+        VALUES (:bid, :pj, 1, :now, :now)
+    ")->execute([':bid' => $biz240, ':pj' => json_encode([$relPhoto240]), ':now' => gmdate('Y-m-d H:i:s')]);
+    $reportedIncomplete240 = is_file($absPhoto240);
+    $drainRes240 = VettingPurger::drainDurableMediaDeletions($pdo, null);
+    $drainedClean240 = $drainRes240['completed'] >= 1 && $drainRes240['remaining'] === 0 && !is_file($absPhoto240);
+}
+
+assertTrue(
+    $erasureRes240['owner_deleted'] === true &&
+    $reportedIncomplete240 === true &&
+    $drainedClean240 === true,
+    'Durable pending_media_deletions journal tracks failed disk unlinks honestly and drains residual media on retry (#240)'
 );
 
 if ($initialDriver === 'sqlite') {

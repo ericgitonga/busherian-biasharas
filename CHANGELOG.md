@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.18.0] - 2026-11-12
+
+### Security & Kenya DPA 2019 Hardening (Pass-3 Wave 2 — HIGH)
+- **Admin Header Auth Rate Limiting & Automation Secret Separation (`#236` / `H-01`, Parent `#229`)**: Enforced `AntiSpamGate::checkAuthAttemptAllowed($pdo, $clientIp, 'admin_login', ...)` inside `AdminAuth::isAuthenticated()` before checking `HTTP_X_ADMIN_TOKEN`, separated `AdminAuth::verifyAutomationHeaderToken()` so human `ADMIN_PASSWORD_HASH` passwords are never accepted via headers, and disabled `HTTP_X_ADMIN_TOKEN` in `APP_ENV=production` unless `ALLOW_ADMIN_HEADER_TOKEN=true`.
+- **Takedown Authoritative Owner Email Boundary (`#237` / `H-02`, Parent `#229`)**: Removed public `email_public` from immediate owner auto-quarantine eligibility in `public/takedown.php` and added `VettingPurger::isAuthoritativeOwnerEmailForTakedown()` enforcement inside both `submitTakedownRequest()` and `confirmOwnerTakedownByToken()`, escalating non-owner public inbox or transferred-ownership tokens to `'pending_review'`.
+- **Atomic FTPS Mid-Promotion Rollback & Fail-Closed Maintenance Gate (`#238` / `H-03`, Parent `#232`)**: Journaled `(r_dir, backup_name, dst_name)` into `promoted_backups` immediately after `ftp.rename(dst_name, backup_name)` (before `ftp.rename(stg_name, dst_name)`) in `.github/scripts/ftps_deploy.py`, refreshed `.maintenance_deploy.json` periodically during multi-file promotions, and retained a non-expiring `"rollback_failed": true` maintenance gate in `src/bootstrap.php` if rollback restoration itself fails.
+- **Quarantine Media Lifecycle Serialization & Private Photo Staging (`#239` / `H-04`, Parent `#230`)**: Added per-business database locks (`VettingPurger::acquireBusinessLifecycleLock()` / `acquireNamedSequenceLock()`), staged newly uploaded photos privately inside `storage/quarantined_media/<businessId>/` via `PhotoUploader::processBusinessPhotos()`, promoted photos to `public/uploads/businesses/` only after commit when locked status is `'approved'`/`'pending'`, and serialized `PhotoUploader::sweepOrphanedMedia()` via `media_sweep_lock`.
+- **Durable `pending_media_deletions` Journal & Honest Erasure Reporting (`#240` / `H-05`, Parent `#230`)**: Added `pending_media_deletions` table (`SCHEMA_INIT_VERSION = '2026-11-v18-high'`), enqueued and drained media deletion obligations across `VettingPurger::deleteBusiness()`, `OwnerAuth::deleteOwnerAccountAndData()`, `enforceRetentionCeilings()`, and `/admin/index.php`, and surfaced explicit partial/queued media-cleanup notices on owner/admin erasure flows whenever disk unlinks require retry.
+- **Regression Suite (`#236`–`#240`)**: Added Section 44 (`44a`–`44d`) unit tests in `tests/run_unit_tests.php`, FTPS mid-promotion & rollback-failure fault-injection tests in `tests/test_unit.py`, and Playwright browser E2E regressions in `e2e/test_smoke.py`.
+
 ## [0.17.1] - 2026-11-12
 
 ### Fixed

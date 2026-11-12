@@ -53,6 +53,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($adminAction === 'retry_outbox') {
         $retryRes = Mailer::processRetryQueue($pdo, 25, 5);
         $flashMsg = "Processed {$retryRes['processed']} queued/failed outbox email(s): {$retryRes['delivered']} delivered/simulated, {$retryRes['failed']} still failing.";
+    } elseif ($adminAction === 'retry_media_deletions') {
+        $drainRes = VettingPurger::drainDurableMediaDeletions($pdo, null);
+        $flashMsg = "Processed {$drainRes['processed']} queued media deletion(s): {$drainRes['completed']} completed, {$drainRes['remaining']} remaining.";
     } elseif ($adminAction === 'resolve_takedown') {
         $reqId = (int)($_POST['request_id'] ?? 0);
         $decision = trim((string)($_POST['decision'] ?? ''));
@@ -73,9 +76,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flashErr = 'Deletion cancelled: You must type the exact business name to confirm permanent deletion.';
             } else {
                 $adminClientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
-                VettingPurger::deleteBusiness($pdo, $targetId, 'admin_dashboard', 'admin_console', $adminClientIp);
+                $mediaNote = '';
+                try {
+                    VettingPurger::deleteBusiness($pdo, $targetId, 'admin_dashboard', 'admin_console', $adminClientIp);
+                } catch (\RuntimeException $delMediaEx) {
+                    $mediaNote = ' (Note: ' . $delMediaEx->getMessage() . ')';
+                }
                 $totalNow = (int)$pdo->query("SELECT COUNT(*) FROM businesses")->fetchColumn();
-                $flashMsg = "Permanently deleted '{$delInfo['name']}' (#{$delInfo['business_number']}, ID: {$delInfo['business_id']}). {$totalNow} business listing(s) remain active with stable Business Numbers.";
+                $flashMsg = "Permanently deleted '{$delInfo['name']}' (#{$delInfo['business_number']}, ID: {$delInfo['business_id']}). {$totalNow} business listing(s) remain active with stable Business Numbers.{$mediaNote}";
             }
         } elseif ($adminAction === 'unpublish') {
             $adminClientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
@@ -179,6 +187,12 @@ $retryableOutboxCount = (int)$pdo->query("
       AND attempts < 5
       AND body_html NOT LIKE '[REDACTED%'
 ")->fetchColumn();
+$pendingMediaDeletionsCount = 0;
+try {
+    $pendingMediaDeletionsCount = (int)$pdo->query("SELECT COUNT(*) FROM pending_media_deletions")->fetchColumn();
+} catch (\Throwable $e) {
+    $pendingMediaDeletionsCount = 0;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -251,14 +265,26 @@ $retryableOutboxCount = (int)$pdo->query("
         <?php if ($retryableOutboxCount > 0): ?>
           &nbsp;•&nbsp;<strong style="color:#991B1B;"><?= $retryableOutboxCount ?> queued/failed email(s) awaiting retry</strong> (<code>php bin/process-email-outbox.php</code>)
         <?php endif; ?>
+        <?php if ($pendingMediaDeletionsCount > 0): ?>
+          &nbsp;•&nbsp;<strong style="color:#991B1B;"><?= $pendingMediaDeletionsCount ?> DPA media erasure obligation(s) queued</strong> (<code>pending_media_deletions</code>)
+        <?php endif; ?>
       </div>
-      <?php if ($retryableOutboxCount > 0): ?>
-        <form method="POST" action="/admin/index.php" style="margin:0;">
-          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
-          <input type="hidden" name="admin_action" value="retry_outbox">
-          <button type="submit" class="btn btn-outline" style="padding:0.35rem 0.75rem;font-size:0.78rem;">🔄 Retry Outbox Now (<?= $retryableOutboxCount ?>)</button>
-        </form>
-      <?php endif; ?>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <?php if ($retryableOutboxCount > 0): ?>
+          <form method="POST" action="/admin/index.php" style="margin:0;">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+            <input type="hidden" name="admin_action" value="retry_outbox">
+            <button type="submit" class="btn btn-outline" style="padding:0.35rem 0.75rem;font-size:0.78rem;">🔄 Retry Outbox Now (<?= $retryableOutboxCount ?>)</button>
+          </form>
+        <?php endif; ?>
+        <?php if ($pendingMediaDeletionsCount > 0): ?>
+          <form method="POST" action="/admin/index.php" style="margin:0;">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+            <input type="hidden" name="admin_action" value="retry_media_deletions">
+            <button type="submit" class="btn btn-outline" style="padding:0.35rem 0.75rem;font-size:0.78rem;">🧹 Drain Media Erasures (<?= $pendingMediaDeletionsCount ?>)</button>
+          </form>
+        <?php endif; ?>
+      </div>
     </div>
 
     <div class="vetting-privacy-banner" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
