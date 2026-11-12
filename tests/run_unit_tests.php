@@ -3906,6 +3906,142 @@ assertTrue(
     'Natural-language Specialty Finder resolves conversational first-person descriptions, agent-noun stems, domain concepts & typos across all 116 specialties (#276)'
 );
 
+// 47. Multi-Sector / Secondary Specialty & Multi-Business Owner Guidance (#278, #279, #280)
+$pubSpecRow279Stmt = $pdo->prepare("SELECT id, parent_id FROM categories WHERE name = 'Book, Academic & Digital Publishing' AND parent_id IS NOT NULL LIMIT 1");
+$pubSpecRow279Stmt->execute();
+$pubSpecRow279 = $pubSpecRow279Stmt->fetch();
+$saasSpecRow279Stmt = $pdo->prepare("SELECT id, parent_id FROM categories WHERE name = 'Custom Software & Mobile App Dev' AND parent_id IS NOT NULL LIMIT 1");
+$saasSpecRow279Stmt->execute();
+$saasSpecRow279 = $saasSpecRow279Stmt->fetch();
+$edCoachSpecRow279Stmt = $pdo->prepare("SELECT id, parent_id FROM categories WHERE name = 'Author Coaching & Manuscript Advisory' AND parent_id IS NOT NULL LIMIT 1");
+$edCoachSpecRow279Stmt->execute();
+$edCoachSpecRow279 = $edCoachSpecRow279Stmt->fetch();
+
+$pubSecId279 = (int)($pubSpecRow279['parent_id'] ?? 0);
+$pubSpecId279 = (int)($pubSpecRow279['id'] ?? 0);
+$techSecId279 = (int)($saasSpecRow279['parent_id'] ?? 0);
+$saasSpecId279 = (int)($saasSpecRow279['id'] ?? 0);
+$edSecId279 = (int)($edCoachSpecRow279['parent_id'] ?? 0);
+$edCoachSpecId279 = (int)($edCoachSpecRow279['id'] ?? 0);
+
+$emptySecPair279 = VettingPurger::normalizeSecondaryCategoryPair($pdo, ['secondary_sector_id' => '', 'secondary_specialty_id' => ''], $pubSpecId279);
+assertTrue(
+    $emptySecPair279['secondary_sector_id'] === null && $emptySecPair279['secondary_specialty_id'] === null,
+    'normalizeSecondaryCategoryPair returns nulls when optional secondary category fields are blank (#279)'
+);
+
+$partialRejected279 = false;
+try {
+    VettingPurger::normalizeSecondaryCategoryPair($pdo, ['secondary_sector_id' => $techSecId279, 'secondary_specialty_id' => ''], $pubSpecId279);
+} catch (\InvalidArgumentException $e) {
+    $partialRejected279 = true;
+}
+$mismatchRejected279 = false;
+try {
+    VettingPurger::normalizeSecondaryCategoryPair($pdo, ['secondary_sector_id' => $pubSecId279, 'secondary_specialty_id' => $saasSpecId279], $pubSpecId279);
+} catch (\InvalidArgumentException $e) {
+    $mismatchRejected279 = true;
+}
+$dupPrimaryRejected279 = false;
+try {
+    VettingPurger::normalizeSecondaryCategoryPair($pdo, ['secondary_sector_id' => $pubSecId279, 'secondary_specialty_id' => $pubSpecId279], $pubSpecId279);
+} catch (\InvalidArgumentException $e) {
+    $dupPrimaryRejected279 = true;
+}
+assertTrue(
+    $partialRejected279 && $mismatchRejected279 && $dupPrimaryRejected279,
+    'normalizeSecondaryCategoryPair rejects half-empty pairs, mismatched sector/specialty pairs, and duplicates of primary specialty (#279)'
+);
+
+$dualOwnerEmail279 = 'dual-founder-279@example.co.ke';
+$dualBizId279 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Imani Press & Apps Studio 279',
+    'tagline' => 'Book publishing house and custom mobile app developer',
+    'description' => 'Cross-sector literary publishing and mobile software engineering.',
+    'school_badge' => 'AGHS',
+    'sector_id' => $pubSecId279,
+    'specialty_id' => $pubSpecId279,
+    'secondary_sector_id' => $techSecId279,
+    'secondary_specialty_id' => $saasSpecId279,
+    'phone_primary' => '+254722279279',
+    'owner_email' => $dualOwnerEmail279,
+    'status' => 'approved',
+]);
+$dualOwner279 = OwnerAuth::upsertOwner($pdo, $dualOwnerEmail279, 'Anne Gladys Test');
+$ownerBizRows279 = OwnerAuth::getBusinessesForOwner($pdo, (int)$dualOwner279['id']);
+$foundDualRow279 = null;
+foreach ($ownerBizRows279 as $obRow279) {
+    if ((int)$obRow279['id'] === $dualBizId279) {
+        $foundDualRow279 = $obRow279;
+        break;
+    }
+}
+assertTrue(
+    $foundDualRow279 !== null &&
+    (int)$foundDualRow279['secondary_sector_id'] === $techSecId279 &&
+    (int)$foundDualRow279['secondary_specialty_id'] === $saasSpecId279 &&
+    (string)$foundDualRow279['secondary_sector_name'] === 'Technology, Software & Digital' &&
+    (string)$foundDualRow279['secondary_specialty_name'] === 'Custom Software & Mobile App Dev',
+    'createBusinessDirectly & OwnerAuth::getBusinessesForOwner persist and hydrate secondary sector & specialty (#279)'
+);
+
+// Owner updating secondary specialty triggers critical-edit courtesy alert & updates cleanly
+$updOwnerRes279 = VettingPurger::updateBusinessByOwner($pdo, $dualBizId279, $dualOwner279, [
+    'name' => 'Imani Press & Apps Studio 279',
+    'tagline' => 'Book publishing house and author coaching studio',
+    'description' => 'Cross-sector literary publishing and manuscript coaching.',
+    'sector_id' => $pubSecId279,
+    'specialty_id' => $pubSpecId279,
+    'secondary_sector_id' => $edSecId279,
+    'secondary_specialty_id' => $edCoachSpecId279,
+    'phone_primary' => '+254722279279',
+    'owner_adult_attestation_18' => '1',
+]);
+assertTrue(
+    (int)($updOwnerRes279['business']['secondary_specialty_id'] ?? 0) === $edCoachSpecId279 &&
+    isset($updOwnerRes279['critical_changes']['Secondary Category']),
+    'updateBusinessByOwner updates secondary specialty and logs Secondary Category critical change (#279)'
+);
+
+// Admin clearing secondary specialty sets columns back to NULL
+VettingPurger::updateBusiness($pdo, $dualBizId279, [
+    'name' => 'Imani Press & Apps Studio 279',
+    'tagline' => 'Book publishing house',
+    'description' => 'Focused literary publishing.',
+    'school_badge' => 'AGHS',
+    'sector_id' => $pubSecId279,
+    'specialty_id' => $pubSpecId279,
+    'secondary_sector_id' => '',
+    'secondary_specialty_id' => '',
+    'phone_primary' => '+254722279279',
+    'owner_email' => $dualOwnerEmail279,
+    'status' => 'approved',
+]);
+$clearedRow279Stmt = $pdo->prepare("SELECT secondary_sector_id, secondary_specialty_id FROM businesses WHERE id = :id");
+$clearedRow279Stmt->execute([':id' => $dualBizId279]);
+$clearedRow279 = $clearedRow279Stmt->fetch();
+assertTrue(
+    $clearedRow279['secondary_sector_id'] === null && $clearedRow279['secondary_specialty_id'] === null,
+    'updateBusiness clears secondary_sector_id and secondary_specialty_id cleanly to NULL when left blank (#279)'
+);
+
+$secUiHtml280 = bbiz_render_secondary_specialty_fields($tree273, $techSecId279, $saasSpecId279, '');
+$allFormsHaveSecUi280 = true;
+foreach ($formsWithFinder274 as $relForm280) {
+    $fSrc280 = (string)file_get_contents(dirname(__DIR__) . '/' . $relForm280);
+    if (!str_contains($fSrc280, 'bbiz_render_secondary_specialty_fields(')) {
+        $allFormsHaveSecUi280 = false;
+    }
+}
+assertTrue(
+    $allFormsHaveSecUi280 &&
+    str_contains($secUiHtml280, 'id="secondary_sector_id"') &&
+    str_contains($secUiHtml280, 'id="secondary_specialty_id"') &&
+    str_contains($secUiHtml280, 'id="secondary-specialty-quick-finder"') &&
+    str_contains($secUiHtml280, '/owner/index.php'),
+    'Secondary specialty selector, quick finder & multi-business owner guidance render across all 4 listing forms (#280)'
+);
+
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);
 }

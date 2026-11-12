@@ -29,6 +29,8 @@ $form = [
     'description' => '',
     'sector_id' => $defaultSectorId,
     'specialty_id' => $defaultSpecId,
+    'secondary_sector_id' => '',
+    'secondary_specialty_id' => '',
     'service_mode' => 'physical',
     'b2b_ready' => 0,
     'accepts_lpo' => 0,
@@ -102,7 +104,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $regSel = trim((string)($_POST['regulator_name'] ?? ''));
     $regCus = trim((string)($_POST['regulator_name_custom'] ?? ''));
     $form['regulator_name'] = ($regSel === 'Other Statutory Regulator') ? $regCus : $regSel;
-    $isRegSpec = CategoryMatcher::isSpecialtyRegulated($pdo, (int)$form['specialty_id']);
+    $isRegSpec = CategoryMatcher::isSpecialtyRegulated($pdo, (int)$form['specialty_id'])
+        || CategoryMatcher::isSpecialtyRegulated($pdo, (int)($form['secondary_specialty_id'] ?? 0));
     if (!$isRegSpec) {
         $form['regulator_name'] = '';
     }
@@ -251,6 +254,8 @@ $tokens = AntiSpamGate::generateFormTokens();
         <input type="text" id="regulator_name_custom" name="regulator_name_custom" class="input-control"
           placeholder="Specify statutory regulator..." style="margin-top:0.45rem;display:none;" disabled>
       </div>
+
+      <?= bbiz_render_secondary_specialty_fields($taxonomyTree, !empty($form['secondary_sector_id']) ? (int)$form['secondary_sector_id'] : null, !empty($form['secondary_specialty_id']) ? (int)$form['secondary_specialty_id'] : null, (string)($form['regulator_name'] ?? '')) ?>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.9rem;margin-top:0.9rem;">
         <div>

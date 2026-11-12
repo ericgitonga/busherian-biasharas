@@ -1824,6 +1824,117 @@ def test_playwright_ch1_chunk1_publishing_specialty_finder():
         ctx.close()
 
 
+def test_playwright_ch1_chunk2_secondary_specialty_and_multi_business_guidance():
+    """Playwright E2E test for Chapter 1 Chunk 2 (#278, #279, #280): Secondary Specialty & Multi-Business Guidance."""
+    st_cat, cat_body, _ = _request("/api/categories.php")
+    assert st_cat == 200, cat_body
+    cat_payload = json.loads(cat_body)
+    spec_lookup = {}
+    for sec in cat_payload.get("sectors", []):
+        for sp in sec.get("specialties", []):
+            spec_lookup[sp["name"]] = {"sector_id": int(sec["id"]), "specialty_id": int(sp["id"]), "sector_name": sec["name"]}
+
+    pub_info = spec_lookup["Book, Academic & Digital Publishing"]
+    saas_info = spec_lookup["Custom Software & Mobile App Dev"]
+
+    ctx = _new_browser_context()
+    try:
+        page = ctx.new_page()
+        page.goto(f"{BASE_URL}/submit.php", wait_until="networkidle")
+        if page.get_by_test_id("cookie-reject-btn").is_visible():
+            page.get_by_test_id("cookie-reject-btn").click()
+
+        # 1. Verify secondary specialty box and multi-business portfolio guidance note are visible
+        sec_box = page.get_by_test_id("secondary-specialty-box")
+        guidance_note = page.get_by_test_id("multi-business-guidance-note")
+        sec_box.wait_for(state="visible", timeout=5000)
+        assert "/owner/index.php" in guidance_note.inner_html()
+        assert "same Owner Login Email" in guidance_note.inner_text()
+
+        # 2. Pick unregulated Primary Specialty ('Book, Academic & Digital Publishing') -> regulator stays hidden
+        prim_finder = page.get_by_test_id("specialty-quick-finder")
+        prim_results = page.get_by_test_id("specialty-finder-results")
+        prim_finder.fill("Book, Academic & Digital Publishing")
+        prim_results.wait_for(state="visible", timeout=5000)
+        prim_results.locator("button", has_text="Book, Academic & Digital Publishing").click()
+        assert not page.locator("#regulated-fields-wrap").is_visible()
+
+        # 3. Pick regulated Secondary Specialty ('wakili' -> Advocates & Law Firm) -> regulator box MUST appear dynamically!
+        sec_finder = page.get_by_test_id("secondary-specialty-quick-finder")
+        sec_results = page.get_by_test_id("secondary-specialty-finder-results")
+        sec_finder.fill("We also practice corporate law as wakili")
+        sec_results.wait_for(state="visible", timeout=5000)
+        sec_results.locator("button", has_text="Advocates & Law Firm").click()
+        page.locator("#regulated-fields-wrap").wait_for(state="visible", timeout=5000)
+        assert "LSK" in page.locator("#regulator_name").input_value()
+
+        # 4. Clear Secondary Field -> resets secondary dropdowns and hides regulator box since primary is unregulated
+        page.get_by_test_id("btn-clear-secondary-specialty").click()
+        assert page.locator("#secondary_sector_id").input_value() == ""
+        assert not page.locator("#regulated-fields-wrap").is_visible()
+
+        # 5. Admin Direct Add: publish a cross-sector business (Publishing + Software/Mobile Apps) & verify API + card + modal
+        if ADMIN_ACCESS_TOKEN:
+            page.goto(f"{BASE_URL}/admin/login.php", wait_until="networkidle")
+            page.locator("#admin_token").fill(ADMIN_ACCESS_TOKEN)
+            page.locator("form button[type='submit']").click()
+            page.wait_for_url("**/admin/index.php**", timeout=8000)
+
+            page.goto(f"{BASE_URL}/admin/add-business.php", wait_until="networkidle")
+            unique_biz_name = f"Gladys Dual Studio {int(time.time())}"
+            page.locator("#name").fill(unique_biz_name)
+            page.locator("select[name='school_badge']").select_option("AGHS")
+            page.locator("#tagline").fill("Publishing memoirs and building cross-platform mobile apps")
+            page.locator("#description").fill("Full-service Kenyan book publishing house and bespoke mobile & web app studio.")
+
+            # Primary via quick finder
+            page.get_by_test_id("specialty-quick-finder").fill("Book, Academic & Digital Publishing")
+            page.get_by_test_id("specialty-finder-results").wait_for(state="visible", timeout=5000)
+            page.get_by_test_id("specialty-finder-results").locator("button", has_text="Book, Academic & Digital Publishing").click()
+
+            # Secondary via natural-language secondary quick finder
+            page.get_by_test_id("secondary-specialty-quick-finder").fill("We also build mobile apps and custom SaaS")
+            page.get_by_test_id("secondary-specialty-finder-results").wait_for(state="visible", timeout=5000)
+            page.get_by_test_id("secondary-specialty-finder-results").locator("button", has_text="Custom Software & Mobile App Dev").click()
+            assert page.locator("#secondary_sector_id").input_value() == str(saas_info["sector_id"])
+            assert page.locator("#secondary_specialty_id").input_value() == str(saas_info["specialty_id"])
+
+            page.locator("#phone_primary").fill("+254722888279")
+            page.locator("#area_neighborhood").fill("Westlands")
+            page.locator("select[name='admin_provenance_basis']").select_option("alumni_direct_authorization")
+            page.locator("input[name='admin_provenance_note']").fill("Direct founder authorization for Chunk 2 E2E test")
+            page.locator("input[name='admin_adult_subject_attested']").check()
+            page.locator("form[action='/admin/add-business.php'] button[type='submit']").click()
+            page.wait_for_url("**/admin/index.php?added=**", timeout=10000)
+
+            # Verify /api/businesses.php matches BOTH primary (Publishing) AND secondary (Software/SaaS) filters!
+            for filt_info in (pub_info, saas_info):
+                qs = f"/api/businesses.php?sector_id={filt_info['sector_id']}&specialty_id={filt_info['specialty_id']}&per_page=50"
+                st_api, api_body, _ = _request(qs)
+                assert st_api == 200, api_body
+                items = json.loads(api_body).get("businesses", [])
+                matched = [b for b in items if b["name"] == unique_biz_name]
+                assert len(matched) == 1, f"Expected {unique_biz_name} under {filt_info}, got {[b['name'] for b in items]}"
+                assert matched[0]["secondary_sector_name"] == "Technology, Software & Digital"
+                assert matched[0]["secondary_specialty_name"] == "Custom Software & Mobile App Dev"
+
+            # Verify card & detail modal render Secondary Field badge on public directory homepage
+            page.goto(f"{BASE_URL}/", wait_until="networkidle")
+            search_box = page.get_by_test_id("search-input")
+            search_box.fill(unique_biz_name)
+            card = page.locator("[data-testid='biz-card']", has_text=unique_biz_name)
+            card.wait_for(state="visible", timeout=8000)
+            sec_badge_text = card.get_by_test_id("biz-card-secondary-taxonomy").inner_text()
+            assert "Technology, Software & Digital" in sec_badge_text and "Custom Software & Mobile App Dev" in sec_badge_text
+
+            card.get_by_test_id("biz-card-title").click()
+            modal_sec = page.get_by_test_id("modal-secondary-taxonomy")
+            modal_sec.wait_for(state="visible", timeout=5000)
+            assert "Custom Software & Mobile App Dev" in modal_sec.inner_text()
+    finally:
+        ctx.close()
+
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -1839,4 +1950,5 @@ TESTS = [
     test_playwright_r3_high_regressions,
     test_playwright_r3_medium_regressions,
     test_playwright_ch1_chunk1_publishing_specialty_finder,
+    test_playwright_ch1_chunk2_secondary_specialty_and_multi_business_guidance,
 ]

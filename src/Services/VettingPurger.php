@@ -255,6 +255,36 @@ final class VettingPurger
         return $u;
     }
 
+    /**
+     * Normalize and validate optional secondary_sector_id + secondary_specialty_id (#279).
+     *
+     * @return array{secondary_sector_id: ?int, secondary_specialty_id: ?int}
+     */
+    public static function normalizeSecondaryCategoryPair(PDO $pdo, array $data, int $primarySpecialtyId = 0): array
+    {
+        $rawSecSector = $data['secondary_sector_id'] ?? null;
+        $rawSecSpec = $data['secondary_specialty_id'] ?? null;
+        $secSectorId = ($rawSecSector !== null && $rawSecSector !== '') ? (int)$rawSecSector : 0;
+        $secSpecId = ($rawSecSpec !== null && $rawSecSpec !== '') ? (int)$rawSecSpec : 0;
+
+        if ($secSectorId <= 0 && $secSpecId <= 0) {
+            return ['secondary_sector_id' => null, 'secondary_specialty_id' => null];
+        }
+        if ($secSectorId <= 0 || $secSpecId <= 0) {
+            throw new \InvalidArgumentException('Please select both a Secondary Industry Sector and a Secondary Specialty, or leave both blank.');
+        }
+        if (!CategoryMatcher::validateSectorAndSpecialtyPair($pdo, $secSectorId, $secSpecId)) {
+            throw new \InvalidArgumentException('Selected Secondary Specialty does not belong to the chosen Secondary Industry Sector.');
+        }
+        if ($primarySpecialtyId > 0 && $secSpecId === $primarySpecialtyId) {
+            throw new \InvalidArgumentException('Secondary Specialty must be different from your Primary Specialty (or leave Secondary blank).');
+        }
+        return [
+            'secondary_sector_id' => $secSectorId,
+            'secondary_specialty_id' => $secSpecId,
+        ];
+    }
+
     public static function validateListingWritePayload(
         PDO $pdo,
         array $data,
@@ -267,6 +297,7 @@ final class VettingPurger
         if (!CategoryMatcher::validateSectorAndSpecialtyPair($pdo, $sectorId, $specialtyId)) {
             throw new \InvalidArgumentException('Selected Specialty does not belong to the chosen Industry Sector.');
         }
+        self::normalizeSecondaryCategoryPair($pdo, $data, $specialtyId);
 
         $name = trim((string)($data['name'] ?? ''));
         if ($name === '' || mb_strlen($name) > 180) {
@@ -1214,7 +1245,10 @@ final class VettingPurger
             ? trim((string)$data['operating_hours_json'])
             : HoursEngine::buildScheduleJsonFromPost($data, (string)($existingRow['operating_hours_json'] ?? ''));
 
+        $secondaryPair = self::normalizeSecondaryCategoryPair($pdo, $data, (int)($data['specialty_id'] ?? 0));
         $validationData = $data;
+        $validationData['secondary_sector_id'] = $secondaryPair['secondary_sector_id'];
+        $validationData['secondary_specialty_id'] = $secondaryPair['secondary_specialty_id'];
         $validationData['google_maps_url'] = $coordsMeta['google_maps_url'];
         self::validateListingWritePayload($pdo, $validationData, $resolvedLat, $resolvedLng, $hoursJson);
 
@@ -1246,6 +1280,8 @@ final class VettingPurger
                 school_badge = :school_badge,
                 sector_id = :sector_id,
                 specialty_id = :specialty_id,
+                secondary_sector_id = :secondary_sector_id,
+                secondary_specialty_id = :secondary_specialty_id,
                 service_mode = :service_mode,
                 alumni_perk = :alumni_perk,
                 b2b_ready = :b2b_ready,
@@ -1289,6 +1325,8 @@ final class VettingPurger
             ':school_badge' => in_array($data['school_badge'] ?? '', ['AHS', 'AGHS', 'BOTH'], true) ? $data['school_badge'] : 'BOTH',
             ':sector_id' => (int)$data['sector_id'],
             ':specialty_id' => (int)$data['specialty_id'],
+            ':secondary_sector_id' => $secondaryPair['secondary_sector_id'],
+            ':secondary_specialty_id' => $secondaryPair['secondary_specialty_id'],
             ':service_mode' => in_array($data['service_mode'] ?? '', ['physical', 'hybrid', 'online'], true) ? $data['service_mode'] : 'physical',
             ':alumni_perk' => trim((string)($data['alumni_perk'] ?? '')) ?: null,
             ':b2b_ready' => !empty($data['b2b_ready']) ? 1 : 0,
@@ -1437,12 +1475,15 @@ final class VettingPurger
             ? trim((string)$data['operating_hours_json'])
             : HoursEngine::buildScheduleJsonFromPost($data, (string)$defaultHours);
 
+        $secondaryPair = self::normalizeSecondaryCategoryPair($pdo, $data, $specialtyId);
         $validationPayload = $data;
         $validationPayload['name'] = $name;
         $validationPayload['tagline'] = $tagline;
         $validationPayload['description'] = $description;
         $validationPayload['sector_id'] = $sectorId;
         $validationPayload['specialty_id'] = $specialtyId;
+        $validationPayload['secondary_sector_id'] = $secondaryPair['secondary_sector_id'];
+        $validationPayload['secondary_specialty_id'] = $secondaryPair['secondary_specialty_id'];
         $validationPayload['google_maps_url'] = $coordsMeta['google_maps_url'];
         self::validateListingWritePayload($pdo, $validationPayload, $lat, $lng, $hoursJson);
 
@@ -1480,7 +1521,7 @@ final class VettingPurger
         $stmt = $pdo->prepare("
             INSERT INTO businesses (
                 business_id, business_number, name, slug, tagline, description, school_badge,
-                sector_id, specialty_id, service_mode, alumni_perk,
+                sector_id, specialty_id, secondary_sector_id, secondary_specialty_id, service_mode, alumni_perk,
                 b2b_ready, accepts_lpo, regulator_name, regulator_license,
                 branch_name, building_name, floor_suite, street_road,
                 area_neighborhood, country, city_county, landmark_directions,
@@ -1492,7 +1533,7 @@ final class VettingPurger
                 verified_at, last_confirmed_at
             ) VALUES (
                 :business_id, :business_number, :name, :slug, :tagline, :description, :school_badge,
-                :sector_id, :specialty_id, :service_mode, :alumni_perk,
+                :sector_id, :specialty_id, :secondary_sector_id, :secondary_specialty_id, :service_mode, :alumni_perk,
                 :b2b_ready, :accepts_lpo, :regulator_name, :regulator_license,
                 :branch_name, :building_name, :floor_suite, :street_road,
                 :area_neighborhood, :country, :city_county, :landmark_directions,
@@ -1515,6 +1556,8 @@ final class VettingPurger
             ':school_badge' => in_array($data['school_badge'] ?? '', ['AHS', 'AGHS', 'BOTH'], true) ? $data['school_badge'] : 'AHS',
             ':sector_id' => $sectorId,
             ':specialty_id' => $specialtyId,
+            ':secondary_sector_id' => $secondaryPair['secondary_sector_id'],
+            ':secondary_specialty_id' => $secondaryPair['secondary_specialty_id'],
             ':service_mode' => in_array($data['service_mode'] ?? '', ['physical', 'hybrid', 'online'], true) ? $data['service_mode'] : 'physical',
             ':alumni_perk' => trim((string)($data['alumni_perk'] ?? '')) ?: null,
             ':b2b_ready' => !empty($data['b2b_ready']) ? 1 : 0,
@@ -1617,10 +1660,13 @@ final class VettingPurger
         }
 
         $oldStmt = $pdo->prepare("
-            SELECT b.*, sec.name AS sector_name, spec.name AS specialty_name
+            SELECT b.*, sec.name AS sector_name, spec.name AS specialty_name,
+                   sec2.name AS secondary_sector_name, spec2.name AS secondary_specialty_name
             FROM businesses b
             INNER JOIN categories sec ON sec.id = b.sector_id
             INNER JOIN categories spec ON spec.id = b.specialty_id
+            LEFT JOIN categories sec2 ON sec2.id = b.secondary_sector_id
+            LEFT JOIN categories spec2 ON spec2.id = b.secondary_specialty_id
             WHERE b.id = :id
             LIMIT 1
         ");
@@ -1640,10 +1686,17 @@ final class VettingPurger
         $newNameCheck = trim((string)($data['name'] ?? $oldBiz['name']));
         $newSectorCheck = (int)($data['sector_id'] ?? $oldBiz['sector_id']);
         $newSpecCheck = (int)($data['specialty_id'] ?? $oldBiz['specialty_id']);
+        $secMergeInput = [
+            'secondary_sector_id' => array_key_exists('secondary_sector_id', $data) ? $data['secondary_sector_id'] : ($oldBiz['secondary_sector_id'] ?? null),
+            'secondary_specialty_id' => array_key_exists('secondary_specialty_id', $data) ? $data['secondary_specialty_id'] : ($oldBiz['secondary_specialty_id'] ?? null),
+        ];
+        $ownerSecondaryPair = self::normalizeSecondaryCategoryPair($pdo, $secMergeInput, $newSpecCheck);
         $valPayload = array_merge((array)$oldBiz, $data, [
             'name' => $newNameCheck,
             'sector_id' => $newSectorCheck,
             'specialty_id' => $newSpecCheck,
+            'secondary_sector_id' => $ownerSecondaryPair['secondary_sector_id'],
+            'secondary_specialty_id' => $ownerSecondaryPair['secondary_specialty_id'],
             'google_maps_url' => $coordsMeta['google_maps_url'],
         ]);
         self::validateListingWritePayload($pdo, $valPayload, $resolvedLat, $resolvedLng, $hoursJson);
@@ -1681,6 +1734,8 @@ final class VettingPurger
                 description = :description,
                 sector_id = :sector_id,
                 specialty_id = :specialty_id,
+                secondary_sector_id = :secondary_sector_id,
+                secondary_specialty_id = :secondary_specialty_id,
                 service_mode = :service_mode,
                 alumni_perk = :alumni_perk,
                 b2b_ready = :b2b_ready,
@@ -1727,6 +1782,8 @@ final class VettingPurger
             ':description' => trim((string)($data['description'] ?? $oldBiz['description'])),
             ':sector_id' => $newSectorId,
             ':specialty_id' => $newSpecId,
+            ':secondary_sector_id' => $ownerSecondaryPair['secondary_sector_id'],
+            ':secondary_specialty_id' => $ownerSecondaryPair['secondary_specialty_id'],
             ':service_mode' => in_array($data['service_mode'] ?? '', ['physical', 'hybrid', 'online'], true) ? $data['service_mode'] : $oldBiz['service_mode'],
             ':alumni_perk' => trim((string)($data['alumni_perk'] ?? '')) ?: null,
             ':b2b_ready' => !empty($data['b2b_ready']) ? 1 : 0,
@@ -1787,10 +1844,13 @@ final class VettingPurger
         }
 
         $newStmt = $pdo->prepare("
-            SELECT b.*, sec.name AS sector_name, spec.name AS specialty_name
+            SELECT b.*, sec.name AS sector_name, spec.name AS specialty_name,
+                   sec2.name AS secondary_sector_name, spec2.name AS secondary_specialty_name
             FROM businesses b
             INNER JOIN categories sec ON sec.id = b.sector_id
             INNER JOIN categories spec ON spec.id = b.specialty_id
+            LEFT JOIN categories sec2 ON sec2.id = b.secondary_sector_id
+            LEFT JOIN categories spec2 ON spec2.id = b.secondary_specialty_id
             WHERE b.id = :id
             LIMIT 1
         ");
@@ -1808,6 +1868,19 @@ final class VettingPurger
             $criticalChanges['Category (Sector -> Specialty)'] = [
                 'before' => "{$oldBiz['sector_name']} -> {$oldBiz['specialty_name']}",
                 'after' => "{$newBiz['sector_name']} -> {$newBiz['specialty_name']}",
+            ];
+        }
+        if ((int)($oldBiz['secondary_sector_id'] ?? 0) !== (int)($newBiz['secondary_sector_id'] ?? 0)
+            || (int)($oldBiz['secondary_specialty_id'] ?? 0) !== (int)($newBiz['secondary_specialty_id'] ?? 0)) {
+            $oldSecLbl = !empty($oldBiz['secondary_sector_name']) && !empty($oldBiz['secondary_specialty_name'])
+                ? "{$oldBiz['secondary_sector_name']} -> {$oldBiz['secondary_specialty_name']}"
+                : 'None';
+            $newSecLbl = !empty($newBiz['secondary_sector_name']) && !empty($newBiz['secondary_specialty_name'])
+                ? "{$newBiz['secondary_sector_name']} -> {$newBiz['secondary_specialty_name']}"
+                : 'None';
+            $criticalChanges['Secondary Category'] = [
+                'before' => $oldSecLbl,
+                'after' => $newSecLbl,
             ];
         }
 

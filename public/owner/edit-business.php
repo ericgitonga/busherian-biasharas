@@ -54,7 +54,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $regSel = trim((string)($postData['regulator_name'] ?? ''));
         $regCus = trim((string)($postData['regulator_name_custom'] ?? ''));
         $postData['regulator_name'] = ($regSel === 'Other Statutory Regulator') ? $regCus : $regSel;
-        $isRegSpec = CategoryMatcher::isSpecialtyRegulated($pdo, (int)($postData['specialty_id'] ?? 0));
+        $isRegSpec = CategoryMatcher::isSpecialtyRegulated($pdo, (int)($postData['specialty_id'] ?? 0))
+            || CategoryMatcher::isSpecialtyRegulated($pdo, (int)($postData['secondary_specialty_id'] ?? 0));
         if (!$isRegSpec) {
             $postData['regulator_name'] = '';
         }
@@ -193,6 +194,8 @@ $tokens = AntiSpamGate::generateFormTokens();
         <input type="text" id="regulator_name_custom" name="regulator_name_custom" class="input-control"
           placeholder="Specify statutory regulator..." style="margin-top:0.45rem;display:none;" disabled>
       </div>
+
+      <?= bbiz_render_secondary_specialty_fields($taxonomyTree, !empty($biz['secondary_sector_id']) ? (int)$biz['secondary_sector_id'] : null, !empty($biz['secondary_specialty_id']) ? (int)$biz['secondary_specialty_id'] : null, (string)($biz['regulator_name'] ?? '')) ?>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.9rem;margin-top:0.9rem;">
         <div>

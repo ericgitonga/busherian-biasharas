@@ -34,7 +34,9 @@ $stmt = $pdo->query("
     SELECT
         b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.description,
         b.school_badge, b.sector_id, b.specialty_id,
+        b.secondary_sector_id, b.secondary_specialty_id,
         sec.name AS sector_name, spec.name AS specialty_name,
+        sec2.name AS secondary_sector_name, spec2.name AS secondary_specialty_name,
         b.service_mode, b.alumni_perk, b.b2b_ready, b.accepts_lpo,
         b.regulator_name, b.regulator_license,
         b.branch_name, b.building_name, b.floor_suite, b.street_road,
@@ -47,6 +49,8 @@ $stmt = $pdo->query("
     FROM businesses b
     INNER JOIN categories sec ON sec.id = b.sector_id
     INNER JOIN categories spec ON spec.id = b.specialty_id
+    LEFT JOIN categories sec2 ON sec2.id = b.secondary_sector_id AND sec2.status = 'approved'
+    LEFT JOIN categories spec2 ON spec2.id = b.secondary_specialty_id AND spec2.status = 'approved'
     WHERE b.status = 'approved'
     ORDER BY b.business_number ASC, b.id ASC
     LIMIT 10 OFFSET 0
@@ -86,6 +90,10 @@ foreach ($rows as $r) {
         'sector_name' => $r['sector_name'],
         'specialty_id' => (int)$r['specialty_id'],
         'specialty_name' => $r['specialty_name'],
+        'secondary_sector_id' => (!empty($r['secondary_sector_id']) && !empty($r['secondary_sector_name'])) ? (int)$r['secondary_sector_id'] : null,
+        'secondary_sector_name' => !empty($r['secondary_sector_name']) ? $r['secondary_sector_name'] : null,
+        'secondary_specialty_id' => (!empty($r['secondary_specialty_id']) && !empty($r['secondary_specialty_name'])) ? (int)$r['secondary_specialty_id'] : null,
+        'secondary_specialty_name' => !empty($r['secondary_specialty_name']) ? $r['secondary_specialty_name'] : null,
         'service_mode' => $r['service_mode'],
         'alumni_perk' => $r['alumni_perk'],
         'b2b_ready' => (bool)$r['b2b_ready'],

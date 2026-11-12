@@ -30,9 +30,11 @@ CREATE TABLE IF NOT EXISTS businesses (
     -- School Affiliation Badge ONLY (No House, No Year Left, No School Number EVER stored here)
     school_badge ENUM('AHS', 'AGHS', 'BOTH') NOT NULL DEFAULT 'AHS',
 
-    -- 2-Level Category Assignment
+    -- 2-Level Category Assignment (+ Optional Secondary Sector & Specialty for Cross-Sector Founders #279)
     sector_id INT UNSIGNED NOT NULL,
     specialty_id INT UNSIGNED NOT NULL,
+    secondary_sector_id INT UNSIGNED NULL DEFAULT NULL,
+    secondary_specialty_id INT UNSIGNED NULL DEFAULT NULL,
 
     -- Service Mode & B2B / Alumni Offer
     service_mode ENUM('physical', 'hybrid', 'online') NOT NULL DEFAULT 'physical',
@@ -89,7 +91,10 @@ CREATE TABLE IF NOT EXISTS businesses (
 
     CONSTRAINT fk_biz_sector FOREIGN KEY (sector_id) REFERENCES categories(id),
     CONSTRAINT fk_biz_specialty FOREIGN KEY (specialty_id) REFERENCES categories(id),
+    CONSTRAINT fk_biz_sec_sector FOREIGN KEY (secondary_sector_id) REFERENCES categories(id) ON DELETE SET NULL,
+    CONSTRAINT fk_biz_sec_specialty FOREIGN KEY (secondary_specialty_id) REFERENCES categories(id) ON DELETE SET NULL,
     INDEX idx_status_sector_spec (status, sector_id, specialty_id),
+    INDEX idx_status_sec_sector_spec (status, secondary_sector_id, secondary_specialty_id),
     INDEX idx_coords (latitude, longitude),
     INDEX idx_country_city (country, city_county),
     INDEX idx_biz_number (business_number),

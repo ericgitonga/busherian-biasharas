@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v20-pub';
+    public const SCHEMA_INIT_VERSION = '2026-11-v21-sec-spec';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -373,6 +373,8 @@ final class Database
                     school_badge TEXT NOT NULL DEFAULT 'AHS',
                     sector_id INTEGER NOT NULL REFERENCES categories(id),
                     specialty_id INTEGER NOT NULL REFERENCES categories(id),
+                    secondary_sector_id INTEGER NULL REFERENCES categories(id) ON DELETE SET NULL,
+                    secondary_specialty_id INTEGER NULL REFERENCES categories(id) ON DELETE SET NULL,
                     service_mode TEXT NOT NULL DEFAULT 'physical',
                     alumni_perk TEXT NULL,
                     b2b_ready INTEGER NOT NULL DEFAULT 0,
@@ -593,6 +595,13 @@ final class Database
             if (!isset($bizCols['admin_provenance_note'])) {
                 $pdo->exec("ALTER TABLE businesses ADD COLUMN admin_provenance_note TEXT NULL");
             }
+            if (!isset($bizCols['secondary_sector_id'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN secondary_sector_id INTEGER NULL REFERENCES categories(id) ON DELETE SET NULL");
+            }
+            if (!isset($bizCols['secondary_specialty_id'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN secondary_specialty_id INTEGER NULL REFERENCES categories(id) ON DELETE SET NULL");
+            }
+            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_status_sec_sector_spec ON businesses (status, secondary_sector_id, secondary_specialty_id)");
 
             $tokCols = [];
             foreach ($pdo->query("PRAGMA table_info(owner_auth_tokens)")->fetchAll() as $tc) {
@@ -650,6 +659,16 @@ final class Database
             }
             if (!isset($bizCols['admin_provenance_note'])) {
                 $pdo->exec("ALTER TABLE businesses ADD COLUMN admin_provenance_note VARCHAR(255) NULL AFTER listing_provenance");
+            }
+            if (!isset($bizCols['secondary_sector_id'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN secondary_sector_id INT UNSIGNED NULL DEFAULT NULL AFTER specialty_id");
+            }
+            if (!isset($bizCols['secondary_specialty_id'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN secondary_specialty_id INT UNSIGNED NULL DEFAULT NULL AFTER secondary_sector_id");
+            }
+            $idxRows = $pdo->query("SHOW INDEX FROM businesses WHERE Key_name = 'idx_status_sec_sector_spec'")->fetchAll();
+            if ($idxRows === []) {
+                $pdo->exec("ALTER TABLE businesses ADD INDEX idx_status_sec_sector_spec (status, secondary_sector_id, secondary_specialty_id)");
             }
 
             $tokCols = [];
