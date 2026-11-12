@@ -982,6 +982,12 @@ def test_playwright_high_01_02_05_browser_security_regressions():
         p2.wait_for_url("**/owner/index.php**", timeout=8000)
         p2.get_by_test_id("owner-logout-all-btn").wait_for(state="visible", timeout=5000)
 
+        # R2-LOW-03 (#203): GET /owner/logout.php MUST NOT sign out Device 2 (renders confirmation button while session stays active)
+        p2.goto(f"{BASE_URL}/owner/logout.php", wait_until="networkidle")
+        p2.get_by_test_id("owner-confirm-logout-btn").wait_for(state="visible", timeout=5000)
+        p2.goto(f"{BASE_URL}/owner/index.php", wait_until="networkidle")
+        p2.get_by_test_id("owner-signed-in-email").wait_for(state="visible", timeout=5000)
+
         # Click Sign Out All Devices on Device 1 -> Device 2 must immediately be invalidated on reload!
         p1.get_by_test_id("owner-logout-all-btn").click()
         p1.wait_for_url("**/owner/login.php**", timeout=8000)
@@ -1197,6 +1203,26 @@ def test_playwright_med_04_08_09_12_14_15_regressions():
                 resp_replay = adm.goto(signed_review_url, wait_until="networkidle")
                 assert resp_replay is not None and resp_replay.status == 409
                 adm.get_by_test_id("review-action-error").wait_for(state="visible", timeout=5000)
+
+                # R2-LOW-01 (#201): Anonymous /owner/login.php?biz=<rejected_id> MUST NOT leak non-approved listing name or hints!
+                ctx_anon_hint = _new_browser_context()
+                try:
+                    anon_p = ctx_anon_hint.new_page()
+                    anon_p.goto(f"{BASE_URL}/owner/login.php?biz={pend_id}", wait_until="networkidle")
+                    anon_body = anon_p.content()
+                    assert "Linked owner email on file:" not in anon_body
+                    assert "Sign In to Edit Business Listing" not in anon_body
+                finally:
+                    ctx_anon_hint.close()
+
+            # R2-LOW-03 (#203): GET /admin/login.php?logout=1 MUST NOT terminate Admin session; POST Sign Out button MUST!
+            adm.goto(f"{BASE_URL}/admin/login.php?logout=1", wait_until="networkidle")
+            adm.get_by_test_id("admin-confirm-logout-btn").wait_for(state="visible", timeout=5000)
+            adm.goto(f"{BASE_URL}/admin/index.php", wait_until="networkidle")
+            adm.get_by_test_id("admin-logout-btn").wait_for(state="visible", timeout=5000)
+            adm.get_by_test_id("admin-logout-btn").click()
+            adm.wait_for_url("**/admin/login.php?logged_out=1**", timeout=8000)
+            adm.get_by_test_id("admin-logout-notice").wait_for(state="visible", timeout=5000)
         finally:
             ctx_adm.close()
 

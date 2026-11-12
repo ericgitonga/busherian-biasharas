@@ -95,7 +95,10 @@ $tokens = AntiSpamGate::generateFormTokens();
       <nav class="header-actions" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
         <a href="/submit.php" class="btn btn-gold">+ Register Another Biashara</a>
         <a href="/" class="btn btn-outline-light">Public Directory</a>
-        <a href="/owner/logout.php" data-testid="owner-logout-link" class="btn btn-outline-light">Sign Out</a>
+        <form method="POST" action="/owner/logout.php" style="margin:0;display:inline;">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+          <button type="submit" data-testid="owner-logout-link" class="btn btn-outline-light" style="cursor:pointer;">Sign Out</button>
+        </form>
         <form method="POST" action="/owner/logout.php" style="margin:0;display:inline;">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="scope" value="all">

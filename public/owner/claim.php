@@ -254,7 +254,10 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
       </a>
       <nav class="header-actions">
         <?php if ($currentOwner !== null): ?>
-          <a href="/owner/logout.php" class="btn btn-outline-light">Sign Out (<?= htmlspecialchars((string)$currentOwner['email'], ENT_QUOTES, 'UTF-8') ?>)</a>
+          <form method="POST" action="/owner/logout.php" style="margin:0;display:inline;">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+            <button type="submit" class="btn btn-outline-light" style="cursor:pointer;">Sign Out (<?= htmlspecialchars((string)$currentOwner['email'], ENT_QUOTES, 'UTF-8') ?>)</button>
+          </form>
         <?php endif; ?>
         <a href="/" class="btn btn-outline-light">&larr; Public Directory</a>
       </nav>

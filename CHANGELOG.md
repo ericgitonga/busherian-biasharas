@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.15.1] - 2026-11-12
+
+### Security
+- **Approved-Only & Per-IP Throttled Anonymous `?biz=<id>` Hint Lookups (`[Adversarial R2-LOW-01]`)**: Updated `OwnerAuth::getMaskedOwnerEmailHintsForBusiness()` with `$requireApproved` enforcement and restricted unauthenticated `/owner/login.php?biz=<id>` lookups strictly to `status = 'approved'` listings behind per-IP `AntiSpamGate::checkAndRecordRateLimit()` (`owner_biz_hint_lookup`) throttling so pending, rejected, or quarantined business names and masked email hints cannot be enumerated on sequential IDs (closes #201, part of #197).
+- **`POST` + Session CSRF Requirement for Owner & Admin Sign-Out (`[Adversarial R2-LOW-03]`)**: Removed `GET`-based session termination on `/owner/logout.php` and `/admin/login.php?logout=1`, requiring `POST` + `AntiSpamGate::verifyCsrfToken()` to log out (while rendering a side-effect-free confirmation screen on `GET`), and converted all Sign Out navigation controls across `public/owner/index.php`, `public/owner/claim.php`, and `public/admin/index.php` into inline `POST` forms carrying session CSRF tokens (closes #203, part of #197).
+
+### Fixed
+- **Unambiguous 24-Hour (`00:00`–`24:00`) & Equal-Endpoint Shift Semantics in `HoursEngine` (`[Adversarial R2-LOW-02]`)**: Updated `HoursEngine::validateScheduleJson()`, `buildScheduleJsonFromPost()`, `evaluateStatus()`, and `formatScheduleTable()` to reject ambiguous equal-endpoint intervals (`08:00`–`08:00`, `00:00`–`00:00`), require explicit `["00:00", "24:00"]` for 24-hour open days, and evaluate continuous 24/7 vs single-day 24-hour schedules consistently across midnight in `Africa/Nairobi` (EAT) (closes #202, part of #199).
+
+### Documentation
+- **Synced `egm-skills/busherian-biasharas/` (`SKILL.md` + `MEMORY.md`) Across Remote & Local Checkout (`[Adversarial R2-LOW-04]`)**: Added project-specific operational memory archive `MEMORY.md`, ignored local `MEMORY.md` in `.gitignore`, and synchronized both `SKILL.md` and `MEMORY.md` to `ericgitonga/egm-skills` and local `/home/gitonga/Develop/projects/egm-skills/busherian-biasharas/` (closes #204, part of #200).
+- tag: `v0.15.1`
+
 ## [0.15.0] - 2026-11-12
 
 ### Security
