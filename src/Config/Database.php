@@ -435,14 +435,14 @@ final class Database
             $pdo->exec("INSERT OR IGNORE INTO business_sequences (seq_key, current_val) VALUES ('rate_limit_mutex', 0)");
             $pdo->prepare("INSERT OR IGNORE INTO business_sequences (seq_key, current_val) VALUES ('business_number', :v)")
                 ->execute([':v' => $maxNum]);
-            $pdo->prepare("UPDATE business_sequences SET current_val = :v, updated_at = CURRENT_TIMESTAMP WHERE seq_key = 'business_number' AND current_val < :v")
-                ->execute([':v' => $maxNum]);
+            $pdo->prepare("UPDATE business_sequences SET current_val = :v1, updated_at = CURRENT_TIMESTAMP WHERE seq_key = 'business_number' AND current_val < :v2")
+                ->execute([':v1' => $maxNum, ':v2' => $maxNum]);
         } else {
             $pdo->exec("INSERT IGNORE INTO business_sequences (seq_key, current_val) VALUES ('rate_limit_mutex', 0)");
             $pdo->prepare("INSERT IGNORE INTO business_sequences (seq_key, current_val) VALUES ('business_number', :v)")
                 ->execute([':v' => $maxNum]);
-            $pdo->prepare("UPDATE business_sequences SET current_val = :v WHERE seq_key = 'business_number' AND current_val < :v")
-                ->execute([':v' => $maxNum]);
+            $pdo->prepare("UPDATE business_sequences SET current_val = :v1 WHERE seq_key = 'business_number' AND current_val < :v2")
+                ->execute([':v1' => $maxNum, ':v2' => $maxNum]);
         }
     }
 
