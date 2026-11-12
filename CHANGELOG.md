@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.20.0] - 2026-11-12
+
+### Added
+- **Publishing Taxonomy Expansion & English/Swahili Synonym Lexicon (`#273`, Parent `#272`)**: Expanded `CategoryMatcher::DEFAULT_TAXONOMY` (`116` Level 2 specialties across `15` Industry Sectors) to represent publishing across both Creative/Media (`Book, Academic & Digital Publishing`, `Editorial, Ghostwriting & Author Services`, `Podcast, Broadcast & Content Studio`) and Education/Coaching (`Author Coaching & Manuscript Advisory`), added safe in-place legacy slug migration in `CategoryMatcher::ensureTaxonomyUpToDate()` (`SCHEMA_INIT_VERSION = '2026-11-v20-pub'`), expanded `CategoryMatcher::SYNONYM_LEXICON` with English and Swahili publishing/editorial terms (`publisher`, `publishing`, `book`, `books`, `author`, `editing`, `editorial`, `proofreading`, `ghostwriting`, `manuscript`, `isbn`, `mchapishaji`, `uchapishaji`, `vitabu`, `kitabu`, `mwandishi`), and added `CategoryMatcher::searchSpecialties()` plus synonym-aware `suggestCategoryFromText()` scoring.
+- **Instant Type-Ahead Specialty Finder Across All Listing Forms (`#274`, Parent `#272`)**: Added `bbiz_render_specialty_finder()` (`src/bootstrap.php`), `.specialty-finder-*` heritage styles (`public/assets/css/app.css`), and keyboard-accessible (`ArrowDown`/`ArrowUp`/`Enter`/`Escape`) + click type-ahead search (`public/assets/js/form-enhancements.js`) above the Sector/Specialty selectors on `/submit.php`, `/owner/edit-business.php`, `/admin/add-business.php`, and `/admin/edit-business.php`, auto-selecting both Level 1 Sector and Level 2 Specialty (and updating statutory regulator visibility) in one click.
+- **Unit & Playwright E2E Coverage (`#272`–`#274`)**: Added Section 46 unit assertions in `tests/run_unit_tests.php` and `test_playwright_ch1_chunk1_publishing_specialty_finder` in `e2e/test_smoke.py`.
+
 ## [0.19.0] - 2026-11-12
 
 ### Security & Kenya DPA 2019 Hardening (Pass-3 Wave 3 — MEDIUM)

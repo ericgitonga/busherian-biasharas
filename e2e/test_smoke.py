@@ -1662,7 +1662,10 @@ def test_playwright_r3_medium_regressions():
     assert st_hlth == 200, f"Expected 200 from /api/health.php, got {st_hlth}: {body_hlth}"
     hlth_json = json.loads(body_hlth)
     assert hlth_json.get("status") == "ok" and hlth_json.get("schema_ready") is True, hlth_json
-    assert hlth_json.get("schema_version") == "2026-11-v19-med", hlth_json
+    db_php = (Path(__file__).resolve().parent.parent / "src/Config/Database.php").read_text(encoding="utf-8")
+    m_ver = re.search(r"SCHEMA_INIT_VERSION\s*=\s*'([^']+)'", db_php)
+    expected_schema_ver = m_ver.group(1) if m_ver else "2026-11-v20-pub"
+    assert hlth_json.get("schema_version") == expected_schema_ver, hlth_json
 
     # 2. M-04 (#244) & M-05 (#245): Unconsented metric rejected; consented metric strips query/fragment & enforces non-rolling cookie TTL
     st_uncons, body_uncons, _ = _request(
@@ -1729,6 +1732,83 @@ def test_playwright_r3_medium_regressions():
         ctx_c.close()
 
 
+
+def test_playwright_ch1_chunk1_publishing_specialty_finder():
+    """Playwright E2E test for Chapter 1 Chunk 1 (#272, #273, #274): Publishing taxonomy & Type-Ahead Specialty Finder."""
+    # 1. Verify /api/categories.php exposes the expanded publishing & author coaching specialties
+    st_cat, cat_body, _ = _request("/api/categories.php")
+    assert st_cat == 200, cat_body
+    cat_payload = json.loads(cat_body)
+    spec_to_sector = {}
+    for sec in cat_payload.get("sectors", []):
+        for sp in sec.get("specialties", []):
+            spec_to_sector[sp["name"]] = sec["name"]
+
+    assert spec_to_sector.get("Book, Academic & Digital Publishing") == "Creative, Media, Marketing & Events"
+    assert spec_to_sector.get("Editorial, Ghostwriting & Author Services") == "Creative, Media, Marketing & Events"
+    assert spec_to_sector.get("Podcast, Broadcast & Content Studio") == "Creative, Media, Marketing & Events"
+    assert spec_to_sector.get("Author Coaching & Manuscript Advisory") == "Education, Training & Coaching"
+
+    # 2. Verify interactive Type-Ahead Specialty Finder in headless Chromium on /submit.php and /admin/add-business.php
+    ctx = _new_browser_context()
+    try:
+        page = ctx.new_page()
+        page.goto(f"{BASE_URL}/submit.php", wait_until="networkidle")
+        if page.get_by_test_id("cookie-reject-btn").is_visible():
+            page.get_by_test_id("cookie-reject-btn").click()
+
+        finder = page.get_by_test_id("specialty-quick-finder")
+        results = page.get_by_test_id("specialty-finder-results")
+        status = page.get_by_test_id("specialty-finder-status")
+
+        finder.wait_for(state="visible", timeout=5000)
+        finder.fill("publishing")
+        results.wait_for(state="visible", timeout=5000)
+        res_text = results.inner_text()
+        assert "Book, Academic & Digital Publishing" in res_text
+        assert "Author Coaching & Manuscript Advisory" in res_text
+
+        # Click 'Author Coaching & Manuscript Advisory' -> must auto-populate Education sector + specialty
+        results.locator("button", has_text="Author Coaching & Manuscript Advisory").click()
+        assert "Education, Training & Coaching" in page.locator("#sector_id option:checked").inner_text()
+        assert "Author Coaching & Manuscript Advisory" in page.locator("#specialty_id option:checked").inner_text()
+        assert "Author Coaching & Manuscript Advisory" in status.inner_text()
+
+        # Swahili synonym 'mchapishaji' + keyboard Enter must select Book, Academic & Digital Publishing WITHOUT submitting form
+        finder.fill("mchapishaji")
+        results.wait_for(state="visible", timeout=5000)
+        finder.press("Enter")
+        assert "/submit.php" in page.url
+        assert "Creative, Media, Marketing & Events" in page.locator("#sector_id option:checked").inner_text()
+        assert "Book, Academic & Digital Publishing" in page.locator("#specialty_id option:checked").inner_text()
+
+        # Regulated specialty ('wakili' -> Advocates & Law Firm) must also auto-reveal #regulated-fields-wrap
+        finder.fill("wakili")
+        results.wait_for(state="visible", timeout=5000)
+        results.locator("button", has_text="Advocates & Law Firm").click()
+        reg_wrap = page.locator("#regulated-fields-wrap")
+        reg_wrap.wait_for(state="visible", timeout=5000)
+        assert "LSK" in page.locator("#regulator_name").input_value()
+
+        # Verify Admin Add Business form also renders and operates the Type-Ahead Specialty Finder
+        if ADMIN_ACCESS_TOKEN:
+            page.goto(f"{BASE_URL}/admin/login.php", wait_until="networkidle")
+            page.locator("#admin_token").fill(ADMIN_ACCESS_TOKEN)
+            page.locator("form button[type='submit']").click()
+            page.wait_for_url("**/admin/index.php**", timeout=8000)
+
+            page.goto(f"{BASE_URL}/admin/add-business.php", wait_until="networkidle")
+            adm_finder = page.get_by_test_id("specialty-quick-finder")
+            adm_results = page.get_by_test_id("specialty-finder-results")
+            adm_finder.fill("proofreading")
+            adm_results.wait_for(state="visible", timeout=5000)
+            adm_results.locator("button", has_text="Editorial, Ghostwriting & Author Services").click()
+            assert "Creative, Media, Marketing & Events" in page.locator("#sector_id option:checked").inner_text()
+            assert "Editorial, Ghostwriting & Author Services" in page.locator("#specialty_id option:checked").inner_text()
+    finally:
+        ctx.close()
+
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -1743,4 +1823,5 @@ TESTS = [
     test_playwright_r2_medium_regressions,
     test_playwright_r3_high_regressions,
     test_playwright_r3_medium_regressions,
+    test_playwright_ch1_chunk1_publishing_specialty_finder,
 ]

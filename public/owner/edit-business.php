@@ -166,6 +166,8 @@ $tokens = AntiSpamGate::generateFormTokens();
         <textarea id="description" name="description" rows="3" class="input-control" required><?= htmlspecialchars((string)$biz['description'], ENT_QUOTES, 'UTF-8') ?></textarea>
       </div>
 
+      <?= bbiz_render_specialty_finder($taxonomyTree) ?>
+
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.9rem;margin-top:0.9rem;">
         <div>
           <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Industry Sector *</label>
@@ -336,7 +338,7 @@ $tokens = AntiSpamGate::generateFormTokens();
       const sec = TAXONOMY.find(s => Number(s.id) === secId);
       const sp = (sec && sec.specialties) ? sec.specialties.find(x => Number(x.id) === specId) : null;
 
-      if (!sp || !sp.regulated) {
+      if (!sp || !(sp.is_regulated || sp.regulated)) {
         regWrap.hidden = true;
         regWrap.style.display = 'none';
         regSelect.required = false;
@@ -356,7 +358,7 @@ $tokens = AntiSpamGate::generateFormTokens();
 
       const opts = Array.isArray(sp.regulator_options) && sp.regulator_options.length
         ? sp.regulator_options.slice()
-        : (sp.default_regulator ? [sp.default_regulator] : []);
+        : ((sp.regulator_default || sp.default_regulator) ? [sp.regulator_default || sp.default_regulator] : []);
       if (!opts.includes('Other Statutory Regulator')) {
         opts.push('Other Statutory Regulator');
       }
@@ -369,7 +371,7 @@ $tokens = AntiSpamGate::generateFormTokens();
         regSelect.appendChild(o);
       });
 
-      const targetVal = (typeof savedReg === 'string' && savedReg.trim() !== '') ? savedReg.trim() : (sp.default_regulator || opts[0]);
+      const targetVal = (typeof savedReg === 'string' && savedReg.trim() !== '') ? savedReg.trim() : (sp.regulator_default || sp.default_regulator || opts[0]);
       if (opts.includes(targetVal)) {
         regSelect.value = targetVal;
         regCustom.style.display = 'none';

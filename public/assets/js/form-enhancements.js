@@ -146,6 +146,294 @@
   bindSameAsDirectPhone(samePrimaryChk, primaryPhoneInput);
   bindSameAsDirectPhone(sameWhatsappChk, whatsappPhoneInput);
 
+  // =========================================================================
+  // Instant Type-Ahead Specialty Finder Across All Sectors & Synonyms (#274)
+  // =========================================================================
+  function bindSpecialtyQuickFinder() {
+    const finderWrap = document.querySelector('[data-specialty-finder]');
+    const finderInput = document.getElementById('specialty-quick-finder');
+    const clearBtn = document.getElementById('specialty-finder-clear');
+    const resultsBox = document.getElementById('specialty-finder-results');
+    const statusBox = document.getElementById('specialty-finder-status');
+    const sectorSel = document.getElementById('sector_id');
+    const specSel = document.getElementById('specialty_id');
+
+    if (!finderWrap || !finderInput || !resultsBox || !sectorSel || !specSel) return;
+
+    let taxonomy = [];
+    let synonyms = {};
+    try {
+      taxonomy = JSON.parse(finderWrap.getAttribute('data-taxonomy-json') || '[]');
+    } catch (_) {}
+    try {
+      synonyms = JSON.parse(finderWrap.getAttribute('data-synonyms-json') || '{}');
+    } catch (_) {}
+
+    const flatSpecs = [];
+    if (Array.isArray(taxonomy)) {
+      taxonomy.forEach(sec => {
+        if (!sec || !Array.isArray(sec.specialties)) return;
+        sec.specialties.forEach(sp => {
+          if (!sp || !sp.id || !sp.name) return;
+          flatSpecs.push({
+            specialtyId: Number(sp.id),
+            specialtyName: String(sp.name),
+            specialtyLower: String(sp.name).toLowerCase(),
+            sectorId: Number(sec.id),
+            sectorName: String(sec.name || ''),
+            sectorLower: String(sec.name || '').toLowerCase(),
+            isRegulated: Boolean(sp.is_regulated)
+          });
+        });
+      });
+    }
+
+    let currentMatches = [];
+    let activeIndex = -1;
+
+    function expandTokens(tokens) {
+      const phrases = new Set();
+      tokens.forEach(tok => {
+        if (Array.isArray(synonyms[tok])) {
+          synonyms[tok].forEach(m => phrases.add(String(m).toLowerCase()));
+        }
+        if (tok.length >= 4) {
+          Object.keys(synonyms).forEach(lexKey => {
+            if (lexKey.startsWith(tok) && Array.isArray(synonyms[lexKey])) {
+              synonyms[lexKey].forEach(m => phrases.add(String(m).toLowerCase()));
+            }
+          });
+        }
+      });
+      return Array.from(phrases);
+    }
+
+    function rankSpecialties(rawQuery) {
+      const clean = String(rawQuery || '').trim().toLowerCase();
+      if (!clean) return [];
+      const tokens = clean.split(/[^a-z0-9]+/i).filter(Boolean);
+      if (tokens.length === 0) return [];
+      const synPhrases = expandTokens(tokens);
+
+      const scored = [];
+      flatSpecs.forEach(item => {
+        let score = 0;
+        const combined = item.specialtyLower + ' ' + item.sectorLower;
+
+        if (item.specialtyLower === clean) {
+          score += 30;
+        } else if (item.specialtyLower.startsWith(clean)) {
+          score += 18;
+        } else if (item.specialtyLower.includes(clean)) {
+          score += 14;
+        } else if (item.sectorLower.includes(clean)) {
+          score += 6;
+        }
+
+        tokens.forEach(tok => {
+          if (tok.length < 2) return;
+          const wordBoundary = new RegExp('\\b' + tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+          if (wordBoundary.test(item.specialtyName)) {
+            score += 7;
+          } else if (item.specialtyLower.includes(tok)) {
+            score += 4.5;
+          } else if (wordBoundary.test(item.sectorName)) {
+            score += 2.5;
+          }
+        });
+
+        synPhrases.forEach(syn => {
+          if (syn && item.specialtyLower.includes(syn)) {
+            score += 5.5;
+          } else if (syn && combined.includes(syn)) {
+            score += 2;
+          }
+        });
+
+        if (score > 0) {
+          scored.push({ item, score });
+        }
+      });
+
+      scored.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.item.specialtyName.localeCompare(b.item.specialtyName);
+      });
+
+      return scored.slice(0, 8).map(s => s.item);
+    }
+
+    function closeDropdown() {
+      resultsBox.hidden = true;
+      finderInput.setAttribute('aria-expanded', 'false');
+      finderInput.removeAttribute('aria-activedescendant');
+      activeIndex = -1;
+    }
+
+    function syncActiveHighlight() {
+      const buttons = resultsBox.querySelectorAll('.specialty-finder-option');
+      buttons.forEach((btn, idx) => {
+        const isAct = (idx === activeIndex);
+        btn.classList.toggle('is-active', isAct);
+        btn.setAttribute('aria-selected', isAct ? 'true' : 'false');
+        if (isAct) {
+          finderInput.setAttribute('aria-activedescendant', btn.id);
+          if (typeof btn.scrollIntoView === 'function') {
+            btn.scrollIntoView({ block: 'nearest' });
+          }
+        }
+      });
+    }
+
+    function chooseMatch(match) {
+      if (!match) return;
+      const jsToken = document.getElementById('js_interaction_token');
+      if (jsToken && !jsToken.value) {
+        jsToken.value = 'human_verified_' + Date.now();
+      }
+
+      sectorSel.value = String(match.sectorId);
+      sectorSel.dispatchEvent(new Event('change', { bubbles: true }));
+      specSel.value = String(match.specialtyId);
+      specSel.dispatchEvent(new Event('change', { bubbles: true }));
+
+      [sectorSel, specSel].forEach(el => {
+        el.style.borderColor = '#059669';
+        el.style.backgroundColor = '#ECFDF5';
+      });
+
+      finderInput.value = match.specialtyName;
+      if (clearBtn) clearBtn.hidden = false;
+      closeDropdown();
+
+      if (statusBox) {
+        statusBox.textContent = '✓ Auto-selected: ' + match.sectorName + ' → ' + match.specialtyName;
+      }
+    }
+
+    function renderMatches() {
+      const q = finderInput.value.trim();
+      if (clearBtn) clearBtn.hidden = (q === '');
+      if (q.length < 2) {
+        currentMatches = [];
+        resultsBox.innerHTML = '';
+        closeDropdown();
+        return;
+      }
+
+      currentMatches = rankSpecialties(q);
+      resultsBox.innerHTML = '';
+      activeIndex = currentMatches.length > 0 ? 0 : -1;
+
+      if (currentMatches.length === 0) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'specialty-finder-empty';
+        const supportsCustom = Array.from(specSel.options || []).some(o => o.value === '__custom__')
+          || Boolean(document.getElementById('custom-specialty-wrap'));
+        emptyDiv.textContent = supportsCustom
+          ? 'No exact match yet — choose the closest Industry Sector below and select "+ Add New Specialty" to propose yours.'
+          : 'No matching specialty found — try another keyword or select from Industry Sector below.';
+        resultsBox.appendChild(emptyDiv);
+        resultsBox.hidden = false;
+        finderInput.setAttribute('aria-expanded', 'true');
+        return;
+      }
+
+      currentMatches.forEach((m, idx) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'spec-finder-opt-' + m.specialtyId;
+        btn.className = 'specialty-finder-option' + (idx === 0 ? ' is-active' : '');
+        btn.setAttribute('role', 'option');
+        btn.setAttribute('aria-selected', idx === 0 ? 'true' : 'false');
+        btn.setAttribute('data-specialty-id', String(m.specialtyId));
+        btn.setAttribute('data-sector-id', String(m.sectorId));
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'specialty-finder-opt-name';
+        nameSpan.textContent = m.specialtyName;
+
+        const secSpan = document.createElement('span');
+        secSpan.className = 'specialty-finder-opt-sector';
+        secSpan.textContent = m.sectorName;
+
+        btn.appendChild(nameSpan);
+        btn.appendChild(secSpan);
+
+        btn.addEventListener('mousedown', e => {
+          // Prevent input blur before selection fires
+          e.preventDefault();
+        });
+        btn.addEventListener('click', () => chooseMatch(m));
+        resultsBox.appendChild(btn);
+      });
+
+      resultsBox.hidden = false;
+      finderInput.setAttribute('aria-expanded', 'true');
+      syncActiveHighlight();
+    }
+
+    finderInput.addEventListener('input', () => {
+      if (statusBox) statusBox.textContent = '';
+      renderMatches();
+    });
+
+    finderInput.addEventListener('focus', () => {
+      if (finderInput.value.trim().length >= 2) {
+        renderMatches();
+      }
+    });
+
+    finderInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        closeDropdown();
+        return;
+      }
+      if (resultsBox.hidden || currentMatches.length === 0) {
+        if (e.key === 'Enter' && finderInput.value.trim().length >= 2) {
+          e.preventDefault();
+          renderMatches();
+          if (currentMatches.length > 0) {
+            chooseMatch(currentMatches[0]);
+          }
+        }
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        activeIndex = (activeIndex + 1) % currentMatches.length;
+        syncActiveHighlight();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        activeIndex = (activeIndex - 1 + currentMatches.length) % currentMatches.length;
+        syncActiveHighlight();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const chosen = currentMatches[activeIndex >= 0 ? activeIndex : 0];
+        if (chosen) chooseMatch(chosen);
+      }
+    });
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        finderInput.value = '';
+        clearBtn.hidden = true;
+        if (statusBox) statusBox.textContent = '';
+        closeDropdown();
+        finderInput.focus();
+      });
+    }
+
+    document.addEventListener('click', e => {
+      if (!finderWrap.contains(e.target)) {
+        closeDropdown();
+      }
+    });
+  }
+
+  bindSpecialtyQuickFinder();
+
+
   const fileInput = document.getElementById('business_photos');
   const hiddenJsonInput = document.getElementById('business_photos_data_json');
   const previewWrap = document.getElementById('business-photos-preview');

@@ -335,6 +335,67 @@ HTML;
 }
 
 
+
+if (!function_exists('bbiz_render_specialty_finder')) {
+    /**
+     * Render instant zero-latency Type-Ahead Specialty Finder across all Level 2 specialties & synonyms (#274).
+     */
+    function bbiz_render_specialty_finder(array $taxonomyTree): string
+    {
+        $compactTree = [];
+        foreach ($taxonomyTree as $sec) {
+            $specs = [];
+            foreach (($sec['specialties'] ?? []) as $sp) {
+                $specs[] = [
+                    'id' => (int)($sp['id'] ?? 0),
+                    'name' => (string)($sp['name'] ?? ''),
+                    'is_regulated' => !empty($sp['is_regulated']),
+                ];
+            }
+            $compactTree[] = [
+                'id' => (int)($sec['id'] ?? 0),
+                'name' => (string)($sec['name'] ?? ''),
+                'specialties' => $specs,
+            ];
+        }
+        $taxJson = htmlspecialchars(
+            (string)json_encode($compactTree, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ENT_QUOTES,
+            'UTF-8'
+        );
+        $synJson = htmlspecialchars(
+            (string)json_encode(\BusherianBiasharas\Services\CategoryMatcher::SYNONYM_LEXICON, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ENT_QUOTES,
+            'UTF-8'
+        );
+
+        return <<<HTML
+        <div class="specialty-finder-box" data-specialty-finder="1" data-testid="specialty-finder-box" data-taxonomy-json="{$taxJson}" data-synonyms-json="{$synJson}">
+          <label for="specialty-quick-finder" class="specialty-finder-label">
+            🔍 Not sure which sector fits? Type your service to find the right Sector &amp; Specialty
+          </label>
+          <div class="specialty-finder-input-wrap">
+            <input
+              type="search"
+              id="specialty-quick-finder"
+              data-testid="specialty-quick-finder"
+              class="input-control specialty-finder-input"
+              autocomplete="off"
+              spellcheck="false"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded="false"
+              aria-controls="specialty-finder-results"
+              placeholder="Try e.g. publishing, author coaching, proofreading, app dev, wakili, mchapishaji...">
+            <button type="button" id="specialty-finder-clear" class="specialty-finder-clear" aria-label="Clear specialty search" hidden>&times;</button>
+            <div id="specialty-finder-results" data-testid="specialty-finder-results" class="specialty-finder-results" role="listbox" aria-label="Matching specialties" hidden></div>
+          </div>
+          <div id="specialty-finder-status" data-testid="specialty-finder-status" class="specialty-finder-status" aria-live="polite"></div>
+        </div>
+HTML;
+    }
+}
+
 if (!function_exists('bbiz_render_place_fields')) {
     /**
      * Render cascading 2-level Place selectors (Level 1: Country -> Level 2: City / County / State) (#97).
