@@ -52,12 +52,12 @@ bbiz_send_security_headers(false);
         </ul>
       </div>
 
-      <h2 style="color:#114B3E;">3. Your Cookie Choice &amp; Anonymous Directory Statistics</h2>
+      <h2 style="color:#114B3E;">3. Your Cookie Choice, Interactive Maps &amp; Anonymous Directory Statistics</h2>
       <ul>
         <li><strong>Your Choice Comes First (Allow for Analysis or Allow only Essential):</strong> On your first visit, we show a simple banner asking whether you wish to <strong>Allow for Analysis</strong> or <strong>Allow only Essential</strong> cookies. Your choice is remembered on your browser and can be changed anytime using the button below.</li>
-        <li><strong>If You Click "Allow only Essential" (or Before You Choose):</strong> No usage cookies are saved and no visit statistics are recorded. Every directory feature — searching, filtering, maps, and contacting businesses — works 100% normally.</li>
+        <li><strong>If You Click "Allow only Essential" (or Before You Choose):</strong> No usage cookies are saved, no visit statistics are recorded, and no external map tiles are loaded automatically. Searching, filtering, and contacting businesses work 100% normally.</li>
         <li><strong>If You Click "Allow for Analysis":</strong> We save a single anonymous browser cookie to help us count overall page visits, popular search terms, and clicks to businesses so we can improve the directory. These anonymous counts are cleared automatically after 6 months.</li>
-        <li><strong>Zero Outside Ad Trackers:</strong> All fonts, maps, icons, and scripts are hosted directly by Busherian Biasharas. We never share your browsing activity with outside advertisers.</li>
+        <li><strong>Consent-Gated OpenStreetMap Tiles, Address Lookup &amp; Road Routing:</strong> Fonts, icons, and map controls are hosted directly by Busherian Biasharas with zero outside advertising trackers. Interactive street map tiles are served by <strong>OpenStreetMap</strong> (tile.openstreetmap.org) and load <strong>only after you click "Allow for Analysis" or click "Load Interactive Map (OpenStreetMap)"</strong> on the map panel, because loading map tiles shares your browser IP address and viewed map region with OpenStreetMap. When you enter a starting street or request driving directions, our server queries <strong>OpenStreetMap Nominatim</strong> (address lookup) and <strong>OSRM</strong> (road route calculation) using only the coordinates or street name needed to compute the route — never your personal identity.</li>
       </ul>
       <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:0.9rem 1.1rem;margin:0.9rem 0 1.25rem 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;font-size:0.86rem;">
         <div><strong>Your Current Cookie Preference:</strong> <span id="dpa-cookie-status-label">Checking...</span></div>

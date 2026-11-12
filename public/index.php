@@ -19,7 +19,17 @@ $isAdminVisitor = AdminAuth::isAuthenticated();
 $taxonomyTree = CategoryMatcher::getTaxonomyTree($pdo, false);
 $placeHierarchy = LocationEngine::getPlaceHierarchy();
 
-// Load initial approved businesses (strictly zero vetting columns)
+// Load bounded initial page-1 approved businesses (#180: LIMIT 10 OFFSET 0, zero N+1, zero vetting columns)
+$initialPerPage = 10;
+$totalApprovedCount = (int)$pdo->query("
+    SELECT COUNT(*)
+    FROM businesses b
+    INNER JOIN categories sec ON sec.id = b.sector_id
+    INNER JOIN categories spec ON spec.id = b.specialty_id
+    WHERE b.status = 'approved'
+")->fetchColumn();
+$initialTotalPages = max(1, (int)ceil($totalApprovedCount / $initialPerPage));
+
 $stmt = $pdo->query("
     SELECT
         b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.description,
@@ -39,23 +49,29 @@ $stmt = $pdo->query("
     INNER JOIN categories spec ON spec.id = b.specialty_id
     WHERE b.status = 'approved'
     ORDER BY b.business_number ASC, b.id ASC
+    LIMIT 10 OFFSET 0
 ");
 $rows = $stmt->fetchAll();
+
+$initialPageIds = array_map(static fn(array $r): int => (int)$r['id'], $rows);
+$editableInitialIds = ($currentOwner !== null && $initialPageIds !== [])
+    ? OwnerAuth::getEditableBusinessIdsForOwner($pdo, (int)$currentOwner['id'], $initialPageIds)
+    : [];
+$isAuthenticatedViewer = ($currentOwner !== null || $isAdminVisitor);
 
 $initialBusinesses = [];
 foreach ($rows as $r) {
     $bizId = (int)$r['id'];
-    $canOwnerEdit = $currentOwner !== null && OwnerAuth::canOwnerEditBusiness($pdo, (int)$currentOwner['id'], $bizId);
+    $canOwnerEdit = !empty($editableInitialIds[$bizId]);
     $canEdit = $canOwnerEdit || $isAdminVisitor;
     $editUrl = $canOwnerEdit
         ? ('/owner/edit-business.php?id=' . $bizId)
         : ($isAdminVisitor ? ('/admin/edit-business.php?id=' . $bizId) : null);
 
-    $initialBusinesses[] = [
+    $bizItem = [
         'id' => $bizId,
         'can_edit' => $canEdit,
         'edit_url' => $editUrl,
-        'owner_email_hints' => OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $bizId),
         'business_id' => $r['business_id'],
         'business_number' => (int)$r['business_number'],
         'name' => $r['name'],
@@ -101,7 +117,17 @@ foreach ($rows as $r) {
             'youtube'   => $r['social_youtube'],
         ]),
     ];
+    if ($isAuthenticatedViewer) {
+        $bizItem['owner_email_hints'] = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $bizId);
+    }
+    $initialBusinesses[] = $bizItem;
 }
+$initialPagination = [
+    'page' => 1,
+    'per_page' => $initialPerPage,
+    'total' => $totalApprovedCount,
+    'total_pages' => $initialTotalPages,
+];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -212,7 +238,7 @@ foreach ($rows as $r) {
       <div class="results-header">
         <div>
           <strong id="results-count" data-testid="results-count" style="font-size:0.95rem;color:#114B3E;display:block;">
-            <?= count($initialBusinesses) ?> Verified Busherian Biasharas
+            <?= $totalApprovedCount > 0 ? ('Showing 1–' . count($initialBusinesses) . ' of ' . $totalApprovedCount . ' Verified Busherian Biasharas') : '0 Verified Busherian Biasharas' ?>
           </strong>
           <span style="font-size:0.76rem;color:#6B7280;">
             Click any card or map pin for Website, WhatsApp, Call, Hours &amp; Exact Pin
@@ -273,6 +299,7 @@ foreach ($rows as $r) {
     window.PLACE_HIERARCHY = <?= json_encode($placeHierarchy, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
     window.PLACE_UNIT_LABELS = <?= json_encode(LocationEngine::getPlaceUnitLabels(), JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
     window.INITIAL_BUSINESSES = <?= json_encode($initialBusinesses, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
+    window.INITIAL_PAGINATION = <?= json_encode($initialPagination, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) ?>;
   </script>
   <script src="/assets/vendor/leaflet/leaflet.js"></script>
   <script src="/assets/js/consent-metrics.js"></script>

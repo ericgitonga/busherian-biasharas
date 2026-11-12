@@ -8,12 +8,164 @@ use RuntimeException;
 
 final class VettingPurger
 {
-    /**
-     * Approve a pending business listing and IMMEDIATELY hard-delete its alumni vetting credentials
-     * (`school_code`, `house_name`, `year_left`, `school_number`) from `business_vetting_queue`.
-     */
-    public static function approveBusiness(PDO $pdo, int $businessId, ?int $mergeIntoSpecialtyId = null): array
+    public const PRIVACY_NOTICE_VERSION = '2026-11-v2';
+
+    public const ALLOWED_ADMIN_PROVENANCE_BASES = [
+        'alumni_direct_authorization',
+        'public_alumni_business_registry',
+        'verified_event_or_chapter_directory',
+        'owner_written_request',
+    ];
+
+    public static function allocateNextBusinessNumber(PDO $pdo): int
     {
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            \BusherianBiasharas\Config\Database::syncBusinessSequenceFloor($pdo);
+            $pdo->prepare("UPDATE business_sequences SET current_val = current_val + 1 WHERE seq_key = 'business_number'")
+                ->execute();
+            $stmt = $pdo->prepare("SELECT current_val FROM business_sequences WHERE seq_key = 'business_number' LIMIT 1");
+            $stmt->execute();
+            $val = (int)($stmt->fetchColumn() ?: 1);
+            if ($ownTx) {
+                $pdo->commit();
+            }
+            return max(1, $val);
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    public static function recordModerationAudit(
+        PDO $pdo,
+        int $businessId,
+        string $action,
+        string $channel,
+        string $actorIdentifier,
+        ?string $previousStatus,
+        string $newStatus,
+        ?string $reasonNote = null,
+        ?string $clientIp = null
+    ): void {
+        $ipHash = ($clientIp !== null && trim($clientIp) !== '')
+            ? AntiSpamGate::pseudonymizeIp($clientIp)
+            : null;
+        $pdo->prepare("
+            INSERT INTO moderation_audit_log (
+                business_id, action, channel, actor_identifier,
+                previous_status, new_status, reason_note, ip_hash, created_at
+            ) VALUES (
+                :bid, :act, :ch, :actor,
+                :prev, :next, :note, :iph, CURRENT_TIMESTAMP
+            )
+        ")->execute([
+            ':bid' => $businessId,
+            ':act' => mb_substr(trim($action), 0, 32),
+            ':ch' => mb_substr(trim($channel), 0, 40),
+            ':actor' => mb_substr(trim($actorIdentifier) !== '' ? trim($actorIdentifier) : 'system', 0, 190),
+            ':prev' => $previousStatus !== null ? mb_substr(trim($previousStatus), 0, 24) : null,
+            ':next' => mb_substr(trim($newStatus), 0, 24),
+            ':note' => $reasonNote !== null && trim($reasonNote) !== '' ? mb_substr(trim($reasonNote), 0, 255) : null,
+            ':iph' => $ipHash,
+        ]);
+    }
+
+    public static function validateHttpUrl(?string $rawUrl, string $fieldLabel): ?string
+    {
+        $u = trim((string)($rawUrl ?? ''));
+        if ($u === '') {
+            return null;
+        }
+        if (strlen($u) > 500) {
+            throw new \InvalidArgumentException("{$fieldLabel} must be 500 characters or fewer.");
+        }
+        if (!preg_match('#^https?://[^\s<>"\x00-\x1f]+$#i', $u)) {
+            throw new \InvalidArgumentException("{$fieldLabel} must start with http:// or https://.");
+        }
+        $parts = parse_url($u);
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        $host = trim((string)($parts['host'] ?? ''));
+        if (!in_array($scheme, ['http', 'https'], true) || $host === '') {
+            throw new \InvalidArgumentException("{$fieldLabel} must be a valid http:// or https:// URL.");
+        }
+        return $u;
+    }
+
+    public static function validateListingWritePayload(
+        PDO $pdo,
+        array $data,
+        ?float $latitude,
+        ?float $longitude,
+        string $hoursJson
+    ): void {
+        $sectorId = (int)($data['sector_id'] ?? 0);
+        $specialtyId = (int)($data['specialty_id'] ?? 0);
+        if (!CategoryMatcher::validateSectorAndSpecialtyPair($pdo, $sectorId, $specialtyId)) {
+            throw new \InvalidArgumentException('Selected Specialty does not belong to the chosen Industry Sector.');
+        }
+
+        $name = trim((string)($data['name'] ?? ''));
+        if ($name === '' || mb_strlen($name) > 180) {
+            throw new \InvalidArgumentException('Business Name is required and must be 180 characters or fewer.');
+        }
+        $tagline = trim((string)($data['tagline'] ?? ''));
+        if (mb_strlen($tagline) > 220) {
+            throw new \InvalidArgumentException('Short Tagline must be 220 characters or fewer.');
+        }
+        $desc = trim((string)($data['description'] ?? ''));
+        if (mb_strlen($desc) > 5000) {
+            throw new \InvalidArgumentException('Business Description must be 5,000 characters or fewer.');
+        }
+
+        $emailPub = trim((string)($data['email_public'] ?? ''));
+        if ($emailPub !== '' && (!filter_var($emailPub, FILTER_VALIDATE_EMAIL) || strlen($emailPub) > 190)) {
+            throw new \InvalidArgumentException('Public Contact Email must be a valid email address.');
+        }
+
+        $urlFields = [
+            'website_url' => 'Website URL',
+            'google_maps_url' => 'Google Maps URL',
+            'social_instagram' => 'Instagram URL',
+            'social_linkedin' => 'LinkedIn URL',
+            'social_x' => 'X (Twitter) URL',
+            'social_facebook' => 'Facebook URL',
+            'social_tiktok' => 'TikTok URL',
+            'social_youtube' => 'YouTube URL',
+        ];
+        foreach ($urlFields as $key => $label) {
+            if (array_key_exists($key, $data)) {
+                self::validateHttpUrl(is_scalar($data[$key]) ? (string)$data[$key] : null, $label);
+            }
+        }
+
+        if (($latitude !== null && $longitude === null) || ($latitude === null && $longitude !== null)) {
+            throw new \InvalidArgumentException('Both Latitude and Longitude must be provided together.');
+        }
+        if ($latitude !== null && $longitude !== null) {
+            if (!is_finite($latitude) || !is_finite($longitude) || $latitude < -90.0 || $latitude > 90.0 || $longitude < -180.0 || $longitude > 180.0) {
+                throw new \InvalidArgumentException('Coordinates must be within valid bounds (-90..90 latitude, -180..180 longitude).');
+            }
+        }
+
+        if (!HoursEngine::validateScheduleJson($hoursJson)) {
+            throw new \InvalidArgumentException('Operating hours schedule contains invalid 24-hour HH:MM values.');
+        }
+    }
+
+    public static function approveBusiness(
+        PDO $pdo,
+        int $businessId,
+        ?int $mergeIntoSpecialtyId = null,
+        string $channel = 'admin_dashboard',
+        string $actorIdentifier = 'admin_console',
+        ?string $clientIp = null
+    ): array {
         $ownTx = !$pdo->inTransaction();
         if ($ownTx) {
             $pdo->beginTransaction();
@@ -26,10 +178,13 @@ final class VettingPurger
             if (!$biz) {
                 throw new RuntimeException("Business #{$businessId} not found.");
             }
+            $prevStatus = (string)($biz['status'] ?? '');
+            if ($prevStatus !== 'pending') {
+                throw new RuntimeException("Business #{$businessId} cannot be approved because its status is '{$prevStatus}' (expected 'pending').");
+            }
 
             if ($mergeIntoSpecialtyId !== null && $mergeIntoSpecialtyId > 0) {
-                // Re-point business to canonical specialty and mark custom specialty rejected
-                $specStmt = $pdo->prepare("SELECT id, parent_id FROM categories WHERE id = :sid");
+                $specStmt = $pdo->prepare("SELECT id, parent_id FROM categories WHERE id = :sid AND parent_id IS NOT NULL");
                 $specStmt->execute([':sid' => $mergeIntoSpecialtyId]);
                 $targetSpec = $specStmt->fetch();
                 if ($targetSpec) {
@@ -44,23 +199,24 @@ final class VettingPurger
                         ->execute([':old' => $oldSpecId]);
                 }
             } else {
-                // Approve any custom specialty submitted with this business
                 $pdo->prepare("UPDATE categories SET status = 'approved' WHERE id = :sid AND status = 'pending_approval'")
                     ->execute([':sid' => (int)$biz['specialty_id']]);
             }
 
-            // Transition business to approved
-            $pdo->prepare("
+            $upd = $pdo->prepare("
                 UPDATE businesses
                 SET status = 'approved',
                     quarantine_prev_status = NULL,
                     verified_at = CURRENT_TIMESTAMP,
                     last_confirmed_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE id = :id
-            ")->execute([':id' => $businessId]);
+                WHERE id = :id AND status = 'pending'
+            ");
+            $upd->execute([':id' => $businessId]);
+            if ($upd->rowCount() !== 1) {
+                throw new RuntimeException("Business #{$businessId} state changed concurrently; approval aborted.");
+            }
 
-            // Link submitter's email as persistent business owner before purging temporary vetting credentials
             $vetRowStmt = $pdo->prepare("SELECT submitter_email, submitter_name, submitter_phone FROM business_vetting_queue WHERE business_id = :id LIMIT 1");
             $vetRowStmt->execute([':id' => $businessId]);
             $vetRow = $vetRowStmt->fetch();
@@ -78,11 +234,22 @@ final class VettingPurger
                 Mailer::notifyOwnerListingApproved($pdo, ['id' => $businessId, 'name' => (string)$biz['name']], $subEmail);
             }
 
-            // STRICT PRIVACY GUARANTEE: Permanently hard-delete House, Year Left & School Number & scrub any legacy outbox PII
             $del = $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id");
             $del->execute([':id' => $businessId]);
             $purgedRows = $del->rowCount();
             Mailer::scrubLegacyVettingPiiFromOutbox($pdo, $businessId);
+
+            self::recordModerationAudit(
+                $pdo,
+                $businessId,
+                'approve',
+                $channel,
+                $actorIdentifier,
+                $prevStatus,
+                'approved',
+                $mergeIntoSpecialtyId ? "Merged specialty #{$mergeIntoSpecialtyId}" : null,
+                $clientIp
+            );
 
             if ($ownTx) {
                 $pdo->commit();
@@ -103,38 +270,63 @@ final class VettingPurger
         }
     }
 
-    /**
-     * Reject a pending business listing and IMMEDIATELY hard-delete its alumni vetting credentials.
-     */
-    public static function rejectBusiness(PDO $pdo, int $businessId): array
-    {
+    public static function rejectBusiness(
+        PDO $pdo,
+        int $businessId,
+        string $channel = 'admin_dashboard',
+        string $actorIdentifier = 'admin_console',
+        ?string $clientIp = null
+    ): array {
         $ownTx = !$pdo->inTransaction();
         if ($ownTx) {
             $pdo->beginTransaction();
         }
 
         try {
-            $stmt = $pdo->prepare("SELECT id, specialty_id FROM businesses WHERE id = :id");
+            $stmt = $pdo->prepare("SELECT id, specialty_id, status, photos_json FROM businesses WHERE id = :id");
             $stmt->execute([':id' => $businessId]);
             $biz = $stmt->fetch();
             if (!$biz) {
                 throw new RuntimeException("Business #{$businessId} not found.");
             }
+            $prevStatus = (string)($biz['status'] ?? '');
+            if ($prevStatus !== 'pending') {
+                throw new RuntimeException("Business #{$businessId} cannot be rejected because its status is '{$prevStatus}' (expected 'pending').");
+            }
+            $oldPhotosJson = is_string($biz['photos_json'] ?? null) ? $biz['photos_json'] : null;
 
-            $pdo->prepare("UPDATE businesses SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = :id")
-                ->execute([':id' => $businessId]);
+            $upd = $pdo->prepare("UPDATE businesses SET status = 'rejected', photos_json = '[]', updated_at = CURRENT_TIMESTAMP WHERE id = :id AND status = 'pending'");
+            $upd->execute([':id' => $businessId]);
+            if ($upd->rowCount() !== 1) {
+                throw new RuntimeException("Business #{$businessId} state changed concurrently; rejection aborted.");
+            }
 
             $pdo->prepare("UPDATE categories SET status = 'rejected' WHERE id = :sid AND status = 'pending_approval'")
                 ->execute([':sid' => (int)$biz['specialty_id']]);
 
-            // Permanently hard-delete House, Year Left & School Number & scrub any legacy outbox PII
             $del = $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id");
             $del->execute([':id' => $businessId]);
             $purgedRows = $del->rowCount();
             Mailer::scrubLegacyVettingPiiFromOutbox($pdo, $businessId);
 
+            self::recordModerationAudit(
+                $pdo,
+                $businessId,
+                'reject',
+                $channel,
+                $actorIdentifier,
+                $prevStatus,
+                'rejected',
+                null,
+                $clientIp
+            );
+
             if ($ownTx) {
                 $pdo->commit();
+            }
+
+            if ($oldPhotosJson !== null && $oldPhotosJson !== '') {
+                PhotoUploader::deleteAllBusinessMedia($businessId, $oldPhotosJson);
             }
 
             return [
@@ -150,16 +342,21 @@ final class VettingPurger
         }
     }
 
-    /**
-     * Reversible DPA Quarantine (#168):
-     * Hides a listing from public endpoints while preserving its previous status (`quarantine_prev_status`)
-     * and NEVER deleting pending `business_vetting_queue` verification evidence.
-     */
-    public static function quarantineBusinessDpa(PDO $pdo, int $businessId): void
-    {
-        $curStmt = $pdo->prepare("SELECT status FROM businesses WHERE id = :id LIMIT 1");
+    public static function quarantineBusinessDpa(
+        PDO $pdo,
+        int $businessId,
+        string $channel = 'dpa_takedown',
+        string $actorIdentifier = 'owner_or_admin',
+        ?string $clientIp = null
+    ): void {
+        $curStmt = $pdo->prepare("SELECT status, photos_json FROM businesses WHERE id = :id LIMIT 1");
         $curStmt->execute([':id' => $businessId]);
-        $curStatus = (string)($curStmt->fetchColumn() ?: '');
+        $row = $curStmt->fetch();
+        if (!$row) {
+            return;
+        }
+        $curStatus = (string)($row['status'] ?? '');
+        $photosJson = is_string($row['photos_json'] ?? null) ? $row['photos_json'] : null;
         if ($curStatus === '') {
             return;
         }
@@ -174,15 +371,29 @@ final class VettingPurger
                 ':prev' => $curStatus,
                 ':id' => $businessId,
             ]);
+            self::recordModerationAudit(
+                $pdo,
+                $businessId,
+                'quarantine',
+                $channel,
+                $actorIdentifier,
+                $curStatus,
+                'quarantined_dpa',
+                null,
+                $clientIp
+            );
         }
+        PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
     }
 
-    /**
-     * Restore a quarantined business back to its pre-quarantine state ('pending' if unreviewed vetting exists, else 'approved') (#168).
-     */
-    public static function restoreQuarantinedBusiness(PDO $pdo, int $businessId): string
-    {
-        $stmt = $pdo->prepare("SELECT status, quarantine_prev_status, verified_at FROM businesses WHERE id = :id LIMIT 1");
+    public static function restoreQuarantinedBusiness(
+        PDO $pdo,
+        int $businessId,
+        string $channel = 'admin_dashboard',
+        string $actorIdentifier = 'admin_console',
+        ?string $clientIp = null
+    ): string {
+        $stmt = $pdo->prepare("SELECT status, quarantine_prev_status, verified_at, photos_json FROM businesses WHERE id = :id LIMIT 1");
         $stmt->execute([':id' => $businessId]);
         $row = $stmt->fetch();
         if (!$row) {
@@ -212,6 +423,24 @@ final class VettingPurger
             ':st' => $targetStatus,
             ':id' => $businessId,
         ]);
+
+        self::recordModerationAudit(
+            $pdo,
+            $businessId,
+            'restore',
+            $channel,
+            $actorIdentifier,
+            (string)($row['status'] ?? 'quarantined_dpa'),
+            $targetStatus,
+            null,
+            $clientIp
+        );
+
+        if ($targetStatus !== 'rejected') {
+            PhotoUploader::restoreQuarantinedBusinessPhotos($businessId, is_string($row['photos_json'] ?? null) ? $row['photos_json'] : null);
+        } else {
+            PhotoUploader::deleteAllBusinessMedia($businessId, is_string($row['photos_json'] ?? null) ? $row['photos_json'] : null);
+        }
 
         return $targetStatus;
     }
@@ -431,9 +660,13 @@ final class VettingPurger
         $metricsCutoff = gmdate('Y-m-d H:i:s', time() - (180 * 86400));
         $pdo->prepare("DELETE FROM usage_metrics WHERE created_at < :mcut")->execute([':mcut' => $metricsCutoff]);
 
+        $mediaSweep = PhotoUploader::sweepOrphanedMedia($pdo, 3600);
+
         return [
             'vetting_rows_purged' => $vettingPurged,
             'outbox_bodies_redacted' => $outboxRedacted,
+            'orphaned_public_media_deleted' => $mediaSweep['orphaned_public_deleted'],
+            'orphaned_quarantine_media_deleted' => $mediaSweep['orphaned_quarantine_deleted'],
             'cutoff_utc' => $cutoffDate,
         ];
     }
@@ -497,11 +730,18 @@ final class VettingPurger
     /**
      * Permanently delete an existing business record (and any associated vetting, outbox, takedown, link & click rows).
      */
-    public static function deleteBusiness(PDO $pdo, int $businessId): bool
-    {
-        $photoStmt = $pdo->prepare("SELECT photos_json FROM businesses WHERE id = :id LIMIT 1");
+    public static function deleteBusiness(
+        PDO $pdo,
+        int $businessId,
+        string $channel = 'admin_dashboard',
+        string $actorIdentifier = 'admin_console',
+        ?string $clientIp = null
+    ): bool {
+        $photoStmt = $pdo->prepare("SELECT status, photos_json FROM businesses WHERE id = :id LIMIT 1");
         $photoStmt->execute([':id' => $businessId]);
-        $photosJson = $photoStmt->fetchColumn();
+        $bizRow = $photoStmt->fetch();
+        $photosJson = is_array($bizRow) && is_string($bizRow['photos_json'] ?? null) ? $bizRow['photos_json'] : null;
+        $prevStatus = is_array($bizRow) ? (string)($bizRow['status'] ?? '') : null;
 
         $ownTx = !$pdo->inTransaction();
         if ($ownTx) {
@@ -518,13 +758,23 @@ final class VettingPurger
             $del->execute([':id' => $businessId]);
             $deleted = $del->rowCount() > 0;
             if ($deleted) {
-                self::renumberBusinesses($pdo);
+                self::recordModerationAudit(
+                    $pdo,
+                    $businessId,
+                    'delete',
+                    $channel,
+                    $actorIdentifier,
+                    $prevStatus,
+                    'deleted',
+                    null,
+                    $clientIp
+                );
             }
             if ($ownTx) {
                 $pdo->commit();
             }
-            if ($deleted && is_string($photosJson) && $photosJson !== '') {
-                PhotoUploader::deleteBusinessPhotoFiles($photosJson);
+            if ($deleted) {
+                PhotoUploader::deleteAllBusinessMedia($businessId, $photosJson);
             }
             return $deleted;
         } catch (\Throwable $e) {
@@ -550,13 +800,26 @@ final class VettingPurger
         $hoursJson = isset($data['operating_hours_json']) && trim((string)$data['operating_hours_json']) !== ''
             ? trim((string)$data['operating_hours_json'])
             : HoursEngine::buildScheduleJsonFromPost($data, (string)($existingRow['operating_hours_json'] ?? ''));
+
+        $validationData = $data;
+        $validationData['google_maps_url'] = $coordsMeta['google_maps_url'];
+        self::validateListingWritePayload($pdo, $validationData, $resolvedLat, $resolvedLng, $hoursJson);
+
+        $previousPhotoUrls = PhotoUploader::decodePhotosJson(isset($existingRow['photos_json']) ? (string)$existingRow['photos_json'] : null);
         $photosJson = PhotoUploader::processBusinessPhotos(
             isset($existingRow['photos_json']) ? (string)$existingRow['photos_json'] : null,
             isset($data['remove_photos']) && is_array($data['remove_photos']) ? $data['remove_photos'] : [],
             $_FILES['business_photos'] ?? null,
             isset($data['business_photos_data_json']) ? (string)$data['business_photos_data_json'] : null
         );
+        $keptPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
+        $newlyWrittenPhotoUrls = array_values(array_diff($keptPhotoUrls, $previousPhotoUrls));
 
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
         $stmt = $pdo->prepare("
             UPDATE businesses SET
                 name = :name,
@@ -650,9 +913,31 @@ final class VettingPurger
             OwnerAuth::linkOwnerToBusiness($pdo, (int)$ownerRec['id'], $businessId, 'admin_assigned');
         }
 
-        // If status is approved/rejected, ensure no vetting queue row remains (preserve vetting on quarantine per #168)
-        if (in_array($data['status'] ?? 'approved', ['approved', 'rejected'], true)) {
+        $targetStatus = in_array($data['status'] ?? '', ['approved', 'pending', 'rejected', 'quarantined_dpa'], true)
+            ? (string)$data['status']
+            : 'approved';
+        if (in_array($targetStatus, ['approved', 'rejected'], true)) {
             $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")->execute([':id' => $businessId]);
+        }
+        if ($ownTx) {
+            $pdo->commit();
+        }
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if ($newlyWrittenPhotoUrls !== []) {
+                PhotoUploader::deleteRemovedPhotoUrls($newlyWrittenPhotoUrls, []);
+            }
+            throw $e;
+        }
+        if ($targetStatus === 'quarantined_dpa') {
+            PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+        } elseif ($targetStatus === 'approved') {
+            PhotoUploader::restoreQuarantinedBusinessPhotos($businessId, $photosJson);
+        }
+        if ($ownTx) {
+            PhotoUploader::deleteRemovedPhotoUrls($previousPhotoUrls, $keptPhotoUrls);
         }
     }
 
@@ -711,9 +996,8 @@ final class VettingPurger
             $description = $name;
         }
 
-        $slug = self::generateUniqueSlug($pdo, $name);
-        $businessUid = self::generateUniqueBusinessUid($pdo);
-        $nextNum = ((int)$pdo->query("SELECT COALESCE(MAX(business_number), 0) FROM businesses")->fetchColumn()) + 1;
+        $sectorId = max(1, (int)($data['sector_id'] ?? 1));
+        $specialtyId = max(1, (int)($data['specialty_id'] ?? 2));
         $coordsMeta = self::resolveCoordsFromAdminData($data);
         $lat = $coordsMeta['latitude'];
         $lng = $coordsMeta['longitude'];
@@ -731,6 +1015,32 @@ final class VettingPurger
         $hoursJson = isset($data['operating_hours_json']) && trim((string)$data['operating_hours_json']) !== ''
             ? trim((string)$data['operating_hours_json'])
             : HoursEngine::buildScheduleJsonFromPost($data, (string)$defaultHours);
+
+        $validationPayload = $data;
+        $validationPayload['name'] = $name;
+        $validationPayload['tagline'] = mb_substr($tagline, 0, 180);
+        $validationPayload['description'] = $description;
+        $validationPayload['sector_id'] = $sectorId;
+        $validationPayload['specialty_id'] = $specialtyId;
+        $validationPayload['google_maps_url'] = $coordsMeta['google_maps_url'];
+        self::validateListingWritePayload($pdo, $validationPayload, $lat, $lng, $hoursJson);
+
+        $provenanceNote = trim((string)($data['admin_provenance_note'] ?? ''));
+        if (!empty($data['require_provenance_basis'])) {
+            $basis = trim((string)($data['admin_provenance_basis'] ?? ''));
+            if (!in_array($basis, self::ALLOWED_ADMIN_PROVENANCE_BASES, true) || $provenanceNote === '') {
+                throw new \InvalidArgumentException('Please select the DPA lawful-basis source and enter a brief authorization note before publishing.');
+            }
+            $provenanceNote = mb_substr("[{$basis}] {$provenanceNote}", 0, 255);
+        } elseif ($provenanceNote === '') {
+            $provenanceNote = 'Admin-curated verified Busherian business listing';
+        } else {
+            $provenanceNote = mb_substr($provenanceNote, 0, 255);
+        }
+
+        $slug = self::generateUniqueSlug($pdo, $name);
+        $businessUid = self::generateUniqueBusinessUid($pdo);
+        $nextNum = self::allocateNextBusinessNumber($pdo);
         $photosJson = PhotoUploader::processBusinessPhotos(
             isset($data['photos_json']) ? (string)$data['photos_json'] : null,
             [],
@@ -753,7 +1063,8 @@ final class VettingPurger
                 operating_hours_json, photos_json, phone_primary, whatsapp_number,
                 email_public, website_url, social_instagram, social_linkedin,
                 social_x, social_facebook, social_tiktok, social_youtube,
-                status, verified_at, last_confirmed_at
+                status, privacy_notice_version, listing_provenance, admin_provenance_note,
+                verified_at, last_confirmed_at
             ) VALUES (
                 :business_id, :business_number, :name, :slug, :tagline, :description, :school_badge,
                 :sector_id, :specialty_id, :service_mode, :alumni_perk,
@@ -764,7 +1075,8 @@ final class VettingPurger
                 :operating_hours_json, :photos_json, :phone_primary, :whatsapp_number,
                 :email_public, :website_url, :social_instagram, :social_linkedin,
                 :social_x, :social_facebook, :social_tiktok, :social_youtube,
-                :status, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                :status, :pver, 'admin_curated', :pnote,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
         ");
 
@@ -776,8 +1088,8 @@ final class VettingPurger
             ':tagline' => mb_substr($tagline, 0, 180),
             ':description' => $description,
             ':school_badge' => in_array($data['school_badge'] ?? '', ['AHS', 'AGHS', 'BOTH'], true) ? $data['school_badge'] : 'AHS',
-            ':sector_id' => max(1, (int)($data['sector_id'] ?? 1)),
-            ':specialty_id' => max(1, (int)($data['specialty_id'] ?? 1)),
+            ':sector_id' => $sectorId,
+            ':specialty_id' => $specialtyId,
             ':service_mode' => in_array($data['service_mode'] ?? '', ['physical', 'hybrid', 'online'], true) ? $data['service_mode'] : 'physical',
             ':alumni_perk' => trim((string)($data['alumni_perk'] ?? '')) ?: null,
             ':b2b_ready' => !empty($data['b2b_ready']) ? 1 : 0,
@@ -809,10 +1121,14 @@ final class VettingPurger
             ':social_tiktok' => trim((string)($data['social_tiktok'] ?? '')) ?: null,
             ':social_youtube' => trim((string)($data['social_youtube'] ?? '')) ?: null,
             ':status' => $status,
+            ':pver' => self::PRIVACY_NOTICE_VERSION,
+            ':pnote' => $provenanceNote,
         ]);
 
         $newId = (int)$pdo->lastInsertId();
-        self::renumberBusinesses($pdo);
+        if ($status === 'quarantined_dpa') {
+            PhotoUploader::quarantineBusinessPhotos($newId, $photosJson);
+        }
         return $newId;
     }
 
@@ -885,13 +1201,33 @@ final class VettingPurger
         $hoursJson = isset($data['operating_hours_json']) && trim((string)$data['operating_hours_json']) !== ''
             ? trim((string)$data['operating_hours_json'])
             : HoursEngine::buildScheduleJsonFromPost($data, (string)$oldBiz['operating_hours_json']);
+
+        $newNameCheck = trim((string)($data['name'] ?? $oldBiz['name']));
+        $newSectorCheck = (int)($data['sector_id'] ?? $oldBiz['sector_id']);
+        $newSpecCheck = (int)($data['specialty_id'] ?? $oldBiz['specialty_id']);
+        $valPayload = array_merge((array)$oldBiz, $data, [
+            'name' => $newNameCheck,
+            'sector_id' => $newSectorCheck,
+            'specialty_id' => $newSpecCheck,
+            'google_maps_url' => $coordsMeta['google_maps_url'],
+        ]);
+        self::validateListingWritePayload($pdo, $valPayload, $resolvedLat, $resolvedLng, $hoursJson);
+
+        $previousPhotoUrls = PhotoUploader::decodePhotosJson(isset($oldBiz['photos_json']) ? (string)$oldBiz['photos_json'] : null);
         $photosJson = PhotoUploader::processBusinessPhotos(
             isset($oldBiz['photos_json']) ? (string)$oldBiz['photos_json'] : null,
             isset($data['remove_photos']) && is_array($data['remove_photos']) ? $data['remove_photos'] : [],
             $_FILES['business_photos'] ?? null,
             isset($data['business_photos_data_json']) ? (string)$data['business_photos_data_json'] : null
         );
+        $keptPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
+        $newlyWrittenPhotoUrls = array_values(array_diff($keptPhotoUrls, $previousPhotoUrls));
 
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
         $stmt = $pdo->prepare("
             UPDATE businesses SET
                 name = :name,
@@ -974,6 +1310,22 @@ final class VettingPurger
             ':social_youtube' => trim((string)($data['social_youtube'] ?? '')) ?: null,
             ':id' => $businessId,
         ]);
+        if ($ownTx) {
+            $pdo->commit();
+        }
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if ($newlyWrittenPhotoUrls !== []) {
+                PhotoUploader::deleteRemovedPhotoUrls($newlyWrittenPhotoUrls, []);
+            }
+            throw $e;
+        }
+
+        if ($ownTx) {
+            PhotoUploader::deleteRemovedPhotoUrls($previousPhotoUrls, $keptPhotoUrls);
+        }
 
         $newStmt = $pdo->prepare("
             SELECT b.*, sec.name AS sector_name, spec.name AS specialty_name

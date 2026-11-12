@@ -37,7 +37,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect pertinent changed files & lint PHP
+      - name: Detect pertinent changed & retired files & lint PHP
         env:
           BEFORE_SHA: ${{ github.event.before }}
           AFTER_SHA: ${{ github.sha }}
@@ -45,10 +45,12 @@ jobs:
           SYNC_ALL: ${{ inputs.sync_all }}
         run: |
           set -euo pipefail
+          : > /tmp/deleted_files.txt
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$SYNC_ALL" = "true" ]; then
             git ls-files public src bin VERSION > /tmp/changed_files.txt
           elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
             git diff --name-only --diff-filter=ACMRT "$BEFORE_SHA" "$AFTER_SHA" -- public src bin VERSION > /tmp/changed_files.txt
+            git diff --name-only --diff-filter=D "$BEFORE_SHA" "$AFTER_SHA" -- public src bin | grep -vE '^(public/)?uploads/' > /tmp/deleted_files.txt || true
           else
             git ls-files public src bin VERSION > /tmp/changed_files.txt
           fi
@@ -59,7 +61,7 @@ jobs:
             fi
           done < /tmp/changed_files.txt
 
-      - name: Upload files via Explicit FTPS (Verified TLS)
+      - name: Upload files via Atomic Explicit FTPS (Verified TLS)
         env:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
@@ -71,4 +73,4 @@ jobs:
           if [[ "${FTP_SERVER}" != "angryhosting.com" && "${FTP_SERVER}" != *.angryhosting.com ]]; then
             TLS_ARG=(--tls-servername "angryhosting.com")
           fi
-          python3 .github/scripts/ftps_deploy.py --mode prod --files-list /tmp/changed_files.txt "${TLS_ARG[@]}"
+          python3 .github/scripts/ftps_deploy.py --mode prod --files-list /tmp/changed_files.txt --deleted-files-list /tmp/deleted_files.txt --release-sha "${GITHUB_SHA}" "${TLS_ARG[@]}"

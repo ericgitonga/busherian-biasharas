@@ -56,7 +56,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'confi
             $bStmt = $pdo->prepare("SELECT * FROM businesses WHERE id = :id LIMIT 1");
             $bStmt->execute([':id' => $cBizId]);
             $bRow = $bStmt->fetch() ?: ['id' => $cBizId, 'name' => "Listing #{$cBizId}"];
-            Mailer::notifyAdminTakedownRequest($pdo, (array)$bRow, (array)$confirmed, 'owner_quarantined');
+            $confirmIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+            if (AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $confirmIp, null, false)['allowed']) {
+                Mailer::notifyAdminTakedownRequest($pdo, (array)$bRow, (array)$confirmed, 'owner_quarantined');
+            }
             $messageHeading = '✓ Email Confirmed — Listing Immediately Paused:';
             $message = "Your ownership email has been confirmed and {$bRow['name']} is now hidden from the public directory while our team completes your request.";
         }
@@ -148,21 +151,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'confi
                 ];
 
                 if ($reqRes['status'] === 'owner_verified_quarantined') {
-                    Mailer::notifyAdminTakedownRequest($pdo, (array)$bizRow, $reqSummary, 'owner_quarantined');
+                    if (AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, null, false)['allowed']) {
+                        Mailer::notifyAdminTakedownRequest($pdo, (array)$bizRow, $reqSummary, 'owner_quarantined');
+                    }
                     $messageHeading = '✓ Verified Owner Request — Listing Immediately Paused:';
                     $message = "{$bizRow['name']} has been immediately hidden from the public directory while our team at admin@busherianbiasharas.com completes your removal or correction request.";
                 } elseif ($reqRes['status'] === 'awaiting_owner_email_confirm' && !empty($reqRes['raw_token'])) {
                     $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
                     $confirmUrl = "{$baseUrl}/takedown.php?confirm_token=" . urlencode((string)$reqRes['raw_token']);
-                    Mailer::sendOwnerTakedownConfirmationLink($pdo, (array)$bizRow, $requesterEmail, $confirmUrl);
-                    Mailer::notifyAdminTakedownRequest($pdo, (array)$bizRow, $reqSummary, 'queued_review');
-                    $messageHeading = '✓ Check Your Email to Pause Immediately (Also Queued for Admin Review):';
-                    $message = "We sent a single-use confirmation link to {$requesterEmail}. Click that link to pause {$bizRow['name']} immediately, or allow our team at admin@busherianbiasharas.com to complete priority review.";
+                    $sentOwnerConfirm = false;
+                    if (AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, $requesterEmail, true)['allowed']) {
+                        Mailer::sendOwnerTakedownConfirmationLink($pdo, (array)$bizRow, $requesterEmail, $confirmUrl);
+                        $sentOwnerConfirm = true;
+                    }
+                    if (AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, null, false)['allowed']) {
+                        Mailer::notifyAdminTakedownRequest($pdo, (array)$bizRow, $reqSummary, 'queued_review');
+                    }
+                    $messageHeading = $sentOwnerConfirm
+                        ? '✓ Check Your Email to Pause Immediately (Also Queued for Admin Review):'
+                        : '✓ Request Queued for Priority Admin Review:';
+                    $message = $sentOwnerConfirm
+                        ? "We sent a single-use confirmation link to {$requesterEmail}. Click that link to pause {$bizRow['name']} immediately, or allow our team at admin@busherianbiasharas.com to complete priority review."
+                        : "Your request for {$bizRow['name']} has been queued for priority review by our team at admin@busherianbiasharas.com.";
                 } else {
-                    Mailer::notifyAdminTakedownRequest($pdo, (array)$bizRow, $reqSummary, 'queued_review');
+                    if (AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, null, false)['allowed']) {
+                        Mailer::notifyAdminTakedownRequest($pdo, (array)$bizRow, $reqSummary, 'queued_review');
+                    }
                     $primaryOwnerNotify = array_key_first($designatedEmails);
                     if (is_string($primaryOwnerNotify) && $primaryOwnerNotify !== '' && $primaryOwnerNotify !== $requesterEmail) {
-                        Mailer::notifyOwnerThirdPartyTakedownNotice($pdo, (array)$bizRow, $primaryOwnerNotify);
+                        if (AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, $primaryOwnerNotify, false)['allowed']) {
+                            Mailer::notifyOwnerThirdPartyTakedownNotice($pdo, (array)$bizRow, $primaryOwnerNotify);
+                        }
                     }
                     $messageHeading = '✓ Request Queued for Priority Admin Review:';
                     $message = "Thank you. Your report regarding {$bizRow['name']} has been logged for priority review by our team at admin@busherianbiasharas.com. To protect alumni listings against unverified disruption, published listings stay live until owner confirmation or administrator review is completed.";

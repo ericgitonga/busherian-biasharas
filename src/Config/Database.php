@@ -9,6 +9,7 @@ use RuntimeException;
 
 final class Database
 {
+    public const SCHEMA_INIT_VERSION = '2026-11-v15-med';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -193,6 +194,34 @@ final class Database
 
     private static function ensureInitialized(PDO $pdo, string $driver): void
     {
+        // Fast-path (#183): skip DDL/taxonomy/pin checks on normal web requests once schema_init_version matches
+        try {
+            $verStmt = $pdo->prepare("SELECT setting_value FROM app_settings WHERE setting_key = 'schema_init_version' LIMIT 1");
+            $verStmt->execute();
+            $currentVer = trim((string)($verStmt->fetchColumn() ?: ''));
+            if ($currentVer === self::SCHEMA_INIT_VERSION) {
+                return;
+            }
+        } catch (\Throwable $e) {
+            // Uninitialized database -> proceed with idempotent local schema initialization
+        }
+
+        if (strtolower(self::env('BBIZ_DISABLE_WEB_AUTO_MIGRATE', 'false')) === 'true' && PHP_SAPI !== 'cli') {
+            throw new DatabaseUnavailableException('Database schema migration is pending; run php bin/migrate-and-seed.php.');
+        }
+
+        self::migrateAndSeed($pdo, false);
+    }
+
+    /**
+     * Explicit idempotent schema migration, taxonomy sync, sequence initialization,
+     * and optional external coordinate backfill (#183).
+     *
+     * @return array{driver: string, schema_version: string, categories_count: int, next_business_seq: int, backfill: ?array}
+     */
+    public static function migrateAndSeed(PDO $pdo, bool $runExternalPinBackfill = false): array
+    {
+        $driver = strtolower((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
         if ($driver === 'mysql') {
             $hasCat = $pdo->query("SHOW TABLES LIKE 'categories'")->fetchColumn();
             if (!$hasCat) {
@@ -327,6 +356,7 @@ final class Database
         self::ensureUsageMetricsTable($pdo, $driver);
         self::ensureOwnerTables($pdo, $driver);
         self::ensureOutboxAndTakedownTables($pdo, $driver);
+        self::ensureProvenanceAuditAndSequenceTables($pdo, $driver);
 
         // Seed default taxonomy if empty; NEVER seed sample businesses in production (#169)
         $appEnv = strtolower(self::env('APP_ENV', 'development'));
@@ -358,23 +388,167 @@ final class Database
             }
         }
 
-        // One-time idempotent backfill of missing latitude/longitude from listed map pins/links (#138, #141)
+
+        // One-time idempotent backfill of missing latitude/longitude (#138, #141, #183)
+        // Web fallback NEVER makes external HTTP geocoding calls ($runExternalPinBackfill === false); CLI can opt in.
+        $bfSummary = null;
         $backfillState = self::getSetting($pdo, 'coords_pin_backfill_v1');
         if ($backfillState !== 'done') {
             $attempts = ctype_digit($backfillState) ? (int)$backfillState : 0;
             if ($attempts < 3) {
                 try {
-                    $allowExt = (getenv('BBIZ_OFFLINE_ROUTING') !== '1');
-                    $bf = \BusherianBiasharas\Services\VettingPurger::backfillMissingCoordinatesFromPins($pdo, $allowExt);
-                    if (($bf['network_errors'] ?? 0) === 0 && empty($bf['item_errors'])) {
+                    $allowExt = $runExternalPinBackfill && (getenv('BBIZ_OFFLINE_ROUTING') !== '1');
+                    $bfSummary = \BusherianBiasharas\Services\VettingPurger::backfillMissingCoordinatesFromPins($pdo, $allowExt);
+                    if (($bfSummary['network_errors'] ?? 0) === 0 && empty($bfSummary['item_errors'])) {
                         self::setSetting($pdo, 'coords_pin_backfill_v1', 'done');
-                    } else {
+                    } elseif ($runExternalPinBackfill) {
                         self::setSetting($pdo, 'coords_pin_backfill_v1', (string)($attempts + 1));
                     }
                 } catch (\Throwable $bfErr) {
-                    error_log('[Database::ensureInitialized] coords_pin_backfill_v1 failed: ' . $bfErr->getMessage());
+                    error_log('[Database::migrateAndSeed] coords_pin_backfill_v1 failed: ' . $bfErr->getMessage());
                 }
             }
+        }
+
+        self::syncBusinessSequenceFloor($pdo, $driver);
+        self::setSetting($pdo, 'schema_init_version', self::SCHEMA_INIT_VERSION);
+
+        $catCount = (int)$pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
+        $seqStmt = $pdo->prepare("SELECT current_val FROM business_sequences WHERE seq_key = 'business_number' LIMIT 1");
+        $seqStmt->execute();
+        $seqVal = (int)($seqStmt->fetchColumn() ?: 0);
+
+        return [
+            'driver' => $driver,
+            'schema_version' => self::SCHEMA_INIT_VERSION,
+            'categories_count' => $catCount,
+            'next_business_seq' => $seqVal,
+            'backfill' => $bfSummary,
+        ];
+    }
+
+    public static function syncBusinessSequenceFloor(PDO $pdo, ?string $driver = null): void
+    {
+        $drv = $driver ?? strtolower((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        $maxNum = (int)$pdo->query("SELECT COALESCE(MAX(business_number), 0) FROM businesses")->fetchColumn();
+        if ($drv === 'sqlite') {
+            $pdo->exec("INSERT OR IGNORE INTO business_sequences (seq_key, current_val) VALUES ('rate_limit_mutex', 0)");
+            $pdo->prepare("INSERT OR IGNORE INTO business_sequences (seq_key, current_val) VALUES ('business_number', :v)")
+                ->execute([':v' => $maxNum]);
+            $pdo->prepare("UPDATE business_sequences SET current_val = :v1, updated_at = CURRENT_TIMESTAMP WHERE seq_key = 'business_number' AND current_val < :v2")
+                ->execute([':v1' => $maxNum, ':v2' => $maxNum]);
+        } else {
+            $pdo->exec("INSERT IGNORE INTO business_sequences (seq_key, current_val) VALUES ('rate_limit_mutex', 0)");
+            $pdo->prepare("INSERT IGNORE INTO business_sequences (seq_key, current_val) VALUES ('business_number', :v)")
+                ->execute([':v' => $maxNum]);
+            $pdo->prepare("UPDATE business_sequences SET current_val = :v1 WHERE seq_key = 'business_number' AND current_val < :v2")
+                ->execute([':v1' => $maxNum, ':v2' => $maxNum]);
+        }
+    }
+
+    private static function ensureProvenanceAuditAndSequenceTables(PDO $pdo, string $driver): void
+    {
+        if ($driver === 'sqlite') {
+            $bizCols = [];
+            foreach ($pdo->query("PRAGMA table_info(businesses)")->fetchAll() as $c) {
+                $bizCols[(string)($c['name'] ?? '')] = true;
+            }
+            if (!isset($bizCols['consent_recorded_at'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN consent_recorded_at TEXT NULL");
+            }
+            if (!isset($bizCols['privacy_notice_version'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN privacy_notice_version TEXT NULL");
+            }
+            if (!isset($bizCols['age_attested_at'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN age_attested_at TEXT NULL");
+            }
+            if (!isset($bizCols['listing_provenance'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN listing_provenance TEXT NOT NULL DEFAULT 'admin_curated'");
+            }
+            if (!isset($bizCols['admin_provenance_note'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN admin_provenance_note TEXT NULL");
+            }
+
+            $tokCols = [];
+            foreach ($pdo->query("PRAGMA table_info(owner_auth_tokens)")->fetchAll() as $tc) {
+                $tokCols[(string)($tc['name'] ?? '')] = true;
+            }
+            if (!isset($tokCols['failed_attempts'])) {
+                $pdo->exec("ALTER TABLE owner_auth_tokens ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0");
+            }
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS moderation_audit_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    business_id INTEGER NOT NULL,
+                    action TEXT NOT NULL,
+                    channel TEXT NOT NULL,
+                    actor_identifier TEXT NOT NULL,
+                    previous_status TEXT NULL,
+                    new_status TEXT NOT NULL,
+                    reason_note TEXT NULL,
+                    ip_hash TEXT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS idx_mod_audit_biz ON moderation_audit_log (business_id, created_at);
+                CREATE TABLE IF NOT EXISTS business_sequences (
+                    seq_key TEXT PRIMARY KEY,
+                    current_val INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+        } else {
+            $bizCols = [];
+            foreach ($pdo->query("SHOW COLUMNS FROM businesses")->fetchAll() as $c) {
+                $bizCols[(string)($c['Field'] ?? '')] = true;
+            }
+            if (!isset($bizCols['consent_recorded_at'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN consent_recorded_at DATETIME NULL AFTER quarantine_prev_status");
+            }
+            if (!isset($bizCols['privacy_notice_version'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN privacy_notice_version VARCHAR(32) NULL AFTER consent_recorded_at");
+            }
+            if (!isset($bizCols['age_attested_at'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN age_attested_at DATETIME NULL AFTER privacy_notice_version");
+            }
+            if (!isset($bizCols['listing_provenance'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN listing_provenance VARCHAR(32) NOT NULL DEFAULT 'admin_curated' AFTER age_attested_at");
+            }
+            if (!isset($bizCols['admin_provenance_note'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN admin_provenance_note VARCHAR(255) NULL AFTER listing_provenance");
+            }
+
+            $tokCols = [];
+            foreach ($pdo->query("SHOW COLUMNS FROM owner_auth_tokens")->fetchAll() as $tc) {
+                $tokCols[(string)($tc['Field'] ?? '')] = true;
+            }
+            if (!isset($tokCols['failed_attempts'])) {
+                $pdo->exec("ALTER TABLE owner_auth_tokens ADD COLUMN failed_attempts INT UNSIGNED NOT NULL DEFAULT 0 AFTER used_at");
+            }
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS moderation_audit_log (
+                    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                    business_id INT UNSIGNED NOT NULL,
+                    action VARCHAR(32) NOT NULL,
+                    channel VARCHAR(40) NOT NULL,
+                    actor_identifier VARCHAR(190) NOT NULL,
+                    previous_status VARCHAR(24) DEFAULT NULL,
+                    new_status VARCHAR(24) NOT NULL,
+                    reason_note VARCHAR(255) DEFAULT NULL,
+                    ip_hash CHAR(64) DEFAULT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_mod_audit_biz (business_id, created_at),
+                    INDEX idx_mod_audit_action (action, created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS business_sequences (
+                    seq_key VARCHAR(40) NOT NULL PRIMARY KEY,
+                    current_val INT UNSIGNED NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
         }
     }
 

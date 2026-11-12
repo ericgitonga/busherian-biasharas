@@ -286,6 +286,40 @@ final class CategoryMatcher
         'muziki' => ['Music', 'Live Bands', 'Sound Production'],
     ];
 
+
+    /**
+     * Server-side hierarchy check (#186):
+     * - $sectorId MUST exist and be a top-level sector (`parent_id IS NULL`).
+     * - $specialtyId MUST exist, be a child specialty (`parent_id IS NOT NULL`), and have `parent_id === $sectorId`.
+     */
+    public static function validateSectorAndSpecialtyPair(PDO $pdo, int $sectorId, int $specialtyId): bool
+    {
+        if ($sectorId <= 0 || $specialtyId <= 0 || $sectorId === $specialtyId) {
+            return false;
+        }
+        $stmt = $pdo->prepare("SELECT id, parent_id, status FROM categories WHERE id IN (:sec, :spec)");
+        $stmt->execute([':sec' => $sectorId, ':spec' => $specialtyId]);
+        $rows = [];
+        foreach ($stmt->fetchAll() as $r) {
+            $rows[(int)$r['id']] = $r;
+        }
+        if (!isset($rows[$sectorId], $rows[$specialtyId])) {
+            return false;
+        }
+        $secRow = $rows[$sectorId];
+        $specRow = $rows[$specialtyId];
+        if ($secRow['parent_id'] !== null) {
+            return false;
+        }
+        if ($specRow['parent_id'] === null || (int)$specRow['parent_id'] !== $sectorId) {
+            return false;
+        }
+        if (($secRow['status'] ?? 'approved') === 'rejected' || ($specRow['status'] ?? 'approved') === 'rejected') {
+            return false;
+        }
+        return true;
+    }
+
     public static function slugify(string $text): string
     {
         $slug = strtolower(trim($text));
@@ -1409,7 +1443,7 @@ final class CategoryMatcher
                 operating_hours_json, phone_primary, whatsapp_number,
                 email_public, website_url, social_instagram, social_linkedin,
                 social_x, social_facebook, social_tiktok, social_youtube,
-                status, verified_at, last_confirmed_at
+                status, listing_provenance, admin_provenance_note, verified_at, last_confirmed_at
             ) VALUES (
                 :business_id, :business_number, :name, :slug, :tagline, :description, :school_badge,
                 :sector_id, :specialty_id, :service_mode, :alumni_perk,
@@ -1420,7 +1454,7 @@ final class CategoryMatcher
                 :operating_hours_json, :phone_primary, :whatsapp_number,
                 :email_public, :website_url, :social_instagram, :social_linkedin,
                 :social_x, :social_facebook, :social_tiktok, :social_youtube,
-                'approved', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                'approved', 'admin_curated', 'Seeded initial verified alumni directory listing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
         ");
 

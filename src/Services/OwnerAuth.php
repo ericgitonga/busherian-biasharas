@@ -8,6 +8,7 @@ use PDO;
 
 final class OwnerAuth
 {
+    public const MAX_OTP_FAILED_ATTEMPTS = 5;
     private const COOKIE_NAME = 'bbiz_owner_session';
     private const PREPROD_COOKIE_NAME = 'bbiz_preprod_owner_session';
 
@@ -379,6 +380,31 @@ final class OwnerAuth
     }
 
     /**
+     * Batch ownership lookup (`WHERE business_id IN (...)`) to eliminate N+1 queries on directory pages (#180).
+     *
+     * @param int[] $businessIds
+     * @return array<int, bool>
+     */
+    public static function getEditableBusinessIdsForOwner(PDO $pdo, int $ownerId, array $businessIds): array
+    {
+        if ($ownerId <= 0 || empty($businessIds)) {
+            return [];
+        }
+        $cleanIds = array_values(array_unique(array_filter(array_map('intval', $businessIds), static fn(int $id): bool => $id > 0)));
+        if (empty($cleanIds)) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($cleanIds), '?'));
+        $stmt = $pdo->prepare("SELECT business_id FROM business_owner_links WHERE owner_id = ? AND business_id IN ({$placeholders})");
+        $stmt->execute(array_merge([$ownerId], $cleanIds));
+        $editable = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $bid) {
+            $editable[(int)$bid] = true;
+        }
+        return $editable;
+    }
+
+    /**
      * Return all businesses linked to a given owner.
      */
     public static function getBusinessesForOwner(PDO $pdo, int $ownerId): array
@@ -502,15 +528,8 @@ final class OwnerAuth
             return false;
         }
         $nh = self::claimInviteNonceHash($businessId, $expiresAt, $signature, $recipientEmail);
-        $chk = $pdo->prepare("SELECT 1 FROM used_nonces WHERE nonce_hash = :nh LIMIT 1");
-        $chk->execute([':nh' => $nh]);
-        if ($chk->fetchColumn()) {
-            return false;
-        }
         try {
-            $ins = $pdo->prepare("INSERT INTO used_nonces (nonce_hash, expires_at) VALUES (:nh, :exp)");
-            $ins->execute([':nh' => $nh, ':exp' => max($expiresAt, time() + 60)]);
-            return true;
+            return AntiSpamGate::claimSingleUseNonce($pdo, $nh, max($expiresAt, time() + 60));
         } catch (\Throwable $e) {
             error_log('[OwnerAuth::consumeClaimInviteOnce] Nonce lock skipped/failed: ' . $e->getMessage());
             return false;
@@ -659,6 +678,18 @@ final class OwnerAuth
                 return false;
             }
             self::linkOwnerToBusiness($pdo, $ownerId, $businessId, 'claim_invite_link');
+            $nowUtc = gmdate('Y-m-d H:i:s');
+            $pdo->prepare("
+                UPDATE businesses
+                SET listing_provenance = CASE WHEN listing_provenance = 'admin_curated' THEN 'claimed' ELSE listing_provenance END,
+                    consent_recorded_at = COALESCE(consent_recorded_at, :now1),
+                    privacy_notice_version = COALESCE(privacy_notice_version, :ver)
+                WHERE id = :bid
+            ")->execute([
+                ':now1' => $nowUtc,
+                ':ver' => VettingPurger::PRIVACY_NOTICE_VERSION,
+                ':bid' => $businessId,
+            ]);
             if ($ownTx) {
                 $pdo->commit();
             }
@@ -740,35 +771,71 @@ final class OwnerAuth
             return null;
         }
         $tokenHash = hash('sha256', $clean);
-        $stmt = $pdo->prepare("
-            SELECT * FROM owner_auth_tokens
-            WHERE token_hash = :th
-              AND used_at IS NULL
-              AND expires_at >= :now
-            LIMIT 1
-        ");
-        $stmt->execute([':th' => $tokenHash, ':now' => time()]);
-        $row = $stmt->fetch();
-        if (!$row) {
-            return null;
+        $now = time();
+
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
         }
+        try {
+            $stmt = $pdo->prepare("
+                SELECT * FROM owner_auth_tokens
+                WHERE token_hash = :th
+                  AND used_at IS NULL
+                  AND expires_at >= :now
+                LIMIT 1
+            ");
+            $stmt->execute([':th' => $tokenHash, ':now' => $now]);
+            $row = $stmt->fetch();
+            if (!$row) {
+                if ($ownTx) {
+                    $pdo->rollBack();
+                }
+                return null;
+            }
 
-        $pdo->prepare("UPDATE owner_auth_tokens SET used_at = :now WHERE id = :id")
-            ->execute([':now' => time(), ':id' => (int)$row['id']]);
+            $consume = $pdo->prepare("
+                UPDATE owner_auth_tokens
+                SET used_at = :now
+                WHERE id = :id
+                  AND used_at IS NULL
+                  AND expires_at >= :now_chk
+            ");
+            $consume->execute([
+                ':now' => $now,
+                ':id' => (int)$row['id'],
+                ':now_chk' => $now,
+            ]);
+            if ($consume->rowCount() !== 1) {
+                if ($ownTx) {
+                    $pdo->rollBack();
+                }
+                return null;
+            }
 
-        $normTokenEmail = strtolower(trim((string)$row['email']));
-        $owner = self::upsertOwner($pdo, $normTokenEmail);
-        $claimBizId = !empty($row['claim_business_id']) ? (int)$row['claim_business_id'] : 0;
-        if ($claimBizId > 0 && self::isEmailEligibleForClaim($pdo, $claimBizId, $normTokenEmail)) {
-            self::linkOwnerToBusiness($pdo, (int)$owner['id'], $claimBizId, 'claim_invite_link');
-        } else {
-            $claimBizId = 0;
+            $normTokenEmail = strtolower(trim((string)$row['email']));
+            $owner = self::upsertOwner($pdo, $normTokenEmail);
+            $claimBizId = !empty($row['claim_business_id']) ? (int)$row['claim_business_id'] : 0;
+            if ($claimBizId > 0 && self::isEmailEligibleForClaim($pdo, $claimBizId, $normTokenEmail)) {
+                self::linkOwnerToBusiness($pdo, (int)$owner['id'], $claimBizId, 'claim_invite_link');
+            } else {
+                $claimBizId = 0;
+            }
+
+            if ($ownTx) {
+                $pdo->commit();
+            }
+
+            return [
+                'owner' => $owner,
+                'claimed_business_id' => $claimBizId > 0 ? $claimBizId : null,
+            ];
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
         }
-
-        return [
-            'owner' => $owner,
-            'claimed_business_id' => $claimBizId > 0 ? $claimBizId : null,
-        ];
     }
 
     private static function setOwnerCookieValue(string $cookieVal, int $expTs): void
@@ -1338,20 +1405,36 @@ final class OwnerAuth
         $code = sprintf('%06d', random_int(100000, 999999));
         $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
         $tokenHash = hash_hmac('sha256', "otp6|{$normEmail}|{$code}", $secret);
-        $expiresAt = time() + 900; // 15 minutes
+        $now = time();
+        $expiresAt = $now + 900; // 15 minutes
 
-        $pdo->prepare("UPDATE owner_auth_tokens SET used_at = :now WHERE LOWER(email) = :em AND used_at IS NULL")
-            ->execute([':now' => time(), ':em' => $normEmail]);
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            $pdo->prepare("UPDATE owner_auth_tokens SET used_at = :now WHERE LOWER(email) = :em AND used_at IS NULL")
+                ->execute([':now' => $now, ':em' => $normEmail]);
 
-        $pdo->prepare("
-            INSERT INTO owner_auth_tokens (email, token_hash, claim_business_id, expires_at, created_at)
-            VALUES (:em, :th, :cbid, :exp, CURRENT_TIMESTAMP)
-        ")->execute([
-            ':em' => $normEmail,
-            ':th' => $tokenHash,
-            ':cbid' => ($claimBusinessId !== null && $claimBusinessId > 0) ? $claimBusinessId : null,
-            ':exp' => $expiresAt,
-        ]);
+            $pdo->prepare("
+                INSERT INTO owner_auth_tokens (email, token_hash, claim_business_id, expires_at, failed_attempts, created_at)
+                VALUES (:em, :th, :cbid, :exp, 0, CURRENT_TIMESTAMP)
+            ")->execute([
+                ':em' => $normEmail,
+                ':th' => $tokenHash,
+                ':cbid' => ($claimBusinessId !== null && $claimBusinessId > 0) ? $claimBusinessId : null,
+                ':exp' => $expiresAt,
+            ]);
+
+            if ($ownTx) {
+                $pdo->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
 
         return [
             'code' => $code,
@@ -1360,9 +1443,6 @@ final class OwnerAuth
         ];
     }
 
-    /**
-     * Verify a 6-digit verification code and set the owner's password in one atomic flow (#152, #165).
-     */
     public static function verifyOtpAndSetPassword(PDO $pdo, string $email, string $submittedCode, string $newPassword): ?array
     {
         $normEmail = strtolower(trim($email));
@@ -1376,33 +1456,81 @@ final class OwnerAuth
 
         $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
         $expectedHash = hash_hmac('sha256', "otp6|{$normEmail}|{$digits}", $secret);
-
-        $stmt = $pdo->prepare("
-            SELECT * FROM owner_auth_tokens
-            WHERE LOWER(email) = :em
-              AND token_hash = :th
-              AND used_at IS NULL
-              AND expires_at >= :now
-            LIMIT 1
-        ");
-        $stmt->execute([
-            ':em' => $normEmail,
-            ':th' => $expectedHash,
-            ':now' => time(),
-        ]);
-        $row = $stmt->fetch();
-        if (!$row) {
-            return null;
-        }
+        $now = time();
 
         $ownTx = !$pdo->inTransaction();
         if ($ownTx) {
             $pdo->beginTransaction();
         }
         try {
-            $consume = $pdo->prepare("UPDATE owner_auth_tokens SET used_at = :now WHERE id = :id AND used_at IS NULL");
-            $consume->execute([':now' => time(), ':id' => (int)$row['id']]);
-            if ($consume->rowCount() < 1) {
+            $activeStmt = $pdo->prepare("
+                SELECT * FROM owner_auth_tokens
+                WHERE LOWER(email) = :em
+                  AND used_at IS NULL
+                  AND expires_at >= :now
+                ORDER BY id DESC
+                LIMIT 1
+            ");
+            $activeStmt->execute([
+                ':em' => $normEmail,
+                ':now' => $now,
+            ]);
+            $row = $activeStmt->fetch();
+            if (!$row) {
+                if ($ownTx) {
+                    $pdo->rollBack();
+                }
+                return null;
+            }
+
+            $tokenId = (int)$row['id'];
+            $failedAttempts = (int)($row['failed_attempts'] ?? 0);
+            if ($failedAttempts >= self::MAX_OTP_FAILED_ATTEMPTS) {
+                $pdo->prepare("UPDATE owner_auth_tokens SET used_at = :now WHERE id = :id AND used_at IS NULL")
+                    ->execute([':now' => $now, ':id' => $tokenId]);
+                if ($ownTx) {
+                    $pdo->commit();
+                }
+                return null;
+            }
+
+            if (!hash_equals((string)$row['token_hash'], $expectedHash)) {
+                $nextFailures = $failedAttempts + 1;
+                if ($nextFailures >= self::MAX_OTP_FAILED_ATTEMPTS) {
+                    $pdo->prepare("
+                        UPDATE owner_auth_tokens
+                        SET failed_attempts = failed_attempts + 1,
+                            used_at = :now
+                        WHERE id = :id AND used_at IS NULL
+                    ")->execute([':now' => $now, ':id' => $tokenId]);
+                } else {
+                    $pdo->prepare("
+                        UPDATE owner_auth_tokens
+                        SET failed_attempts = failed_attempts + 1
+                        WHERE id = :id AND used_at IS NULL
+                    ")->execute([':id' => $tokenId]);
+                }
+                if ($ownTx) {
+                    $pdo->commit();
+                }
+                return null;
+            }
+
+            $consume = $pdo->prepare("
+                UPDATE owner_auth_tokens
+                SET used_at = :now
+                WHERE id = :id
+                  AND used_at IS NULL
+                  AND expires_at >= :now_chk
+                  AND failed_attempts < :max_att
+            ");
+            $consume->execute([
+                ':now' => $now,
+                ':id' => $tokenId,
+                ':now_chk' => $now,
+                ':max_att' => self::MAX_OTP_FAILED_ATTEMPTS,
+            ]);
+            if ($consume->rowCount() !== 1) {
                 if ($ownTx && $pdo->inTransaction()) {
                     $pdo->rollBack();
                 }

@@ -271,3 +271,117 @@ def test_ftps_deploy_cli_clean_error_and_geny_intermediates_non_root(tmp_path: P
             tls_servername="attacker-host.example.invalid",
         )
     srv_mismatch.join()
+
+
+def test_ftps_deploy_atomic_staging_manifest_and_deleted_files(tmp_path: Path, monkeypatch):
+    ftps_mod = _load_ftps_deploy_module()
+    import ftplib
+    import json
+
+    # 1. Protected paths MUST be blocked from deletion even if passed to validate_deletable_deploy_path
+    for protected_rel in [".env", ".env.production", "storage/app.sqlite", "public/uploads/photo.jpg", "public/uploads/.htaccess"]:
+        with pytest.raises(ValueError):
+            ftps_mod.validate_deletable_deploy_path(protected_rel)
+    assert ftps_mod.validate_deletable_deploy_path("public/retired-endpoint.php") == "public/retired-endpoint.php"
+
+    # 2. Mock VerifiedFTPTLS session verifying STOR .bbiz_stage_* -> SIZE -> RNFR/RNTO + retired file deletion + .deploy_manifest.json
+    class _FakeFtpClient:
+        def __init__(self, fail_size_mismatch: bool = False):
+            self.cwd_dir = "/"
+            self.files: dict[str, bytes] = {
+                "/busherianbiasharas.com/www/html/index.php": b"OLD_LIVE_INDEX",
+                "/busherianbiasharas.com/www/html/old-legacy.php": b"LEGACY_TO_DELETE",
+            }
+            self.dirs: set[str] = {"/", "/busherianbiasharas.com", "/busherianbiasharas.com/www", "/busherianbiasharas.com/www/html"}
+            self.ops: list[tuple[str, str]] = []
+            self.fail_size_mismatch = fail_size_mismatch
+
+        def voidcmd(self, cmd: str) -> str:
+            self.ops.append(("VOID", cmd))
+            return "200 OK"
+
+        def cwd(self, d: str) -> None:
+            if d not in self.dirs:
+                raise ftplib.error_perm("550 Directory not found")
+            self.cwd_dir = d
+
+        def mkd(self, d: str) -> str:
+            self.dirs.add(d)
+            return d
+
+        def storbinary(self, cmd: str, fp) -> str:
+            assert cmd.startswith("STOR ")
+            fname = cmd[5:]
+            assert fname.startswith(".bbiz_stage_"), f"Direct non-staged overwrite attempted: {fname}"
+            full = f"{self.cwd_dir.rstrip('/')}/{fname}"
+            self.files[full] = fp.read()
+            self.ops.append(("STOR", full))
+            return "226 Transfer complete"
+
+        def size(self, fname: str) -> int:
+            full = f"{self.cwd_dir.rstrip('/')}/{fname}"
+            actual = len(self.files[full])
+            return actual - 1 if self.fail_size_mismatch else actual
+
+        def rename(self, src_name: str, dst_name: str) -> str:
+            src_full = f"{self.cwd_dir.rstrip('/')}/{src_name}"
+            dst_full = f"{self.cwd_dir.rstrip('/')}/{dst_name}"
+            self.files[dst_full] = self.files.pop(src_full)
+            self.ops.append(("RENAME", f"{src_full} -> {dst_full}"))
+            return "250 Renamed"
+
+        def delete(self, path_or_name: str) -> str:
+            full = path_or_name if path_or_name.startswith("/") else f"{self.cwd_dir.rstrip('/')}/{path_or_name}"
+            if full not in self.files:
+                raise ftplib.error_perm("550 No such file")
+            del self.files[full]
+            self.ops.append(("DELE", full))
+            return "250 Deleted"
+
+        def quit(self) -> str:
+            return "221 Goodbye"
+
+        def close(self) -> None:
+            pass
+
+    local_index = tmp_path / "index.php"
+    local_index.write_bytes(b"<?php echo 'NEW_ATOMIC_V15';\n")
+
+    # 2a. Size mismatch during upload MUST delete staged temp file and leave live index.php untouched!
+    bad_ftp = _FakeFtpClient(fail_size_mismatch=True)
+    monkeypatch.setattr(ftps_mod, "connect_verified_ftps", lambda *a, **kw: bad_ftp)
+    with pytest.raises(ValueError, match="size mismatch"):
+        ftps_mod.deploy_items(
+            [(local_index, "public/index.php")],
+            host="ftp.example.test",
+            user="u",
+            password="p",
+            app_root="/busherianbiasharas.com/www",
+            mode="prod",
+            release_sha="deadbeef181",
+        )
+    assert bad_ftp.files["/busherianbiasharas.com/www/html/index.php"] == b"OLD_LIVE_INDEX"
+    assert not any(".bbiz_stage_" in k for k in bad_ftp.files)
+
+    # 2b. Healthy atomic promotion + retired file deletion (including idempotent missing file) + .deploy_manifest.json
+    good_ftp = _FakeFtpClient(fail_size_mismatch=False)
+    monkeypatch.setattr(ftps_mod, "connect_verified_ftps", lambda *a, **kw: good_ftp)
+    promoted = ftps_mod.deploy_items(
+        [(local_index, "public/index.php")],
+        deleted_rel_paths=["public/old-legacy.php", "public/already-gone.php"],
+        host="ftp.example.test",
+        user="u",
+        password="p",
+        app_root="/busherianbiasharas.com/www",
+        mode="prod",
+        release_sha="cafebabe181",
+    )
+    assert promoted == 1
+    assert good_ftp.files["/busherianbiasharas.com/www/html/index.php"] == b"<?php echo 'NEW_ATOMIC_V15';\n"
+    assert "/busherianbiasharas.com/www/html/old-legacy.php" not in good_ftp.files
+    manifest_bytes = good_ftp.files.get("/busherianbiasharas.com/www/.deploy_manifest.json")
+    assert manifest_bytes is not None
+    manifest = json.loads(manifest_bytes.decode("utf-8"))
+    assert manifest["release_sha"] == "cafebabe181"
+    assert manifest["uploaded_count"] == 1
+    assert manifest["deleted_count"] == 1

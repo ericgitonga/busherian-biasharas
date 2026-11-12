@@ -2,8 +2,19 @@
   'use strict';
 
 
+  const initialBusinesses = Array.isArray(window.INITIAL_BUSINESSES) ? window.INITIAL_BUSINESSES : [];
+  const initialPagination = (window.INITIAL_PAGINATION && typeof window.INITIAL_PAGINATION === 'object')
+    ? window.INITIAL_PAGINATION
+    : {
+        page: 1,
+        per_page: 10,
+        total: initialBusinesses.length,
+        total_pages: Math.max(1, Math.ceil(initialBusinesses.length / 10)),
+      };
+
   const state = {
-    businesses: window.INITIAL_BUSINESSES || [],
+    businesses: initialBusinesses,
+    pagination: initialPagination,
     sectors: window.INITIAL_SECTORS || [],
     placeHierarchy: window.PLACE_HIERARCHY || {},
     selectedSectorId: '',
@@ -23,9 +34,12 @@
     radiusKm: '',
     searchQuery: '',
     shortlistIds: new Set(),
+    shortlistedRecords: new Map(),
     activeBusiness: null,
     focusedBusinessId: null,
     activeRoute: null, // { biz, fromLat, fromLng, originLabel, data }
+    isLoading: false,
+    fetchError: '',
   };
 
   const els = {
@@ -48,24 +62,49 @@
     shortlistExportBtn: document.getElementById('btn-export-shortlist'),
   };
 
-  function withOutboundAttribution(rawUrl) {
-    if (!rawUrl) return '';
+  // Security (#186): Strictly enforce explicit http:// or https:// absolute URLs; reject javascript:, data:, vbscript:, or malformed inputs.
+  function sanitizeHttpUrl(rawUrl) {
+    if (typeof rawUrl !== 'string') return '';
+    const trimmed = rawUrl.trim();
+    if (!trimmed || !/^https?:\/\//i.test(trimmed)) return '';
     try {
-      const u = new URL(rawUrl, window.location.origin);
+      const u = new URL(trimmed);
       if (u.protocol === 'http:' || u.protocol === 'https:') {
-        if (!u.searchParams.has('utm_source')) {
-          u.searchParams.set('utm_source', 'busherianbiasharas.com');
-        }
-        if (!u.searchParams.has('utm_medium')) {
-          u.searchParams.set('utm_medium', 'referral');
-        }
-        if (!u.searchParams.has('utm_campaign')) {
-          u.searchParams.set('utm_campaign', 'alumni_directory');
-        }
         return u.toString();
       }
-    } catch (e) {}
-    return rawUrl;
+    } catch (_) {}
+    return '';
+  }
+
+  function withOutboundAttribution(rawUrl) {
+    const clean = sanitizeHttpUrl(rawUrl);
+    if (!clean) return '';
+    try {
+      const u = new URL(clean);
+      if (!u.searchParams.has('utm_source')) {
+        u.searchParams.set('utm_source', 'busherianbiasharas.com');
+      }
+      if (!u.searchParams.has('utm_medium')) {
+        u.searchParams.set('utm_medium', 'referral');
+      }
+      if (!u.searchParams.has('utm_campaign')) {
+        u.searchParams.set('utm_campaign', 'alumni_directory');
+      }
+      return u.toString();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function hasMapTileConsent() {
+    if (window.BBizMetrics && typeof window.BBizMetrics.hasConsent === 'function' && window.BBizMetrics.hasConsent()) {
+      return true;
+    }
+    try {
+      return localStorage.getItem('bbiz_map_tiles_enabled') === 'yes';
+    } catch (_) {
+      return false;
+    }
   }
 
   function escapeHtml(str) {
@@ -158,7 +197,35 @@
     return null;
   }
 
-  async function fetchBusinesses() {
+  const ALLOWED_PAGE_SIZES = [10, 25, 50, 100];
+  state.currentPage = Number(state.pagination.page) || 1;
+  state.perPage = ALLOWED_PAGE_SIZES.includes(Number(state.pagination.per_page)) ? Number(state.pagination.per_page) : 10;
+
+  let activeFetchController = null;
+  let latestRequestSeq = 0;
+
+  async function fetchBusinesses(options) {
+    const opts = options || {};
+    if (opts.resetPage !== false) {
+      state.currentPage = 1;
+    }
+
+    if (activeFetchController && typeof activeFetchController.abort === 'function') {
+      try { activeFetchController.abort(); } catch (_) {}
+    }
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    activeFetchController = controller;
+    const reqSeq = ++latestRequestSeq;
+
+    state.isLoading = true;
+    state.fetchError = '';
+    if (els.cardsGrid) {
+      els.cardsGrid.setAttribute('aria-busy', 'true');
+    }
+    if (els.resultsCount) {
+      els.resultsCount.textContent = 'Updating Busherian Biasharas…';
+    }
+
     const params = new URLSearchParams();
     if (state.searchQuery) params.set('q', state.searchQuery);
     if (state.selectedSectorId) params.set('sector_id', state.selectedSectorId);
@@ -174,28 +241,70 @@
       params.set('lng', String(state.userLng));
       if (state.radiusKm) params.set('radius_km', String(state.radiusKm));
     }
+    params.set('page', String(state.currentPage));
+    params.set('per_page', String(state.perPage));
 
-    const res = await fetch('/api/businesses.php?' + params.toString());
-    const data = await res.json();
-    if (data && data.status === 'ok') {
-      state.businesses = data.businesses || [];
-      state.currentPage = 1;
+    try {
+      const res = await fetch('/api/businesses.php?' + params.toString(), controller ? { signal: controller.signal } : undefined);
+      if (reqSeq !== latestRequestSeq) return;
+      if (!res.ok) {
+        throw new Error(`Directory request failed (HTTP ${res.status}).`);
+      }
+      const data = await res.json();
+      if (reqSeq !== latestRequestSeq) return;
+      if (!data || data.status !== 'ok') {
+        throw new Error((data && data.message) || 'Could not load directory listings.');
+      }
+
+      state.isLoading = false;
+      state.fetchError = '';
+      state.businesses = Array.isArray(data.businesses) ? data.businesses : [];
+      const pag = (data.pagination && typeof data.pagination === 'object')
+        ? data.pagination
+        : {
+            page: state.currentPage,
+            per_page: state.perPage,
+            total: typeof data.total_count === 'number' ? data.total_count : state.businesses.length,
+            total_pages: Math.max(1, Math.ceil((typeof data.total_count === 'number' ? data.total_count : state.businesses.length) / state.perPage)),
+          };
+      state.pagination = pag;
+      state.currentPage = Number(pag.page) || 1;
+      state.perPage = ALLOWED_PAGE_SIZES.includes(Number(pag.per_page)) ? Number(pag.per_page) : state.perPage;
+
+      state.businesses.forEach(b => {
+        if (state.shortlistIds.has(b.id)) {
+          state.shortlistedRecords.set(b.id, b);
+        }
+      });
+
       if (state.activeRoute && !state.businesses.some(b => Number(b.id) === Number(state.activeRoute.biz.id))) {
         state.activeRoute = null;
       }
+      if (els.cardsGrid) {
+        els.cardsGrid.removeAttribute('aria-busy');
+      }
       renderCards();
       renderInteractiveMap();
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        return;
+      }
+      if (reqSeq !== latestRequestSeq) {
+        return;
+      }
+      state.isLoading = false;
+      state.fetchError = (err && err.message) ? err.message : 'Network error while loading directory listings.';
+      if (els.cardsGrid) {
+        els.cardsGrid.removeAttribute('aria-busy');
+      }
+      renderCards();
     }
   }
-
-  const ALLOWED_PAGE_SIZES = [10, 25, 50, 100];
-  state.currentPage = 1;
-  state.perPage = 10;
 
   function renderPaginationControls(totalItems, currentPage, totalPages, startIdx, endIdx) {
     const navEl = document.getElementById('directory-pagination');
     if (!navEl) return;
-    if (totalItems === 0) {
+    if (totalItems === 0 || state.fetchError) {
       navEl.innerHTML = '';
       return;
     }
@@ -237,19 +346,36 @@
       const nextSize = Number(e.target.value);
       state.perPage = ALLOWED_PAGE_SIZES.includes(nextSize) ? nextSize : 10;
       state.currentPage = 1;
-      renderCards();
+      fetchBusinesses({ resetPage: true });
     });
   }
 
   document.addEventListener('click', (e) => {
+    const retryBtn = e.target.closest('[data-testid="directory-fetch-retry"]');
+    if (retryBtn) {
+      e.preventDefault();
+      fetchBusinesses({ resetPage: false });
+      return;
+    }
+
+    const enableOsmBtn = e.target.closest('#btn-enable-osm-map');
+    if (enableOsmBtn) {
+      e.preventDefault();
+      try {
+        localStorage.setItem('bbiz_map_tiles_enabled', 'yes');
+      } catch (_) {}
+      renderInteractiveMap();
+      return;
+    }
+
     const pageBtn = e.target.closest('[data-goto-page]');
     if (pageBtn) {
       e.preventDefault();
       e.stopPropagation();
       const targetPage = Number(pageBtn.getAttribute('data-goto-page'));
-      if (Number.isFinite(targetPage) && targetPage >= 1) {
+      if (Number.isFinite(targetPage) && targetPage >= 1 && targetPage !== state.currentPage) {
         state.currentPage = targetPage;
-        renderCards();
+        fetchBusinesses({ resetPage: false });
         const pane = document.getElementById('pane-results');
         if (pane && typeof pane.scrollIntoView === 'function') {
           pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -260,25 +386,42 @@
 
   function renderCards() {
     if (!els.cardsGrid) return;
-    const perPage = ALLOWED_PAGE_SIZES.includes(Number(state.perPage)) ? Number(state.perPage) : 10;
-    const totalItems = state.businesses.length;
-    const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
-    if (!state.currentPage || state.currentPage < 1) state.currentPage = 1;
-    if (state.currentPage > totalPages) state.currentPage = totalPages;
 
-    const startIdx = (state.currentPage - 1) * perPage;
-    const pagedBusinesses = state.businesses.slice(startIdx, startIdx + perPage);
+    if (state.fetchError) {
+      if (els.resultsCount) {
+        els.resultsCount.textContent = 'Unable to update directory listings';
+      }
+      els.cardsGrid.innerHTML = `
+        <div data-testid="directory-fetch-error" role="alert" style="grid-column:1/-1;background:#FEF2F2;padding:1.5rem;border-radius:12px;text-align:center;border:2px solid #DC2626;">
+          <h3 style="margin:0 0 0.45rem 0;color:#991B1B;">Could not load directory listings</h3>
+          <p style="margin:0 0 0.9rem 0;color:#7F1D1D;font-size:0.88rem;">${escapeHtml(state.fetchError)}</p>
+          <button type="button" id="btn-retry-fetch" data-testid="directory-fetch-retry" class="btn btn-crimson">🔄 Retry Loading Listings</button>
+        </div>
+      `;
+      renderPaginationControls(0, 1, 1, 0, 0);
+      return;
+    }
+
+    const perPage = ALLOWED_PAGE_SIZES.includes(Number(state.perPage)) ? Number(state.perPage) : 10;
+    const pag = state.pagination || {};
+    const pagedBusinesses = Array.isArray(state.businesses) ? state.businesses : [];
+    const totalItems = typeof pag.total === 'number' ? pag.total : pagedBusinesses.length;
+    const totalPages = typeof pag.total_pages === 'number' ? Math.max(1, pag.total_pages) : Math.max(1, Math.ceil(totalItems / perPage));
+    const currentPage = Math.min(Math.max(1, Number(pag.page) || state.currentPage || 1), totalPages);
+    state.currentPage = currentPage;
+
+    const startIdx = totalItems === 0 ? 0 : (currentPage - 1) * perPage;
     const endIdx = startIdx + pagedBusinesses.length;
 
     if (els.resultsCount) {
-      if (totalItems === 0) {
+      if (totalItems === 0 || pagedBusinesses.length === 0) {
         els.resultsCount.textContent = '0 Verified Busherian Biasharas';
       } else {
         els.resultsCount.textContent = `Showing ${startIdx + 1}–${endIdx} of ${totalItems} Verified Busherian ${totalItems === 1 ? 'Biashara' : 'Biasharas'}`;
       }
     }
 
-    if (totalItems === 0) {
+    if (totalItems === 0 || pagedBusinesses.length === 0) {
       els.cardsGrid.innerHTML = `
         <div style="grid-column:1/-1;background:#fff;padding:2rem;border-radius:12px;text-align:center;border:1px dashed #D1D5DB;">
           <h3 style="margin:0 0 0.5rem 0;color:#7B1113;">No matching businesses found</h3>
@@ -727,6 +870,30 @@
       ? allPinned.filter(b => Number(b.id) === isolatedBizId)
       : allPinned;
 
+    if (!hasMapTileConsent()) {
+      if (leafletMap) {
+        try { leafletMap.remove(); } catch (_) {}
+        leafletMap = null;
+        markersLayer = null;
+        routeLayer = null;
+        mapOverlayBadge = null;
+      }
+      els.mapCanvas.innerHTML = `
+        <div data-testid="map-consent-placeholder" style="display:flex;flex-direction:column;height:100%;min-height:320px;align-items:center;justify-content:center;background:#F9FAFB;padding:1.5rem;text-align:center;gap:0.75rem;">
+          <div style="font-size:1.85rem;" aria-hidden="true">🗺️</div>
+          <h3 style="margin:0;font-size:1rem;color:#114B3E;">Interactive OpenStreetMap Pin Map</h3>
+          <p style="margin:0;max-width:360px;font-size:0.81rem;color:#4B5563;line-height:1.5;">
+            Interactive street map tiles are served by <strong>OpenStreetMap</strong> (<code>tile.openstreetmap.org</code>). Loading map tiles shares your browser IP address and map view with OpenStreetMap.
+          </p>
+          <button type="button" id="btn-enable-osm-map" data-testid="btn-enable-osm-map" class="btn btn-green" style="font-size:0.84rem;padding:0.55rem 1.05rem;">
+            🗺️ Load Interactive Map (OpenStreetMap)
+          </button>
+          <span style="font-size:0.73rem;color:#6B7280;">${visiblePinned.length} verified location pin(s) ready on this page • <a href="/privacy.php" style="color:#7B1113;font-weight:600;">Privacy Notice</a></span>
+        </div>
+      `;
+      return;
+    }
+
     if (typeof window.L === 'undefined') {
       els.mapCanvas.innerHTML = '<div style="display:flex;height:100%;align-items:center;justify-content:center;color:#6B7280;padding:1rem;text-align:center;">Interactive map loading...</div>';
       return;
@@ -894,7 +1061,8 @@
     const waText = encodeURIComponent(`Hi ${biz.name}, I found your business on Busherian Biasharas!`);
     const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${waText}` : '';
 
-    const gmapsUrl = biz.google_maps_url
+    const safeCustomGmaps = sanitizeHttpUrl(biz.google_maps_url);
+    const gmapsUrl = safeCustomGmaps
       || (biz.latitude !== null && biz.longitude !== null
         ? `https://www.google.com/maps/search/?api=1&query=${biz.latitude},${biz.longitude}`
         : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(biz.name + ' ' + biz.city_county)}`);
@@ -902,6 +1070,8 @@
     const wazeUrl = (biz.latitude !== null && biz.longitude !== null)
       ? `https://waze.com/ul?ll=${biz.latitude},${biz.longitude}&navigate=yes`
       : '';
+
+    const safeWebsiteHref = withOutboundAttribution(biz.website_url);
 
     const socials = biz.socials || {};
     const socialBadges = [
@@ -911,8 +1081,9 @@
       ['facebook', 'Facebook', socials.facebook],
       ['tiktok', 'TikTok', socials.tiktok],
       ['youtube', 'YouTube', socials.youtube],
-    ].filter(s => !!s[2]).map(([key, label, url]) => `
-      <a href="${escapeHtml(withOutboundAttribution(url))}" target="_blank" rel="noopener" class="btn btn-outline" style="font-size:0.8rem;padding:0.4rem 0.75rem;">
+    ].map(([key, label, url]) => [key, label, withOutboundAttribution(url)])
+     .filter(s => !!s[2]).map(([key, label, safeHref]) => `
+      <a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer" class="btn btn-outline" style="font-size:0.8rem;padding:0.4rem 0.75rem;">
         ${escapeHtml(label)} &nearr;
       </a>
     `).join('');
@@ -971,7 +1142,7 @@
         ` : ''}
 
         <div class="cta-grid">
-          ${biz.website_url ? `<a href="${escapeHtml(withOutboundAttribution(biz.website_url))}" target="_blank" rel="noopener" data-track="website" class="btn btn-crimson">🌐 Visit Website &nearr;</a>` : ''}
+          ${safeWebsiteHref ? `<a href="${escapeHtml(safeWebsiteHref)}" target="_blank" rel="noopener noreferrer" data-track="website" class="btn btn-crimson">🌐 Visit Website &nearr;</a>` : ''}
           ${biz.phone_primary ? `<a href="tel:${escapeHtml(biz.phone_primary)}" data-track="call" class="btn btn-green">📞 Call ${escapeHtml(biz.phone_primary)}</a>` : ''}
           ${waUrl ? `<a href="${escapeHtml(waUrl)}" target="_blank" rel="noopener noreferrer" data-track="whatsapp" class="btn btn-gold">💬 WhatsApp Now</a>` : ''}
           ${biz.email_public ? `<a href="mailto:${escapeHtml(biz.email_public)}" data-track="email" class="btn btn-outline">✉️ Email Business</a>` : ''}
@@ -1037,7 +1208,9 @@
   }
 
   function exportB2BShortlist() {
-    const selected = state.businesses.filter(b => state.shortlistIds.has(b.id));
+    const selected = Array.from(state.shortlistIds)
+      .map(id => state.shortlistedRecords.get(id) || state.businesses.find(b => Number(b.id) === Number(id)))
+      .filter(Boolean);
     if (selected.length === 0) {
       alert('Select at least one business using "+ B2B Shortlist" on any card to export a procurement summary.');
       return;
@@ -1272,12 +1445,15 @@
       const id = Number(shortlistBtn.getAttribute('data-shortlist-id'));
       if (state.shortlistIds.has(id)) {
         state.shortlistIds.delete(id);
+        state.shortlistedRecords.delete(id);
       } else {
         if (state.shortlistIds.size >= 5) {
           alert('You can shortlist up to 5 alumni vendors at a time.');
           return;
         }
         state.shortlistIds.add(id);
+        const foundBiz = state.businesses.find(b => Number(b.id) === id);
+        if (foundBiz) state.shortlistedRecords.set(id, foundBiz);
         trackClick(id, 'shortlist');
       }
       if (els.shortlistCount) {
@@ -1340,6 +1516,10 @@
       btnList.classList.remove('btn-crimson');
     });
   }
+
+  window.addEventListener('bbiz:consent-changed', () => {
+    renderInteractiveMap();
+  });
 
   // Initial Render
   renderCards();

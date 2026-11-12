@@ -96,17 +96,24 @@
     }
 
     updatePrivacyPageStatus();
+    try {
+      window.dispatchEvent(new CustomEvent('bbiz:consent-changed', { detail: { decision: decision } }));
+    } catch (_) {}
   }
 
   function resetChoice() {
     currentDecision = '';
     try {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem('bbiz_map_tiles_enabled');
     } catch (_) {}
     deleteCookie(CONSENT_COOKIE);
     deleteCookie(VID_COOKIE);
     renderBannerIfNeeded();
     updatePrivacyPageStatus();
+    try {
+      window.dispatchEvent(new CustomEvent('bbiz:consent-changed', { detail: { decision: '' } }));
+    } catch (_) {}
   }
 
   function renderBannerIfNeeded() {

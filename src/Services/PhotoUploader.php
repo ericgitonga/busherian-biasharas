@@ -3,11 +3,16 @@ declare(strict_types=1);
 
 namespace BusherianBiasharas\Services;
 
+use PDO;
+
 final class PhotoUploader
 {
     public const MAX_PHOTOS = 5;
     public const MAX_DIMENSION = 1200;
-    public const MAX_FILE_BYTES = 8388608; // 8 MB raw input ceiling before resize
+    public const MAX_FILE_BYTES = 8388608; // 8 MB per raw input file (#176)
+    public const MAX_TOTAL_UPLOAD_BYTES = 20971520; // 20 MB aggregate per request (#176)
+    public const MAX_SOURCE_EDGE = 4096; // Max width or height BEFORE GD allocation (#176)
+    public const MAX_SOURCE_PIXELS = 16000000; // 16 MP max total pixels BEFORE GD allocation (#176)
 
     private const ALLOWED_MIMES = [
         'image/jpeg',
@@ -15,9 +20,80 @@ final class PhotoUploader
         'image/webp',
     ];
 
-    /**
-     * Decode existing photos_json into a clean array of relative URLs.
-     */
+    public static function resolvePublicWebRoot(): string
+    {
+        $explicitRoot = \BusherianBiasharas\Config\Database::env('BBIZ_PUBLIC_WEB_ROOT', '');
+        if ($explicitRoot !== '') {
+            $clean = rtrim($explicitRoot, '/');
+            if (!is_dir($clean)) {
+                @mkdir($clean, 0775, true);
+            }
+            return $clean;
+        }
+        $projectRoot = dirname(__DIR__, 2);
+        if (is_dir($projectRoot . '/html')) {
+            return $projectRoot . '/html';
+        }
+        return $projectRoot . '/public';
+    }
+
+    public static function uploadDir(): string
+    {
+        $dir = self::resolvePublicWebRoot() . '/uploads/businesses';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        return $dir;
+    }
+
+    public static function quarantineDirRoot(): string
+    {
+        $override = \BusherianBiasharas\Config\Database::env('BBIZ_QUARANTINE_MEDIA_DIR', '');
+        if ($override !== '') {
+            $dir = rtrim($override, '/');
+        } else {
+            $customPub = \BusherianBiasharas\Config\Database::env('BBIZ_PUBLIC_WEB_ROOT', '');
+            if ($customPub !== '') {
+                $cleanPub = rtrim($customPub, '/');
+                $dir = dirname($cleanPub) . '/' . basename($cleanPub) . '_quarantined_media';
+            } else {
+                $dir = dirname(__DIR__, 2) . '/storage/quarantined_media';
+            }
+        }
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0750, true);
+        }
+        return $dir;
+    }
+
+    public static function resolveSafeUploadFilePath(string $urlPath, bool $mustExist = false): ?string
+    {
+        $trimmed = trim($urlPath);
+        if (!preg_match('~^/uploads/businesses/([A-Za-z0-9._-]+)$~', $trimmed, $m)) {
+            return null;
+        }
+        $filename = $m[1];
+        if ($filename === '' || $filename[0] === '.' || str_contains($filename, '..')) {
+            return null;
+        }
+        $baseDir = realpath(self::uploadDir());
+        if ($baseDir === false) {
+            return null;
+        }
+        $candidate = $baseDir . DIRECTORY_SEPARATOR . $filename;
+        if (is_link($candidate)) {
+            return null;
+        }
+        if (file_exists($candidate)) {
+            $resolved = realpath($candidate);
+            if ($resolved === false || !str_starts_with($resolved, $baseDir . DIRECTORY_SEPARATOR)) {
+                return null;
+            }
+            return is_file($resolved) ? $resolved : null;
+        }
+        return $mustExist ? null : $candidate;
+    }
+
     public static function decodePhotosJson(?string $photosJson): array
     {
         if ($photosJson === null || trim($photosJson) === '') {
@@ -29,18 +105,13 @@ final class PhotoUploader
         }
         $clean = [];
         foreach ($arr as $item) {
-            if (is_string($item) && str_starts_with($item, '/uploads/businesses/')) {
+            if (is_string($item) && self::resolveSafeUploadFilePath($item, false) !== null) {
                 $clean[] = $item;
             }
         }
         return array_slice(array_values(array_unique($clean)), 0, self::MAX_PHOTOS);
     }
 
-    /**
-     * Process existing photos (minus any marked for removal) + newly uploaded files or client-resized data URLs.
-     * Re-encodes every image through GD to strip EXIF GPS/camera metadata (Kenya DPA 2019 privacy protection)
-     * and enforce a strict max of 5 photos per business.
-     */
     public static function processBusinessPhotos(
         ?string $existingPhotosJson,
         array $removeUrls = [],
@@ -54,82 +125,143 @@ final class PhotoUploader
         }
 
         $newBinaryImages = [];
+        $aggregateBytes = 0;
 
-        // 1. Check client-resized base64 data URLs first (if provided by JS compressor)
-        if ($clientDataUrlsJson !== null && trim($clientDataUrlsJson) !== '') {
+        if ($clientDataUrlsJson !== null && trim($clientDataUrlsJson) !== '' && trim($clientDataUrlsJson) !== '[]') {
             $decodedList = json_decode($clientDataUrlsJson, true);
-            if (is_array($decodedList)) {
-                foreach ($decodedList as $dataUrl) {
-                    if (!is_string($dataUrl) || !preg_match('#^data:image/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$#', $dataUrl, $m)) {
-                        continue;
-                    }
-                    $rawBytes = base64_decode($m[2], true);
-                    if (is_string($rawBytes) && strlen($rawBytes) > 0 && strlen($rawBytes) <= self::MAX_FILE_BYTES) {
-                        $newBinaryImages[] = $rawBytes;
-                    }
-                }
+            if (!is_array($decodedList)) {
+                throw new PhotoUploadValidationException('Malformed inline photo upload payload.');
             }
-        }
-
-        // 2. Also support standard multipart $_FILES['business_photos'] when JS data URLs aren't used
-        if (empty($newBinaryImages) && is_array($uploadedFiles) && isset($uploadedFiles['tmp_name'])) {
-            $tmpNames = is_array($uploadedFiles['tmp_name']) ? $uploadedFiles['tmp_name'] : [$uploadedFiles['tmp_name']];
-            $errors   = is_array($uploadedFiles['error']) ? $uploadedFiles['error'] : [$uploadedFiles['error']];
-            $sizes    = is_array($uploadedFiles['size']) ? $uploadedFiles['size'] : [$uploadedFiles['size']];
-
-            foreach ($tmpNames as $idx => $tmpPath) {
-                $err = (int)($errors[$idx] ?? UPLOAD_ERR_NO_FILE);
-                $sz  = (int)($sizes[$idx] ?? 0);
-                if ($err !== UPLOAD_ERR_OK || !is_string($tmpPath) || $tmpPath === '' || $sz <= 0 || $sz > self::MAX_FILE_BYTES) {
+            if ((count($current) + count($decodedList)) > self::MAX_PHOTOS) {
+                throw new PhotoUploadValidationException(
+                    'You may upload at most ' . self::MAX_PHOTOS . ' photos per business listing.'
+                );
+            }
+            foreach ($decodedList as $dataUrl) {
+                if (!is_string($dataUrl) || trim($dataUrl) === '') {
                     continue;
                 }
-                if (is_uploaded_file($tmpPath) || is_file($tmpPath)) {
-                    $bytes = @file_get_contents($tmpPath);
-                    if (is_string($bytes) && $bytes !== '') {
-                        $newBinaryImages[] = $bytes;
-                    }
+                if (!preg_match('#^data:image/(jpeg|png|webp);base64,([A-Za-z0-9+/=\s]+)$#', $dataUrl, $m)) {
+                    throw new PhotoUploadValidationException('Unsupported inline photo format (use JPEG, PNG, or WebP).');
+                }
+                $rawBytes = base64_decode($m[2], true);
+                if (!is_string($rawBytes) || $rawBytes === '') {
+                    throw new PhotoUploadValidationException('Invalid base64 image data.');
+                }
+                $len = strlen($rawBytes);
+                if ($len > self::MAX_FILE_BYTES) {
+                    throw new PhotoUploadValidationException('Each photo must be 8 MB or smaller.');
+                }
+                $aggregateBytes += $len;
+                if ($aggregateBytes > self::MAX_TOTAL_UPLOAD_BYTES) {
+                    throw new PhotoUploadValidationException('Combined photo upload size must be 20 MB or smaller.');
+                }
+                $newBinaryImages[] = $rawBytes;
+            }
+        }
+
+        if (empty($newBinaryImages) && is_array($uploadedFiles) && isset($uploadedFiles['tmp_name'])) {
+            $tmpNames = is_array($uploadedFiles['tmp_name']) ? $uploadedFiles['tmp_name'] : [$uploadedFiles['tmp_name']];
+            $errors   = is_array($uploadedFiles['error'] ?? null) ? $uploadedFiles['error'] : [$uploadedFiles['error'] ?? UPLOAD_ERR_NO_FILE];
+            $sizes    = is_array($uploadedFiles['size'] ?? null) ? $uploadedFiles['size'] : [$uploadedFiles['size'] ?? 0];
+            $names    = is_array($uploadedFiles['name'] ?? null) ? $uploadedFiles['name'] : [$uploadedFiles['name'] ?? ''];
+
+            $nonEmptyFiles = 0;
+            foreach ($tmpNames as $idx => $tmpPath) {
+                $err = (int)($errors[$idx] ?? UPLOAD_ERR_NO_FILE);
+                $nm = trim((string)($names[$idx] ?? ''));
+                if ($err === UPLOAD_ERR_NO_FILE || ($nm === '' && (!is_string($tmpPath) || $tmpPath === ''))) {
+                    continue;
+                }
+                $nonEmptyFiles++;
+                if ((count($current) + $nonEmptyFiles) > self::MAX_PHOTOS) {
+                    throw new PhotoUploadValidationException(
+                        'You may upload at most ' . self::MAX_PHOTOS . ' photos per business listing.'
+                    );
+                }
+                if ($err === UPLOAD_ERR_INI_SIZE || $err === UPLOAD_ERR_FORM_SIZE) {
+                    throw new PhotoUploadValidationException('Uploaded photo exceeds the 8 MB per-file size limit.');
+                }
+                if ($err !== UPLOAD_ERR_OK) {
+                    throw new PhotoUploadValidationException('Photo upload failed with upload error code ' . $err . '.');
+                }
+                if (!is_string($tmpPath) || $tmpPath === '' || (!is_uploaded_file($tmpPath) && !is_file($tmpPath))) {
+                    continue;
+                }
+                $declaredSz = (int)($sizes[$idx] ?? 0);
+                $actualSz = (int)(@filesize($tmpPath) ?: $declaredSz);
+                if ($actualSz <= 0) {
+                    continue;
+                }
+                if ($actualSz > self::MAX_FILE_BYTES || $declaredSz > self::MAX_FILE_BYTES) {
+                    throw new PhotoUploadValidationException('Each photo must be 8 MB or smaller.');
+                }
+                $aggregateBytes += $actualSz;
+                if ($aggregateBytes > self::MAX_TOTAL_UPLOAD_BYTES) {
+                    throw new PhotoUploadValidationException('Combined photo upload size must be 20 MB or smaller.');
+                }
+                $bytes = @file_get_contents($tmpPath);
+                if (is_string($bytes) && $bytes !== '') {
+                    $newBinaryImages[] = $bytes;
                 }
             }
         }
 
-        foreach ($newBinaryImages as $rawBytes) {
-            if (count($current) >= self::MAX_PHOTOS) {
-                break;
+        if ((count($current) + count($newBinaryImages)) > self::MAX_PHOTOS) {
+            throw new PhotoUploadValidationException(
+                'You may upload at most ' . self::MAX_PHOTOS . ' photos per business listing.'
+            );
+        }
+
+        $newlySavedUrls = [];
+        try {
+            foreach ($newBinaryImages as $rawBytes) {
+                $savedRelUrl = self::sanitizeAndSaveImageBytes($rawBytes);
+                if ($savedRelUrl !== null) {
+                    $newlySavedUrls[] = $savedRelUrl;
+                    $current[] = $savedRelUrl;
+                }
             }
-            $savedRelUrl = self::sanitizeAndSaveImageBytes($rawBytes);
-            if ($savedRelUrl !== null) {
-                $current[] = $savedRelUrl;
+        } catch (\Throwable $e) {
+            foreach ($newlySavedUrls as $u) {
+                $p = self::resolveSafeUploadFilePath($u, true);
+                if ($p !== null) {
+                    @unlink($p);
+                }
             }
+            throw $e;
         }
 
         return (string)json_encode(array_slice($current, 0, self::MAX_PHOTOS), JSON_UNESCAPED_SLASHES);
     }
 
-    /**
-     * Validate image binary via getimagesizefromstring, re-encode via GD (stripping EXIF metadata),
-     * resize to <= 1200px, and save under public/uploads/businesses/ (or html/uploads/businesses/ on production).
-     */
     public static function sanitizeAndSaveImageBytes(string $rawBytes): ?string
     {
-        if ($rawBytes === '' || strlen($rawBytes) > self::MAX_FILE_BYTES) {
+        if ($rawBytes === '') {
             return null;
         }
+        if (strlen($rawBytes) > self::MAX_FILE_BYTES) {
+            throw new PhotoUploadValidationException('Each photo must be 8 MB or smaller.');
+        }
+
         $info = @getimagesizefromstring($rawBytes);
         if (!is_array($info) || empty($info['mime']) || !in_array($info['mime'], self::ALLOWED_MIMES, true)) {
             return null;
         }
         $width = (int)($info[0] ?? 0);
         $height = (int)($info[1] ?? 0);
-        if ($width < 10 || $height < 10 || $width > 10000 || $height > 10000) {
+        if ($width < 10 || $height < 10) {
             return null;
         }
 
-        $webRoot = self::resolvePublicWebRoot();
-        $targetDir = $webRoot . '/uploads/businesses';
-        if (!is_dir($targetDir)) {
-            @mkdir($targetDir, 0775, true);
+        // Decompression-bomb guard (#176): reject >4096px edge or >16 MP BEFORE calling imagecreatefromstring()
+        if ($width > self::MAX_SOURCE_EDGE || $height > self::MAX_SOURCE_EDGE || ($width * $height) > self::MAX_SOURCE_PIXELS) {
+            throw new PhotoUploadValidationException(
+                "Image dimensions ({$width}x{$height}) exceed the maximum allowed " . self::MAX_SOURCE_EDGE . "px edge / 16 MP security limit."
+            );
         }
 
+        $targetDir = self::uploadDir();
         $fileId = 'bbiz_' . gmdate('Ymd_His') . '_' . bin2hex(random_bytes(5));
 
         if (function_exists('imagecreatefromstring')) {
@@ -167,6 +299,7 @@ final class PhotoUploader
             imagedestroy($dstImg);
 
             if ($ok && is_file($fullPath)) {
+                @chmod($fullPath, 0644);
                 return '/uploads/businesses/' . $filename;
             }
         }
@@ -174,37 +307,193 @@ final class PhotoUploader
         return null;
     }
 
-    private static function resolvePublicWebRoot(): string
-    {
-        $explicitRoot = \BusherianBiasharas\Config\Database::env('BBIZ_PUBLIC_WEB_ROOT', '');
-        if ($explicitRoot !== '' && is_dir($explicitRoot)) {
-            return rtrim($explicitRoot, '/');
-        }
-        $projectRoot = dirname(__DIR__, 2);
-        if (is_dir($projectRoot . '/html')) {
-            return $projectRoot . '/html';
-        }
-        return $projectRoot . '/public';
-    }
-
-    /**
-     * Delete sanitized photo files belonging to a deleted business listing.
-     */
     public static function deleteBusinessPhotoFiles(?string $photosJson): void
     {
+        foreach (self::decodePhotosJson($photosJson) as $relUrl) {
+            $safePath = self::resolveSafeUploadFilePath($relUrl, true);
+            if ($safePath !== null) {
+                @unlink($safePath);
+            }
+        }
+    }
+
+    public static function deleteRemovedPhotoUrls(array $previousUrls, array $keptUrls): int
+    {
+        $removed = array_diff($previousUrls, $keptUrls);
+        $deleted = 0;
+        foreach ($removed as $url) {
+            if (!is_string($url)) {
+                continue;
+            }
+            $safePath = self::resolveSafeUploadFilePath($url, true);
+            if ($safePath !== null && @unlink($safePath)) {
+                $deleted++;
+            }
+        }
+        return $deleted;
+    }
+
+    public static function quarantineBusinessPhotos(int $businessId, ?string $photosJson): int
+    {
+        if ($businessId <= 0) {
+            return 0;
+        }
         $urls = self::decodePhotosJson($photosJson);
         if (empty($urls)) {
-            return;
+            return 0;
         }
-        $targetDir = self::resolvePublicWebRoot() . '/uploads/businesses';
-        foreach ($urls as $relUrl) {
-            $base = basename($relUrl);
-            if (preg_match('/^bbiz_[A-Za-z0-9_]+\.(?:webp|jpg|jpeg|png)$/', $base)) {
-                $fullPath = $targetDir . '/' . $base;
-                if (is_file($fullPath)) {
-                    @unlink($fullPath);
+        $qDir = self::quarantineDirRoot() . '/' . $businessId;
+        if (!is_dir($qDir)) {
+            @mkdir($qDir, 0750, true);
+        }
+        $moved = 0;
+        foreach ($urls as $url) {
+            $srcPath = self::resolveSafeUploadFilePath($url, true);
+            if ($srcPath === null) {
+                continue;
+            }
+            $destPath = $qDir . '/' . basename($srcPath);
+            if (@rename($srcPath, $destPath)) {
+                $moved++;
+            } elseif (@copy($srcPath, $destPath) && @unlink($srcPath)) {
+                $moved++;
+            }
+        }
+        return $moved;
+    }
+
+    public static function restoreQuarantinedBusinessPhotos(int $businessId, ?string $photosJson): int
+    {
+        if ($businessId <= 0) {
+            return 0;
+        }
+        $urls = self::decodePhotosJson($photosJson);
+        $qDir = self::quarantineDirRoot() . '/' . $businessId;
+        if (!is_dir($qDir)) {
+            return 0;
+        }
+        $restored = 0;
+        foreach ($urls as $url) {
+            $destPath = self::resolveSafeUploadFilePath($url, false);
+            if ($destPath === null) {
+                continue;
+            }
+            $qFile = $qDir . '/' . basename($destPath);
+            if (!is_file($qFile) || is_link($qFile)) {
+                continue;
+            }
+            if (@rename($qFile, $destPath)) {
+                @chmod($destPath, 0644);
+                $restored++;
+            } elseif (@copy($qFile, $destPath) && @unlink($qFile)) {
+                @chmod($destPath, 0644);
+                $restored++;
+            }
+        }
+        $remaining = @scandir($qDir);
+        if (is_array($remaining) && count(array_diff($remaining, ['.', '..'])) === 0) {
+            @rmdir($qDir);
+        }
+        return $restored;
+    }
+
+    public static function deleteAllBusinessMedia(int $businessId, ?string $photosJson): int
+    {
+        $deleted = 0;
+        foreach (self::decodePhotosJson($photosJson) as $url) {
+            $safePath = self::resolveSafeUploadFilePath($url, true);
+            if ($safePath !== null && @unlink($safePath)) {
+                $deleted++;
+            }
+        }
+        if ($businessId > 0) {
+            $qDir = self::quarantineDirRoot() . '/' . $businessId;
+            if (is_dir($qDir) && !is_link($qDir)) {
+                foreach (@scandir($qDir) ?: [] as $entry) {
+                    if ($entry === '.' || $entry === '..') {
+                        continue;
+                    }
+                    $p = $qDir . '/' . $entry;
+                    if (is_file($p) && !is_link($p) && @unlink($p)) {
+                        $deleted++;
+                    }
+                }
+                @rmdir($qDir);
+            }
+        }
+        return $deleted;
+    }
+
+    public static function sweepOrphanedMedia(PDO $pdo, int $minAgeSeconds = 3600): array
+    {
+        $referencedFiles = [];
+        $quarantinedBizIds = [];
+
+        $stmt = $pdo->query("SELECT id, status, photos_json FROM businesses");
+        foreach ($stmt->fetchAll() as $row) {
+            $bid = (int)($row['id'] ?? 0);
+            $st = (string)($row['status'] ?? '');
+            if ($st === 'quarantined_dpa') {
+                $quarantinedBizIds[$bid] = true;
+            }
+            foreach (self::decodePhotosJson($row['photos_json'] ?? null) as $u) {
+                $referencedFiles[basename($u)] = true;
+            }
+        }
+
+        $cutoff = time() - max(0, $minAgeSeconds);
+        $pubDeleted = 0;
+        $upDir = realpath(self::uploadDir());
+        if ($upDir !== false && is_dir($upDir)) {
+            foreach (@scandir($upDir) ?: [] as $entry) {
+                if ($entry === '.' || $entry === '..' || $entry[0] === '.') {
+                    continue;
+                }
+                if (isset($referencedFiles[$entry])) {
+                    continue;
+                }
+                $full = $upDir . DIRECTORY_SEPARATOR . $entry;
+                if (is_link($full) || !is_file($full)) {
+                    continue;
+                }
+                $mtime = (int)(@filemtime($full) ?: time());
+                if ($mtime <= $cutoff && @unlink($full)) {
+                    $pubDeleted++;
                 }
             }
         }
+
+        $quarDeleted = 0;
+        $qRoot = realpath(self::quarantineDirRoot());
+        if ($qRoot !== false && is_dir($qRoot)) {
+            foreach (@scandir($qRoot) ?: [] as $bizFolder) {
+                if ($bizFolder === '.' || $bizFolder === '..' || !ctype_digit($bizFolder)) {
+                    continue;
+                }
+                $bid = (int)$bizFolder;
+                if (isset($quarantinedBizIds[$bid])) {
+                    continue;
+                }
+                $bDir = $qRoot . DIRECTORY_SEPARATOR . $bizFolder;
+                if (!is_dir($bDir) || is_link($bDir)) {
+                    continue;
+                }
+                foreach (@scandir($bDir) ?: [] as $f) {
+                    if ($f === '.' || $f === '..') {
+                        continue;
+                    }
+                    $fp = $bDir . DIRECTORY_SEPARATOR . $f;
+                    if (is_file($fp) && !is_link($fp) && @unlink($fp)) {
+                        $quarDeleted++;
+                    }
+                }
+                @rmdir($bDir);
+            }
+        }
+
+        return [
+            'orphaned_public_deleted' => $pubDeleted,
+            'orphaned_quarantine_deleted' => $quarDeleted,
+        ];
     }
 }

@@ -1,18 +1,28 @@
 #!/usr/bin/env python3
-"""Hardened Explicit FTPS deployment helper (#170, #192).
+"""Hardened Explicit FTPS deployment helper (#170, #181, #192).
 
-Enforces strict X.509 CA chain validation and hostname verification (TLS 1.2+)
-on BOTH the FTPS control channel (`AUTH TLS`) and passive data transfer sockets (`PROT P`),
-aborting immediately on any certificate/hostname error before credentials or files are exposed.
+Enforces:
+1. Strict X.509 CA chain validation and hostname verification (TLS 1.2+)
+   on BOTH the FTPS control channel (`AUTH TLS`) and passive data sockets (`PROT P`).
+2. Atomic per-file staged uploads (`.bbiz_stage_<pid>_<rand>_<name>`) with remote byte-size
+   verification (`SIZE`) and atomic `RNFR`/`RNTO` promotion so live PHP files are never
+   served half-written during deploys (#181).
+3. Safe retirement of deleted tracked files (`--deleted-files-list`) while strictly
+   protecting `.env`, `storage/`, and `public/uploads/` (including `.htaccess`) (#181).
+4. Post-deploy `.deploy_manifest.json` release stamp (#181).
 """
 
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import ftplib
+import io
+import json
 import os
 import pathlib
 import posixpath
+import secrets
 import socket
 import ssl
 import sys
@@ -24,6 +34,11 @@ FORBIDDEN_PREFIXES = (
     "uploads/",
     "public/uploads/",
     ".git/",
+)
+
+PROTECTED_FROM_DELETE = (
+    "public/uploads/.htaccess",
+    "uploads/.htaccess",
 )
 
 DEFAULT_INTERMEDIATES_PEM = pathlib.Path(__file__).with_name("letsencrypt_geny_intermediates.pem")
@@ -90,11 +105,18 @@ def validate_relative_deploy_path(rel_path: str) -> str:
     norm = rel_path.strip().replace("\\", "/").lstrip("/")
     if not norm or norm.startswith("../") or "/../" in f"/{norm}/":
         raise ValueError(f"Unsafe relative path rejected: {rel_path!r}")
-    if norm in ("public/uploads/.htaccess", "uploads/.htaccess"):
+    if norm in PROTECTED_FROM_DELETE:
         return norm
     base = posixpath.basename(norm)
-    if base == ".env" or any(norm == p.rstrip("/") or norm.startswith(p) for p in FORBIDDEN_PREFIXES):
+    if base == ".env" or base.startswith(".env.") or any(norm == p.rstrip("/") or norm.startswith(p) for p in FORBIDDEN_PREFIXES):
         raise ValueError(f"Forbidden runtime/secret path rejected from FTPS deploy: {norm}")
+    return norm
+
+
+def validate_deletable_deploy_path(rel_path: str) -> str:
+    norm = validate_relative_deploy_path(rel_path)
+    if norm in PROTECTED_FROM_DELETE:
+        raise ValueError(f"Protected security file cannot be deleted via FTPS deploy: {norm}")
     return norm
 
 
@@ -111,6 +133,20 @@ def map_remote_path(rel_path: str, app_root: str, mode: str) -> str:
             sub = norm[len("public/"):]
             return f"{clean_root}/html/admin/preprod/{sub}"
         return f"{clean_root}/preprod_app/{norm}"
+    raise ValueError(f"Unsupported deploy mode: {mode!r}")
+
+
+def map_remote_delete_path(rel_path: str, app_root: str, mode: str) -> str:
+    validate_deletable_deploy_path(rel_path)
+    return map_remote_path(rel_path, app_root, mode)
+
+
+def manifest_remote_path(app_root: str, mode: str) -> str:
+    clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
+    if mode == "prod":
+        return f"{clean_root}/.deploy_manifest.json"
+    if mode == "preprod":
+        return f"{clean_root}/preprod_app/.deploy_manifest.json"
     raise ValueError(f"Unsupported deploy mode: {mode!r}")
 
 
@@ -135,9 +171,48 @@ def connect_verified_ftps(
     return ftp
 
 
+def _atomic_upload_bytes(
+    ftp: ftplib.FTP,
+    ensure_remote_dir_fn,
+    remote_full: str,
+    payload_bytes: bytes,
+    label: str,
+) -> None:
+    remote_dir = posixpath.dirname(remote_full)
+    remote_filename = posixpath.basename(remote_full)
+    ensure_remote_dir_fn(remote_dir)
+
+    stage_name = f".bbiz_stage_{os.getpid()}_{secrets.token_hex(4)}_{remote_filename}"
+    expected_size = len(payload_bytes)
+    try:
+        ftp.storbinary(f"STOR {stage_name}", io.BytesIO(payload_bytes))
+        try:
+            remote_size = ftp.size(stage_name)
+        except ftplib.error_perm as sz_err:
+            # 500/502 when SIZE is unsupported by a minimal daemon; any other perm error is raised
+            msg = str(sz_err)
+            if not (msg.startswith("500") or msg.startswith("502")):
+                raise
+            remote_size = None
+
+        if remote_size is not None and int(remote_size) != expected_size:
+            raise ValueError(
+                f"Staged FTPS upload size mismatch for {label}: expected {expected_size} bytes, got {remote_size}"
+            )
+
+        ftp.rename(stage_name, remote_filename)
+    except Exception:
+        try:
+            ftp.delete(stage_name)
+        except Exception:
+            pass
+        raise
+
+
 def deploy_items(
     items: Iterable[tuple[pathlib.Path, str]],
     *,
+    deleted_rel_paths: Iterable[str] = (),
     host: str,
     user: str,
     password: str,
@@ -146,10 +221,14 @@ def deploy_items(
     port: int = 21,
     cafile: str | None = None,
     tls_servername: str | None = None,
+    release_sha: str | None = None,
+    write_manifest: bool = True,
 ) -> int:
     materialized = [(lp, map_remote_path(rel, app_root, mode), rel) for lp, rel in items]
-    if not materialized:
-        print("No pertinent files changed; skipping FTPS upload.")
+    deleted_targets = [(map_remote_delete_path(rel, app_root, mode), rel) for rel in deleted_rel_paths]
+
+    if not materialized and not deleted_targets:
+        print("No pertinent files changed or retired; skipping FTPS session.")
         return 0
 
     ftp = connect_verified_ftps(
@@ -180,22 +259,53 @@ def deploy_items(
         ftp.cwd(remote_dir)
 
     uploaded = 0
+    deleted = 0
     try:
+        try:
+            ftp.voidcmd("TYPE I")
+        except Exception:
+            pass
+
         for local_path, remote_full, rel_label in materialized:
-            remote_dir = posixpath.dirname(remote_full)
-            remote_filename = posixpath.basename(remote_full)
-            ensure_remote_dir(remote_dir)
-            with local_path.open("rb") as lf:
-                ftp.storbinary(f"STOR {remote_filename}", lf)
-            print(f"Uploaded: {rel_label} -> {remote_full}")
+            data = local_path.read_bytes()
+            _atomic_upload_bytes(ftp, ensure_remote_dir, remote_full, data, rel_label)
+            print(f"Uploaded (atomic stage->rename): {rel_label} -> {remote_full} ({len(data)}B)")
             uploaded += 1
+
+        for remote_del, rel_del in deleted_targets:
+            try:
+                ftp.delete(remote_del)
+                print(f"Retired deleted file: {rel_del} -> {remote_del}")
+                deleted += 1
+            except ftplib.error_perm as exc:
+                if str(exc).startswith("550"):
+                    print(f"Retired file already absent (idempotent): {rel_del} -> {remote_del}")
+                else:
+                    raise
+
+        if write_manifest:
+            manifest_payload = json.dumps(
+                {
+                    "mode": mode,
+                    "release_sha": (release_sha or os.environ.get("GITHUB_SHA") or "unknown").strip(),
+                    "deployed_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "uploaded_count": uploaded,
+                    "deleted_count": deleted,
+                },
+                indent=2,
+            ).encode("utf-8")
+            m_path = manifest_remote_path(app_root, mode)
+            _atomic_upload_bytes(ftp, ensure_remote_dir, m_path, manifest_payload, ".deploy_manifest.json")
     finally:
         try:
             ftp.quit()
         except Exception:
             ftp.close()
 
-    print(f"Successfully uploaded {uploaded} file(s) via certificate-verified Explicit FTPS ({mode}).")
+    print(
+        f"Successfully promoted {uploaded} file(s) and retired {deleted} deleted file(s) "
+        f"via atomic Explicit FTPS ({mode})."
+    )
     return uploaded
 
 
@@ -227,12 +337,38 @@ def collect_items_from_args(args: argparse.Namespace) -> list[tuple[pathlib.Path
     raise ValueError("Either --files-list or --stage-dir must be provided.")
 
 
+def collect_deleted_from_args(args: argparse.Namespace) -> list[str]:
+    if not getattr(args, "deleted_files_list", None):
+        return []
+    del_path = pathlib.Path(args.deleted_files_list)
+    if not del_path.is_file():
+        return []
+    seen: set[str] = set()
+    deleted: list[str] = []
+    for raw_line in del_path.read_text(encoding="utf-8").splitlines():
+        rel = raw_line.strip()
+        if not rel or rel in seen:
+            continue
+        seen.add(rel)
+        deleted.append(rel)
+    return deleted
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Deploy files over certificate-verified Explicit FTPS.")
     parser.add_argument("--mode", choices=("prod", "preprod"), required=True)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--files-list", help="Newline-delimited file of repo-relative paths to upload")
     group.add_argument("--stage-dir", help="Directory containing staged files to upload")
+    parser.add_argument(
+        "--deleted-files-list",
+        help="Optional newline-delimited file of retired repo-relative paths to delete remotely",
+    )
+    parser.add_argument(
+        "--release-sha",
+        default=os.environ.get("GITHUB_SHA", "").strip() or None,
+        help="Git commit SHA recorded in .deploy_manifest.json",
+    )
     parser.add_argument("--port", type=int, default=int(os.environ.get("FTP_PORT", "21")))
     parser.add_argument(
         "--tls-servername",
@@ -242,8 +378,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     items = collect_items_from_args(args)
-    if not items:
-        print("No pertinent files changed; skipping FTPS upload.")
+    deleted_rels = collect_deleted_from_args(args)
+    if not items and not deleted_rels:
+        print("No pertinent files changed or retired; skipping FTPS upload.")
         return 0
 
     host = os.environ["FTP_SERVER"]
@@ -254,6 +391,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         deploy_items(
             items,
+            deleted_rel_paths=deleted_rels,
             host=host,
             user=user,
             password=password,
@@ -261,6 +399,7 @@ def main(argv: list[str] | None = None) -> int:
             mode=args.mode,
             port=args.port,
             tls_servername=args.tls_servername,
+            release_sha=args.release_sha,
         )
     except (ssl.SSLError, socket.error, *ftplib.all_errors, ValueError) as exc:
         print(f"CRITICAL FTPS DEPLOY ERROR: {exc}", file=sys.stderr)
