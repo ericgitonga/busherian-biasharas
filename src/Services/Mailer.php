@@ -10,6 +10,9 @@ final class Mailer
 {
     private const ACTION_LINK_TTL_SECONDS = 259200; // 72 hours
 
+    /** @var list<int> Outbox IDs queued inside an active DB transaction, flushed only after commit (#188). */
+    private static array $pendingPostCommitIds = [];
+
     /**
      * Generate a cryptographically signed one-click Admin Triage URL (HMAC-SHA256).
      */
@@ -106,59 +109,199 @@ final class Mailer
         ?string $replyTo = null,
         ?int $businessId = null
     ): int {
-        $simulate = strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes'
-                 || strtolower(Database::env('APP_ENV', 'development')) !== 'production';
+        $cleanReply = ($replyTo !== null && filter_var($replyTo, FILTER_VALIDATE_EMAIL))
+            ? AntiSpamGate::sanitizeHeaderValue($replyTo)
+            : null;
 
-        $status = $simulate ? 'simulated' : 'queued';
         $stmt = $pdo->prepare("
-            INSERT INTO email_outbox (business_id, recipient_email, subject, body_html, status, attempts, sent_at)
-            VALUES (:bid, :to, :subj, :body, :status, 1, CURRENT_TIMESTAMP)
+            INSERT INTO email_outbox (business_id, recipient_email, reply_to, subject, body_html, status, attempts, sent_at)
+            VALUES (:bid, :to, :rto, :subj, :body, 'queued', 0, NULL)
         ");
         $stmt->execute([
             ':bid' => ($businessId !== null && $businessId > 0) ? $businessId : null,
             ':to' => $recipient,
+            ':rto' => $cleanReply,
             ':subj' => AntiSpamGate::sanitizeHeaderValue($subject),
             ':body' => $bodyHtml,
-            ':status' => $status,
         ]);
         $outboxId = (int)$pdo->lastInsertId();
 
-        if (!$simulate) {
-            $cleanSubject = AntiSpamGate::sanitizeHeaderValue($subject);
-            $fromEmail = Database::env('SMTP_FROM_EMAIL', 'noreply@busherianbiasharas.com');
-            $fromName  = Database::env('SMTP_FROM_NAME', 'Busherian Biasharas');
-            $cleanReply = ($replyTo !== null && filter_var($replyTo, FILTER_VALIDATE_EMAIL))
-                ? AntiSpamGate::sanitizeHeaderValue($replyTo)
-                : null;
-
-            $smtpHost = trim(Database::env('SMTP_HOST', ''));
-            $ok = false;
-            if ($smtpHost !== '') {
-                $ok = self::sendViaAuthenticatedSmtp($recipient, $cleanSubject, $bodyHtml, $fromEmail, $fromName, $cleanReply);
-            }
-            if (!$ok && function_exists('mail')) {
-                $msgId = '<' . bin2hex(random_bytes(12)) . '@busherianbiasharas.com>';
-                $headers = [
-                    'MIME-Version: 1.0',
-                    'Content-Type: text/html; charset=UTF-8',
-                    "From: {$fromName} <{$fromEmail}>",
-                    'Date: ' . date(DATE_RFC2822),
-                    "Message-ID: {$msgId}",
-                ];
-                if ($cleanReply !== null) {
-                    $headers[] = "Reply-To: {$cleanReply}";
-                }
-                $envelopeParam = filter_var($fromEmail, FILTER_VALIDATE_EMAIL) ? "-f {$fromEmail}" : '';
-                $ok = $envelopeParam !== ''
-                    ? @mail($recipient, $cleanSubject, $bodyHtml, implode("\r\n", $headers), $envelopeParam)
-                    : @mail($recipient, $cleanSubject, $bodyHtml, implode("\r\n", $headers));
-            }
-            $newStatus = $ok ? 'sent' : 'failed';
-            $pdo->prepare("UPDATE email_outbox SET status = :st WHERE id = :id")
-                ->execute([':st' => $newStatus, ':id' => $outboxId]);
+        // Decouple network SMTP handshakes from open DB transactions (#188):
+        // Never hold DB locks across network I/O or send phantom emails before commit.
+        if ($pdo->inTransaction()) {
+            self::$pendingPostCommitIds[] = $outboxId;
+            return $outboxId;
         }
 
+        self::dispatchOutboxRow($pdo, $outboxId);
         return $outboxId;
+    }
+
+    /**
+     * Dispatch a single `email_outbox` row outside any DB transaction (#188).
+     */
+    public static function dispatchOutboxRow(PDO $pdo, int $outboxId): bool
+    {
+        if ($pdo->inTransaction()) {
+            return false;
+        }
+        $stmt = $pdo->prepare("SELECT * FROM email_outbox WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $outboxId]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            return false;
+        }
+        $bodyHtml = (string)($row['body_html'] ?? '');
+        if (str_starts_with($bodyHtml, '[REDACTED')) {
+            return false;
+        }
+
+        $simulate = strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes'
+                 || strtolower(Database::env('APP_ENV', 'development')) !== 'production';
+
+        $attempts = ((int)($row['attempts'] ?? 0)) + 1;
+        if ($simulate) {
+            $pdo->prepare("
+                UPDATE email_outbox
+                SET status = 'simulated', attempts = :att, sent_at = CURRENT_TIMESTAMP
+                WHERE id = :id
+            ")->execute([':att' => $attempts, ':id' => $outboxId]);
+            return true;
+        }
+
+        $recipient = trim((string)($row['recipient_email'] ?? ''));
+        $cleanSubject = AntiSpamGate::sanitizeHeaderValue((string)($row['subject'] ?? ''));
+        $fromEmail = Database::env('SMTP_FROM_EMAIL', 'noreply@busherianbiasharas.com');
+        $fromName  = Database::env('SMTP_FROM_NAME', 'Busherian Biasharas');
+        $replyRaw  = trim((string)($row['reply_to'] ?? ''));
+        $cleanReply = ($replyRaw !== '' && filter_var($replyRaw, FILTER_VALIDATE_EMAIL))
+            ? AntiSpamGate::sanitizeHeaderValue($replyRaw)
+            : null;
+
+        $smtpHost = trim(Database::env('SMTP_HOST', ''));
+        $disablePhpMailFallback = strtolower(Database::env('SMTP_DISABLE_MAIL_FALLBACK', 'no')) === 'yes';
+        $ok = false;
+        if ($smtpHost !== '') {
+            $ok = self::sendViaAuthenticatedSmtp($recipient, $cleanSubject, $bodyHtml, $fromEmail, $fromName, $cleanReply);
+        }
+        if (!$ok && !$disablePhpMailFallback && function_exists('mail')) {
+            $msgId = '<' . bin2hex(random_bytes(12)) . '@busherianbiasharas.com>';
+            $headers = [
+                'MIME-Version: 1.0',
+                'Content-Type: text/html; charset=UTF-8',
+                "From: {$fromName} <{$fromEmail}>",
+                'Date: ' . date(DATE_RFC2822),
+                "Message-ID: {$msgId}",
+            ];
+            if ($cleanReply !== null) {
+                $headers[] = "Reply-To: {$cleanReply}";
+            }
+            $envelopeParam = filter_var($fromEmail, FILTER_VALIDATE_EMAIL) ? "-f {$fromEmail}" : '';
+            $ok = $envelopeParam !== ''
+                ? @mail($recipient, $cleanSubject, $bodyHtml, implode("\r\n", $headers), $envelopeParam)
+                : @mail($recipient, $cleanSubject, $bodyHtml, implode("\r\n", $headers));
+        }
+
+        if ($ok) {
+            $pdo->prepare("
+                UPDATE email_outbox
+                SET status = 'sent', attempts = :att, sent_at = CURRENT_TIMESTAMP
+                WHERE id = :id
+            ")->execute([':att' => $attempts, ':id' => $outboxId]);
+            return true;
+        }
+
+        $pdo->prepare("
+            UPDATE email_outbox
+            SET status = 'failed', attempts = :att
+            WHERE id = :id
+        ")->execute([':att' => $attempts, ':id' => $outboxId]);
+        return false;
+    }
+
+    /**
+     * Flush deferred outbox messages queued during a now-committed DB transaction (#188).
+     *
+     * @return array{dispatched: int, failed: int}
+     */
+    public static function flushPendingOutbox(PDO $pdo): array
+    {
+        if ($pdo->inTransaction() || self::$pendingPostCommitIds === []) {
+            return ['dispatched' => 0, 'failed' => 0];
+        }
+        $ids = array_values(array_unique(self::$pendingPostCommitIds));
+        self::$pendingPostCommitIds = [];
+        $dispatched = 0;
+        $failed = 0;
+        foreach ($ids as $id) {
+            $existsStmt = $pdo->prepare("SELECT id FROM email_outbox WHERE id = :id LIMIT 1");
+            $existsStmt->execute([':id' => $id]);
+            if (!$existsStmt->fetchColumn()) {
+                continue; // Rolled back before flush
+            }
+            if (self::dispatchOutboxRow($pdo, $id)) {
+                $dispatched++;
+            } else {
+                $failed++;
+            }
+        }
+        return ['dispatched' => $dispatched, 'failed' => $failed];
+    }
+
+    public static function clearPendingOutbox(): void
+    {
+        self::$pendingPostCommitIds = [];
+    }
+
+    public static function wasDeliveredOrSimulated(PDO $pdo, int $outboxId): bool
+    {
+        if ($outboxId <= 0) {
+            return false;
+        }
+        $stmt = $pdo->prepare("SELECT status FROM email_outbox WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $outboxId]);
+        $status = (string)($stmt->fetchColumn() ?: '');
+        return in_array($status, ['sent', 'simulated'], true);
+    }
+
+    /**
+     * Bounded retry worker for `queued` and `failed` outbox items (#188).
+     *
+     * @return array{processed: int, delivered: int, failed: int, last_run_utc: string}
+     */
+    public static function processRetryQueue(PDO $pdo, int $maxBatch = 25, int $maxAttempts = 5): array
+    {
+        $limit = max(1, min(100, $maxBatch));
+        $cap = max(1, min(10, $maxAttempts));
+        $stmt = $pdo->prepare("
+            SELECT id
+            FROM email_outbox
+            WHERE status IN ('queued', 'failed')
+              AND attempts < :cap
+              AND body_html NOT LIKE '[REDACTED%'
+            ORDER BY id ASC
+            LIMIT {$limit}
+        ");
+        $stmt->execute([':cap' => $cap]);
+        $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+
+        $delivered = 0;
+        $failed = 0;
+        foreach ($ids as $id) {
+            if (self::dispatchOutboxRow($pdo, $id)) {
+                $delivered++;
+            } else {
+                $failed++;
+            }
+        }
+        $nowUtc = gmdate('Y-m-d H:i:s');
+        Database::setSetting($pdo, 'OUTBOX_WORKER_LAST_RUN_AT', $nowUtc);
+        return [
+            'processed' => count($ids),
+            'delivered' => $delivered,
+            'failed' => $failed,
+            'last_run_utc' => $nowUtc,
+        ];
     }
 
     /**

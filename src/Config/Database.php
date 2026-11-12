@@ -688,13 +688,20 @@ final class Database
 
             $outboxCols = $pdo->query("PRAGMA table_info(email_outbox)")->fetchAll();
             $hasOutboxBizId = false;
+            $hasOutboxReplyTo = false;
             foreach ($outboxCols as $oc) {
                 if (($oc['name'] ?? '') === 'business_id') {
                     $hasOutboxBizId = true;
                 }
+                if (($oc['name'] ?? '') === 'reply_to') {
+                    $hasOutboxReplyTo = true;
+                }
             }
             if (!$hasOutboxBizId) {
                 $pdo->exec("ALTER TABLE email_outbox ADD COLUMN business_id INTEGER NULL");
+            }
+            if (!$hasOutboxReplyTo) {
+                $pdo->exec("ALTER TABLE email_outbox ADD COLUMN reply_to TEXT NULL");
             }
             $pdo->exec("CREATE INDEX IF NOT EXISTS idx_outbox_business ON email_outbox (business_id)");
 
@@ -730,13 +737,20 @@ final class Database
 
             $outboxCols = $pdo->query("SHOW COLUMNS FROM email_outbox")->fetchAll();
             $hasOutboxBizId = false;
+            $hasOutboxReplyTo = false;
             foreach ($outboxCols as $oc) {
                 if (($oc['Field'] ?? '') === 'business_id') {
                     $hasOutboxBizId = true;
                 }
+                if (($oc['Field'] ?? '') === 'reply_to') {
+                    $hasOutboxReplyTo = true;
+                }
             }
             if (!$hasOutboxBizId) {
                 $pdo->exec("ALTER TABLE email_outbox ADD COLUMN business_id INT UNSIGNED NULL AFTER id, ADD INDEX idx_outbox_business (business_id)");
+            }
+            if (!$hasOutboxReplyTo) {
+                $pdo->exec("ALTER TABLE email_outbox ADD COLUMN reply_to VARCHAR(190) NULL AFTER recipient_email");
             }
 
             $pdo->exec("

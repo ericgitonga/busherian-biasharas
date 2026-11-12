@@ -86,6 +86,7 @@ final class VettingPurger
 
             if ($ownTx) {
                 $pdo->commit();
+                Mailer::flushPendingOutbox($pdo);
             }
 
             return [
@@ -96,6 +97,7 @@ final class VettingPurger
         } catch (\Throwable $e) {
             if ($ownTx && $pdo->inTransaction()) {
                 $pdo->rollBack();
+                Mailer::clearPendingOutbox();
             }
             throw $e;
         }
@@ -433,6 +435,62 @@ final class VettingPurger
             'vetting_rows_purged' => $vettingPurged,
             'outbox_bodies_redacted' => $outboxRedacted,
             'cutoff_utc' => $cutoffDate,
+        ];
+    }
+
+    /**
+     * Record a scheduled execution heartbeat for `bin/purge-dpa-retention.php` (#188).
+     */
+    public static function recordCronHeartbeat(PDO $pdo, array $summary = []): string
+    {
+        $nowUtc = gmdate('Y-m-d H:i:s');
+        \BusherianBiasharas\Config\Database::setSetting($pdo, 'DPA_RETENTION_CRON_LAST_RUN_AT', $nowUtc);
+        if ($summary !== []) {
+            \BusherianBiasharas\Config\Database::setSetting(
+                $pdo,
+                'DPA_RETENTION_CRON_LAST_SUMMARY',
+                (string)json_encode($summary, JSON_UNESCAPED_SLASHES)
+            );
+        }
+        return $nowUtc;
+    }
+
+    /**
+     * Inspect whether the scheduled `bin/purge-dpa-retention.php` cron heartbeat is healthy or stale (#188).
+     *
+     * @return array{healthy: bool, status: string, last_run_utc: ?string, age_hours: ?float, stale_after_hours: int}
+     */
+    public static function getRetentionCronHealth(PDO $pdo, int $staleAfterHours = 36): array
+    {
+        $threshold = max(1, $staleAfterHours);
+        $raw = trim(\BusherianBiasharas\Config\Database::getSetting($pdo, 'DPA_RETENTION_CRON_LAST_RUN_AT', ''));
+        if ($raw === '') {
+            return [
+                'healthy' => false,
+                'status' => 'never_run',
+                'last_run_utc' => null,
+                'age_hours' => null,
+                'stale_after_hours' => $threshold,
+            ];
+        }
+        $ts = strtotime($raw . ' UTC');
+        if ($ts === false || $ts <= 0) {
+            return [
+                'healthy' => false,
+                'status' => 'invalid_timestamp',
+                'last_run_utc' => $raw,
+                'age_hours' => null,
+                'stale_after_hours' => $threshold,
+            ];
+        }
+        $ageHours = round(max(0, time() - $ts) / 3600, 2);
+        $healthy = $ageHours <= $threshold;
+        return [
+            'healthy' => $healthy,
+            'status' => $healthy ? 'healthy' : 'stale',
+            'last_run_utc' => gmdate('Y-m-d H:i:s', $ts),
+            'age_hours' => $ageHours,
+            'stale_after_hours' => $threshold,
         ];
     }
 

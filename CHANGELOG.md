@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.14.2] - 2026-11-12
+
+### Security
+- **Strict Session-Bound CSRF Token Generation & Verification (`[Adversarial LOW-01]`)**: Removed the `'stateless'` session-ID fallback from `AntiSpamGate::generateFormTokens()` and `AntiSpamGate::verifyCsrfToken()`, adding `AntiSpamGate::generateCsrfToken()` that invokes `OwnerAuth::startSecureSession()` and fails closed (`RuntimeException` on generation, `false` on verification) whenever `session_id()` is empty (closes #187, part of #161).
+
+### Changed
+- **Transaction-Decoupled Email Outbox, Retry Worker & DPA Retention Cron Heartbeat (`[Adversarial LOW-02]`)**: Deferred network SMTP / `mail()` delivery in `Mailer::enqueueAndSend()` whenever `$pdo->inTransaction()` is active, flushing queued `email_outbox` rows strictly post-commit via `Mailer::flushPendingOutbox()` (and discarding queued IDs on rollback via `Mailer::clearPendingOutbox()`); added bounded CLI retry worker `bin/process-email-outbox.php` (`Mailer::processRetryQueue()`) and admin `Retry Outbox Now` action; surfaced honest UI error/delay notices when immediate OTP email delivery fails (`Mailer::wasDeliveredOrSimulated()`); and added `VettingPurger::recordCronHeartbeat()` / `getRetentionCronHealth()` in `bin/purge-dpa-retention.php` and `public/admin/index.php` to surface stale (`> 36h`) or unconfigured cron warnings (closes #188, part of #160).
+- **Synced `README.md`, `SKILL.md` (`busherian-biasharas` + `egm-skills`), & `CategoryMatcher` Docs (`[Adversarial LOW-03]`)**: Updated `README.md`, `SKILL.md`, and `CategoryMatcher::similarity()` comments to accurately document substring + normalized Levenshtein + `similar_text()` fuzzy deduplication, OpenStreetMap tile / OSRM / Nominatim usage alongside self-hosted CSS/JS/Leaflet, explicit `conda activate ds` test commands, and current release version (closes #189).
+
+### Fixed
+- **Allowed Tracked `public/uploads/.htaccess` in Full-Sync FTPS Deployments**: Permitted exact Apache hardening file `public/uploads/.htaccess` in `.github/scripts/ftps_deploy.py` (`validate_relative_deploy_path()`) while keeping all uploaded media under `public/uploads/*` blocked so `workflow_dispatch` full-tree syncs succeed cleanly (closes #194, part of #160).
+- tag: `v0.14.2`
+
 ## [0.14.1] - 2026-11-12
 
 ### Fixed

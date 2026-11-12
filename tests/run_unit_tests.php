@@ -33,6 +33,8 @@ use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\OwnerAuth;
+
+OwnerAuth::startSecureSession();
 use BusherianBiasharas\Services\PhotoUploader;
 use BusherianBiasharas\Services\VettingPurger;
 use BusherianBiasharas\Services\WebsiteEnricher;
@@ -69,7 +71,7 @@ $expanded = CategoryMatcher::expandSearchTerms('wakili');
 assertTrue(in_array('Advocates', $expanded, true), 'Swahili term "wakili" expands to Advocates');
 
 $fuzzy = CategoryMatcher::findFuzzyMatches($pdo, 'Advocate & Law Firms', null, 0.65);
-assertTrue(!empty($fuzzy) && str_contains($fuzzy[0]['name'], 'Advocates'), 'Jaro-Winkler fuzzy matcher detects duplicate custom specialty');
+assertTrue(!empty($fuzzy) && str_contains($fuzzy[0]['name'], 'Advocates'), 'Fuzzy matcher (Levenshtein + similar_text) detects duplicate custom specialty (#189)');
 
 // 3. Verify Spatial Haversine, Google Maps URL & Plus Code Decoder
 $distKm = LocationEngine::haversineKm(-1.286389, 36.817223, -1.264700, 36.802100);
@@ -1564,6 +1566,119 @@ assertTrue(
 );
 @unlink($tmpScript169);
 @unlink($prodEmptySqlite);
+
+
+// =========================================================================
+// Section 38: Adversarial LOW-01 (#187) & LOW-02 (#188) Regression Suite
+// =========================================================================
+
+// 38a. LOW-01 (#187): Session-bound CSRF rejects 'stateless' HMAC and fails closed without session_id()
+$activeCsrf = AntiSpamGate::generateCsrfToken();
+$forgedStatelessCsrf = hash_hmac('sha256', 'stateless', (string)getenv('CSRF_SECRET'));
+assertTrue(
+    $activeCsrf !== '' &&
+    AntiSpamGate::verifyCsrfToken($activeCsrf) === true &&
+    AntiSpamGate::verifyCsrfToken($forgedStatelessCsrf) === false,
+    'AntiSpamGate::verifyCsrfToken accepts active session token and rejects forged stateless CSRF token (#187)'
+);
+
+$noSessionScript = <<<'PHP'
+<?php
+// Emit output BEFORE bootstrap so headers_sent() is true and session_start() cannot create a session_id()
+echo "PRE_OUTPUT\n";
+require_once $argv[1] . '/src/bootstrap.php';
+$verifyOk = \BusherianBiasharas\Services\AntiSpamGate::verifyCsrfToken(
+    hash_hmac('sha256', 'stateless', (string)getenv('CSRF_SECRET'))
+);
+$threwOnGen = false;
+try {
+    \BusherianBiasharas\Services\AntiSpamGate::generateCsrfToken();
+} catch (\RuntimeException $e) {
+    $threwOnGen = true;
+}
+echo ($verifyOk === false && $threwOnGen) ? "FAIL_CLOSED_OK" : "UNEXPECTED_OPEN";
+PHP;
+$tmpScript187 = sys_get_temp_dir() . '/bbiz_test_187_' . getmypid() . '.php';
+file_put_contents($tmpScript187, $noSessionScript);
+$out187 = [];
+$rc187 = 0;
+exec(sprintf('CSRF_SECRET=%s php %s %s 2>/dev/null', escapeshellarg((string)getenv('CSRF_SECRET')), escapeshellarg($tmpScript187), escapeshellarg(dirname(__DIR__))), $out187, $rc187);
+@unlink($tmpScript187);
+assertTrue(
+    $rc187 === 0 && str_contains(implode("\n", $out187), 'FAIL_CLOSED_OK'),
+    'AntiSpamGate CSRF generation throws RuntimeException and verification returns false when session_id() is empty (#187)'
+);
+
+// 38b. LOW-02 (#188): Deferred SMTP inside DB transactions, zero phantom emails on rollback, bounded retry worker, and DPA cron heartbeat
+Mailer::clearPendingOutbox();
+
+// 1) Rollback test: enqueue inside open transaction -> status is 'queued' (attempts=0) -> rollBack() -> flushPendingOutbox() dispatches 0!
+$pdo->beginTransaction();
+$rolledBackOutboxId = Mailer::enqueueAndSend($pdo, 'rollback188@test.co.ke', 'Rollback Test #188', '<p>Should roll back</p>');
+$inTxStmt = $pdo->prepare("SELECT status, attempts FROM email_outbox WHERE id = :id");
+$inTxStmt->execute([':id' => $rolledBackOutboxId]);
+$inTxRow = $inTxStmt->fetch();
+$pdo->rollBack();
+$flushAfterRollback = Mailer::flushPendingOutbox($pdo);
+$afterRbStmt = $pdo->prepare("SELECT COUNT(*) FROM email_outbox WHERE id = :id");
+$afterRbStmt->execute([':id' => $rolledBackOutboxId]);
+assertTrue(
+    is_array($inTxRow) &&
+    $inTxRow['status'] === 'queued' &&
+    (int)$inTxRow['attempts'] === 0 &&
+    $flushAfterRollback['dispatched'] === 0 &&
+    (int)$afterRbStmt->fetchColumn() === 0,
+    'Mailer::enqueueAndSend defers dispatch while $pdo->inTransaction() is true and sends zero phantom emails on rollback (#188)'
+);
+
+// 2) Commit + post-commit flush test
+$pdo->beginTransaction();
+$committedOutboxId = Mailer::enqueueAndSend($pdo, 'commit188@test.co.ke', 'Commit Test #188', '<p>Should flush post-commit</p>', 'reply188@test.co.ke');
+$pdo->commit();
+$flushCommitted = Mailer::flushPendingOutbox($pdo);
+assertTrue(
+    $flushCommitted['dispatched'] === 1 &&
+    Mailer::wasDeliveredOrSimulated($pdo, $committedOutboxId) === true,
+    'Mailer::flushPendingOutbox dispatches queued emails cleanly after $pdo->commit() (#188)'
+);
+
+// 3) Failed live SMTP -> honest status='failed' -> Mailer::processRetryQueue retries and delivers once simulation/SMTP recovers
+putenv('APP_ENV=production');
+putenv('SIMULATE_EMAILS=no');
+putenv('SMTP_HOST=127.0.0.1');
+putenv('SMTP_PORT=1');
+putenv('SMTP_DISABLE_MAIL_FALLBACK=yes');
+$failedOtpId = Mailer::sendOwnerPasswordOtp($pdo, 'retry188@test.co.ke', '654321', 'Retry Test Biashara');
+$wasDeliveredWhenDown = Mailer::wasDeliveredOrSimulated($pdo, $failedOtpId);
+
+// Recover mail transport (re-enable simulation for test environment) and run retry worker
+putenv('APP_ENV=testing');
+putenv('SIMULATE_EMAILS=yes');
+putenv('SMTP_HOST=');
+putenv('SMTP_DISABLE_MAIL_FALLBACK=no');
+$retrySummary = Mailer::processRetryQueue($pdo, 25, 5);
+$wasDeliveredAfterRetry = Mailer::wasDeliveredOrSimulated($pdo, $failedOtpId);
+assertTrue(
+    $wasDeliveredWhenDown === false &&
+    $retrySummary['delivered'] >= 1 &&
+    $wasDeliveredAfterRetry === true,
+    'Failed OTP send reports wasDeliveredOrSimulated=false and succeeds via Mailer::processRetryQueue retry worker (#188)'
+);
+$pdo->prepare("DELETE FROM email_outbox WHERE id IN (:id1, :id2)")->execute([':id1' => $committedOutboxId, ':id2' => $failedOtpId]);
+
+// 4) DPA Retention Cron Heartbeat monitoring (never_run -> stale -> healthy)
+Database::setSetting($pdo, 'DPA_RETENTION_CRON_LAST_RUN_AT', '');
+$healthNever = VettingPurger::getRetentionCronHealth($pdo, 36);
+Database::setSetting($pdo, 'DPA_RETENTION_CRON_LAST_RUN_AT', gmdate('Y-m-d H:i:s', time() - (48 * 3600)));
+$healthStale = VettingPurger::getRetentionCronHealth($pdo, 36);
+VettingPurger::recordCronHeartbeat($pdo, ['vetting_rows_purged' => 0]);
+$healthFresh = VettingPurger::getRetentionCronHealth($pdo, 36);
+assertTrue(
+    $healthNever['healthy'] === false && $healthNever['status'] === 'never_run' &&
+    $healthStale['healthy'] === false && $healthStale['status'] === 'stale' &&
+    $healthFresh['healthy'] === true && $healthFresh['status'] === 'healthy',
+    'VettingPurger::getRetentionCronHealth detects never_run, stale (>36h), and fresh scheduled cron heartbeats (#188)'
+);
 
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);

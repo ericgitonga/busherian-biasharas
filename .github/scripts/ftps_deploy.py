@@ -90,6 +90,8 @@ def validate_relative_deploy_path(rel_path: str) -> str:
     norm = rel_path.strip().replace("\\", "/").lstrip("/")
     if not norm or norm.startswith("../") or "/../" in f"/{norm}/":
         raise ValueError(f"Unsafe relative path rejected: {rel_path!r}")
+    if norm in ("public/uploads/.htaccess", "uploads/.htaccess"):
+        return norm
     base = posixpath.basename(norm)
     if base == ".env" or any(norm == p.rstrip("/") or norm.startswith(p) for p in FORBIDDEN_PREFIXES):
         raise ValueError(f"Forbidden runtime/secret path rejected from FTPS deploy: {norm}")

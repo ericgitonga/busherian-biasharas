@@ -9,4 +9,9 @@ use BusherianBiasharas\Services\VettingPurger;
 
 $pdo = Database::getConnection();
 $summary = VettingPurger::enforceRetentionCeilings($pdo, 30);
-echo json_encode(['status' => 'ok', 'retention_purge' => $summary], JSON_UNESCAPED_SLASHES) . PHP_EOL;
+$heartbeatUtc = VettingPurger::recordCronHeartbeat($pdo, $summary);
+echo json_encode([
+    'status' => 'ok',
+    'heartbeat_utc' => $heartbeatUtc,
+    'retention_purge' => $summary,
+], JSON_UNESCAPED_SLASHES) . PHP_EOL;

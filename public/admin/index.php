@@ -45,6 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flashMsg = $gClientId !== ''
             ? 'Google SSO (OAuth 2.0) credentials saved! The "Continue with Google (SSO)" button is now active on /owner/login.php.'
             : 'Google SSO credentials cleared.';
+    } elseif ($adminAction === 'retry_outbox') {
+        $retryRes = Mailer::processRetryQueue($pdo, 25, 5);
+        $flashMsg = "Processed {$retryRes['processed']} queued/failed outbox email(s): {$retryRes['delivered']} delivered/simulated, {$retryRes['failed']} still failing.";
     } elseif ($adminAction === 'resolve_takedown') {
         $reqId = (int)($_POST['request_id'] ?? 0);
         $decision = trim((string)($_POST['decision'] ?? ''));
@@ -158,6 +161,14 @@ $leakedVettingCount = (int)$pdo->query("
 ")->fetchColumn();
 
 $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status = 'approved'")->fetchColumn();
+$cronHealth = VettingPurger::getRetentionCronHealth($pdo, 36);
+$retryableOutboxCount = (int)$pdo->query("
+    SELECT COUNT(*)
+    FROM email_outbox
+    WHERE status IN ('queued', 'failed')
+      AND attempts < 5
+      AND body_html NOT LIKE '[REDACTED%'
+")->fetchColumn();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -205,6 +216,31 @@ $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status 
         ⚠️ <?= htmlspecialchars($flashErr, ENT_QUOTES, 'UTF-8') ?>
       </div>
     <?php endif; ?>
+
+    <div data-testid="admin-cron-health-banner" style="background:<?= $cronHealth['healthy'] ? '#ECFDF5' : '#FFFBEB' ?>;border:1px solid <?= $cronHealth['healthy'] ? '#A7F3D0' : '#FCD34D' ?>;border-radius:10px;padding:0.75rem 1rem;margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;font-size:0.84rem;">
+      <div>
+        <?php if ($cronHealth['healthy']): ?>
+          <strong style="color:#065F46;">✓ Scheduled DPA Retention Cron Healthy:</strong>
+          <span style="color:#374151;">Last run <code><?= htmlspecialchars((string)$cronHealth['last_run_utc'], ENT_QUOTES, 'UTF-8') ?> UTC</code> (<?= htmlspecialchars((string)$cronHealth['age_hours'], ENT_QUOTES, 'UTF-8') ?>h ago).</span>
+        <?php elseif ($cronHealth['status'] === 'never_run'): ?>
+          <strong style="color:#92400E;">⚠️ Scheduled DPA Retention Cron Not Yet Recorded:</strong>
+          <span style="color:#78350F;">Schedule <code>php bin/purge-dpa-retention.php</code> daily in cPanel Cron Jobs so automated 30-day storage-limitation sweeps run even when no admin signs in.</span>
+        <?php else: ?>
+          <strong style="color:#92400E;">⚠️ Scheduled DPA Retention Cron Stale (&gt; <?= (int)$cronHealth['stale_after_hours'] ?>h):</strong>
+          <span style="color:#78350F;">Last heartbeat: <code><?= htmlspecialchars((string)($cronHealth['last_run_utc'] ?? 'unknown'), ENT_QUOTES, 'UTF-8') ?> UTC</code>. Verify <code>php bin/purge-dpa-retention.php</code> in cPanel Cron Jobs.</span>
+        <?php endif; ?>
+        <?php if ($retryableOutboxCount > 0): ?>
+          &nbsp;•&nbsp;<strong style="color:#991B1B;"><?= $retryableOutboxCount ?> queued/failed email(s) awaiting retry</strong> (<code>php bin/process-email-outbox.php</code>)
+        <?php endif; ?>
+      </div>
+      <?php if ($retryableOutboxCount > 0): ?>
+        <form method="POST" action="/admin/index.php" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="admin_action" value="retry_outbox">
+          <button type="submit" class="btn btn-outline" style="padding:0.35rem 0.75rem;font-size:0.78rem;">🔄 Retry Outbox Now (<?= $retryableOutboxCount ?>)</button>
+        </form>
+      <?php endif; ?>
+    </div>
 
     <div class="vetting-privacy-banner" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
       <div>

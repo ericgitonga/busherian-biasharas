@@ -303,6 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Security Boundary (#162): Only link immediately when the requester is ALREADY authenticated as $submitterEmail.
                     // Never mutate an existing owner record, write a password, or issue a session from unauthenticated input.
                     $existingTargetOwner = null;
+                    $otpOutboxId = 0;
                     if ($isAuthenticatedSameEmail) {
                         $pdo->prepare("UPDATE businesses SET owner_email = :oem WHERE id = :id")
                             ->execute([':oem' => $submitterEmail, ':id' => $submittedBusinessId]);
@@ -313,12 +314,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $otpRate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'submit_owner_otp', 2, 5, 15);
                             if ($otpRate['allowed']) {
                                 $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $submitterEmail, $submittedBusinessId);
-                                Mailer::sendOwnerPasswordOtp($pdo, $submitterEmail, $otpInfo['code'], $bizName);
+                                $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $submitterEmail, $otpInfo['code'], $bizName);
                             }
                         }
                     }
 
-                    // Notify admin@busherianbiasharas.com via durable outbox + signed 1-click links
+                    // Enqueue notification inside transaction; SMTP dispatch runs strictly after commit (#188)
                     Mailer::notifyAdminNewSubmission(
                         $pdo,
                         ['id' => $submittedBusinessId, 'name' => $bizName],
@@ -334,6 +335,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
 
                     $pdo->commit();
+                    Mailer::flushPendingOutbox($pdo);
                     if (!$isAuthenticatedSameEmail) {
                         OwnerAuth::recordSelfSubmittedPendingInSession($submittedBusinessId, $submitterEmail);
                     }
@@ -345,6 +347,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $postSubmitVerifyUrl = '/owner/login.php?email=' . rawurlencode($submitterEmail);
                         $postSubmitVerifyLabel = 'Sign In to Your Owner Account';
                         $successMessage = "Your business has been submitted for one-time alumni vetting! For your security, existing Owner Accounts are never modified without signing in. Sign in with your email and password (or verify a 6-digit email code on Owner Sign In) to manage your listings.";
+                    } elseif ($otpOutboxId > 0 && !Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
+                        $postSubmitVerifyUrl = '/owner/login.php?mode=reset&email=' . rawurlencode($submitterEmail);
+                        $postSubmitVerifyLabel = 'Request Verification Code';
+                        $successMessage = "Your business has been submitted for one-time alumni vetting! Outbound email delivery to {$submitterEmail} is temporarily delayed and queued for automatic retry — you can request a fresh 6-digit code anytime on Owner Sign In.";
                     } else {
                         $postSubmitVerifyUrl = '/owner/login.php?mode=verify_otp&email=' . rawurlencode($submitterEmail);
                         $postSubmitVerifyLabel = 'Verify Email & Set Owner Password';
@@ -354,6 +360,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($pdo->inTransaction()) {
                         $pdo->rollBack();
                     }
+                    Mailer::clearPendingOutbox();
                     error_log('[submit.php] Submission save failed: ' . $e->getMessage());
                     $errors[] = 'Could not save submission due to a temporary server error. Please verify your entries and try again.';
                 }
