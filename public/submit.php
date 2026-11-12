@@ -61,26 +61,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $schoolNumber  = trim((string)($_POST['school_number'] ?? '')); // Strictly optional "School Number"
             $submitterName = trim((string)($_POST['submitter_name'] ?? ''));
             $submitterEmail = strtolower(trim((string)($_POST['submitter_email'] ?? '')));
-            $submitterPhone = WebsiteEnricher::normalizeKenyanPhone((string)($_POST['submitter_phone'] ?? ''));
+            $rawSubmitterPhone = trim((string)($_POST['submitter_phone'] ?? ''));
+            $submitterPhone = WebsiteEnricher::normalizeKenyanPhone($rawSubmitterPhone);
 
             if (!in_array($schoolCode, ['AHS', 'AGHS'], true)) {
                 $errors[] = 'Please select your School (AHS or AGHS).';
-            } elseif (!Houses::isValidHouse($schoolCode, $houseName)) {
-                $errors[] = 'Please select a valid confirmed House for your school.';
+            } elseif ($houseName === '' || mb_strlen($houseName) > 80 || !Houses::isValidHouse($schoolCode, $houseName)) {
+                $errors[] = 'Please select a valid confirmed House for your school (80 characters or fewer).';
             }
 
             $currentYear = (int)date('Y');
             if ($yearLeft < 1940 || $yearLeft > $currentYear) {
                 $errors[] = "Please enter a valid Year Left (between 1940 and {$currentYear}).";
             }
-            if ($submitterName === '' || mb_strlen($submitterName) < 2) {
-                $errors[] = 'Please provide your full name for vetting.';
+            if ($schoolNumber !== '' && mb_strlen($schoolNumber) > 30) {
+                $errors[] = 'School Number must be 30 characters or fewer.';
             }
-            if (!filter_var($submitterEmail, FILTER_VALIDATE_EMAIL)) {
-                $errors[] = 'Please provide a valid submitter email address.';
+            if ($submitterName === '' || mb_strlen($submitterName) < 2 || mb_strlen($submitterName) > 150) {
+                $errors[] = 'Please provide your full name for vetting (2 to 150 characters).';
             }
-            if ($submitterPhone === '') {
-                $errors[] = 'Please provide your contact phone number for vetting.';
+            if ($submitterEmail === '' || mb_strlen($submitterEmail) > 190 || !filter_var($submitterEmail, FILTER_VALIDATE_EMAIL)) {
+                $errors[] = 'Please provide a valid submitter email address (190 characters or fewer).';
+            }
+            if ($submitterPhone === '' || mb_strlen($submitterPhone) > 40 || mb_strlen($rawSubmitterPhone) > 40) {
+                $errors[] = 'Please provide your contact phone number for vetting (40 characters or fewer).';
+            }
+            if (empty($errors)) {
+                try {
+                    VettingPurger::validateVettingIdentityPayload([
+                        'school_code' => $schoolCode,
+                        'house_name' => $houseName,
+                        'year_left' => $yearLeft,
+                        'school_number' => $schoolNumber,
+                        'submitter_name' => $submitterName,
+                        'submitter_email' => $submitterEmail,
+                        'raw_submitter_phone' => $rawSubmitterPhone,
+                        'submitter_phone' => $submitterPhone,
+                    ]);
+                } catch (\InvalidArgumentException $vetEx) {
+                    $errors[] = $vetEx->getMessage();
+                }
             }
 
             // Validate Kenya DPA 2019 s.33 Age Gate & s.29 Unbundled Consent
@@ -571,7 +591,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
           <div>
             <label for="house_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">House * (Compulsory for Vetting Only)</label>
             <select id="house_name" name="house_name" class="select-control" required></select>
-            <input type="text" id="house_custom" name="house_custom" class="input-control"
+            <input type="text" id="house_custom" name="house_custom" maxlength="80" class="input-control"
               placeholder="Enter your AGHS House name..." style="margin-top:0.45rem;display:none;">
           </div>
 
@@ -582,22 +602,22 @@ $aghsHouses = Houses::AGHS_HOUSES;
 
           <div>
             <label for="school_number" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">School Number (Optional — Vetting Only)</label>
-            <input type="text" id="school_number" name="school_number" class="input-control" placeholder="Optional School Number (e.g. 6412)">
+            <input type="text" id="school_number" name="school_number" maxlength="30" class="input-control" placeholder="Optional School Number (e.g. 6412)">
           </div>
         </div>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.9rem;margin-top:0.9rem;">
           <div>
             <label for="submitter_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your Full Name *</label>
-            <input type="text" id="submitter_name" name="submitter_name" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['full_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. Eng. Jane Wanjiku" required>
+            <input type="text" id="submitter_name" name="submitter_name" maxlength="150" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['full_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. Eng. Jane Wanjiku" required>
           </div>
           <div>
             <label for="submitter_email" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your Owner Login Email (For Approval &amp; Editing) *</label>
-            <input type="email" id="submitter_email" name="submitter_email" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="you@company.co.ke" required>
+            <input type="email" id="submitter_email" name="submitter_email" maxlength="190" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="you@company.co.ke" required>
           </div>
           <div>
             <label for="submitter_phone" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your Direct Phone *</label>
-            <input type="tel" id="submitter_phone" name="submitter_phone" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['phone'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="+254722000000" required>
+            <input type="tel" id="submitter_phone" name="submitter_phone" maxlength="40" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['phone'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="+254722000000" required>
           </div>
         </div>
 

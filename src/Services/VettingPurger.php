@@ -202,6 +202,47 @@ final class VettingPurger
         }
     }
 
+    /**
+     * Validate alumni vetting & submitter identity fields against exact `business_vetting_queue` MySQL column widths (#233 R3-LOW-01).
+     *
+     * @param array<string, mixed> $vetting
+     */
+    public static function validateVettingIdentityPayload(array $vetting): void
+    {
+        $schoolCode = strtoupper(trim((string)($vetting['school_code'] ?? '')));
+        $houseName = trim((string)($vetting['house_name'] ?? ''));
+        $yearLeft = (int)($vetting['year_left'] ?? 0);
+        $schoolNumber = trim((string)($vetting['school_number'] ?? ''));
+        $submitterName = trim((string)($vetting['submitter_name'] ?? ''));
+        $submitterEmail = strtolower(trim((string)($vetting['submitter_email'] ?? '')));
+        $rawPhone = trim((string)($vetting['raw_submitter_phone'] ?? ($vetting['submitter_phone'] ?? '')));
+        $submitterPhone = trim((string)($vetting['submitter_phone'] ?? ''));
+
+        if (!in_array($schoolCode, ['AHS', 'AGHS'], true)) {
+            throw new \InvalidArgumentException('Please select your School (AHS or AGHS).');
+        }
+        if ($houseName === '' || mb_strlen($houseName) > 80 || !\BusherianBiasharas\Config\Houses::isValidHouse($schoolCode, $houseName)) {
+            throw new \InvalidArgumentException('Please select a valid confirmed House for your school (80 characters or fewer).');
+        }
+        $currentYear = (int)date('Y');
+        if ($yearLeft < 1940 || $yearLeft > $currentYear) {
+            throw new \InvalidArgumentException("Please enter a valid Year Left (between 1940 and {$currentYear}).");
+        }
+        if ($schoolNumber !== '' && mb_strlen($schoolNumber) > 30) {
+            throw new \InvalidArgumentException('School Number must be 30 characters or fewer.');
+        }
+        if ($submitterName === '' || mb_strlen($submitterName) < 2 || mb_strlen($submitterName) > 150) {
+            throw new \InvalidArgumentException('Please provide your full name for vetting (2 to 150 characters).');
+        }
+        if ($submitterEmail === '' || mb_strlen($submitterEmail) > 190 || !filter_var($submitterEmail, FILTER_VALIDATE_EMAIL)) {
+            throw new \InvalidArgumentException('Please provide a valid submitter email address (190 characters or fewer).');
+        }
+        if ($submitterPhone === '' || mb_strlen($submitterPhone) > 40 || mb_strlen($rawPhone) > 40) {
+            throw new \InvalidArgumentException('Please provide a valid contact phone number for vetting (40 characters or fewer).');
+        }
+    }
+
+
     public static function approveBusiness(
         PDO $pdo,
         int $businessId,

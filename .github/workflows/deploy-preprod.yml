@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: ftp-deploy-busherian-biasharas-preprod
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy-preprod:

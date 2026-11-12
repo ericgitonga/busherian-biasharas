@@ -58,6 +58,9 @@ $editableInitialIds = ($currentOwner !== null && $initialPageIds !== [])
     ? OwnerAuth::getEditableBusinessIdsForOwner($pdo, (int)$currentOwner['id'], $initialPageIds)
     : [];
 $isAuthenticatedViewer = ($currentOwner !== null || $isAdminVisitor);
+$batchedInitialHints = ($isAuthenticatedViewer && $initialPageIds !== [])
+    ? OwnerAuth::getMaskedOwnerEmailHintsForBusinesses($pdo, $initialPageIds)
+    : [];
 
 $initialBusinesses = [];
 foreach ($rows as $r) {
@@ -118,7 +121,7 @@ foreach ($rows as $r) {
         ]),
     ];
     if ($isAuthenticatedViewer) {
-        $bizItem['owner_email_hints'] = OwnerAuth::getMaskedOwnerEmailHintsForBusiness($pdo, $bizId);
+        $bizItem['owner_email_hints'] = $batchedInitialHints[$bizId] ?? [];
     }
     $initialBusinesses[] = $bizItem;
 }

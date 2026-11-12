@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.17.1] - 2026-11-12
+
+### Fixed
+
+- **Exact Schema-Aligned Submitter Vetting Field Bounds (`[Adversarial R3-LOW-01]`)**: Added `VettingPurger::validateVettingIdentityPayload()` and explicit server-side + HTML `maxlength` checks in `public/submit.php` aligning `house_name` (`<= 80`), `school_number` (`<= 30`), `submitter_name` (`2..150`), `submitter_email` (`<= 190`), and `submitter_phone` (`<= 40`) with `business_vetting_queue` in `src/schema.sql` (closes #233, part of #231).
+- **Batched `owner_email_hints` Queries on Authenticated Directory Responses (`[Adversarial R3-LOW-02]`)**: Added `OwnerAuth::getMaskedOwnerEmailHintsForBusinesses()` and replaced per-listing `getMaskedOwnerEmailHintsForBusiness()` loops in `public/api/businesses.php` and `public/index.php` so authenticated pages resolve masked hints in at most two `IN (...)` SQL queries (closes #234, part of #231).
+- **CLI `flock()` Overlap Guards, Non-Cancellable Pre-Prod Promotion & CI Python Parity Docs (`[Adversarial R3-LOW-03]`)**: Added `bbiz_acquire_cli_worker_lock()` non-blocking `flock(LOCK_EX | LOCK_NB)` overlap guards to `bin/process-email-outbox.php` and `bin/purge-dpa-retention.php`, set `cancel-in-progress: false` in `.github/workflows/deploy-preprod.yml`, and documented local `ds` conda (`Python 3.11`) vs GitHub Actions (`actions/setup-python@v5`, `Python 3.11`) parity in `README.md` (closes #235, part of #232).
+
 ## [0.17.0] - 2026-11-12
 
 ### Security

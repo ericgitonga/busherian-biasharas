@@ -45,3 +45,5 @@ BASE_URL=http://127.0.0.1:8080 python e2e/run.py
 4. Configure two cPanel Cron Jobs:
    - Daily DPA 30-day storage-limitation & heartbeat sweep: `php /path/to/app/bin/purge-dpa-retention.php`
    - Every 5–10 minutes outbound email retry worker: `php /path/to/app/bin/process-email-outbox.php`
+
+- **Local vs CI Python Parity:** Local developer & agent workflows run inside the `ds` conda environment (`Python 3.11`), while GitHub Actions `ubuntu-latest` CI workflows provision matching `Python 3.11` via `actions/setup-python@v5` for fast, deterministic PR gating.

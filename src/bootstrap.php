@@ -563,3 +563,38 @@ if (!function_exists('bbiz_render_github_delete_modal')) {
 HTML;
     }
 }
+
+/**
+ * Non-blocking CLI process overlap guard using OS flock() (#235 R3-LOW-03).
+ * Returns the open file handle (caller MUST keep variable in scope until exit), or null if another instance holds the lock.
+ *
+ * @return resource|null
+ */
+function bbiz_acquire_cli_worker_lock(string $lockName)
+{
+    $safeName = preg_replace('/[^a-zA-Z0-9_.-]/', '_', $lockName) ?: 'worker';
+    $lockDir = trim((string)(getenv('BBIZ_CLI_LOCK_DIR') ?: ''));
+    if ($lockDir === '') {
+        $lockDir = dirname(__DIR__) . '/storage/locks';
+    }
+    if (!is_dir($lockDir)) {
+        @mkdir($lockDir, 0770, true);
+    }
+    $lockFile = rtrim($lockDir, '/') . '/' . $safeName . '.lock';
+    $fp = @fopen($lockFile, 'c+');
+    if ($fp === false) {
+        throw new \RuntimeException("Unable to open CLI lockfile: {$lockFile}");
+    }
+    if (!@flock($fp, LOCK_EX | LOCK_NB)) {
+        @fclose($fp);
+        return null;
+    }
+    @ftruncate($fp, 0);
+    @fwrite($fp, (string)getmypid() . ' ' . gmdate('c') . PHP_EOL);
+    @fflush($fp);
+    $holdMs = (int)(getenv('BBIZ_CLI_TEST_HOLD_MS') ?: 0);
+    if ($holdMs > 0 && strtolower((string)(getenv('APP_ENV') ?: '')) === 'testing') {
+        usleep(min(3000, $holdMs) * 1000);
+    }
+    return $fp;
+}
