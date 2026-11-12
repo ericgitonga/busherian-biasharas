@@ -460,6 +460,9 @@
             </div>
             <h3 class="card-title" data-testid="biz-card-title">${escapeHtml(biz.name)}</h3>
             <div class="card-taxonomy">${escapeHtml(biz.sector_name)} &rarr; ${escapeHtml(biz.specialty_name)}</div>
+            ${biz.secondary_sector_name && biz.secondary_specialty_name
+              ? `<div class="card-taxonomy card-taxonomy-secondary" data-testid="biz-card-secondary-taxonomy">+ Also: ${escapeHtml(biz.secondary_sector_name)} &rarr; ${escapeHtml(biz.secondary_specialty_name)}</div>`
+              : ''}
             <p class="card-tagline">${escapeHtml(biz.tagline)}</p>
             ${perkHtml}
           </div>
@@ -1124,6 +1127,11 @@
           <div style="font-size:0.86rem;font-weight:700;color:#7B1113;margin-top:0.2rem;">
             ${escapeHtml(biz.sector_name)} &rarr; ${escapeHtml(biz.specialty_name)}
           </div>
+          ${biz.secondary_sector_name && biz.secondary_specialty_name ? `
+            <div data-testid="modal-secondary-taxonomy" style="font-size:0.8rem;font-weight:700;color:#114B3E;margin-top:0.18rem;">
+              + Secondary Field: ${escapeHtml(biz.secondary_sector_name)} &rarr; ${escapeHtml(biz.secondary_specialty_name)}
+            </div>
+          ` : ''}
         </div>
         <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
           ${biz.can_edit && biz.edit_url ? `<a href="${escapeHtml(biz.edit_url)}" class="btn btn-green" style="font-size:0.82rem;padding:0.4rem 0.85rem;">✏️ Edit My Business</a>` : ''}
@@ -1222,8 +1230,8 @@
     };
     const rows = selected.map(b => [
       b.name,
-      b.sector_name,
-      b.specialty_name,
+      b.secondary_sector_name ? `${b.sector_name} (+ ${b.secondary_sector_name})` : b.sector_name,
+      b.secondary_specialty_name ? `${b.specialty_name} (+ ${b.secondary_specialty_name})` : b.specialty_name,
       `${b.area_neighborhood || ''} ${b.city_county || ''}`.trim(),
       b.b2b_ready ? 'Yes' : 'No',
       b.accepts_lpo ? 'Yes' : 'No',

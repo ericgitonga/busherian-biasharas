@@ -354,6 +354,8 @@ if (!function_exists('bbiz_render_specialty_finder')) {
                     'name' => $sName,
                     'concepts' => (string)($conceptsMap[$sName] ?? ''),
                     'is_regulated' => !empty($sp['is_regulated']),
+                    'regulator_default' => $sp['regulator_default'] ?? null,
+                    'regulator_options' => $sp['regulator_options'] ?? [],
                 ];
             }
             $compactTree[] = [
@@ -400,6 +402,88 @@ if (!function_exists('bbiz_render_specialty_finder')) {
             <div id="specialty-finder-results" data-testid="specialty-finder-results" class="specialty-finder-results" role="listbox" aria-label="Matching specialties" hidden></div>
           </div>
           <div id="specialty-finder-status" data-testid="specialty-finder-status" class="specialty-finder-status" aria-live="polite"></div>
+        </div>
+HTML;
+    }
+}
+
+if (!function_exists('bbiz_render_secondary_specialty_fields')) {
+    /**
+     * Render optional Secondary Industry Sector & Specialty selectors (with natural-language quick finder)
+     * plus Multi-Business Owner Portfolio guidance across all 4 listing forms (#280).
+     */
+    function bbiz_render_secondary_specialty_fields(
+        array $taxonomyTree,
+        ?int $currentSecSectorId = null,
+        ?int $currentSecSpecId = null,
+        string $savedRegulatorName = ''
+    ): string {
+        $secIdVal = ($currentSecSectorId !== null && $currentSecSectorId > 0) ? $currentSecSectorId : 0;
+        $specIdVal = ($currentSecSpecId !== null && $currentSecSpecId > 0) ? $currentSecSpecId : 0;
+        $escSavedReg = htmlspecialchars(trim($savedRegulatorName), ENT_QUOTES, 'UTF-8');
+
+        $sectorOpts = '<option value="">None (Single Industry Sector)</option>';
+        foreach ($taxonomyTree as $sec) {
+            $sid = (int)($sec['id'] ?? 0);
+            $sname = htmlspecialchars((string)($sec['name'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $sel = ($secIdVal > 0 && $sid === $secIdVal) ? ' selected' : '';
+            $sectorOpts .= "<option value=\"{$sid}\"{$sel}>{$sname}</option>";
+        }
+
+        $clearHidden = ($secIdVal > 0 || $specIdVal > 0) ? '' : ' hidden';
+
+        return <<<HTML
+        <div class="secondary-specialty-box" data-secondary-specialty-box="1" data-testid="secondary-specialty-box" data-initial-sec-sector-id="{$secIdVal}" data-initial-sec-spec-id="{$specIdVal}" data-saved-regulator="{$escSavedReg}">
+          <div class="secondary-specialty-header">
+            <div>
+              <div class="secondary-specialty-title">
+                🔀 Secondary Industry Sector &amp; Specialty <span class="secondary-specialty-optional">(Optional — if this business spans two fields)</span>
+              </div>
+              <p class="secondary-specialty-hint">
+                Offer services across two domains under one business name (e.g. <em>Book Publishing</em> + <em>Mobile App &amp; Web Development</em>)? Add your second field below so visitors find you under both directory filters.
+              </p>
+            </div>
+            <button type="button" id="btn-clear-secondary-specialty" data-testid="btn-clear-secondary-specialty" class="btn btn-outline secondary-specialty-clear-btn"{$clearHidden}>
+              ✕ Clear Secondary Field
+            </button>
+          </div>
+
+          <div class="specialty-finder-input-wrap" style="margin-top:0.55rem;">
+            <input
+              type="search"
+              id="secondary-specialty-quick-finder"
+              data-testid="secondary-specialty-quick-finder"
+              class="input-control specialty-finder-input"
+              autocomplete="off"
+              spellcheck="false"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded="false"
+              aria-controls="secondary-specialty-finder-results"
+              placeholder="Optional quick search for 2nd field (e.g. We also build mobile apps &amp; websites)...">
+            <button type="button" id="secondary-specialty-finder-clear" class="specialty-finder-clear" aria-label="Clear secondary specialty search" hidden>&times;</button>
+            <div id="secondary-specialty-finder-results" data-testid="secondary-specialty-finder-results" class="specialty-finder-results" role="listbox" aria-label="Matching secondary specialties" hidden></div>
+          </div>
+          <div id="secondary-specialty-finder-status" data-testid="secondary-specialty-finder-status" class="specialty-finder-status" aria-live="polite"></div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.85rem;margin-top:0.65rem;">
+            <div>
+              <label for="secondary_sector_id" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;color:#1F2937;">Secondary Industry Sector (Optional)</label>
+              <select id="secondary_sector_id" name="secondary_sector_id" data-testid="secondary-sector-select" class="select-control">
+                {$sectorOpts}
+              </select>
+            </div>
+            <div>
+              <label for="secondary_specialty_id" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;color:#1F2937;">Secondary Specialty (Optional)</label>
+              <select id="secondary_specialty_id" name="secondary_specialty_id" data-testid="secondary-specialty-select" class="select-control">
+                <option value="">None — Select Secondary Sector first...</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="multi-business-guidance-note" data-testid="multi-business-guidance-note">
+            🏢 <strong>Running completely separate companies?</strong> If your ventures operate under distinct business names, brands, or premises, register each company as its own listing using the <strong>same Owner Login Email</strong> on <a href="/submit.php">Submit a Biashara</a> — you can manage all of your businesses side by side from one <a href="/owner/index.php">My Businesses dashboard</a>.
+          </div>
         </div>
 HTML;
     }

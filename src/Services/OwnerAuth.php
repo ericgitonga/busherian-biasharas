@@ -454,12 +454,16 @@ final class OwnerAuth
                 b.*,
                 sec.name AS sector_name,
                 spec.name AS specialty_name,
+                sec2.name AS secondary_sector_name,
+                spec2.name AS secondary_specialty_name,
                 l.linked_via,
                 l.created_at AS linked_at
             FROM business_owner_links l
             INNER JOIN businesses b ON b.id = l.business_id
             INNER JOIN categories sec ON sec.id = b.sector_id
             INNER JOIN categories spec ON spec.id = b.specialty_id
+            LEFT JOIN categories sec2 ON sec2.id = b.secondary_sector_id AND sec2.status = 'approved'
+            LEFT JOIN categories spec2 ON spec2.id = b.secondary_specialty_id AND spec2.status = 'approved'
             WHERE l.owner_id = :oid
             ORDER BY b.business_number ASC, b.id ASC
         ");

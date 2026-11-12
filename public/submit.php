@@ -118,6 +118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sectorId    = (int)($_POST['sector_id'] ?? 0);
             $specialtyId = (string)($_POST['specialty_id'] ?? '');
             $customSpec  = trim((string)($_POST['custom_specialty_name'] ?? ''));
+            $rawSecSectorId = trim((string)($_POST['secondary_sector_id'] ?? ''));
+            $rawSecSpecId   = trim((string)($_POST['secondary_specialty_id'] ?? ''));
             $serviceMode = strtolower(trim((string)($_POST['service_mode'] ?? 'physical')));
             $alumniPerk  = trim((string)($_POST['alumni_perk'] ?? ''));
             $b2bReady    = !empty($_POST['b2b_ready']) ? 1 : 0;
@@ -139,6 +141,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($sectorId <= 0) {
                 $errors[] = 'Please select an Industry Sector.';
             }
+            $secondaryPair = ['secondary_sector_id' => null, 'secondary_specialty_id' => null];
+            try {
+                $secondaryPair = VettingPurger::normalizeSecondaryCategoryPair(
+                    $pdo,
+                    ['secondary_sector_id' => $rawSecSectorId, 'secondary_specialty_id' => $rawSecSpecId],
+                    $specialtyId !== '__custom__' ? (int)$specialtyId : 0
+                );
+            } catch (\InvalidArgumentException $secCatEx) {
+                $errors[] = $secCatEx->getMessage();
+            }
+
+            $isSecondaryRegulated = ($secondaryPair['secondary_specialty_id'] !== null)
+                && CategoryMatcher::isSpecialtyRegulated($pdo, (int)$secondaryPair['secondary_specialty_id']);
+
             if ($specialtyId === '__custom__') {
                 if ($customSpec === '' || mb_strlen($customSpec) < 3 || mb_strlen($customSpec) > 120) {
                     $errors[] = 'Please enter a custom Specialty name between 3 and 120 characters.';
@@ -150,7 +166,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $errors[] = 'Selected Industry Sector is invalid.';
                     }
                 }
-                $regName = '';
+                if ($isSecondaryRegulated) {
+                    if ($regName === '') {
+                        $errors[] = 'Please confirm your Professional Regulator / Statutory Body (required for regulated businesses).';
+                    }
+                } else {
+                    $regName = '';
+                }
             } elseif ((int)$specialtyId <= 0) {
                 $errors[] = 'Please select a Specialty (or choose "+ Add New Specialty").';
                 $regName = '';
@@ -159,12 +181,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $errors[] = 'Selected Specialty does not belong to the chosen Industry Sector.';
                 }
                 $regInfo = CategoryMatcher::getSpecialtyRegulationById($pdo, (int)$specialtyId);
-                if ($regInfo !== null) {
+                if ($regInfo !== null || $isSecondaryRegulated) {
                     if ($regName === '') {
                         $errors[] = 'Please confirm your Professional Regulator / Statutory Body (required for regulated businesses).';
                     }
                 } else {
-                    // Unregulated business specialty: regulator field is hidden and cleared
+                    // Unregulated business specialties: regulator field is hidden and cleared
                     $regName = '';
                 }
             }
@@ -227,6 +249,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'description' => $description,
                         'sector_id' => $sectorId,
                         'specialty_id' => $finalSpecialtyId,
+                        'secondary_sector_id' => $secondaryPair['secondary_sector_id'],
+                        'secondary_specialty_id' => $secondaryPair['secondary_specialty_id'],
                         'alumni_perk' => $alumniPerk,
                         'regulator_name' => $regName,
                         'regulator_license' => $regLicense,
@@ -263,7 +287,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $insBiz = $pdo->prepare("
                         INSERT INTO businesses (
                             business_id, business_number, name, slug, tagline, description, school_badge,
-                            sector_id, specialty_id, service_mode, alumni_perk,
+                            sector_id, specialty_id, secondary_sector_id, secondary_specialty_id, service_mode, alumni_perk,
                             b2b_ready, accepts_lpo, regulator_name, regulator_license,
                             branch_name, building_name, floor_suite, street_road,
                             area_neighborhood, country, city_county, landmark_directions,
@@ -275,7 +299,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             status, consent_recorded_at, privacy_notice_version, age_attested_at, listing_provenance
                         ) VALUES (
                             :business_id, :business_number, :name, :slug, :tagline, :description, :school_badge,
-                            :sector_id, :specialty_id, :service_mode, :alumni_perk,
+                            :sector_id, :specialty_id, :secondary_sector_id, :secondary_specialty_id, :service_mode, :alumni_perk,
                             :b2b_ready, :accepts_lpo, :regulator_name, :regulator_license,
                             :branch_name, :building_name, :floor_suite, :street_road,
                             :area_neighborhood, :country, :city_county, :landmark_directions,
@@ -298,6 +322,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':school_badge' => $schoolCode,
                         ':sector_id' => $sectorId,
                         ':specialty_id' => $finalSpecialtyId,
+                        ':secondary_sector_id' => $secondaryPair['secondary_sector_id'],
+                        ':secondary_specialty_id' => $secondaryPair['secondary_specialty_id'],
                         ':service_mode' => in_array($serviceMode, ['physical', 'hybrid', 'online'], true) ? $serviceMode : 'physical',
                         ':alumni_perk' => $alumniPerk !== '' ? $alumniPerk : null,
                         ':b2b_ready' => $b2bReady,
@@ -708,6 +734,8 @@ $aghsHouses = Houses::AGHS_HOUSES;
           <input type="text" id="regulator_name_custom" name="regulator_name_custom" class="input-control"
             placeholder="Specify statutory regulator..." style="margin-top:0.45rem;display:none;" disabled>
         </div>
+
+        <?= bbiz_render_secondary_specialty_fields($taxonomyTree, isset($_POST['secondary_sector_id']) ? (int)$_POST['secondary_sector_id'] : null, isset($_POST['secondary_specialty_id']) ? (int)$_POST['secondary_specialty_id'] : null, (string)($_POST['regulator_name'] ?? '')) ?>
 
         <div style="margin-top:0.9rem;">
           <label for="alumni_perk" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Busherian Alumni Perk / Discount (Optional)</label>

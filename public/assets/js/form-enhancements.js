@@ -280,14 +280,15 @@
             sectorLower: secLower,
             secWordSet: new Set(secWords),
             secStems,
-            isRegulated: Boolean(sp.is_regulated)
+            isRegulated: Boolean(sp.is_regulated),
+            regulatorDefault: sp.regulator_default || null,
+            regulatorOptions: Array.isArray(sp.regulator_options) ? sp.regulator_options : []
           });
         });
       });
     }
 
-    let currentMatches = [];
-    let activeIndex = -1;
+
 
     function expandSynonyms(tokens) {
       const phrases = new Set();
@@ -417,171 +418,410 @@
       return scored.slice(0, 8).map(s => s.item);
     }
 
-    function closeDropdown() {
-      resultsBox.hidden = true;
-      finderInput.setAttribute('aria-expanded', 'false');
-      finderInput.removeAttribute('aria-activedescendant');
-      activeIndex = -1;
-    }
+    function attachFinderWidget(cfg) {
+      const {
+        wrapEl,
+        inputEl,
+        clearEl,
+        resultsEl,
+        statusEl,
+        targetSectorSel,
+        targetSpecSel,
+        optIdPrefix,
+        excludeSpecialtyIdFn,
+        statusPrefix
+      } = cfg;
+      if (!wrapEl || !inputEl || !resultsEl || !targetSectorSel || !targetSpecSel) return;
 
-    function syncActiveHighlight() {
-      const buttons = resultsBox.querySelectorAll('.specialty-finder-option');
-      buttons.forEach((btn, idx) => {
-        const isAct = (idx === activeIndex);
-        btn.classList.toggle('is-active', isAct);
-        btn.setAttribute('aria-selected', isAct ? 'true' : 'false');
-        if (isAct) {
-          finderInput.setAttribute('aria-activedescendant', btn.id);
-          if (typeof btn.scrollIntoView === 'function') {
-            btn.scrollIntoView({ block: 'nearest' });
+      let currentMatches = [];
+      let activeIndex = -1;
+
+      function closeDropdown() {
+        resultsEl.hidden = true;
+        inputEl.setAttribute('aria-expanded', 'false');
+        inputEl.removeAttribute('aria-activedescendant');
+        activeIndex = -1;
+      }
+
+      function syncActiveHighlight() {
+        const buttons = resultsEl.querySelectorAll('.specialty-finder-option');
+        buttons.forEach((btn, idx) => {
+          const isAct = (idx === activeIndex);
+          btn.classList.toggle('is-active', isAct);
+          btn.setAttribute('aria-selected', isAct ? 'true' : 'false');
+          if (isAct) {
+            inputEl.setAttribute('aria-activedescendant', btn.id);
+            if (typeof btn.scrollIntoView === 'function') {
+              btn.scrollIntoView({ block: 'nearest' });
+            }
           }
-        }
-      });
-    }
-
-    function chooseMatch(match) {
-      if (!match) return;
-      const jsToken = document.getElementById('js_interaction_token');
-      if (jsToken && !jsToken.value) {
-        jsToken.value = 'human_verified_' + Date.now();
-      }
-
-      sectorSel.value = String(match.sectorId);
-      sectorSel.dispatchEvent(new Event('change', { bubbles: true }));
-      specSel.value = String(match.specialtyId);
-      specSel.dispatchEvent(new Event('change', { bubbles: true }));
-
-      [sectorSel, specSel].forEach(el => {
-        el.style.borderColor = '#059669';
-        el.style.backgroundColor = '#ECFDF5';
-      });
-
-      finderInput.value = match.specialtyName;
-      if (clearBtn) clearBtn.hidden = false;
-      closeDropdown();
-
-      if (statusBox) {
-        statusBox.textContent = '✓ Auto-selected: ' + match.sectorName + ' → ' + match.specialtyName;
-      }
-    }
-
-    function renderMatches() {
-      const q = finderInput.value.trim();
-      if (clearBtn) clearBtn.hidden = (q === '');
-      if (q.length < 2) {
-        currentMatches = [];
-        resultsBox.innerHTML = '';
-        closeDropdown();
-        return;
-      }
-
-      currentMatches = rankSpecialties(q);
-      resultsBox.innerHTML = '';
-      activeIndex = currentMatches.length > 0 ? 0 : -1;
-
-      if (currentMatches.length === 0) {
-        const emptyDiv = document.createElement('div');
-        emptyDiv.className = 'specialty-finder-empty';
-        const supportsCustom = Array.from(specSel.options || []).some(o => o.value === '__custom__')
-          || Boolean(document.getElementById('custom-specialty-wrap'));
-        emptyDiv.textContent = supportsCustom
-          ? 'No exact match yet — choose the closest Industry Sector below and select "+ Add New Specialty" to propose yours.'
-          : 'No matching specialty found — try describing your main product/service or select from Industry Sector below.';
-        resultsBox.appendChild(emptyDiv);
-        resultsBox.hidden = false;
-        finderInput.setAttribute('aria-expanded', 'true');
-        return;
-      }
-
-      currentMatches.forEach((m, idx) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.id = 'spec-finder-opt-' + m.specialtyId;
-        btn.className = 'specialty-finder-option' + (idx === 0 ? ' is-active' : '');
-        btn.setAttribute('role', 'option');
-        btn.setAttribute('aria-selected', idx === 0 ? 'true' : 'false');
-        btn.setAttribute('data-specialty-id', String(m.specialtyId));
-        btn.setAttribute('data-sector-id', String(m.sectorId));
-
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'specialty-finder-opt-name';
-        nameSpan.textContent = m.specialtyName;
-
-        const secSpan = document.createElement('span');
-        secSpan.className = 'specialty-finder-opt-sector';
-        secSpan.textContent = m.sectorName;
-
-        btn.appendChild(nameSpan);
-        btn.appendChild(secSpan);
-
-        btn.addEventListener('mousedown', e => {
-          e.preventDefault();
         });
-        btn.addEventListener('click', () => chooseMatch(m));
-        resultsBox.appendChild(btn);
-      });
-
-      resultsBox.hidden = false;
-      finderInput.setAttribute('aria-expanded', 'true');
-      syncActiveHighlight();
-    }
-
-    finderInput.addEventListener('input', () => {
-      if (statusBox) statusBox.textContent = '';
-      renderMatches();
-    });
-
-    finderInput.addEventListener('focus', () => {
-      if (finderInput.value.trim().length >= 2) {
-        renderMatches();
       }
-    });
 
-    finderInput.addEventListener('keydown', e => {
-      if (e.key === 'Escape') {
-        closeDropdown();
-        return;
-      }
-      if (resultsBox.hidden || currentMatches.length === 0) {
-        if (e.key === 'Enter' && finderInput.value.trim().length >= 2) {
-          e.preventDefault();
-          renderMatches();
-          if (currentMatches.length > 0) {
-            chooseMatch(currentMatches[0]);
-          }
+      function chooseMatch(match) {
+        if (!match) return;
+        const jsToken = document.getElementById('js_interaction_token');
+        if (jsToken && !jsToken.value) {
+          jsToken.value = 'human_verified_' + Date.now();
         }
-        return;
-      }
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        activeIndex = (activeIndex + 1) % currentMatches.length;
-        syncActiveHighlight();
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        activeIndex = (activeIndex - 1 + currentMatches.length) % currentMatches.length;
-        syncActiveHighlight();
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        const chosen = currentMatches[activeIndex >= 0 ? activeIndex : 0];
-        if (chosen) chooseMatch(chosen);
-      }
-    });
 
-    if (clearBtn) {
-      clearBtn.addEventListener('click', () => {
-        finderInput.value = '';
-        clearBtn.hidden = true;
-        if (statusBox) statusBox.textContent = '';
+        targetSectorSel.value = String(match.sectorId);
+        targetSectorSel.dispatchEvent(new Event('change', { bubbles: true }));
+        targetSpecSel.value = String(match.specialtyId);
+        targetSpecSel.dispatchEvent(new Event('change', { bubbles: true }));
+
+        [targetSectorSel, targetSpecSel].forEach(el => {
+          el.style.borderColor = '#059669';
+          el.style.backgroundColor = '#ECFDF5';
+        });
+
+        inputEl.value = match.specialtyName;
+        if (clearEl) clearEl.hidden = false;
         closeDropdown();
-        finderInput.focus();
+
+        if (statusEl) {
+          statusEl.textContent = (statusPrefix || '✓ Auto-selected: ') + match.sectorName + ' → ' + match.specialtyName;
+        }
+      }
+
+      function renderMatches() {
+        const q = inputEl.value.trim();
+        if (clearEl) clearEl.hidden = (q === '');
+        if (q.length < 2) {
+          currentMatches = [];
+          resultsEl.innerHTML = '';
+          closeDropdown();
+          return;
+        }
+
+        const excludedId = typeof excludeSpecialtyIdFn === 'function' ? Number(excludeSpecialtyIdFn() || 0) : 0;
+        currentMatches = rankSpecialties(q).filter(m => excludedId <= 0 || Number(m.specialtyId) !== excludedId);
+        resultsEl.innerHTML = '';
+        activeIndex = currentMatches.length > 0 ? 0 : -1;
+
+        if (currentMatches.length === 0) {
+          const emptyDiv = document.createElement('div');
+          emptyDiv.className = 'specialty-finder-empty';
+          const supportsCustom = Array.from(targetSpecSel.options || []).some(o => o.value === '__custom__')
+            || (targetSpecSel.id === 'specialty_id' && Boolean(document.getElementById('custom-specialty-wrap')));
+          emptyDiv.textContent = supportsCustom
+            ? 'No exact match yet — choose the closest Industry Sector below and select "+ Add New Specialty" to propose yours.'
+            : 'No matching specialty found — try describing your service in plain words or select a Sector below.';
+          resultsEl.appendChild(emptyDiv);
+          resultsEl.hidden = false;
+          inputEl.setAttribute('aria-expanded', 'true');
+          return;
+        }
+
+        currentMatches.forEach((m, idx) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.id = (optIdPrefix || 'spec-finder-opt-') + m.specialtyId;
+          btn.className = 'specialty-finder-option' + (idx === 0 ? ' is-active' : '');
+          btn.setAttribute('role', 'option');
+          btn.setAttribute('aria-selected', idx === 0 ? 'true' : 'false');
+          btn.setAttribute('data-specialty-id', String(m.specialtyId));
+          btn.setAttribute('data-sector-id', String(m.sectorId));
+
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'specialty-finder-opt-name';
+          nameSpan.textContent = m.specialtyName;
+
+          const secSpan = document.createElement('span');
+          secSpan.className = 'specialty-finder-opt-sector';
+          secSpan.textContent = m.sectorName;
+
+          btn.appendChild(nameSpan);
+          btn.appendChild(secSpan);
+
+          btn.addEventListener('mousedown', e => {
+            e.preventDefault();
+          });
+          btn.addEventListener('click', () => chooseMatch(m));
+          resultsEl.appendChild(btn);
+        });
+
+        resultsEl.hidden = false;
+        inputEl.setAttribute('aria-expanded', 'true');
+        syncActiveHighlight();
+      }
+
+      inputEl.addEventListener('input', () => {
+        if (statusEl) statusEl.textContent = '';
+        renderMatches();
+      });
+
+      inputEl.addEventListener('focus', () => {
+        if (inputEl.value.trim().length >= 2) {
+          renderMatches();
+        }
+      });
+
+      inputEl.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+          closeDropdown();
+          return;
+        }
+        if (resultsEl.hidden || currentMatches.length === 0) {
+          if (e.key === 'Enter' && inputEl.value.trim().length >= 2) {
+            e.preventDefault();
+            renderMatches();
+            if (currentMatches.length > 0) {
+              chooseMatch(currentMatches[0]);
+            }
+          }
+          return;
+        }
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          activeIndex = (activeIndex + 1) % currentMatches.length;
+          syncActiveHighlight();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          activeIndex = (activeIndex - 1 + currentMatches.length) % currentMatches.length;
+          syncActiveHighlight();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          const chosen = currentMatches[activeIndex >= 0 ? activeIndex : 0];
+          if (chosen) chooseMatch(chosen);
+        }
+      });
+
+      if (clearEl) {
+        clearEl.addEventListener('click', () => {
+          inputEl.value = '';
+          clearEl.hidden = true;
+          if (statusEl) statusEl.textContent = '';
+          closeDropdown();
+          inputEl.focus();
+        });
+      }
+
+      document.addEventListener('click', e => {
+        if (!wrapEl.contains(e.target)) {
+          closeDropdown();
+        }
       });
     }
 
-    document.addEventListener('click', e => {
-      if (!finderWrap.contains(e.target)) {
-        closeDropdown();
-      }
+    attachFinderWidget({
+      wrapEl: finderWrap,
+      inputEl: finderInput,
+      clearEl: clearBtn,
+      resultsEl: resultsBox,
+      statusEl: statusBox,
+      targetSectorSel: sectorSel,
+      targetSpecSel: specSel,
+      optIdPrefix: 'spec-finder-opt-',
+      excludeSpecialtyIdFn: null,
+      statusPrefix: '✓ Auto-selected: '
     });
+
+    // =======================================================================
+    // Secondary Sector & Specialty Cascading Selector + Regulator Sync (#280)
+    // =======================================================================
+    const secBox = document.querySelector('[data-secondary-specialty-box]');
+    const secSectorSel = document.getElementById('secondary_sector_id');
+    const secSpecSel = document.getElementById('secondary_specialty_id');
+    const secClearAllBtn = document.getElementById('btn-clear-secondary-specialty');
+    const secFinderInput = document.getElementById('secondary-specialty-quick-finder');
+    const secFinderClear = document.getElementById('secondary-specialty-finder-clear');
+    const secFinderResults = document.getElementById('secondary-specialty-finder-results');
+    const secFinderStatus = document.getElementById('secondary-specialty-finder-status');
+
+    if (secBox && secSectorSel && secSpecSel) {
+      const specById = new Map();
+      flatSpecs.forEach(s => specById.set(Number(s.specialtyId), s));
+      let savedRegHint = String(secBox.getAttribute('data-saved-regulator') || '').trim();
+
+      function syncClearSecondaryBtn() {
+        if (!secClearAllBtn) return;
+        const hasAny = Boolean(secSectorSel.value) || Boolean(secSpecSel.value);
+        secClearAllBtn.hidden = !hasAny;
+      }
+
+      function syncCombinedRegulator(preferredReg) {
+        const regWrap = document.getElementById('regulated-fields-wrap');
+        const regSel = document.getElementById('regulator_name');
+        const regCustom = document.getElementById('regulator_name_custom');
+        if (!regWrap || !regSel || !regCustom) return;
+
+        const primId = Number(specSel.value || 0);
+        const secId = Number(secSpecSel.value || 0);
+        const primItem = primId > 0 ? specById.get(primId) : null;
+        const secItem = secId > 0 ? specById.get(secId) : null;
+        const primReg = Boolean(primItem && primItem.isRegulated);
+        const secReg = Boolean(secItem && secItem.isRegulated);
+
+        if (!secReg) {
+          // Secondary is unregulated; if primary is ALSO unregulated, ensure regulator wrap stays hidden
+          if (!primReg) {
+            regWrap.hidden = true;
+            regWrap.style.display = 'none';
+            regSel.disabled = true;
+            regSel.required = false;
+            regSel.innerHTML = '';
+            regCustom.value = '';
+            regCustom.style.display = 'none';
+            regCustom.disabled = true;
+            regCustom.required = false;
+          }
+          return;
+        }
+
+        // Secondary specialty IS regulated -> ensure regulator box is visible & merged
+        const currentChosen = (!regSel.disabled && regSel.value)
+          ? (regSel.value === 'Other Statutory Regulator' && regCustom.value.trim() ? regCustom.value.trim() : regSel.value)
+          : (preferredReg || '');
+
+        const mergedOpts = [];
+        [primItem, secItem].forEach(it => {
+          if (!it || !it.isRegulated) return;
+          const opts = it.regulatorOptions.length > 0
+            ? it.regulatorOptions
+            : (it.regulatorDefault ? [it.regulatorDefault] : []);
+          opts.forEach(o => {
+            if (o !== 'Other Statutory Regulator' && !mergedOpts.includes(o)) {
+              mergedOpts.push(o);
+            }
+          });
+        });
+        mergedOpts.push('Other Statutory Regulator');
+
+        regWrap.hidden = false;
+        regWrap.style.display = 'block';
+        regSel.disabled = false;
+        regSel.required = true;
+        regSel.innerHTML = '';
+
+        const defaultTarget = currentChosen
+          || (primReg && primItem.regulatorDefault ? primItem.regulatorDefault : '')
+          || (secItem.regulatorDefault || mergedOpts[0]);
+
+        let matchedKnown = false;
+        mergedOpts.forEach(lbl => {
+          const opt = document.createElement('option');
+          opt.value = lbl;
+          opt.textContent = lbl;
+          if (lbl === defaultTarget) {
+            opt.selected = true;
+            matchedKnown = true;
+          }
+          regSel.appendChild(opt);
+        });
+
+        if (!matchedKnown && defaultTarget) {
+          regSel.value = 'Other Statutory Regulator';
+          regCustom.style.display = 'block';
+          regCustom.disabled = false;
+          regCustom.required = true;
+          regCustom.value = defaultTarget;
+        } else {
+          const isOther = (regSel.value === 'Other Statutory Regulator');
+          regCustom.style.display = isOther ? 'block' : 'none';
+          regCustom.disabled = !isOther;
+          regCustom.required = isOther;
+          if (!isOther) regCustom.value = '';
+        }
+      }
+
+      function populateSecondarySpecialties(sectorIdVal, selectedSpecIdVal) {
+        secSpecSel.innerHTML = '';
+        const sid = Number(sectorIdVal || 0);
+        if (sid <= 0) {
+          const noneOpt = document.createElement('option');
+          noneOpt.value = '';
+          noneOpt.textContent = 'None — Select Secondary Sector first...';
+          secSpecSel.appendChild(noneOpt);
+          syncClearSecondaryBtn();
+          syncCombinedRegulator('');
+          return;
+        }
+
+        const placeholderOpt = document.createElement('option');
+        placeholderOpt.value = '';
+        placeholderOpt.textContent = 'Select Secondary Specialty...';
+        secSpecSel.appendChild(placeholderOpt);
+
+        const primarySpecId = Number(specSel.value || 0);
+        const secObj = Array.isArray(taxonomy) ? taxonomy.find(s => Number(s.id) === sid) : null;
+        if (secObj && Array.isArray(secObj.specialties)) {
+          secObj.specialties.forEach(sp => {
+            const spId = Number(sp.id);
+            const opt = document.createElement('option');
+            opt.value = String(spId);
+            const isSameAsPrimary = (primarySpecId > 0 && spId === primarySpecId);
+            opt.textContent = isSameAsPrimary ? (sp.name + ' (Already Primary Specialty)') : sp.name;
+            opt.disabled = isSameAsPrimary;
+            if (!isSameAsPrimary && Number(selectedSpecIdVal || 0) === spId) {
+              opt.selected = true;
+            }
+            secSpecSel.appendChild(opt);
+          });
+        }
+        syncClearSecondaryBtn();
+        syncCombinedRegulator(savedRegHint);
+        savedRegHint = '';
+      }
+
+      secSectorSel.addEventListener('change', () => {
+        populateSecondarySpecialties(secSectorSel.value, 0);
+      });
+
+      secSpecSel.addEventListener('change', () => {
+        syncClearSecondaryBtn();
+        syncCombinedRegulator('');
+      });
+
+      specSel.addEventListener('change', () => {
+        // Re-sync disabled duplicate option & combined regulator if primary specialty changes
+        const curSecSector = secSectorSel.value;
+        const curSecSpec = secSpecSel.value;
+        if (curSecSector) {
+          const nextSecSpec = (curSecSpec && String(curSecSpec) === String(specSel.value)) ? 0 : curSecSpec;
+          populateSecondarySpecialties(curSecSector, nextSecSpec);
+        } else {
+          syncCombinedRegulator('');
+        }
+      });
+
+      if (secClearAllBtn) {
+        secClearAllBtn.addEventListener('click', () => {
+          secSectorSel.value = '';
+          populateSecondarySpecialties('', 0);
+          [secSectorSel, secSpecSel].forEach(el => {
+            el.style.borderColor = '';
+            el.style.backgroundColor = '';
+          });
+          if (secFinderInput) secFinderInput.value = '';
+          if (secFinderClear) secFinderClear.hidden = true;
+          if (secFinderStatus) secFinderStatus.textContent = '';
+          secSectorSel.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+      }
+
+      const initSecSectorId = Number(secBox.getAttribute('data-initial-sec-sector-id') || secSectorSel.value || 0);
+      const initSecSpecId = Number(secBox.getAttribute('data-initial-sec-spec-id') || 0);
+      if (initSecSectorId > 0) {
+        secSectorSel.value = String(initSecSectorId);
+        populateSecondarySpecialties(initSecSectorId, initSecSpecId);
+      } else {
+        populateSecondarySpecialties('', 0);
+      }
+
+      attachFinderWidget({
+        wrapEl: secBox,
+        inputEl: secFinderInput,
+        clearEl: secFinderClear,
+        resultsEl: secFinderResults,
+        statusEl: secFinderStatus,
+        targetSectorSel: secSectorSel,
+        targetSpecSel: secSpecSel,
+        optIdPrefix: 'sec-spec-finder-opt-',
+        excludeSpecialtyIdFn: () => Number(specSel.value || 0),
+        statusPrefix: '✓ Auto-selected 2nd field: '
+      });
+    }
   }
 
   bindSpecialtyQuickFinder();
@@ -842,7 +1082,7 @@
       cityField.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    // 2. Cascading sector -> specialty -> custom specialty & regulator
+    // 2. Cascading sector -> specialty -> custom specialty, secondary specialty & regulator
     const sectorSel = submitForm.querySelector('[name="sector_id"]');
     const specSel = submitForm.querySelector('[name="specialty_id"]');
     if (sectorSel && fields.sector_id) {
@@ -853,13 +1093,23 @@
       specSel.value = String(fields.specialty_id);
       specSel.dispatchEvent(new Event('change', { bubbles: true }));
     }
+    const secSectorDraftSel = submitForm.querySelector('[name="secondary_sector_id"]');
+    const secSpecDraftSel = submitForm.querySelector('[name="secondary_specialty_id"]');
+    if (secSectorDraftSel && fields.secondary_sector_id) {
+      secSectorDraftSel.value = String(fields.secondary_sector_id);
+      secSectorDraftSel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    if (secSpecDraftSel && fields.secondary_specialty_id) {
+      secSpecDraftSel.value = String(fields.secondary_specialty_id);
+      secSpecDraftSel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
 
     // 3. Populate remaining inputs, selects, textareas, checkboxes
     const elements = Array.from(submitForm.elements || []);
     elements.forEach(el => {
       const name = el.name;
       if (!name || EXCLUDED_DRAFT_NAMES.has(name)) return;
-      if (name === 'school_code' || name === 'house_name' || name === 'sector_id' || name === 'specialty_id' || name === 'country' || name === 'city_county') return;
+      if (name === 'school_code' || name === 'house_name' || name === 'sector_id' || name === 'specialty_id' || name === 'secondary_sector_id' || name === 'secondary_specialty_id' || name === 'country' || name === 'city_county') return;
       if (!(name in fields)) return;
       const val = fields[name];
 
@@ -926,6 +1176,11 @@
         if (schoolSel) schoolSel.dispatchEvent(new Event('change', { bubbles: true }));
         const sectorSel = submitForm.querySelector('[name="sector_id"]');
         if (sectorSel) sectorSel.dispatchEvent(new Event('change', { bubbles: true }));
+        const secSectorSelReset = submitForm.querySelector('[name="secondary_sector_id"]');
+        if (secSectorSelReset) {
+          secSectorSelReset.value = '';
+          secSectorSelReset.dispatchEvent(new Event('change', { bubbles: true }));
+        }
         bindDayClosedToggle('hours_sat_closed', 'hours_sat_open', 'hours_sat_close', '09:00', '14:00');
         bindDayClosedToggle('hours_sun_closed', 'hours_sun_open', 'hours_sun_close', '10:00', '16:00');
         if (restoredBanner) restoredBanner.style.display = 'none';

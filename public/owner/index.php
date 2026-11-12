@@ -200,6 +200,11 @@ $tokens = AntiSpamGate::generateFormTokens();
                 <div style="font-size:0.83rem;color:#7B1113;font-weight:700;margin-top:0.25rem;">
                   <?= htmlspecialchars((string)$biz['sector_name'], ENT_QUOTES, 'UTF-8') ?> &rarr; <?= htmlspecialchars((string)$biz['specialty_name'], ENT_QUOTES, 'UTF-8') ?>
                 </div>
+                <?php if (!empty($biz['secondary_sector_name']) && !empty($biz['secondary_specialty_name'])): ?>
+                <div style="font-size:0.78rem;color:#114B3E;font-weight:700;margin-top:0.15rem;">
+                  + Also: <?= htmlspecialchars((string)$biz['secondary_sector_name'], ENT_QUOTES, 'UTF-8') ?> &rarr; <?= htmlspecialchars((string)$biz['secondary_specialty_name'], ENT_QUOTES, 'UTF-8') ?>
+                </div>
+                <?php endif; ?>
                 <p style="margin:0.35rem 0 0 0;font-size:0.86rem;color:#4B5563;"><?= htmlspecialchars((string)$biz['tagline'], ENT_QUOTES, 'UTF-8') ?></p>
               </div>
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">

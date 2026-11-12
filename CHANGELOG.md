@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.21.0] - 2026-11-12
+
+### Added
+- **Multi-Sector / Secondary Specialty Schema, Validation & Dual-Category Search API (`#279`, Parent `#278`)**: Added nullable `secondary_sector_id` and `secondary_specialty_id` foreign keys plus composite index `idx_status_sec_sector_spec` (`src/schema.sql`, `src/Config/Database.php`, `SCHEMA_INIT_VERSION = '2026-11-v21-sec-spec'`), added `VettingPurger::normalizeSecondaryCategoryPair()` to enforce valid approved sector/specialty pairing while rejecting half-empty pairs and duplicates of the primary specialty, persisted secondary categories across `createBusinessDirectly()`, `updateBusiness()`, and `updateBusinessByOwner()` (with `Secondary Category` critical-edit courtesy alerts), and updated `/api/businesses.php` (using distinct MySQL 8.0 native prepared placeholders), `public/index.php`, and `OwnerAuth::getBusinessesForOwner()` so cross-sector founders appear under **both** their primary and secondary categories and keyword searches.
+- **Optional Secondary Specialty Form UI, Secondary Natural-Language Quick Finder & Multi-Business Portfolio Guidance (`#280`, Parent `#278`)**: Added `bbiz_render_secondary_specialty_fields()` (`src/bootstrap.php`), reusable `attachFinderWidget()` + cascading secondary selectors + `#btn-clear-secondary-specialty` + combined Primary/Secondary statutory regulator visibility sync + 2-hour `sessionStorage` draft persistence (`public/assets/js/form-enhancements.js`), secondary category badges on directory cards, detail modals, owner portal cards, and B2B procurement CSV exports (`public/assets/js/directory.js`, `public/owner/index.php`, `public/assets/css/app.css`), and a clear **Multi-Business Portfolio** guidance note across `/submit.php`, `/owner/edit-business.php`, `/admin/add-business.php`, and `/admin/edit-business.php` directing alumni with separate companies to submit independent listings under the same Owner Login Email.
+- **Unit & Playwright E2E Coverage (`#278`–`#280`)**: Added Section 47 unit assertions in `tests/run_unit_tests.php` and `test_playwright_ch1_chunk2_secondary_specialty_and_multi_business_guidance` in `e2e/test_smoke.py`.
+
 ## [0.20.1] - 2026-11-12
 
 ### Enhanced

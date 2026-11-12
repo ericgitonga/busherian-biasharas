@@ -58,18 +58,23 @@ try {
         FROM businesses b
         INNER JOIN categories sec ON sec.id = b.sector_id
         INNER JOIN categories spec ON spec.id = b.specialty_id
+        LEFT JOIN categories sec2 ON sec2.id = b.secondary_sector_id AND sec2.status = 'approved'
+        LEFT JOIN categories spec2 ON spec2.id = b.secondary_specialty_id AND spec2.status = 'approved'
         WHERE b.status = 'approved'
     ";
 
     $params = [];
 
     if ($sectorId !== null && $sectorId > 0) {
-        $fromWhereSql .= " AND b.sector_id = :sector_id";
-        $params[':sector_id'] = $sectorId;
+        // Distinct named placeholders for MySQL 8.0 native prepared statements (PDO::ATTR_EMULATE_PREPARES => false)
+        $fromWhereSql .= " AND (b.sector_id = :sector_id_1 OR (b.secondary_sector_id = :sector_id_2 AND sec2.id IS NOT NULL))";
+        $params[':sector_id_1'] = $sectorId;
+        $params[':sector_id_2'] = $sectorId;
     }
     if ($specId !== null && $specId > 0) {
-        $fromWhereSql .= " AND b.specialty_id = :specialty_id";
-        $params[':specialty_id'] = $specId;
+        $fromWhereSql .= " AND (b.specialty_id = :specialty_id_1 OR (b.secondary_specialty_id = :specialty_id_2 AND spec2.id IS NOT NULL))";
+        $params[':specialty_id_1'] = $specId;
+        $params[':specialty_id_2'] = $specId;
     }
     if ($country !== '') {
         $fromWhereSql .= " AND LOWER(b.country) = LOWER(:country)";
@@ -108,7 +113,7 @@ try {
     if ($q !== '') {
         $expandedTerms = CategoryMatcher::expandSearchTerms($q);
         $orClauses = [];
-        $colsToSearch = ['b.name', 'b.tagline', 'b.description', 'sec.name', 'spec.name', 'b.area_neighborhood', 'b.country', 'b.city_county', 'b.street_road'];
+        $colsToSearch = ['b.name', 'b.tagline', 'b.description', 'sec.name', 'spec.name', "COALESCE(sec2.name, '')", "COALESCE(spec2.name, '')", 'b.area_neighborhood', 'b.country', 'b.city_county', 'b.street_road'];
         foreach ($expandedTerms as $idx => $term) {
             $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $term);
             $val = '%' . $escaped . '%';
@@ -129,8 +134,11 @@ try {
         SELECT
             b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.description,
             b.school_badge, b.sector_id, b.specialty_id,
+            b.secondary_sector_id, b.secondary_specialty_id,
             sec.name AS sector_name, sec.slug AS sector_slug,
             spec.name AS specialty_name, spec.slug AS specialty_slug,
+            sec2.name AS secondary_sector_name, sec2.slug AS secondary_sector_slug,
+            spec2.name AS secondary_specialty_name, spec2.slug AS secondary_specialty_slug,
             b.service_mode, b.alumni_perk, b.b2b_ready, b.accepts_lpo,
             b.regulator_name, b.regulator_license,
             b.branch_name, b.building_name, b.floor_suite, b.street_road,
@@ -255,6 +263,8 @@ try {
                 . " FROM businesses b"
                 . " INNER JOIN categories sec ON sec.id = b.sector_id"
                 . " INNER JOIN categories spec ON spec.id = b.specialty_id"
+                . " LEFT JOIN categories sec2 ON sec2.id = b.secondary_sector_id AND sec2.status = 'approved'"
+                . " LEFT JOIN categories spec2 ON spec2.id = b.secondary_specialty_id AND spec2.status = 'approved'"
                 . " WHERE b.id IN ({$inPlaceholders})"
             );
             $hydStmt->execute($winIds);
@@ -311,6 +321,10 @@ try {
             'sector_name' => $row['sector_name'],
             'specialty_id' => (int)$row['specialty_id'],
             'specialty_name' => $row['specialty_name'],
+            'secondary_sector_id' => (!empty($row['secondary_sector_id']) && !empty($row['secondary_sector_name'])) ? (int)$row['secondary_sector_id'] : null,
+            'secondary_sector_name' => !empty($row['secondary_sector_name']) ? $row['secondary_sector_name'] : null,
+            'secondary_specialty_id' => (!empty($row['secondary_specialty_id']) && !empty($row['secondary_specialty_name'])) ? (int)$row['secondary_specialty_id'] : null,
+            'secondary_specialty_name' => !empty($row['secondary_specialty_name']) ? $row['secondary_specialty_name'] : null,
             'service_mode' => $row['service_mode'],
             'alumni_perk' => $row['alumni_perk'],
             'b2b_ready' => (bool)$row['b2b_ready'],

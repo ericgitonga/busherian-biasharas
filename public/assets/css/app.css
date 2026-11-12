@@ -327,6 +327,13 @@ a {
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--bush-crimson);
+  margin-bottom: 0.35rem;
+}
+.card-taxonomy-secondary {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--bush-green);
+  margin-top: -0.15rem;
   margin-bottom: 0.45rem;
 }
 
@@ -913,5 +920,60 @@ a {
 }
 .specialty-finder-status:empty {
   display: none;
+}
+
+/* Optional Secondary Sector & Specialty + Multi-Business Guidance (#280) */
+.secondary-specialty-box {
+  margin-top: 0.95rem;
+  background: #FAF8F4;
+  border: 1px dashed rgba(17, 75, 62, 0.35);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+}
+.secondary-specialty-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.secondary-specialty-title {
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--bush-green);
+}
+.secondary-specialty-optional {
+  font-weight: 600;
+  font-size: 0.78rem;
+  color: var(--ink-700);
+}
+.secondary-specialty-hint {
+  margin: 0.2rem 0 0 0;
+  font-size: 0.79rem;
+  color: var(--ink-700);
+  line-height: 1.45;
+}
+.secondary-specialty-clear-btn {
+  padding: 0.24rem 0.6rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.secondary-specialty-clear-btn[hidden] {
+  display: none !important;
+}
+.multi-business-guidance-note {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  color: #1E3A8A;
+  line-height: 1.45;
+}
+.multi-business-guidance-note a {
+  color: #1D4ED8;
+  font-weight: 700;
+  text-decoration: underline;
 }
 
