@@ -7,6 +7,7 @@ use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\CategoryMatcher;
+use BusherianBiasharas\Services\EngagementRanker;
 use BusherianBiasharas\Services\HoursEngine;
 use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\OwnerAuth;
@@ -29,7 +30,9 @@ try {
     $isAdminVisitor = AdminAuth::isAuthenticated();
     $isAuthenticatedViewer = ($currentOwner !== null || $isAdminVisitor);
 
-    $q          = mb_substr(trim((string)($_GET['q'] ?? '')), 0, 120);
+    $q           = mb_substr(trim((string)($_GET['q'] ?? '')), 0, 120);
+    $filterBizId = isset($_GET['id']) && $_GET['id'] !== '' ? (int)$_GET['id'] : null;
+    $rawSort     = mb_substr(trim((string)($_GET['sort'] ?? '')), 0, 40);
     $sectorId   = isset($_GET['sector_id']) && $_GET['sector_id'] !== '' ? (int)$_GET['sector_id'] : null;
     $specId     = isset($_GET['specialty_id']) && $_GET['specialty_id'] !== '' ? (int)$_GET['specialty_id'] : null;
     $country    = mb_substr(trim((string)($_GET['country'] ?? '')), 0, 80);
@@ -65,6 +68,11 @@ try {
     ";
 
     $params = [];
+
+    if ($filterBizId !== null && $filterBizId > 0) {
+        $fromWhereSql .= " AND b.id = :filter_biz_id";
+        $params[':filter_biz_id'] = $filterBizId;
+    }
 
     if ($sectorId !== null && $sectorId > 0) {
         // Distinct named placeholders for MySQL 8.0 native prepared statements (PDO::ATTR_EMULATE_PREPARES => false)
@@ -180,8 +188,10 @@ try {
         $params[':exact_radius_km'] = $radiusKm;
     }
 
+    $activeSort = EngagementRanker::normalizeSortMode($rawSort, $hasCoordsQuery);
+
     if (!$openNow) {
-        // Pure SQL pagination & distance sorting (#218 M-10): zero full-table fetch into PHP memory
+        // Pure SQL pagination, engagement band ranking & distance sorting (#218 M-10, #310): zero full-table fetch into PHP memory
         $cntStmt = $pdo->prepare("SELECT COUNT(*) " . $fromWhereSql);
         $cntStmt->execute($params);
         $totalCount = (int)$cntStmt->fetchColumn();
@@ -194,12 +204,14 @@ try {
         $pageParams = $params;
         if ($hasCoordsQuery) {
             $selHavExpr = $buildHaversineExpr('sh', $pageParams);
+            $orderBySql = EngagementRanker::buildDirectoryOrderBySql($activeSort, $pageParams, 'sp', true);
             $pageSql = $selectCols . ", CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL THEN ROUND({$selHavExpr}, 2) ELSE NULL END AS _sql_dist "
                 . $fromWhereSql
-                . " ORDER BY CASE WHEN b.latitude IS NULL OR b.longitude IS NULL THEN 1 ELSE 0 END ASC, _sql_dist ASC, b.business_number ASC, b.id ASC"
+                . " ORDER BY {$orderBySql}"
                 . " LIMIT " . (int)$perPage . " OFFSET " . (int)$offset;
         } else {
-            $pageSql = $selectCols . $fromWhereSql . " ORDER BY b.business_number ASC, b.id ASC LIMIT " . (int)$perPage . " OFFSET " . (int)$offset;
+            $orderBySql = EngagementRanker::buildDirectoryOrderBySql($activeSort, $pageParams, 'sp', false);
+            $pageSql = $selectCols . $fromWhereSql . " ORDER BY {$orderBySql} LIMIT " . (int)$perPage . " OFFSET " . (int)$offset;
         }
         $stmt = $pdo->prepare($pageSql);
         $stmt->execute($pageParams);
@@ -211,7 +223,7 @@ try {
         }
         unset($pRow);
     } else {
-        // Complete Batched Open-Now evaluation (#243 M-03): scan lightweight schedule chunks of 250 without truncating at 500
+        // Complete Batched Open-Now evaluation (#243 M-03, #310): scan lightweight schedule chunks of 250 without truncating at 500
         $batchSize = 250;
         $batchOffset = 0;
         $matchedOpenMeta = [];
@@ -219,14 +231,16 @@ try {
             $openParams = $params;
             if ($hasCoordsQuery) {
                 $openHavExpr = $buildHaversineExpr('oh', $openParams);
+                $openOrderSql = EngagementRanker::buildDirectoryOrderBySql($activeSort, $openParams, 'so', true);
                 $openSql = "SELECT b.id, b.operating_hours_json, CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL THEN ROUND({$openHavExpr}, 2) ELSE NULL END AS _sql_dist "
                     . $fromWhereSql
-                    . " ORDER BY CASE WHEN b.latitude IS NULL OR b.longitude IS NULL THEN 1 ELSE 0 END ASC, _sql_dist ASC, b.business_number ASC, b.id ASC"
+                    . " ORDER BY {$openOrderSql}"
                     . " LIMIT 250 OFFSET " . (int)$batchOffset;
             } else {
+                $openOrderSql = EngagementRanker::buildDirectoryOrderBySql($activeSort, $openParams, 'so', false);
                 $openSql = "SELECT b.id, b.operating_hours_json "
                     . $fromWhereSql
-                    . " ORDER BY b.business_number ASC, b.id ASC"
+                    . " ORDER BY {$openOrderSql}"
                     . " LIMIT 250 OFFSET " . (int)$batchOffset;
             }
             $stmt = $pdo->prepare($openSql);
@@ -384,6 +398,7 @@ try {
 
     echo json_encode([
         'status' => 'ok',
+        'sort' => $activeSort,
         'count' => count($results),
         'total_count' => $totalCount,
         'pagination' => [
@@ -391,6 +406,7 @@ try {
             'per_page' => $perPage,
             'total' => $totalCount,
             'total_pages' => $totalPages,
+            'sort' => $activeSort,
         ],
         'businesses' => $results,
     ], JSON_UNESCAPED_SLASHES);

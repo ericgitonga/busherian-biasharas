@@ -4582,6 +4582,188 @@ assertTrue(
     'Quarantine zeroes engagement_score, restore recovers it, CLI recompute worker succeeds, and schema readiness matches 2026-11-v25-engagement (#305, #307)'
 );
 
+// =========================================================================
+// 52. Chapter 3 Chunk 11 (#309, #310, #311): Default Engagement Ordering, Sort Modes, 2h Tie Rotation & Concierge Hook
+// =========================================================================
+
+// 52a. Sort mode normalization & proximity fallback
+assertTrue(
+    \BusherianBiasharas\Services\EngagementRanker::normalizeSortMode('', false) === 'most_referenced' &&
+    \BusherianBiasharas\Services\EngagementRanker::normalizeSortMode('', true) === 'nearest' &&
+    \BusherianBiasharas\Services\EngagementRanker::normalizeSortMode('nearest', false) === 'most_referenced' &&
+    \BusherianBiasharas\Services\EngagementRanker::normalizeSortMode('nearest', true) === 'nearest' &&
+    \BusherianBiasharas\Services\EngagementRanker::normalizeSortMode('most_referenced', true) === 'most_referenced' &&
+    \BusherianBiasharas\Services\EngagementRanker::normalizeSortMode('trending', false) === 'trending' &&
+    \BusherianBiasharas\Services\EngagementRanker::normalizeSortMode('newest', false) === 'newest' &&
+    \BusherianBiasharas\Services\EngagementRanker::normalizeSortMode('az', false) === 'az' &&
+    \BusherianBiasharas\Services\EngagementRanker::normalizeSortMode('directory_number', false) === 'directory_number' &&
+    \BusherianBiasharas\Services\EngagementRanker::normalizeSortMode('unknown_garbage', false) === 'most_referenced',
+    'EngagementRanker::normalizeSortMode resolves default, proximity fallback, and all 6 canonical sort modes (#310)'
+);
+
+// 52b. Concierge citation helper (#311) credits 3.0 pts (`concierge_ref`) and deduplicates within 24h
+$pdo = null;
+Database::resetConnection();
+$pdo = Database::getConnection();
+$conciergeTok = 'human_verified_' . ($engNow * 1000);
+$concRes1 = \BusherianBiasharas\Services\EngagementRanker::recordConciergeCitation(
+    $pdo,
+    $engActiveBizId,
+    '197.232.99.41',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)',
+    $conciergeTok,
+    null,
+    false,
+    $engNow
+);
+$concRes2 = \BusherianBiasharas\Services\EngagementRanker::recordConciergeCitation(
+    $pdo,
+    $engActiveBizId,
+    '197.232.99.41',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)',
+    $conciergeTok,
+    null,
+    false,
+    $engNow + 30
+);
+assertTrue(
+    $concRes1['recorded'] === true &&
+    $concRes1['signal_group'] === 'concierge_ref' &&
+    abs((float)$concRes1['signal_weight'] - 3.0) < 0.001 &&
+    $concRes2['recorded'] === false &&
+    $concRes2['deduplicated'] === true,
+    'EngagementRanker::recordConciergeCitation credits 3.0 concierge_ref points and enforces 24h deduplication (#311)'
+);
+
+// 52c. 2-hour tie-band rotation rotates zero-score peers across 2h boundaries while keeping higher bands strictly above lower bands
+$secSpec310 = $pdo->query("SELECT sector_id, specialty_id FROM businesses WHERE id = {$engActiveBizId} LIMIT 1")->fetch();
+$engSecId = (int)$secSpec310['sector_id'];
+$engSpecId = (int)$secSpec310['specialty_id'];
+$zeroTieIds = [];
+$oldVerifiedTie = gmdate('Y-m-d H:i:s', $engNow - (45 * 86400));
+$insZeroTie = $pdo->prepare("
+    INSERT INTO businesses (
+        business_id, business_number, name, slug, tagline, description,
+        school_badge, sector_id, specialty_id, service_mode, country, city_county,
+        operating_hours_json, phone_primary, status, verified_at, engagement_score, reference_count_90d,
+        listing_provenance, admin_provenance_note
+    ) VALUES (
+        :bid, :bnum, :nm, :sl, 'Tie band test', 'Tie band test',
+        'AGHS', :sec, :spec, 'physical', 'Kenya', 'Nairobi',
+        '{}', '+254700310900', 'approved', :vat, 0.0000, 0,
+        'admin_curated', 'Unit test #310'
+    )
+");
+for ($ti = 1; $ti <= 6; $ti++) {
+    $bnumTie = 93100 + $ti;
+    $insZeroTie->execute([
+        ':bid' => "BBIZ-{$bnumTie}",
+        ':bnum' => $bnumTie,
+        ':nm' => "Zero Tie Peer {$ti}",
+        ':sl' => "zero-tie-peer-310-{$ti}-" . mt_rand(1000, 9999),
+        ':sec' => $engSecId,
+        ':spec' => $engSpecId,
+        ':vat' => $oldVerifiedTie,
+    ]);
+    $zeroTieIds[] = (int)$pdo->lastInsertId();
+}
+
+$slotBaseTs = 1794560000;
+$allCandidateIds310 = array_merge([$engActiveBizId, $engStaleBizId], $zeroTieIds);
+$inList310 = implode(',', array_map('intval', $allCandidateIds310));
+
+$pSlotA = [];
+$ordSlotA = \BusherianBiasharas\Services\EngagementRanker::buildDirectoryOrderBySql('most_referenced', $pSlotA, 'sa', false, $slotBaseTs);
+$stmtSlotA = $pdo->prepare("SELECT id FROM businesses b WHERE b.id IN ({$inList310}) ORDER BY {$ordSlotA}");
+$stmtSlotA->execute($pSlotA);
+$orderIdsA = array_map('intval', $stmtSlotA->fetchAll(PDO::FETCH_COLUMN));
+
+// Within the same 2-hour window (+600s), order is 100% stable for pagination consistency
+$pSlotA2 = [];
+$ordSlotA2 = \BusherianBiasharas\Services\EngagementRanker::buildDirectoryOrderBySql('most_referenced', $pSlotA2, 'sa2', false, $slotBaseTs + 300);
+$stmtSlotA2 = $pdo->prepare("SELECT id FROM businesses b WHERE b.id IN ({$inList310}) ORDER BY {$ordSlotA2}");
+$stmtSlotA2->execute($pSlotA2);
+$orderIdsA2 = array_map('intval', $stmtSlotA2->fetchAll(PDO::FETCH_COLUMN));
+
+// Across subsequent 2-hour slots, find at least one rotated permutation of the 6 tied zero-score peers while #1 and #2 stay fixed!
+$foundDistinctTieOrder = false;
+$alwaysPreservedTop2 = true;
+for ($step = 1; $step <= 5; $step++) {
+    $pSlotNext = [];
+    $ordSlotNext = \BusherianBiasharas\Services\EngagementRanker::buildDirectoryOrderBySql('most_referenced', $pSlotNext, 'sn' . $step, false, $slotBaseTs + ($step * 7200));
+    $stmtSlotNext = $pdo->prepare("SELECT id FROM businesses b WHERE b.id IN ({$inList310}) ORDER BY {$ordSlotNext}");
+    $stmtSlotNext->execute($pSlotNext);
+    $nextIds = array_map('intval', $stmtSlotNext->fetchAll(PDO::FETCH_COLUMN));
+    if ($nextIds[0] !== $engActiveBizId || $nextIds[1] !== $engStaleBizId) {
+        $alwaysPreservedTop2 = false;
+    }
+    if (array_slice($nextIds, 2) !== array_slice($orderIdsA, 2)) {
+        $foundDistinctTieOrder = true;
+    }
+}
+
+assertTrue(
+    $orderIdsA[0] === $engActiveBizId &&
+    $orderIdsA[1] === $engStaleBizId &&
+    $orderIdsA === $orderIdsA2 &&
+    $alwaysPreservedTop2 === true &&
+    $foundDistinctTieOrder === true,
+    'Near-tie band rotation keeps higher engagement bands strictly above lower bands, stays stable within a 2h window, and rotates tied peers across 2h slots (#310)'
+);
+
+// 52d. Verify /api/businesses.php default engagement ordering, all explicit sort modes, ?id= lookup & dignified non-exposure of raw counts
+$runBizApiGet = static function (array $queryParams): array {
+    $runner = sprintf(
+        '$_SERVER["REQUEST_METHOD"]="GET"; $_SERVER["REMOTE_ADDR"]="127.0.0.1"; $_GET=%s; require %s;',
+        var_export($queryParams, true),
+        var_export(dirname(__DIR__) . '/public/api/businesses.php', true)
+    );
+    $raw = (string)shell_exec('php -r ' . escapeshellarg($runner));
+    $dec = json_decode($raw, true);
+    return is_array($dec) ? $dec : ['status' => 'decode_err', 'raw' => $raw];
+};
+
+$pdo = null;
+Database::resetConnection();
+
+$resDef310 = $runBizApiGet(['per_page' => '50']);
+$resTrending310 = $runBizApiGet(['sort' => 'trending', 'per_page' => '50']);
+$resNewest310 = $runBizApiGet(['sort' => 'newest', 'per_page' => '50']);
+$resAz310 = $runBizApiGet(['sort' => 'az', 'per_page' => '50']);
+$resDirNum310 = $runBizApiGet(['sort' => 'directory_number', 'per_page' => '50']);
+$resSingle311 = $runBizApiGet(['id' => (string)$engActiveBizId]);
+
+$pdo = Database::getConnection();
+$pdo->exec("DELETE FROM businesses WHERE id IN (" . implode(',', array_map('intval', $zeroTieIds)) . ")");
+
+$azNames = array_map(static fn(array $r): string => strtolower((string)$r['name']), $resAz310['businesses'] ?? []);
+$azSorted = $azNames;
+sort($azSorted, SORT_STRING);
+
+$dirNums = array_map(static fn(array $r): int => (int)$r['business_number'], $resDirNum310['businesses'] ?? []);
+$dirNumsSorted = $dirNums;
+sort($dirNumsSorted, SORT_NUMERIC);
+
+$firstPublicCard = $resDef310['businesses'][0] ?? [];
+
+assertTrue(
+    ($resDef310['status'] ?? '') === 'ok' &&
+    ($resDef310['sort'] ?? '') === 'most_referenced' &&
+    (int)($firstPublicCard['id'] ?? 0) === $engActiveBizId &&
+    !array_key_exists('engagement_score', $firstPublicCard) &&
+    !array_key_exists('reference_count_90d', $firstPublicCard) &&
+    ($resTrending310['sort'] ?? '') === 'trending' &&
+    (int)($resTrending310['businesses'][0]['id'] ?? 0) === $engActiveBizId &&
+    ($resNewest310['sort'] ?? '') === 'newest' &&
+    ($resAz310['sort'] ?? '') === 'az' &&
+    $azNames === $azSorted &&
+    ($resDirNum310['sort'] ?? '') === 'directory_number' &&
+    $dirNums === $dirNumsSorted &&
+    ($resSingle311['count'] ?? 0) === 1 &&
+    (int)($resSingle311['businesses'][0]['id'] ?? 0) === $engActiveBizId,
+    '/api/businesses.php defaults to most_referenced (#1 = highest engaged), supports trending/newest/az/directory_number + ?id= lookup, and hides raw scores publicly (#309, #310, #311)'
+);
+
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);
 }

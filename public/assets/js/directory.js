@@ -34,6 +34,8 @@
     originLabel: 'My Current Browser Location',
     radiusKm: '',
     searchQuery: '',
+    explicitSort: '',
+    activeSort: (initialPagination && initialPagination.sort) ? String(initialPagination.sort) : 'most_referenced',
     shortlistIds: new Set(),
     shortlistedRecords: new Map(),
     activeBusiness: null,
@@ -342,6 +344,9 @@
       params.set('lng', String(state.userLng));
       if (state.radiusKm) params.set('radius_km', String(state.radiusKm));
     }
+    if (state.explicitSort) {
+      params.set('sort', state.explicitSort);
+    }
     params.set('page', String(state.currentPage));
     params.set('per_page', String(state.perPage));
 
@@ -380,6 +385,7 @@
         setOfflineBannerVisible(true);
       } else {
         state.businesses = Array.isArray(data.businesses) ? data.businesses : [];
+        if (data.sort) state.activeSort = String(data.sort);
         if (!state.searchQuery && !state.selectedSectorId && !state.selectedSpecialtyId && state.currentPage === 1 && state.businesses.length >= offlineCatalogCache.length) {
           offlineCatalogCache = state.businesses.slice();
         }
@@ -1217,8 +1223,29 @@
     } catch (_) {}
   }
 
+  const extraLoadedBusinesses = new Map();
+
+  async function openBusinessByIdOrFetch(bizId, opts) {
+    const numericId = Number(bizId);
+    if (!Number.isFinite(numericId) || numericId <= 0) return;
+    const existing = state.businesses.find(b => Number(b.id) === numericId) || extraLoadedBusinesses.get(numericId);
+    if (existing) {
+      openBusinessModal(numericId, opts);
+      return;
+    }
+    try {
+      const res = await fetch('/api/businesses.php?id=' + encodeURIComponent(String(numericId)));
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.status === 'ok' && Array.isArray(data.businesses) && data.businesses.length > 0) {
+        extraLoadedBusinesses.set(numericId, data.businesses[0]);
+        openBusinessModal(numericId, opts);
+      }
+    } catch (_) {}
+  }
+
   function openBusinessModal(bizId, opts) {
-    const biz = state.businesses.find(b => Number(b.id) === Number(bizId));
+    const biz = state.businesses.find(b => Number(b.id) === Number(bizId)) || extraLoadedBusinesses.get(Number(bizId));
     if (!biz || !els.modalBackdrop || !els.modalContent) return;
     state.activeBusiness = biz;
     state.focusedBusinessId = biz.id;
@@ -1854,10 +1881,20 @@
       return;
     }
 
+    const conciergeCard = e.target.closest('[data-concierge-biz-id]');
+    if (conciergeCard) {
+      e.preventDefault();
+      e.stopPropagation();
+      const cid = Number(conciergeCard.getAttribute('data-concierge-biz-id'));
+      openBusinessByIdOrFetch(cid, { source: 'concierge' });
+      return;
+    }
+
     const cardOrPin = e.target.closest('[data-biz-id]');
     if (cardOrPin) {
       const id = Number(cardOrPin.getAttribute('data-biz-id'));
-      openBusinessModal(id);
+      const src = cardOrPin.getAttribute('data-open-biz-source') === 'concierge' ? 'concierge' : 'directory';
+      openBusinessModal(id, { source: src });
       return;
     }
 
@@ -2179,8 +2216,37 @@
       els.searchInput.focus();
     }
 
+    const initSort = (initParams.get('sort') || '').trim().toLowerCase();
+    const allowedInitSorts = ['most_referenced', 'trending', 'newest', 'nearest', 'az', 'directory_number'];
+    if (initSort && allowedInitSorts.includes(initSort)) {
+      state.explicitSort = initSort;
+      state.activeSort = initSort;
+      if (initSort !== (initialPagination && initialPagination.sort)) {
+        needsInitialFetch = true;
+      }
+    }
+
     if (needsInitialFetch) {
       fetchBusinesses();
+    }
+
+    const initBizId = Number(initParams.get('biz') || initParams.get('open_biz') || 0);
+    const initRef = (initParams.get('ref') || '').trim().toLowerCase();
+    if (Number.isFinite(initBizId) && initBizId > 0) {
+      const openSrc = initRef === 'concierge' ? 'concierge' : 'direct';
+      openBusinessByIdOrFetch(initBizId, { source: openSrc });
+      if (openSrc === 'concierge' && !lastHumanInteractionToken) {
+        const creditDeferredConciergeRef = () => {
+          refreshHumanInteractionToken();
+          recordCheckout(initBizId, 'concierge_ref');
+          ['pointerdown', 'keydown', 'touchstart'].forEach(ev => {
+            document.removeEventListener(ev, creditDeferredConciergeRef);
+          });
+        };
+        ['pointerdown', 'keydown', 'touchstart'].forEach(ev => {
+          document.addEventListener(ev, creditDeferredConciergeRef, { passive: true });
+        });
+      }
     }
   } catch (_) {}
 })();

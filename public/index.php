@@ -5,6 +5,7 @@ require_once dirname(__DIR__) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\CategoryMatcher;
+use BusherianBiasharas\Services\EngagementRanker;
 use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\HoursEngine;
 use BusherianBiasharas\Services\LocationEngine;
@@ -30,7 +31,11 @@ $totalApprovedCount = (int)$pdo->query("
 ")->fetchColumn();
 $initialTotalPages = max(1, (int)ceil($totalApprovedCount / $initialPerPage));
 
-$stmt = $pdo->query("
+$initialSort = EngagementRanker::normalizeSortMode((string)($_GET['sort'] ?? ''), false);
+$initSortParams = [];
+$initOrderBySql = EngagementRanker::buildDirectoryOrderBySql($initialSort, $initSortParams, 'init', false);
+
+$stmt = $pdo->prepare("
     SELECT
         b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.description,
         b.school_badge, b.sector_id, b.specialty_id,
@@ -54,9 +59,10 @@ $stmt = $pdo->query("
     LEFT JOIN categories sec2 ON sec2.id = b.secondary_sector_id AND sec2.status = 'approved'
     LEFT JOIN categories spec2 ON spec2.id = b.secondary_specialty_id AND spec2.status = 'approved'
     WHERE b.status = 'approved'
-    ORDER BY b.business_number ASC, b.id ASC
+    ORDER BY {$initOrderBySql}
     LIMIT 10 OFFSET 0
 ");
+$stmt->execute($initSortParams);
 $rows = $stmt->fetchAll();
 
 $initialPageIds = array_map(static fn(array $r): int => (int)$r['id'], $rows);
@@ -150,6 +156,7 @@ $initialPagination = [
     'per_page' => $initialPerPage,
     'total' => $totalApprovedCount,
     'total_pages' => $initialTotalPages,
+    'sort' => $initialSort,
 ];
 ?>
 <!DOCTYPE html>

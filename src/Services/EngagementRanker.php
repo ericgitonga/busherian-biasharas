@@ -28,6 +28,23 @@ final class EngagementRanker
     public const COLD_START_WINDOW_DAYS = 14.0;
     public const COLD_START_MAX_BOOST = 3.5;
 
+    public const TIE_ROTATION_BUCKET_SECONDS = 7200;
+    public const TIE_ROTATION_PRIME = 65521;
+
+    /**
+     * Canonical directory sort modes (#309, #310).
+     *
+     * @var array<int, string>
+     */
+    public const ALLOWED_SORT_MODES = [
+        'most_referenced',
+        'trending',
+        'newest',
+        'nearest',
+        'az',
+        'directory_number',
+    ];
+
     public const WEIGHT_PROFILE_CHECKOUT = 1.0;
     public const WEIGHT_EXTERNAL_LINK = 2.0;
     public const WEIGHT_DIRECTIONS_REF = 2.5;
@@ -523,5 +540,143 @@ final class EngagementRanker
             'zeroed_non_approved_count' => $zeroed,
             'computed_at_utc' => $computedUtc,
         ];
+    }
+
+    /**
+     * Record a Chapter 2 Biashara Concierge recommendation citation (`concierge_ref`, 3.0 pts) (#311).
+     *
+     * @return array<string, mixed>
+     */
+    public static function recordConciergeCitation(
+        PDO $pdo,
+        int $businessId,
+        string $clientIp,
+        string $userAgent,
+        string $interactionToken,
+        ?int $currentOwnerId = null,
+        bool $isAdmin = false,
+        ?int $nowTs = null
+    ): array {
+        return self::recordCheckout(
+            $pdo,
+            $businessId,
+            'concierge_ref',
+            $clientIp,
+            $userAgent,
+            $interactionToken,
+            $currentOwnerId,
+            $isAdmin,
+            $nowTs
+        );
+    }
+
+    /**
+     * Normalize requested `sort=` mode with automatic proximity fallback (#310).
+     */
+    public static function normalizeSortMode(?string $rawSort, bool $hasCoordsQuery = false): string
+    {
+        $norm = strtolower(trim((string)($rawSort ?? '')));
+        if ($norm === '') {
+            return $hasCoordsQuery ? 'nearest' : 'most_referenced';
+        }
+
+        return match ($norm) {
+            'most_referenced', 'default', 'popular', 'most_checked_out' => 'most_referenced',
+            'trending', 'trending_week' => 'trending',
+            'newest', 'recent' => 'newest',
+            'nearest', 'distance', 'proximity' => $hasCoordsQuery ? 'nearest' : 'most_referenced',
+            'az', 'name', 'alphabetical' => 'az',
+            'directory_number', 'number', 'registration' => 'directory_number',
+            default => $hasCoordsQuery ? 'nearest' : 'most_referenced',
+        };
+    }
+
+    /**
+     * Compute deterministic 2-hour rotation slot index.
+     */
+    public static function computeTieRotationSlot(?int $nowTs = null): int
+    {
+        return intdiv(max(0, $nowTs ?? time()), self::TIE_ROTATION_BUCKET_SECONDS);
+    }
+
+    /**
+     * Derive bijective affine permutation constants mod 65521 for a 2-hour tie-rotation slot (#310).
+     *
+     * @return array{slot:int, mult:int, add:int}
+     */
+    public static function computeTieRotationParams(?int $nowTs = null): array
+    {
+        $slot = self::computeTieRotationSlot($nowTs);
+        $crcA = (int)sprintf('%u', crc32("bbiz_tie_slot_{$slot}_a"));
+        $crcB = (int)sprintf('%u', crc32("bbiz_tie_slot_{$slot}_b"));
+        $mult = ($crcA % (self::TIE_ROTATION_PRIME - 1)) + 1;
+        $add = ($crcB % self::TIE_ROTATION_PRIME);
+
+        return [
+            'slot' => $slot,
+            'mult' => $mult,
+            'add' => $add,
+        ];
+    }
+
+    /**
+     * Cross-dialect (SQLite + MySQL 8.0) monotonic ~5% relative engagement tie-band expression (#310).
+     * Clearly higher engagement bands always outrank lower bands, while near-equal scores share a band.
+     */
+    public static function buildEngagementBandSqlExpr(string $tableAlias = 'b'): string
+    {
+        $a = preg_replace('/[^a-zA-Z0-9_]/', '', $tableAlias) ?: 'b';
+        return "CASE "
+            . "WHEN {$a}.engagement_score <= 0.05 THEN 0 "
+            . "WHEN {$a}.engagement_score < 2.0 THEN 1 + ROUND({$a}.engagement_score * 10.0, 0) "
+            . "WHEN {$a}.engagement_score < 10.0 THEN 21 + ROUND(({$a}.engagement_score - 2.0) * 4.0, 0) "
+            . "WHEN {$a}.engagement_score < 50.0 THEN 53 + ROUND(({$a}.engagement_score - 10.0) * 1.0, 0) "
+            . "ELSE 93 + ROUND(({$a}.engagement_score - 50.0) * 0.25, 0) "
+            . "END";
+    }
+
+    /**
+     * Cross-dialect 2-hour bucketed tie-breaker expression within an equal engagement band (#310).
+     */
+    public static function buildTieJitterSqlExpr(string $tableAlias = 'b', ?int $nowTs = null): string
+    {
+        $a = preg_replace('/[^a-zA-Z0-9_]/', '', $tableAlias) ?: 'b';
+        $rot = self::computeTieRotationParams($nowTs);
+        $prime = self::TIE_ROTATION_PRIME;
+        return "((({$a}.id * {$rot['mult']}) + {$rot['add']}) % {$prime})";
+    }
+
+    /**
+     * Build the SQL `ORDER BY` clause (without the leading `ORDER BY` keyword) for `/api/businesses.php` and `public/index.php` (#310).
+     * Uses distinct named placeholders for MySQL 8.0 native prepared-statement compatibility (`ATTR_EMULATE_PREPARES => false`).
+     *
+     * @param array<string, mixed> $bindParams
+     */
+    public static function buildDirectoryOrderBySql(
+        string $normalizedSortMode,
+        array &$bindParams,
+        string $paramPrefix = 'srt',
+        bool $hasDistAlias = false,
+        ?int $nowTs = null
+    ): string {
+        $ts = $nowTs ?? time();
+        $cleanPrefix = preg_replace('/[^a-zA-Z0-9_]/', '', $paramPrefix) ?: 'srt';
+        $bandExpr = self::buildEngagementBandSqlExpr('b');
+        $jitterExpr = self::buildTieJitterSqlExpr('b', $ts);
+
+        return match ($normalizedSortMode) {
+            'nearest' => $hasDistAlias
+                ? "CASE WHEN b.latitude IS NULL OR b.longitude IS NULL THEN 1 ELSE 0 END ASC, _sql_dist ASC, ({$bandExpr}) DESC, ({$jitterExpr}) DESC, b.id DESC"
+                : "({$bandExpr}) DESC, ({$jitterExpr}) DESC, b.id DESC",
+            'trending' => (function () use (&$bindParams, $cleanPrefix, $ts, $bandExpr, $jitterExpr): string {
+                $pKey = ":{$cleanPrefix}_trend_since";
+                $bindParams[$pKey] = gmdate('Y-m-d H:i:s', $ts - (14 * 86400));
+                return "(SELECT COALESCE(SUM(ce.signal_weight), 0) FROM click_events ce WHERE ce.business_id = b.id AND ce.created_at >= {$pKey}) DESC, ({$bandExpr}) DESC, ({$jitterExpr}) DESC, b.id DESC";
+            })(),
+            'newest' => "COALESCE(b.verified_at, b.created_at) DESC, b.id DESC",
+            'az' => "LOWER(b.name) ASC, b.id ASC",
+            'directory_number' => "b.business_number ASC, b.id ASC",
+            default => "({$bandExpr}) DESC, ({$jitterExpr}) DESC, b.id DESC",
+        };
     }
 }
