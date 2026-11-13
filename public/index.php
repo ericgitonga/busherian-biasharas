@@ -44,6 +44,8 @@ $stmt = $pdo->query("
         b.plus_code, b.latitude, b.longitude, b.google_maps_url,
         b.operating_hours_json, b.photos_json,
         b.phone_primary, b.whatsapp_number, b.email_public, b.website_url,
+        b.booking_enabled, b.booking_url,
+        CASE WHEN (b.email_public IS NOT NULL AND b.email_public != '') OR (b.owner_email IS NOT NULL AND b.owner_email != '') THEN 1 ELSE 0 END AS has_booking_email,
         b.social_instagram, b.social_linkedin, b.social_x,
         b.social_facebook, b.social_tiktok, b.social_youtube
     FROM businesses b
@@ -74,6 +76,9 @@ foreach ($rows as $r) {
     $editUrl = $canOwnerEdit
         ? ('/owner/edit-business.php?id=' . $bizId)
         : ($isAdminVisitor ? ('/admin/edit-business.php?id=' . $bizId) : null);
+
+    $cleanBookingUrl = !empty($r['booking_url']) ? trim((string)$r['booking_url']) : null;
+    $isBookable = ((bool)($r['booking_enabled'] ?? false)) || ($cleanBookingUrl !== null && $cleanBookingUrl !== '');
 
     $bizItem = [
         'id' => $bizId,
@@ -119,6 +124,10 @@ foreach ($rows as $r) {
         'whatsapp_number' => $r['whatsapp_number'],
         'email_public' => $r['email_public'],
         'website_url' => $r['website_url'],
+        'booking_enabled' => $isBookable,
+        'booking_url' => $cleanBookingUrl,
+        'has_booking_email' => (bool)($r['has_booking_email'] ?? false),
+        'is_bookable' => $isBookable,
         'socials' => array_filter([
             'instagram' => $r['social_instagram'],
             'linkedin'  => $r['social_linkedin'],
@@ -231,6 +240,7 @@ $initialPagination = [
         <button type="button" class="pill" data-quick-filter="open_now" data-testid="quick-filter-open-now">🟢 Open Now (EAT)</button>
         <button type="button" class="pill" data-quick-filter="has_perk" data-testid="quick-filter-has-perk">🎁 Busherian Alumni Perks</button>
         <button type="button" class="pill" data-quick-filter="b2b_ready" data-testid="quick-filter-b2b">🏢 B2B &amp; LPO Ready</button>
+        <button type="button" class="pill" data-quick-filter="bookable" data-testid="quick-filter-bookable">📅 Book Appointment</button>
         <button type="button" class="pill" data-quick-filter="AHS" data-testid="quick-filter-AHS">🦅 AHS</button>
         <button type="button" class="pill" data-quick-filter="AGHS" data-testid="quick-filter-AGHS">🔦 AGHS</button>
       </div>

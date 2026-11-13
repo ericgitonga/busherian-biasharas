@@ -196,6 +196,11 @@ $tokens = AntiSpamGate::generateFormTokens();
                   <span style="font-size:0.74rem;background:#F3F4F6;color:#374151;padding:0.15rem 0.5rem;border-radius:999px;font-weight:600;">
                     Status: <?= htmlspecialchars(strtoupper((string)$biz['status']), ENT_QUOTES, 'UTF-8') ?>
                   </span>
+                  <?php if (!empty($biz['booking_enabled']) || !empty($biz['booking_url'])): ?>
+                    <span data-testid="owner-booking-badge" style="font-size:0.74rem;background:#ECFDF5;color:#065F46;border:1px solid #059669;padding:0.15rem 0.55rem;border-radius:999px;font-weight:700;">
+                      📅 Booking Enabled<?= ((int)($biz['booking_clicks_total'] ?? 0) > 0) ? (' • ' . (int)$biz['booking_clicks_total'] . ' req') : '' ?>
+                    </span>
+                  <?php endif; ?>
                 </div>
                 <div style="font-size:0.83rem;color:#7B1113;font-weight:700;margin-top:0.25rem;">
                   <?= htmlspecialchars((string)$biz['sector_name'], ENT_QUOTES, 'UTF-8') ?> &rarr; <?= htmlspecialchars((string)$biz['specialty_name'], ENT_QUOTES, 'UTF-8') ?>

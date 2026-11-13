@@ -25,7 +25,7 @@ $data = json_decode($raw, true) ?: $_POST;
 
 $businessId = (int)($data['business_id'] ?? 0);
 $eventType  = strtolower(trim((string)($data['event_type'] ?? '')));
-$allowedEvents = ['website', 'whatsapp', 'call', 'email', 'map_pin', 'shortlist'];
+$allowedEvents = ['website', 'whatsapp', 'call', 'email', 'map_pin', 'shortlist', 'booking'];
 
 if ($businessId <= 0 || !in_array($eventType, $allowedEvents, true)) {
     http_response_code(400);

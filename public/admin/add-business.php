@@ -40,6 +40,8 @@ $form = [
     'whatsapp_number' => '',
     'email_public' => '',
     'website_url' => trim((string)($_GET['url'] ?? '')),
+    'booking_enabled' => 0,
+    'booking_url' => '',
     'building_name' => '',
     'street_road' => '',
     'area_neighborhood' => '',
@@ -101,6 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $form['b2b_ready'] = !empty($_POST['b2b_ready']) ? 1 : 0;
     $form['accepts_lpo'] = !empty($_POST['accepts_lpo']) ? 1 : 0;
+    $form['booking_enabled'] = !empty($_POST['booking_enabled']) ? 1 : 0;
     $regSel = trim((string)($_POST['regulator_name'] ?? ''));
     $regCus = trim((string)($_POST['regulator_name_custom'] ?? ''));
     $form['regulator_name'] = ($regSel === 'Other Statutory Regulator') ? $regCus : $regSel;
@@ -275,6 +278,8 @@ $tokens = AntiSpamGate::generateFormTokens();
           <input type="url" id="website_url" name="website_url" class="input-control" value="<?= htmlspecialchars((string)$form['website_url'], ENT_QUOTES, 'UTF-8') ?>">
         </div>
       </div>
+
+      <?= bbiz_render_booking_fields(!empty($form['booking_enabled']), (string)($form['booking_url'] ?? '')) ?>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.9rem;margin-top:0.9rem;">
         <div>

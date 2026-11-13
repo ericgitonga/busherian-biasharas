@@ -4042,6 +4042,225 @@ assertTrue(
     'Secondary specialty selector, quick finder & multi-business owner guidance render across all 4 listing forms (#280)'
 );
 
+
+// =========================================================================
+// 48. Chapter 1 Chunk 3: Direct Appointment & Consultation Booking (#282, #283, #284, #285)
+// =========================================================================
+$validCal283 = VettingPurger::normalizeBookingFields([
+    'booking_enabled' => '0',
+    'booking_url' => 'https://calendly.com/busherian-advocates/30min',
+    'phone_primary' => '+254722283001',
+]);
+assertTrue(
+    $validCal283['booking_enabled'] === 1 &&
+    $validCal283['booking_url'] === 'https://calendly.com/busherian-advocates/30min',
+    'normalizeBookingFields auto-enables booking_enabled when a valid HTTPS booking_url is provided (#283)'
+);
+
+$badBookingCases283 = [
+    ['booking_enabled' => '1', 'booking_url' => 'javascript:alert(1)', 'phone_primary' => '+254722283001'],
+    ['booking_enabled' => '1', 'booking_url' => 'https://bit.ly/busherian-book', 'phone_primary' => '+254722283001'],
+    ['booking_enabled' => '1', 'booking_url' => 'https://appointments.spam-portal.xyz/slot', 'phone_primary' => '+254722283001'],
+    ['booking_enabled' => '1', 'booking_url' => '', 'phone_primary' => '', 'whatsapp_number' => '', 'email_public' => '', 'owner_email' => ''],
+];
+$rejectedBookingCount283 = 0;
+foreach ($badBookingCases283 as $badCase283) {
+    try {
+        VettingPurger::normalizeBookingFields($badCase283);
+    } catch (\InvalidArgumentException $e283) {
+        $rejectedBookingCount283++;
+    }
+}
+assertTrue(
+    $rejectedBookingCount283 === count($badBookingCases283),
+    'normalizeBookingFields rejects non-HTTP(S) schemes, shorteners/spam TLDs, and built-in booking without contact channels (#283)'
+);
+
+$bookingOwnerEmail283 = 'dr-njeri-283@busherian-clinic.co.ke';
+$bookingBizId283 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Dr. Njeri Specialist Clinic 283',
+    'tagline' => 'Outpatient & telehealth specialist consultations',
+    'description' => 'Verified AGHS medical clinic offering direct appointment booking.',
+    'school_badge' => 'AGHS',
+    'sector_id' => $pubSecId279,
+    'specialty_id' => $pubSpecId279,
+    'phone_primary' => '+254722283283',
+    'email_public' => 'reception@busherian-clinic.co.ke',
+    'owner_email' => $bookingOwnerEmail283,
+    'booking_enabled' => 1,
+    'booking_url' => 'https://cal.com/njeri-clinic/consult',
+    'status' => 'approved',
+]);
+$bookingOwner283 = OwnerAuth::upsertOwner($pdo, $bookingOwnerEmail283, 'Dr. Njeri Test');
+$pdo->prepare("INSERT INTO click_events (business_id, event_type, created_at) VALUES (:bid, 'booking', :now)")
+    ->execute([':bid' => $bookingBizId283, ':now' => gmdate('Y-m-d H:i:s')]);
+$ownerBookingRows283 = OwnerAuth::getBusinessesForOwner($pdo, (int)$bookingOwner283['id']);
+$foundBookingRow283 = null;
+foreach ($ownerBookingRows283 as $r283) {
+    if ((int)$r283['id'] === $bookingBizId283) {
+        $foundBookingRow283 = $r283;
+        break;
+    }
+}
+assertTrue(
+    $foundBookingRow283 !== null &&
+    (int)$foundBookingRow283['booking_enabled'] === 1 &&
+    (string)$foundBookingRow283['booking_url'] === 'https://cal.com/njeri-clinic/consult' &&
+    (int)$foundBookingRow283['booking_clicks_total'] === 1,
+    'createBusinessDirectly & OwnerAuth::getBusinessesForOwner persist booking_enabled, booking_url & booking_clicks_total (#283, #285)'
+);
+
+// Partial programmatic updateBusinessByOwner preserves booking_enabled when booking_fields_present is absent
+$partialUpd283 = VettingPurger::updateBusinessByOwner($pdo, $bookingBizId283, $bookingOwner283, [
+    'name' => 'Dr. Njeri Specialist Clinic 283',
+    'tagline' => 'Updated outpatient & telehealth consultations',
+    'description' => 'Verified AGHS medical clinic offering direct appointment booking.',
+    'sector_id' => $pubSecId279,
+    'specialty_id' => $pubSpecId279,
+    'phone_primary' => '+254722283283',
+    'email_public' => 'reception@busherian-clinic.co.ke',
+    'owner_adult_attestation_18' => '1',
+]);
+assertTrue(
+    (int)($partialUpd283['business']['booking_enabled'] ?? 0) === 1 &&
+    (string)($partialUpd283['business']['booking_url'] ?? '') === 'https://cal.com/njeri-clinic/consult',
+    'Programmatic updateBusinessByOwner preserves existing booking configuration when booking_fields_present is omitted (#283)'
+);
+
+// Web form submission (booking_fields_present=1) with unchecked booking_enabled and blank booking_url disables booking cleanly
+$webDisable283 = VettingPurger::updateBusinessByOwner($pdo, $bookingBizId283, $bookingOwner283, [
+    'name' => 'Dr. Njeri Specialist Clinic 283',
+    'tagline' => 'Walk-in outpatient consultations',
+    'description' => 'Verified AGHS medical clinic.',
+    'sector_id' => $pubSecId279,
+    'specialty_id' => $pubSpecId279,
+    'phone_primary' => '+254722283283',
+    'email_public' => 'reception@busherian-clinic.co.ke',
+    'booking_fields_present' => '1',
+    'booking_url' => '',
+    'owner_adult_attestation_18' => '1',
+]);
+assertTrue(
+    (int)($webDisable283['business']['booking_enabled'] ?? 1) === 0 &&
+    ($webDisable283['business']['booking_url'] ?? null) === null,
+    'Web form updateBusinessByOwner with unchecked booking_enabled clears booking_enabled & booking_url cleanly (#283)'
+);
+
+// Re-enable built-in booking (booking_enabled=1, booking_url=null) for Mailer & AntiSpamGate tests
+VettingPurger::updateBusiness($pdo, $bookingBizId283, [
+    'name' => 'Dr. Njeri Specialist Clinic 283',
+    'tagline' => 'Built-in appointment requests enabled',
+    'description' => 'Verified AGHS medical clinic.',
+    'school_badge' => 'AGHS',
+    'sector_id' => $pubSecId279,
+    'specialty_id' => $pubSpecId279,
+    'phone_primary' => '+254722283283',
+    'email_public' => 'reception@busherian-clinic.co.ke',
+    'owner_email' => $bookingOwnerEmail283,
+    'booking_fields_present' => '1',
+    'booking_enabled' => '1',
+    'booking_url' => '',
+    'status' => 'approved',
+]);
+
+$bookingUiHtml283 = bbiz_render_booking_fields(true, 'https://calendly.com/sample');
+$allFormsHaveBookingUi283 = true;
+foreach ($formsWithFinder274 as $relForm283) {
+    $fSrc283 = (string)file_get_contents(dirname(__DIR__) . '/' . $relForm283);
+    if (!str_contains($fSrc283, 'bbiz_render_booking_fields(')) {
+        $allFormsHaveBookingUi283 = false;
+    }
+}
+assertTrue(
+    $allFormsHaveBookingUi283 &&
+    str_contains($bookingUiHtml283, 'id="booking_enabled"') &&
+    str_contains($bookingUiHtml283, 'id="booking_url"'),
+    'bbiz_render_booking_fields renders across all 4 listing forms (#283)'
+);
+
+// 7-Layer AntiSpamGate::verifyBookingInquiry() verification (#284)
+$hmacSecret284 = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
+$makeAgedBookingPayload284 = static function (array $overrides = [], int $ageSec = 6) use ($hmacSecret284): array {
+    $ts = time() - $ageSec;
+    $nonce = bin2hex(random_bytes(16));
+    $sig = hash_hmac('sha256', "{$ts}|{$nonce}", $hmacSecret284);
+    return array_merge([
+        'website' => '',
+        'form_ts' => (string)$ts,
+        'form_nonce' => $nonce,
+        'form_sig' => $sig,
+        'js_interaction_token' => 'human_verified_' . (time() * 1000),
+        'requester_name' => 'Wanjiku Kamau',
+        'topic' => 'Initial consultation regarding dental checkup next Tuesday morning.',
+    ], $overrides);
+};
+
+$hpRes284 = AntiSpamGate::verifyBookingInquiry($pdo, $makeAgedBookingPayload284(['website' => 'https://spam-bot.biz']), '198.51.100.201');
+$fastRes284 = AntiSpamGate::verifyBookingInquiry($pdo, $makeAgedBookingPayload284([], 1), '198.51.100.202');
+$noJsRes284 = AntiSpamGate::verifyBookingInquiry($pdo, $makeAgedBookingPayload284(['js_interaction_token' => '']), '198.51.100.203');
+$camelRes284 = AntiSpamGate::verifyBookingInquiry($pdo, $makeAgedBookingPayload284(['requester_name' => 'EdwardWaw']), '198.51.100.204');
+$multiUrlRes284 = AntiSpamGate::verifyBookingInquiry($pdo, $makeAgedBookingPayload284(['topic' => 'See https://one.co.ke and https://two.co.ke']), '198.51.100.205');
+$spamDomRes284 = AntiSpamGate::verifyBookingInquiry($pdo, $makeAgedBookingPayload284(['topic' => 'Read my brief on https://telegra.ph/promo']), '198.51.100.206');
+$spamTldRes284 = AntiSpamGate::verifyBookingInquiry($pdo, $makeAgedBookingPayload284(['topic' => 'Details at https://clinic-promo.ru/offer']), '198.51.100.207');
+$capsRes284 = AntiSpamGate::verifyBookingInquiry($pdo, $makeAgedBookingPayload284(['topic' => 'BOOK ME RIGHT NOW IMMEDIATELY URGENT DISCOUNT OFFER']), '198.51.100.208');
+$scamRes284 = AntiSpamGate::verifyBookingInquiry($pdo, $makeAgedBookingPayload284(['topic' => 'We offer seo ranking service and bitcoin investment returns']), '198.51.100.209');
+
+$humanPayload284 = $makeAgedBookingPayload284();
+$humanOk1_284 = AntiSpamGate::verifyBookingInquiry($pdo, $humanPayload284, '198.51.100.210');
+$replayRes284 = AntiSpamGate::verifyBookingInquiry($pdo, $humanPayload284, '198.51.100.211');
+$humanOk2_284 = AntiSpamGate::verifyBookingInquiry($pdo, $makeAgedBookingPayload284(), '198.51.100.210');
+$rateBlocked3_284 = AntiSpamGate::verifyBookingInquiry($pdo, $makeAgedBookingPayload284(), '198.51.100.210');
+
+assertTrue(
+    !$hpRes284['passed'] && $hpRes284['silent_drop'] === true && $hpRes284['reason'] === 'layer1_honeypot_filled' &&
+    !$fastRes284['passed'] && $fastRes284['silent_drop'] === true && $fastRes284['reason'] === 'layer2_submitted_too_fast' &&
+    !$noJsRes284['passed'] && $noJsRes284['silent_drop'] === true && $noJsRes284['reason'] === 'layer3_missing_human_interaction_token' &&
+    !$camelRes284['passed'] && $camelRes284['silent_drop'] === true && $camelRes284['reason'] === 'layer4_camelcase_bot_name' &&
+    !$multiUrlRes284['passed'] && $multiUrlRes284['reason'] === 'layer4_excessive_urls_in_message' &&
+    !$spamDomRes284['passed'] && $spamDomRes284['silent_drop'] === true && $spamDomRes284['reason'] === 'layer4_blocked_spam_domain' &&
+    !$spamTldRes284['passed'] && $spamTldRes284['silent_drop'] === true && $spamTldRes284['reason'] === 'layer4_blocked_tld' &&
+    !$capsRes284['passed'] && $capsRes284['reason'] === 'layer4_all_caps_shouting' &&
+    !$scamRes284['passed'] && $scamRes284['silent_drop'] === true && $scamRes284['reason'] === 'layer4_scam_lure_detected' &&
+    $humanOk1_284['passed'] === true &&
+    !$replayRes284['passed'] && $replayRes284['reason'] === 'layer2_nonce_replayed' &&
+    $humanOk2_284['passed'] === true &&
+    !$rateBlocked3_284['passed'] && $rateBlocked3_284['silent_drop'] === true && $rateBlocked3_284['reason'] === 'layer5_ip_rate_limit_15m',
+    'AntiSpamGate::verifyBookingInquiry enforces all 7 anti-spam layers including honeypot, 4s time-trap, nonce replay lock, human interaction token, heuristics & 2/15m IP rate limit (#284)'
+);
+
+// Mailer::sendBookingInquiry + Kenya DPA s.38 export redaction of third-party visitor PII (#284)
+$outboxId284 = Mailer::sendBookingInquiry(
+    $pdo,
+    ['id' => $bookingBizId283, 'name' => 'Dr. Njeri Specialist Clinic 283'],
+    $bookingOwnerEmail283,
+    [
+        'requester_name' => "Patient SecretVisitor284
+Bcc:evil@example.com",
+        'requester_email' => 'secret-visitor-284@example.org',
+        'requester_phone' => '+254799284284',
+        'preferred_date' => '2026-11-20',
+        'preferred_slot' => 'Morning (8:00 AM - 12:00 PM EAT)',
+        'topic' => 'Private dermatology consultation note SecretTopic284.',
+    ]
+);
+Mailer::flushPendingOutbox($pdo);
+$outboxRow284Stmt = $pdo->prepare("SELECT reply_to, body_html FROM email_outbox WHERE id = :id");
+$outboxRow284Stmt->execute([':id' => $outboxId284]);
+$outboxRow284 = $outboxRow284Stmt->fetch();
+$ownerExport284 = OwnerAuth::exportOwnerPersonalData($pdo, (int)$bookingOwner283['id']);
+$exportJsonStr284 = (string)json_encode($ownerExport284);
+assertTrue(
+    $outboxId284 > 0 &&
+    (string)($outboxRow284['reply_to'] ?? '') === 'secret-visitor-284@example.org' &&
+    str_contains((string)($outboxRow284['body_html'] ?? ''), "data-visitor-pii='1'") &&
+    !str_contains($exportJsonStr284, 'secret-visitor-284@example.org') &&
+    !str_contains($exportJsonStr284, 'SecretVisitor284') &&
+    !str_contains($exportJsonStr284, '+254799284284') &&
+    !str_contains($exportJsonStr284, 'SecretTopic284') &&
+    str_contains($exportJsonStr284, '[redacted-third-party-inquiry-detail]'),
+    'Mailer::sendBookingInquiry & OwnerAuth::exportOwnerPersonalData deliver booking inquiries cleanly while redacting third-party visitor PII from owner exports (#284)'
+);
+
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);
 }
