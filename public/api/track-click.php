@@ -5,6 +5,7 @@ require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\AntiSpamGate;
+use BusherianBiasharas\Services\EngagementRanker;
 
 bbiz_send_security_headers(true);
 
@@ -41,8 +42,11 @@ try {
         echo json_encode(['status' => 'ok', 'rate_limited' => true]);
         exit;
     }
-    $stmt = $pdo->prepare("INSERT INTO click_events (business_id, event_type) VALUES (:bid, :ev)");
-    $stmt->execute([':bid' => $businessId, ':ev' => $eventType]);
+    $resolvedSig = EngagementRanker::resolveSignal($eventType);
+    $sigGroup = $resolvedSig !== null ? $resolvedSig['signal_group'] : 'other';
+    $sigWeight = $resolvedSig !== null ? $resolvedSig['weight'] : 0.0;
+    $stmt = $pdo->prepare("INSERT INTO click_events (business_id, event_type, signal_group, signal_weight) VALUES (:bid, :ev, :sg, :sw)");
+    $stmt->execute([':bid' => $businessId, ':ev' => $eventType, ':sg' => $sigGroup, ':sw' => $sigWeight]);
     echo json_encode(['status' => 'ok']);
 } catch (\Throwable $e) {
     http_response_code(500);

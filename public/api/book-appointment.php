@@ -199,10 +199,17 @@ try {
         ]);
     }
 
-    if (($_COOKIE['bbiz_consent'] ?? '') === 'accepted') {
-        $pdo->prepare("INSERT INTO click_events (business_id, event_type) VALUES (:bid, 'booking')")
-            ->execute([':bid' => $businessId]);
-    }
+    $viewerCtx = \BusherianBiasharas\Services\EngagementRanker::resolveViewerWithoutStartingAnonymousSession($pdo);
+    \BusherianBiasharas\Services\EngagementRanker::recordCheckout(
+        $pdo,
+        $businessId,
+        'booking',
+        $clientIp,
+        substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255),
+        (string)($post['js_interaction_token'] ?? ''),
+        $viewerCtx['owner_id'],
+        $viewerCtx['is_admin']
+    );
 
     echo json_encode([
         'status' => 'ok',

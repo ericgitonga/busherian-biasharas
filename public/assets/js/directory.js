@@ -1178,7 +1178,35 @@
     }
   }
 
+  let lastHumanInteractionToken = '';
+  function refreshHumanInteractionToken() {
+    lastHumanInteractionToken = 'human_verified_' + Date.now();
+  }
+  ['pointerdown', 'keydown', 'touchstart', 'focusin'].forEach(evName => {
+    document.addEventListener(evName, refreshHumanInteractionToken, { passive: true });
+  });
+
+  function recordCheckout(businessId, signalType) {
+    if (!businessId || !signalType || !lastHumanInteractionToken) return;
+    try {
+      fetch('/api/record-checkout.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: signalType === 'phone' || signalType === 'email',
+        body: JSON.stringify({
+          business_id: Number(businessId),
+          signal_type: signalType,
+          interaction_token: lastHumanInteractionToken,
+        }),
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   function trackClick(businessId, eventType) {
+    if (eventType && eventType !== 'shortlist') {
+      recordCheckout(businessId, eventType);
+      return;
+    }
     if (!window.BBizMetrics || !window.BBizMetrics.hasConsent()) return;
     try {
       fetch('/api/track-click.php', {
@@ -1189,11 +1217,13 @@
     } catch (_) {}
   }
 
-  function openBusinessModal(bizId) {
+  function openBusinessModal(bizId, opts) {
     const biz = state.businesses.find(b => Number(b.id) === Number(bizId));
     if (!biz || !els.modalBackdrop || !els.modalContent) return;
     state.activeBusiness = biz;
     state.focusedBusinessId = biz.id;
+    const isConcierge = Boolean(opts && opts.source === 'concierge');
+    recordCheckout(biz.id, isConcierge ? 'concierge_ref' : 'profile_checkout');
     if (window.BBizMetrics) window.BBizMetrics.track('modal_open', { business_id: biz.id, meta_label: biz.name });
     renderInteractiveMap();
 
@@ -1235,7 +1265,7 @@
       ['youtube', 'YouTube', socials.youtube],
     ].map(([key, label, url]) => [key, label, withOutboundAttribution(url)])
      .filter(s => !!s[2]).map(([key, label, safeHref]) => `
-      <a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer" class="btn btn-outline" style="font-size:0.8rem;padding:0.4rem 0.75rem;">
+      <a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer" data-track="social" class="btn btn-outline" style="font-size:0.8rem;padding:0.4rem 0.75rem;">
         ${escapeHtml(label)} &nearr;
       </a>
     `).join('');
