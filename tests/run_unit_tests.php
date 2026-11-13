@@ -4396,6 +4396,192 @@ assertTrue(
     'Community Charter (Clauses 1-4) renders across /charter.php, /submit.php & /index.php with route/SW allowlisting and omits deferred endowment/bursary pledges (#298, #299, #300)'
 );
 
+// =========================================================================
+// Section 51: Chapter 3 Chunk 10 — Anti-Gaming Checkout Recorder & Time-Decayed Score Engine (#304..#307)
+// =========================================================================
+$engNow = time();
+$sec51SectorId = (int)$pdo->query("SELECT id FROM categories WHERE parent_id IS NULL AND status = 'approved' ORDER BY id ASC LIMIT 1")->fetchColumn();
+$sec51SpecId = (int)$pdo->query("SELECT id FROM categories WHERE parent_id = {$sec51SectorId} AND status = 'approved' ORDER BY id ASC LIMIT 1")->fetchColumn();
+
+$engNewcomerBizId = \BusherianBiasharas\Services\VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Savannah Newcomer Studio 51',
+    'tagline' => 'Brand new verified Busherian creative studio',
+    'description' => 'Testing 14-day cold-start newcomer discovery boost and sybil-resistant engagement scoring.',
+    'school_badge' => 'AGHS',
+    'sector_id' => $sec51SectorId,
+    'specialty_id' => $sec51SpecId,
+    'service_mode' => 'hybrid',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254711005101',
+    'owner_email' => 'newcomer51@savannahstudio.co.ke',
+    'status' => 'approved',
+]);
+
+$engStaleBizId = \BusherianBiasharas\Services\VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Legacy Stale Burst Ltd 51',
+    'tagline' => 'High burst 65 days ago, silent recently',
+    'description' => 'Testing 14-day vs 90-day exponential half-life decay ordering.',
+    'school_badge' => 'AHS',
+    'sector_id' => $sec51SectorId,
+    'specialty_id' => $sec51SpecId,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254711005102',
+    'status' => 'approved',
+]);
+
+$engActiveBizId = \BusherianBiasharas\Services\VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Active Momentum Practice 51',
+    'tagline' => 'Fresh multi-signal references this week',
+    'description' => 'Testing fresh intent-weighted references outranking stale historical bursts.',
+    'school_badge' => 'BOTH',
+    'sector_id' => $sec51SectorId,
+    'specialty_id' => $sec51SpecId,
+    'service_mode' => 'physical',
+    'country' => 'Kenya',
+    'city_county' => 'Nairobi',
+    'phone_primary' => '+254711005103',
+    'status' => 'approved',
+]);
+
+// Age both comparison businesses past the 14-day newcomer window so pure engagement decay is compared apples-to-apples
+$oldVerifiedUtc = gmdate('Y-m-d H:i:s', $engNow - (45 * 86400));
+$pdo->prepare("UPDATE businesses SET verified_at = :v, created_at = :c WHERE id IN (:id1, :id2)")
+    ->execute([':v' => $oldVerifiedUtc, ':c' => $oldVerifiedUtc, ':id1' => $engStaleBizId, ':id2' => $engActiveBizId]);
+
+// 51a. Verify newcomer cold-start boost initialized automatically on createBusinessDirectly(..., 'approved')
+$newcomerScoreInit = (float)$pdo->query("SELECT engagement_score FROM businesses WHERE id = {$engNewcomerBizId}")->fetchColumn();
+assertTrue(
+    $newcomerScoreInit >= 3.40 && $newcomerScoreInit <= 3.51,
+    "Newly approved business immediately receives ~3.5000 14-day cold-start boost, got {$newcomerScoreInit} (#307)"
+);
+
+// 51b. Verify exact signal resolution weights (1.0, 2.0, 2.5, 3.0, 4.0)
+assertTrue(
+    \BusherianBiasharas\Services\EngagementRanker::resolveSignal('profile_checkout')['weight'] === 1.0 &&
+    \BusherianBiasharas\Services\EngagementRanker::resolveSignal('website')['weight'] === 2.0 &&
+    \BusherianBiasharas\Services\EngagementRanker::resolveSignal('social')['weight'] === 2.0 &&
+    \BusherianBiasharas\Services\EngagementRanker::resolveSignal('directions')['weight'] === 2.5 &&
+    \BusherianBiasharas\Services\EngagementRanker::resolveSignal('concierge_ref')['weight'] === 3.0 &&
+    \BusherianBiasharas\Services\EngagementRanker::resolveSignal('whatsapp')['weight'] === 4.0 &&
+    \BusherianBiasharas\Services\EngagementRanker::resolveSignal('booking')['weight'] === 4.0 &&
+    \BusherianBiasharas\Services\EngagementRanker::resolveSignal('unknown_fake_signal') === null,
+    'EngagementRanker resolves all 5 intent signal groups to exact weights (1.0, 2.0, 2.5, 3.0, 4.0) and rejects unknown signals (#305, #307)'
+);
+
+// 51c. Verify anti-gaming protections: missing interaction token, CLI scraper UA, Admin exclusion, Owner self-click exclusion
+$validHumanTok = 'human_verified_' . ($engNow * 1000);
+$browserUa = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126.0 Mobile Safari/537.36';
+$linkedOwner51Id = (int)$pdo->query("SELECT id FROM business_owners WHERE email = 'newcomer51@savannahstudio.co.ke' LIMIT 1")->fetchColumn();
+
+$resNoTok = \BusherianBiasharas\Services\EngagementRanker::recordCheckout($pdo, $engNewcomerBizId, 'whatsapp', '197.232.10.11', $browserUa, '', null, false, $engNow);
+$resScraper = \BusherianBiasharas\Services\EngagementRanker::recordCheckout($pdo, $engNewcomerBizId, 'whatsapp', '197.232.10.12', 'curl/8.5.0', $validHumanTok, null, false, $engNow);
+$resAdminExcl = \BusherianBiasharas\Services\EngagementRanker::recordCheckout($pdo, $engNewcomerBizId, 'whatsapp', '197.232.10.13', $browserUa, $validHumanTok, null, true, $engNow);
+$resOwnerExcl = \BusherianBiasharas\Services\EngagementRanker::recordCheckout($pdo, $engNewcomerBizId, 'whatsapp', '197.232.10.14', $browserUa, $validHumanTok, $linkedOwner51Id, false, $engNow);
+
+assertTrue(
+    $resNoTok['recorded'] === false && ($resNoTok['reason'] ?? '') === 'missing_interaction_proof' &&
+    $resScraper['recorded'] === false && ($resScraper['reason'] ?? '') === 'automated_scraper_ua' &&
+    $resAdminExcl['recorded'] === false && ($resAdminExcl['reason'] ?? '') === 'excluded_admin_session' &&
+    $resOwnerExcl['recorded'] === false && ($resOwnerExcl['reason'] ?? '') === 'excluded_owner_self_reference',
+    'recordCheckout blocks missing interaction tokens, curl/scraper UAs, admin sessions, and owner self-clicks (#306)'
+);
+
+// 51d. Verify 24-hour sybil deduplication: 25 rapid repeat clicks from same IP + UA class credit ONLY ONCE
+$recordedCountBurst = 0;
+$dedupCountBurst = 0;
+for ($i = 0; $i < 25; $i++) {
+    $rBurst = \BusherianBiasharas\Services\EngagementRanker::recordCheckout(
+        $pdo,
+        $engActiveBizId,
+        'whatsapp',
+        '102.215.44.88',
+        $browserUa,
+        $validHumanTok,
+        null,
+        false,
+        $engNow
+    );
+    if ($rBurst['recorded']) {
+        $recordedCountBurst++;
+    }
+    if ($rBurst['deduplicated']) {
+        $dedupCountBurst++;
+    }
+}
+// Distinct signal group ('directions_ref') from same visitor in same 24h IS allowed once (1 per signal group)
+$rDirectionsOnce = \BusherianBiasharas\Services\EngagementRanker::recordCheckout(
+    $pdo,
+    $engActiveBizId,
+    'directions',
+    '102.215.44.88',
+    $browserUa,
+    $validHumanTok,
+    null,
+    false,
+    $engNow
+);
+// Plus 3 other distinct alumni networks contacting Active Momentum Practice today
+foreach (['102.215.45.10', '102.215.46.20', '102.215.47.30'] as $netIp) {
+    \BusherianBiasharas\Services\EngagementRanker::recordCheckout(
+        $pdo,
+        $engActiveBizId,
+        'booking',
+        $netIp,
+        $browserUa,
+        $validHumanTok,
+        null,
+        false,
+        $engNow
+    );
+}
+assertTrue(
+    $recordedCountBurst === 1 && $dedupCountBurst === 24 && $rDirectionsOnce['recorded'] === true,
+    '24h HMAC deduplication credits at most 1 reference per IP+UA+business+signal_group while allowing distinct signal groups (#305, #306)'
+);
+
+// 51e. Seed 8 historical direct_contact clicks 65 days ago on Legacy Stale Burst Ltd and verify recent momentum outranks stale burst
+$stale65Utc = gmdate('Y-m-d H:i:s', $engNow - (65 * 86400));
+$insStale = $pdo->prepare("INSERT INTO click_events (business_id, event_type, signal_group, signal_weight, created_at) VALUES (:bid, 'call', 'direct_contact', 4.00, :cat)");
+for ($s = 0; $s < 8; $s++) {
+    $insStale->execute([':bid' => $engStaleBizId, ':cat' => $stale65Utc]);
+}
+$staleMetrics = \BusherianBiasharas\Services\EngagementRanker::recomputeBusinessScore($pdo, $engStaleBizId, $engNow);
+$activeMetrics = \BusherianBiasharas\Services\EngagementRanker::recomputeBusinessScore($pdo, $engActiveBizId, $engNow);
+
+assertTrue(
+    $activeMetrics['engagement_score'] > $staleMetrics['engagement_score'] &&
+    $staleMetrics['engagement_score'] > 1.0 &&
+    $activeMetrics['reference_count_90d'] === 5 &&
+    $staleMetrics['reference_count_90d'] === 8,
+    "Fresh multi-network engagement ({$activeMetrics['engagement_score']}) outranks 65-day-old stale burst ({$staleMetrics['engagement_score']}) while preserving non-zero 90d/lifetime floor (#307)"
+);
+
+// 51f. Quarantine zeroes engagement_score immediately; restore recovers decayed score; CLI worker executes cleanly
+\BusherianBiasharas\Services\VettingPurger::quarantineBusinessDpa($pdo, $engActiveBizId, 'unit_test', 'admin');
+$quarScore = (float)$pdo->query("SELECT engagement_score FROM businesses WHERE id = {$engActiveBizId}")->fetchColumn();
+\BusherianBiasharas\Services\VettingPurger::restoreQuarantinedBusiness($pdo, $engActiveBizId, 'unit_test', 'admin');
+$restoredScore = (float)$pdo->query("SELECT engagement_score FROM businesses WHERE id = {$engActiveBizId}")->fetchColumn();
+
+$cliEnvPrefix = $initialDriver === 'sqlite'
+    ? 'DB_DRIVER=sqlite DB_SQLITE_PATH=' . escapeshellarg($unitTempSqlite) . ' '
+    : '';
+$cliRecomputeOut = (string)shell_exec($cliEnvPrefix . 'php ' . escapeshellarg(dirname(__DIR__) . '/bin/recompute-engagement-ranks.php'));
+$cliRecomputeJson = json_decode(trim($cliRecomputeOut), true);
+$schemaReady51 = Database::getSchemaReadiness($pdo);
+
+assertTrue(
+    $quarScore === 0.0 &&
+    $restoredScore > 10.0 &&
+    is_array($cliRecomputeJson) &&
+    ($cliRecomputeJson['status'] ?? '') === 'ok' &&
+    ($schemaReady51['schema_ready'] ?? false) === true &&
+    ($schemaReady51['schema_version'] ?? '') === '2026-11-v25-engagement',
+    'Quarantine zeroes engagement_score, restore recovers it, CLI recompute worker succeeds, and schema readiness matches 2026-11-v25-engagement (#305, #307)'
+);
+
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);
 }

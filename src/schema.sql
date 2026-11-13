@@ -80,6 +80,8 @@ CREATE TABLE IF NOT EXISTS businesses (
     logo_path VARCHAR(255) NULL,
     photos_json TEXT NULL,
     status ENUM('pending', 'approved', 'rejected', 'quarantined_dpa') NOT NULL DEFAULT 'pending',
+    engagement_score DECIMAL(10, 4) NOT NULL DEFAULT 0.0000,
+    reference_count_90d INT UNSIGNED NOT NULL DEFAULT 0,
     quarantine_prev_status VARCHAR(24) NULL,
     consent_recorded_at DATETIME NULL,
     privacy_notice_version VARCHAR(32) NULL,
@@ -98,6 +100,7 @@ CREATE TABLE IF NOT EXISTS businesses (
     INDEX idx_status_sector_spec (status, sector_id, specialty_id),
     INDEX idx_status_sec_sector_spec (status, secondary_sector_id, secondary_specialty_id),
     INDEX idx_status_booking (status, booking_enabled),
+    INDEX idx_biz_status_engagement (status, engagement_score DESC, id DESC),
     INDEX idx_coords (latitude, longitude),
     INDEX idx_country_city (country, city_county),
     INDEX idx_biz_number (business_number),
@@ -153,13 +156,23 @@ CREATE TABLE IF NOT EXISTS email_outbox (
     INDEX idx_outbox_business (business_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Anonymous Click Attribution Counters
+-- Anonymous Click & Intent-Weighted Engagement Counters (Chapter 3, #305)
 CREATE TABLE IF NOT EXISTS click_events (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     business_id INT UNSIGNED NOT NULL,
     event_type VARCHAR(30) NOT NULL,
+    signal_group VARCHAR(32) NULL,
+    signal_weight DECIMAL(5, 2) NOT NULL DEFAULT 1.00,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_biz_event (business_id, event_type)
+    INDEX idx_biz_event (business_id, event_type),
+    INDEX idx_click_biz_created (business_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cookie-Free 24-Hour Anti-Spam Engagement Deduplication Window (Zero Visitor Profiles, #305)
+CREATE TABLE IF NOT EXISTS engagement_dedup_24h (
+    dedup_hash CHAR(64) PRIMARY KEY,
+    expires_at INT UNSIGNED NOT NULL,
+    INDEX idx_eng_dedup_exp (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Consented First-Party Usage Metrics (Strictly Opt-In per Kenya DPA 2019 s.32)

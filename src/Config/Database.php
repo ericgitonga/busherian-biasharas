@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v22-booking';
+    public const SCHEMA_INIT_VERSION = '2026-11-v25-engagement';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -224,6 +224,7 @@ final class Database
             'moderation_audit_log',
             'business_sequences',
             'pending_media_deletions',
+            'engagement_dedup_24h',
             'app_settings',
         ];
         $existing = [];
@@ -410,6 +411,8 @@ final class Database
                     logo_path TEXT NULL,
                     photos_json TEXT NULL,
                     status TEXT NOT NULL DEFAULT 'pending',
+                    engagement_score REAL NOT NULL DEFAULT 0.0,
+                    reference_count_90d INTEGER NOT NULL DEFAULT 0,
                     verified_at TEXT NULL,
                     last_confirmed_at TEXT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -450,7 +453,13 @@ final class Database
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     business_id INTEGER NOT NULL,
                     event_type TEXT NOT NULL,
+                    signal_group TEXT NULL,
+                    signal_weight REAL NOT NULL DEFAULT 1.0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE IF NOT EXISTS engagement_dedup_24h (
+                    dedup_hash TEXT PRIMARY KEY,
+                    expires_at INTEGER NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS usage_metrics (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -470,6 +479,7 @@ final class Database
         self::ensureOwnerTables($pdo, $driver);
         self::ensureOutboxAndTakedownTables($pdo, $driver);
         self::ensureProvenanceAuditAndSequenceTables($pdo, $driver);
+        self::ensureEngagementRankingSchema($pdo, $driver);
 
         // Seed default taxonomy if empty; NEVER seed sample businesses in production (#169)
         $appEnv = strtolower(self::env('APP_ENV', 'development'));
@@ -532,6 +542,14 @@ final class Database
         }
 
         self::syncBusinessSequenceFloor($pdo, $driver);
+        if (self::getSetting($pdo, 'engagement_scores_backfill_v1') !== 'done') {
+            try {
+                \BusherianBiasharas\Services\EngagementRanker::recomputeAllApprovedScores($pdo);
+                self::setSetting($pdo, 'engagement_scores_backfill_v1', 'done');
+            } catch (\Throwable $engErr) {
+                error_log('[Database::migrateAndSeed] engagement_scores_backfill_v1 failed: ' . $engErr->getMessage());
+            }
+        }
         self::setSetting($pdo, 'schema_init_version', self::SCHEMA_INIT_VERSION);
 
         $catCount = (int)$pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
@@ -734,6 +752,103 @@ final class Database
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
         }
+    }
+
+    private static function ensureEngagementRankingSchema(PDO $pdo, string $driver): void
+    {
+        if ($driver === 'sqlite') {
+            $bizCols = [];
+            foreach ($pdo->query("PRAGMA table_info(businesses)")->fetchAll() as $c) {
+                $bizCols[(string)($c['name'] ?? '')] = true;
+            }
+            if (!isset($bizCols['engagement_score'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN engagement_score REAL NOT NULL DEFAULT 0.0");
+            }
+            if (!isset($bizCols['reference_count_90d'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN reference_count_90d INTEGER NOT NULL DEFAULT 0");
+            }
+            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_biz_status_engagement ON businesses (status, engagement_score DESC, id DESC)");
+
+            $clickCols = [];
+            foreach ($pdo->query("PRAGMA table_info(click_events)")->fetchAll() as $cc) {
+                $clickCols[(string)($cc['name'] ?? '')] = true;
+            }
+            if (!isset($clickCols['signal_group'])) {
+                $pdo->exec("ALTER TABLE click_events ADD COLUMN signal_group TEXT NULL");
+            }
+            if (!isset($clickCols['signal_weight'])) {
+                $pdo->exec("ALTER TABLE click_events ADD COLUMN signal_weight REAL NOT NULL DEFAULT 1.0");
+            }
+            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_click_biz_created ON click_events (business_id, created_at)");
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS engagement_dedup_24h (
+                    dedup_hash TEXT PRIMARY KEY,
+                    expires_at INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_eng_dedup_exp ON engagement_dedup_24h (expires_at);
+            ");
+        } else {
+            $bizCols = [];
+            foreach ($pdo->query("SHOW COLUMNS FROM businesses")->fetchAll() as $c) {
+                $bizCols[(string)($c['Field'] ?? '')] = true;
+            }
+            if (!isset($bizCols['engagement_score'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN engagement_score DECIMAL(10,4) NOT NULL DEFAULT 0.0000 AFTER status");
+            }
+            if (!isset($bizCols['reference_count_90d'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN reference_count_90d INT UNSIGNED NOT NULL DEFAULT 0 AFTER engagement_score");
+            }
+            $idxEngRows = $pdo->query("SHOW INDEX FROM businesses WHERE Key_name = 'idx_biz_status_engagement'")->fetchAll();
+            if ($idxEngRows === []) {
+                $pdo->exec("ALTER TABLE businesses ADD INDEX idx_biz_status_engagement (status, engagement_score DESC, id DESC)");
+            }
+
+            $clickCols = [];
+            foreach ($pdo->query("SHOW COLUMNS FROM click_events")->fetchAll() as $cc) {
+                $clickCols[(string)($cc['Field'] ?? '')] = true;
+            }
+            if (!isset($clickCols['signal_group'])) {
+                $pdo->exec("ALTER TABLE click_events ADD COLUMN signal_group VARCHAR(32) NULL AFTER event_type");
+            }
+            if (!isset($clickCols['signal_weight'])) {
+                $pdo->exec("ALTER TABLE click_events ADD COLUMN signal_weight DECIMAL(5,2) NOT NULL DEFAULT 1.00 AFTER signal_group");
+            }
+            $idxClickRows = $pdo->query("SHOW INDEX FROM click_events WHERE Key_name = 'idx_click_biz_created'")->fetchAll();
+            if ($idxClickRows === []) {
+                $pdo->exec("ALTER TABLE click_events ADD INDEX idx_click_biz_created (business_id, created_at)");
+            }
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS engagement_dedup_24h (
+                    dedup_hash CHAR(64) PRIMARY KEY,
+                    expires_at INT UNSIGNED NOT NULL,
+                    INDEX idx_eng_dedup_exp (expires_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        }
+
+        // Backfill legacy click_events rows lacking signal_group / signal_weight (#305)
+        $pdo->exec("
+            UPDATE click_events
+            SET signal_group = CASE
+                    WHEN event_type IN ('profile_checkout', 'modal_open') THEN 'profile_checkout'
+                    WHEN event_type IN ('website', 'social') THEN 'external_link'
+                    WHEN event_type IN ('map_pin', 'directions', 'plus_code') THEN 'directions_ref'
+                    WHEN event_type IN ('concierge', 'concierge_ref') THEN 'concierge_ref'
+                    WHEN event_type IN ('call', 'whatsapp', 'email', 'booking', 'share') THEN 'direct_contact'
+                    ELSE 'other'
+                END,
+                signal_weight = CASE
+                    WHEN event_type IN ('profile_checkout', 'modal_open') THEN 1.00
+                    WHEN event_type IN ('website', 'social') THEN 2.00
+                    WHEN event_type IN ('map_pin', 'directions', 'plus_code') THEN 2.50
+                    WHEN event_type IN ('concierge', 'concierge_ref') THEN 3.00
+                    WHEN event_type IN ('call', 'whatsapp', 'email', 'booking', 'share') THEN 4.00
+                    ELSE 0.00
+                END
+            WHERE signal_group IS NULL
+        ");
     }
 
     private static function ensureBusinessIdentityAndNumberColumns(PDO $pdo, string $driver): void

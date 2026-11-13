@@ -2276,6 +2276,117 @@ def test_playwright_ch1_chunk4_community_charter():
         ctx.close()
 
 
+def test_playwright_ch3_chunk10_engagement_checkout_recorder():
+    """Verify Chunk 10 (#304..#307): cookie-free /api/record-checkout.php modal signal, 24h dedup, bot rejection & zero Set-Cookie."""
+    all_biz = _fetch_api_businesses()
+    assert len(all_biz) >= 1
+    target_id = int(all_biz[0]["id"])
+
+    # 1. Scripted POST without interaction_token must be ignored (recorded=False) and emit zero Set-Cookie headers
+    st_bot, body_bot, hdrs_bot = _request(
+        "/api/record-checkout.php",
+        method="POST",
+        data=json.dumps({"business_id": target_id, "signal_type": "whatsapp"}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert st_bot == 200, body_bot
+    bot_json = json.loads(body_bot)
+    assert bot_json.get("recorded") is False and bot_json.get("reason") == "missing_interaction_proof", bot_json
+    assert not any(k.lower() == "set-cookie" for k in hdrs_bot.keys()), f"record-checkout must be 100% cookie-free: {hdrs_bot}"
+
+    # 2. Invalid signal_type returns HTTP 422
+    st_bad, _, _ = _request(
+        "/api/record-checkout.php",
+        method="POST",
+        data=json.dumps({
+            "business_id": target_id,
+            "signal_type": "nonexistent_signal",
+            "interaction_token": f"human_verified_{int(time.time() * 1000)}",
+        }).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert st_bad == 422
+
+    # 3. Direct API contract check with valid human interaction proof -> 1st recorded=True, 2nd deduplicated=True, zero Set-Cookie
+    tok_valid = f"human_verified_{int(time.time() * 1000)}"
+    st_ok1, body_ok1, hdrs_ok1 = _request(
+        "/api/record-checkout.php",
+        method="POST",
+        data=json.dumps({
+            "business_id": target_id,
+            "signal_type": "directions",
+            "interaction_token": tok_valid,
+        }).encode("utf-8"),
+        headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) BusherianE2E/1.0"},
+    )
+    assert st_ok1 == 200, body_ok1
+    ok1_json = json.loads(body_ok1)
+    assert ok1_json.get("status") == "ok" and ok1_json.get("recorded") is True and ok1_json.get("deduplicated") is False, ok1_json
+    assert not any(k.lower() == "set-cookie" for k in hdrs_ok1.keys()), hdrs_ok1
+
+    st_ok2, body_ok2, _ = _request(
+        "/api/record-checkout.php",
+        method="POST",
+        data=json.dumps({
+            "business_id": target_id,
+            "signal_type": "map_pin",  # same signal_group ('directions_ref') -> must deduplicate within 24h!
+            "interaction_token": tok_valid,
+        }).encode("utf-8"),
+        headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) BusherianE2E/1.0"},
+    )
+    assert st_ok2 == 200, body_ok2
+    ok2_json = json.loads(body_ok2)
+    assert ok2_json.get("status") == "ok" and ok2_json.get("recorded") is False and ok2_json.get("deduplicated") is True, ok2_json
+
+    # 4. Real Chromium browser without analytics consent ("Allow only Essential"): clicking a business card
+    #    fires cookie-free /api/record-checkout.php with zero tracking/session cookies!
+    ctx = _new_browser_context()
+    try:
+        page = ctx.new_page()
+        checkout_hits: list[tuple[int, dict]] = []
+        page.on(
+            "response",
+            lambda r: checkout_hits.append((r.status, dict(r.headers)))
+            if "/api/record-checkout.php" in r.url
+            else None,
+        )
+
+        page.goto(f"{BASE_URL}/", wait_until="domcontentloaded")
+        card_title = page.get_by_test_id("biz-card-title").first
+        card_title.wait_for(state="visible", timeout=5000)
+
+        if page.get_by_test_id("cookie-reject-btn").is_visible():
+            page.get_by_test_id("cookie-reject-btn").click()
+
+        card_title.click()
+        modal_backdrop = page.get_by_test_id("biz-modal-backdrop")
+        modal_backdrop.wait_for(state="visible", timeout=5000)
+        for _ in range(20):
+            if len(checkout_hits) >= 1:
+                break
+            page.wait_for_timeout(100)
+        assert len(checkout_hits) >= 1 and checkout_hits[0][0] == 200, checkout_hits
+        assert "set-cookie" not in {k.lower() for k in checkout_hits[0][1].keys()}, checkout_hits[0][1]
+
+        page.locator("#btn-close-modal").click()
+        modal_backdrop.wait_for(state="hidden", timeout=5000)
+
+        # Re-open the exact same card immediately -> fires 200 OK again with zero Set-Cookie
+        card_title.click()
+        modal_backdrop.wait_for(state="visible", timeout=5000)
+        for _ in range(20):
+            if len(checkout_hits) >= 2:
+                break
+            page.wait_for_timeout(100)
+        assert len(checkout_hits) >= 2 and checkout_hits[1][0] == 200, checkout_hits
+        assert "set-cookie" not in {k.lower() for k in checkout_hits[1][1].keys()}, checkout_hits[1][1]
+
+        cookies_after = {c["name"] for c in ctx.cookies()}
+        assert "bbiz_vid" not in cookies_after, cookies_after
+    finally:
+        ctx.close()
+
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -2295,4 +2406,5 @@ TESTS = [
     test_playwright_ch1_chunk3_appointment_booking,
     test_playwright_ch1_chunk5_installable_pwa,
     test_playwright_ch1_chunk4_community_charter,
+    test_playwright_ch3_chunk10_engagement_checkout_recorder,
 ]

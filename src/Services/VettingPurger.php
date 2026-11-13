@@ -566,6 +566,7 @@ final class VettingPurger
                 $mergeIntoSpecialtyId ? "Merged specialty #{$mergeIntoSpecialtyId}" : null,
                 $clientIp
             );
+            EngagementRanker::recomputeBusinessScore($pdo, $businessId);
 
             if ($ownTx) {
                 $pdo->commit();
@@ -611,7 +612,7 @@ final class VettingPurger
             }
             $oldPhotosJson = is_string($biz['photos_json'] ?? null) ? $biz['photos_json'] : null;
 
-            $upd = $pdo->prepare("UPDATE businesses SET status = 'rejected', photos_json = '[]', updated_at = CURRENT_TIMESTAMP WHERE id = :id AND status = 'pending'");
+            $upd = $pdo->prepare("UPDATE businesses SET status = 'rejected', engagement_score = 0, reference_count_90d = 0, photos_json = '[]', updated_at = CURRENT_TIMESTAMP WHERE id = :id AND status = 'pending'");
             $upd->execute([':id' => $businessId]);
             if ($upd->rowCount() !== 1) {
                 throw new RuntimeException("Business #{$businessId} state changed concurrently; rejection aborted.");
@@ -698,6 +699,8 @@ final class VettingPurger
                     UPDATE businesses
                     SET quarantine_prev_status = :prev,
                         status = 'quarantined_dpa',
+                        engagement_score = 0,
+                        reference_count_90d = 0,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id
                 ")->execute([
@@ -771,6 +774,7 @@ final class VettingPurger
             ':st' => $targetStatus,
             ':id' => $businessId,
         ]);
+        EngagementRanker::recomputeBusinessScore($pdo, $businessId);
 
         self::recordModerationAudit(
             $pdo,
@@ -1125,6 +1129,9 @@ final class VettingPurger
         $delClicks->execute([':ccut' => $metricsCutoff]);
         $clicksPurged = $delClicks->rowCount();
 
+        $engDedupPurged = EngagementRanker::purgeExpiredDeduplicationHashes($pdo, $nowTs);
+        $engRecomputed = EngagementRanker::recomputeAllApprovedScores($pdo, $nowTs);
+
         // 8. Pseudonymize personal actor emails & IP hashes in >365d moderation_audit_log (#214 M-06)
         $auditCutoff = gmdate('Y-m-d H:i:s', $nowTs - (365 * 86400));
         $pdo->prepare("
@@ -1149,6 +1156,8 @@ final class VettingPurger
             'analytics_consents_purged' => $consentsPurged,
             'usage_metrics_purged' => $metricsPurged,
             'click_events_purged' => $clicksPurged,
+            'engagement_dedup_purged' => $engDedupPurged,
+            'engagement_scores_recomputed' => $engRecomputed['updated_approved_count'],
             'orphaned_public_media_deleted' => $mediaSweep['orphaned_public_deleted'],
             'orphaned_quarantine_media_deleted' => $mediaSweep['orphaned_quarantine_deleted'],
             'cutoff_utc' => $cutoffDate,
@@ -1674,6 +1683,8 @@ final class VettingPurger
         }
         if ($status === 'quarantined_dpa') {
             PhotoUploader::quarantineBusinessPhotos($newId, $photosJson);
+        } elseif ($status === 'approved') {
+            EngagementRanker::recomputeBusinessScore($pdo, $newId);
         }
         return $newId;
     }
