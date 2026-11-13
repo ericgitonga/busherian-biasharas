@@ -1,22 +1,91 @@
 {
+  "id": "/",
   "name": "Busherian Biasharas — AHS & AGHS Alumni Business Directory",
-  "short_name": "Busherian Biasharas",
-  "description": "Discover and support verified businesses owned by alumni of Alliance High School (AHS) and Alliance Girls High School (AGHS).",
-  "start_url": "/",
+  "short_name": "Biasharas",
+  "description": "Discover, map, and book verified businesses owned by alumni of Alliance High School (AHS) and Alliance Girls High School (AGHS).",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#FAF8F5",
-  "theme_color": "#114B3E",
+  "theme_color": "#7B1113",
+  "categories": [
+    "business",
+    "shopping",
+    "lifestyle"
+  ],
   "icons": [
     {
       "src": "/favicon-192x192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/assets/img/bb-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/img/bb-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Search Directory",
+      "short_name": "Search",
+      "description": "Search verified Busherian businesses by keyword or specialty",
+      "url": "/?source=pwa#search-q",
+      "icons": [
+        {
+          "src": "/favicon-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Book Appointment",
+      "short_name": "Book",
+      "description": "Browse Busherian businesses accepting appointment & consultation bookings",
+      "url": "/?source=pwa&filter=bookable",
+      "icons": [
+        {
+          "src": "/favicon-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Busherian Alumni Perks",
+      "short_name": "Perks",
+      "description": "View businesses offering exclusive AHS & AGHS alumni perks",
+      "url": "/?source=pwa&filter=has_perk",
+      "icons": [
+        {
+          "src": "/favicon-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "List Your Biashara",
+      "short_name": "List Business",
+      "description": "Submit a verified AHS or AGHS alumni business",
+      "url": "/submit.php?source=pwa",
+      "icons": [
+        {
+          "src": "/favicon-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }

@@ -2097,6 +2097,141 @@ def test_playwright_ch1_chunk3_appointment_booking():
         ctx.close()
 
 
+def test_playwright_ch1_chunk5_installable_pwa():
+    """Verify Chunk 5 (#287..#290): Web App Manifest, maskable icon, Service Worker registration, install prompt & offline directory snapshot."""
+    # 1. HTTP checks for manifests, maskable 512px PNG, Service Worker script, and X-BBiz-Public-Cacheable header
+    st_site, body_site, _ = _request("/site.webmanifest")
+    st_man, body_man, _ = _request("/manifest.webmanifest")
+    assert st_site == 200 and st_man == 200
+    man_site = json.loads(body_site)
+    man_pwa = json.loads(body_man)
+    assert man_site == man_pwa
+    assert man_site["display"] == "standalone"
+    assert man_site["start_url"] == "/?source=pwa"
+    assert any(i.get("purpose") == "maskable" and i.get("src") == "/assets/img/bb-icon-maskable-512.png" for i in man_site["icons"])
+
+    mask_req_headers = {"User-Agent": "BusherianE2E/1.0"}
+    if PREPROD_ACCESS_TOKEN:
+        mask_req_headers["X-Preprod-Access"] = PREPROD_ACCESS_TOKEN
+    with urllib.request.urlopen(
+        urllib.request.Request(f"{BASE_URL}/assets/img/bb-icon-maskable-512.png", headers=mask_req_headers),
+        timeout=10,
+    ) as mask_resp:
+        assert mask_resp.status == 200
+        mask_bytes = mask_resp.read()
+    assert mask_bytes[:8] == b"\x89PNG\r\n\x1a\n"
+    mw, mh = struct.unpack(">II", mask_bytes[16:24])
+    assert (mw, mh) == (512, 512)
+
+    st_sw, body_sw, _ = _request("/sw.js")
+    assert st_sw == 200 and "bbiz-pwa-v0.23.0" in body_sw
+
+    st_home, _, hdrs_home = _request("/")
+    assert st_home == 200
+    hdrs_lower = {k.lower(): v for k, v in hdrs_home.items()}
+    assert hdrs_lower.get("x-bbiz-public-cacheable") == "1"
+
+    ctx = _new_browser_context()
+    try:
+        page = ctx.new_page()
+        page.goto(f"{BASE_URL}/", wait_until="networkidle")
+        if page.get_by_test_id("cookie-reject-btn").is_visible():
+            page.get_by_test_id("cookie-reject-btn").click()
+
+        # 2. Wait for Service Worker registration & activation, and ensure pre-cache is populated
+        sw_script_url = page.evaluate(
+            """async () => {
+                if (!('serviceWorker' in navigator)) return '';
+                const reg = await navigator.serviceWorker.ready;
+                return (reg && reg.active && reg.active.scriptURL) ? reg.active.scriptURL : '';
+            }"""
+        )
+        assert sw_script_url.endswith("/sw.js"), f"Expected active /sw.js Service Worker, got {sw_script_url!r}"
+
+        # Wait briefly for async install pre-cache + controller claim, then reload once so page is SW-controlled
+        page.reload(wait_until="networkidle")
+        has_controller = page.evaluate("() => Boolean(navigator.serviceWorker && navigator.serviceWorker.controller)")
+        assert has_controller is True, "Expected navigator.serviceWorker.controller after reload"
+
+        # Verify Cache Storage contains zero owner_email_hints and zero /admin/ entries
+        cache_audit = page.evaluate(
+            """async () => {
+                const keys = await caches.keys();
+                const bbizKeys = keys.filter(k => k.startsWith('bbiz-pwa-'));
+                let urls = [];
+                let leakedOwnerHints = false;
+                for (const k of bbizKeys) {
+                    const c = await caches.open(k);
+                    const reqs = await c.keys();
+                    for (const r of reqs) {
+                        urls.push(r.url);
+                        if (r.url.includes('/api/businesses.php')) {
+                            const resp = await c.match(r);
+                            const txt = resp ? await resp.text() : '';
+                            if (txt.includes('owner_email_hints')) leakedOwnerHints = true;
+                        }
+                    }
+                }
+                return { bbizKeys, urls, leakedOwnerHints };
+            }"""
+        )
+        assert len(cache_audit["bbizKeys"]) >= 1
+        assert cache_audit["leakedOwnerHints"] is False, "CRITICAL: owner_email_hints found in Service Worker Cache Storage!"
+        assert not any("/owner/" in u or "/submit.php" in u or "/takedown.php" in u for u in cache_audit["urls"])
+
+        # 3. Verify smart '📲 Install App' button: guide modal fallback first, then native beforeinstallprompt interception
+        install_btn = page.get_by_test_id("btn-install-app")
+        install_btn.wait_for(state="visible", timeout=5000)
+        install_btn.click()
+
+        pwa_modal = page.get_by_test_id("pwa-install-modal")
+        pwa_modal.wait_for(state="visible", timeout=5000)
+        assert page.get_by_test_id("pwa-guide-ios").is_visible()
+        assert page.get_by_test_id("pwa-guide-other").is_visible()
+        page.get_by_test_id("btn-close-pwa-modal").click()
+        pwa_modal.wait_for(state="hidden", timeout=5000)
+
+        # Dispatch synthetic beforeinstallprompt and confirm clicking #btn-install-app calls prompt() and hides CTA
+        page.evaluate(
+            """() => {
+                window.__pwaPromptCalled = 0;
+                const ev = new Event('beforeinstallprompt', { cancelable: true });
+                ev.prompt = async () => { window.__pwaPromptCalled += 1; };
+                ev.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' });
+                window.dispatchEvent(ev);
+            }"""
+        )
+        install_btn.click()
+        page.wait_for_function(
+            "() => window.__pwaPromptCalled === 1 && document.getElementById('btn-install-app').hidden === true",
+            timeout=5000,
+        )
+
+        # 4. Verify PWA shortcut deep-link (?source=pwa&filter=bookable) activates the Book Appointment pill
+        page.goto(f"{BASE_URL}/?source=pwa&filter=bookable", wait_until="networkidle")
+        book_pill_cls = page.get_by_test_id("quick-filter-bookable").get_attribute("class") or ""
+        assert "active" in book_pill_cls, f"Expected quick-filter-bookable pill to be active on shortcut deep-link, got {book_pill_cls!r}"
+
+        # 5. Offline resilience: switch Chromium context offline, load /?source=pwa, verify cached cards + offline search work!
+        ctx.set_offline(True)
+        try:
+            page.goto(f"{BASE_URL}/?source=pwa", wait_until="domcontentloaded")
+            offline_cards = page.get_by_test_id("biz-card")
+            offline_cards.first.wait_for(state="visible", timeout=8000)
+            first_card_title = (offline_cards.first.get_by_test_id("biz-card-title").text_content() or "").strip()
+            assert len(first_card_title) >= 3
+
+            # Search for the first card's title token while completely offline -> offline snapshot filter keeps it visible & shows offline banner
+            token = first_card_title.split()[0]
+            page.get_by_test_id("search-input").fill(token)
+            page.get_by_test_id("pwa-offline-banner").wait_for(state="visible", timeout=5000)
+            assert page.get_by_test_id("biz-card").count() >= 1
+        finally:
+            ctx.set_offline(False)
+    finally:
+        ctx.close()
+
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -2114,4 +2249,5 @@ TESTS = [
     test_playwright_ch1_chunk1_publishing_specialty_finder,
     test_playwright_ch1_chunk2_secondary_specialty_and_multi_business_guidance,
     test_playwright_ch1_chunk3_appointment_booking,
+    test_playwright_ch1_chunk5_installable_pwa,
 ]

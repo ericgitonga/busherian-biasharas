@@ -181,7 +181,11 @@ if (!function_exists('bbiz_head_meta_tags')) {
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="shortcut icon" href="/favicon.ico">
   <link rel="manifest" href="/site.webmanifest">
-  <meta name="theme-color" content="#114B3E">
+  <meta name="theme-color" content="#7B1113">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Biasharas">
   <link rel="canonical" href="{$u}">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Busherian Biasharas">

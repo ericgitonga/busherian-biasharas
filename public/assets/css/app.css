@@ -1063,3 +1063,64 @@ a {
   opacity: 0 !important;
   pointer-events: none !important;
 }
+
+/* Installable Progressive Web App (PWA) Shell, Offline Banner & Install Modal (#287, #288, #289, #290) */
+.btn-install-pwa {
+  border-color: #FCD34D !important;
+  background: rgba(252, 211, 77, 0.14) !important;
+  color: #FEF3C7 !important;
+  font-weight: 700;
+}
+.btn-install-pwa:hover {
+  background: rgba(252, 211, 77, 0.26) !important;
+}
+.btn-install-pwa[hidden],
+#pwa-install-modal[hidden],
+.pwa-offline-banner[hidden] {
+  display: none !important;
+}
+.pwa-offline-banner {
+  background: #FFFBEB;
+  color: #78350F;
+  border-bottom: 1px solid #F59E0B;
+  padding: 0.5rem 1.25rem;
+  font-size: 0.8rem;
+  text-align: center;
+}
+.pwa-install-steps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+.pwa-platform-card {
+  background: #FAF8F5;
+  border: 1px solid var(--border-200);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 0.95rem;
+}
+.pwa-platform-card.recommended {
+  background: #FEFDF8;
+  border: 2px solid var(--bush-green);
+  box-shadow: 0 2px 8px rgba(17, 75, 62, 0.1);
+}
+.pwa-platform-title {
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--bush-green);
+  margin-bottom: 0.45rem;
+}
+.pwa-platform-steps {
+  margin: 0;
+  padding-left: 1.15rem;
+  font-size: 0.8rem;
+  color: var(--ink-700);
+  line-height: 1.5;
+}
+.pwa-platform-steps li + li {
+  margin-top: 0.35rem;
+}
+@media (display-mode: standalone) {
+  .site-header {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
