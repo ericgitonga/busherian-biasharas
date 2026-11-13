@@ -2387,6 +2387,122 @@ def test_playwright_ch3_chunk10_engagement_checkout_recorder():
         ctx.close()
 
 
+
+def test_playwright_ch3_chunk11_default_ranking_sort_modes_and_concierge_hook():
+    """Verify Chunk 11 (#309..#311): default engagement ranking promotes referenced Page-2 listing to #1, sort= modes, and concierge_ref hook."""
+    dir_ordered = _fetch_api_businesses("sort=directory_number&per_page=100")
+    assert len(dir_ordered) >= 3
+    promoted_biz = dir_ordered[-1]
+    promoted_id = int(promoted_biz["id"])
+    promoted_name = promoted_biz["name"]
+
+    # Credit multiple distinct high-intent signals from distinct simulated client UAs/signals so the last listing rises to #1!
+    tok = f"human_verified_{int(time.time() * 1000)}"
+    for sig, ua in [
+        ("whatsapp", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148"),
+        ("concierge_ref", "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36"),
+        ("directions", "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15"),
+        ("website", "Mozilla/5.0 (X11; Linux x86_64) Chrome/126.0.0.0"),
+    ]:
+        st_sig, body_sig, _ = _request(
+            "/api/record-checkout.php",
+            method="POST",
+            data=json.dumps({
+                "business_id": promoted_id,
+                "signal_type": sig,
+                "interaction_token": tok,
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json", "User-Agent": ua},
+        )
+        assert st_sig == 200, body_sig
+
+    # 1. Default API (no sort param) must now rank `promoted_id` at #1 and report sort='most_referenced'
+    def_payload = _fetch_api_payload("per_page=10")
+    assert def_payload.get("sort") == "most_referenced", def_payload
+    assert int(def_payload["businesses"][0]["id"]) == promoted_id, def_payload["businesses"][0]
+    assert "engagement_score" not in def_payload["businesses"][0]
+
+    # 2. Explicit API sort modes: az & directory_number
+    az_list = _fetch_api_businesses("sort=az&per_page=50")
+    az_lower = [b["name"].lower() for b in az_list]
+    assert az_lower == sorted(az_lower), az_lower
+
+    num_list = _fetch_api_businesses("sort=directory_number&per_page=50")
+    nums = [int(b["business_number"]) for b in num_list]
+    assert nums == sorted(nums), nums
+
+    # 3. Real Chromium browser verification:
+    #    - Homepage SSR + initial render shows `promoted_name` as card #1!
+    #    - Clicking a `[data-concierge-biz-id]` recommendation trigger opens the modal & posts `concierge_ref`!
+    #    - Visiting `/?biz=<id>&ref=concierge` deep-link opens that business's modal automatically!
+    second_biz = dir_ordered[-2]
+    second_id = int(second_biz["id"])
+    second_name = second_biz["name"]
+
+    ctx = _new_browser_context()
+    try:
+        page = ctx.new_page()
+        concierge_payloads: list[dict] = []
+        page.on(
+            "request",
+            lambda req: concierge_payloads.append(json.loads(req.post_data or "{}"))
+            if "/api/record-checkout.php" in req.url and req.method == "POST"
+            else None,
+        )
+
+        page.goto(f"{BASE_URL}/", wait_until="domcontentloaded")
+        if page.get_by_test_id("cookie-reject-btn").is_visible():
+            page.get_by_test_id("cookie-reject-btn").click()
+
+        first_rendered_title = page.get_by_test_id("biz-card-title").first.inner_text().strip()
+        assert first_rendered_title == promoted_name, f"Expected promoted listing {promoted_name!r} at #1, got {first_rendered_title!r}"
+
+        # Inject a Concierge citation button (`[data-concierge-biz-id]`) for `second_id` (even if off-page) and click it
+        page.evaluate(
+            """(bid) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.id = 'e2e-concierge-cite-btn';
+                btn.setAttribute('data-concierge-biz-id', String(bid));
+                btn.textContent = 'Open Concierge Recommendation';
+                document.body.appendChild(btn);
+            }""",
+            second_id,
+        )
+        page.locator("#e2e-concierge-cite-btn").click()
+        modal_backdrop = page.get_by_test_id("biz-modal-backdrop")
+        modal_backdrop.wait_for(state="visible", timeout=5000)
+        assert second_name in page.get_by_test_id("biz-modal-content").inner_text()
+
+        for _ in range(20):
+            if any(p.get("signal_type") == "concierge_ref" and int(p.get("business_id", 0)) == second_id for p in concierge_payloads):
+                break
+            page.wait_for_timeout(100)
+        assert any(
+            p.get("signal_type") == "concierge_ref" and int(p.get("business_id", 0)) == second_id
+            for p in concierge_payloads
+        ), f"Expected concierge_ref checkout POST for {second_id}, got {concierge_payloads}"
+
+        # Verify `/?sort=directory_number` URL parameter restores classic directory #1 at top
+        page.goto(f"{BASE_URL}/?sort=directory_number", wait_until="domcontentloaded")
+        page.wait_for_function(
+            """(expected) => {
+                const el = document.querySelector('[data-testid="biz-card-title"]');
+                return Boolean(el && el.textContent && el.textContent.trim() === expected);
+            }""",
+            arg=dir_ordered[0]["name"],
+            timeout=5000,
+        )
+
+        # Verify `/?biz=<id>&ref=concierge` deep-link automatically opens modal on arrival
+        third_biz = dir_ordered[1]
+        page.goto(f"{BASE_URL}/?biz={int(third_biz['id'])}&ref=concierge", wait_until="domcontentloaded")
+        modal_backdrop.wait_for(state="visible", timeout=5000)
+        assert third_biz["name"] in page.get_by_test_id("biz-modal-content").inner_text()
+    finally:
+        ctx.close()
+
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -2407,4 +2523,5 @@ TESTS = [
     test_playwright_ch1_chunk5_installable_pwa,
     test_playwright_ch1_chunk4_community_charter,
     test_playwright_ch3_chunk10_engagement_checkout_recorder,
+    test_playwright_ch3_chunk11_default_ranking_sort_modes_and_concierge_hook,
 ]

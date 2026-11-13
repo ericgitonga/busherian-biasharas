@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.26.0] - 2026-11-13
+### Added & Changed
+- **Default Engagement-Ranked Directory Ordering, Explicit Sort Modes & 2-Hour Tie Rotation (`#309`, `#310`)**: Updated `public/index.php` (SSR Page 1) and `public/api/businesses.php` (both standard SQL pagination and batched `open_now=1` scanning) to default to descending time-decayed engagement band order (`most_referenced`) with deterministic 2-hour bijective near-tie rotation (`EngagementRanker::buildEngagementBandSqlExpr` & `buildTieJitterSqlExpr`) and automatic `nearest` fallback when proximity coordinates (`lat`/`lng`) are supplied without an explicit override. Added explicit `sort=most_referenced|trending|newest|nearest|az|directory_number` query modes across SQLite and MySQL 8.0 without exposing raw click counts publicly.
+- **Biashara Concierge Citation Integration (`#311`)**: Added `EngagementRanker::recordConciergeCitation()`, `?id=<business_id>` single-record lookup on `public/api/businesses.php`, `[data-concierge-biz-id]` recommendation card click delegation, and `/?biz=<id>&ref=concierge` deep-link modal hydration + deferred human-verified `concierge_ref` (`3.0` pts) attribution in `public/assets/js/directory.js`.
+
 ## [0.25.0] - 2026-11-13
 
 ### Added
