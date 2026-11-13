@@ -4764,6 +4764,93 @@ assertTrue(
     '/api/businesses.php defaults to most_referenced (#1 = highest engaged), supports trending/newest/az/directory_number + ?id= lookup, and hides raw scores publicly (#309, #310, #311)'
 );
 
+// =========================================================================
+// 53. Chapter 3 Chunk 12 (#313, #314, #315, #316): Sort Selector, Dignified Momentum Badges & Private Owner Insights
+// =========================================================================
+
+// 53a. resolveMomentumBadge: popular needs top-decile score AND >= 3 refs; new only when newcomers are a minority; never a "low" label
+$mbNow = time();
+$mbCtxOn = ['popular_cutoff' => 10.0, 'new_badges_enabled' => true];
+$mbCtxOff = ['popular_cutoff' => 10.0, 'new_badges_enabled' => false];
+$mbCtxNoPop = ['popular_cutoff' => null, 'new_badges_enabled' => false];
+$mbRecent = gmdate('Y-m-d H:i:s', $mbNow - (3 * 86400));
+$mbOld = gmdate('Y-m-d H:i:s', $mbNow - (60 * 86400));
+assertTrue(
+    \BusherianBiasharas\Services\EngagementRanker::resolveMomentumBadge(['verified_at' => $mbRecent, 'engagement_score' => 0, 'reference_count_90d' => 0], $mbCtxOn, $mbNow) === 'new' &&
+    \BusherianBiasharas\Services\EngagementRanker::resolveMomentumBadge(['verified_at' => $mbRecent, 'engagement_score' => 0, 'reference_count_90d' => 0], $mbCtxOff, $mbNow) === null &&
+    \BusherianBiasharas\Services\EngagementRanker::resolveMomentumBadge(['verified_at' => $mbOld, 'engagement_score' => 12.5, 'reference_count_90d' => 4], $mbCtxOn, $mbNow) === 'popular' &&
+    \BusherianBiasharas\Services\EngagementRanker::resolveMomentumBadge(['verified_at' => $mbOld, 'engagement_score' => 12.5, 'reference_count_90d' => 2], $mbCtxOn, $mbNow) === null &&
+    \BusherianBiasharas\Services\EngagementRanker::resolveMomentumBadge(['verified_at' => $mbOld, 'engagement_score' => 5.0, 'reference_count_90d' => 40], $mbCtxOn, $mbNow) === null &&
+    \BusherianBiasharas\Services\EngagementRanker::resolveMomentumBadge(['verified_at' => $mbOld, 'engagement_score' => 99.0, 'reference_count_90d' => 40], $mbCtxNoPop, $mbNow) === null,
+    'resolveMomentumBadge marks popular (top-decile + >=3 refs) and new (minority newcomers only) and never emits a low/unpopular label (#315)'
+);
+
+// 53b. computeMomentumContext returns a positive top-decile cutoff when engagement exists
+$mbCtxLive = \BusherianBiasharas\Services\EngagementRanker::computeMomentumContext($pdo, $mbNow);
+assertTrue(
+    array_key_exists('popular_cutoff', $mbCtxLive) && array_key_exists('new_badges_enabled', $mbCtxLive) &&
+    ($mbCtxLive['popular_cutoff'] === null || $mbCtxLive['popular_cutoff'] > 0.0),
+    'computeMomentumContext returns popular_cutoff (positive or null) and new_badges_enabled flag (#315)'
+);
+
+// 53c. getOwnerEngagementSummary: 30d vs 90d windows, ignores >90d rows and legacy NULL signal_group rows
+$insBizId = 99000316;
+$insClick316 = $pdo->prepare("INSERT INTO click_events (business_id, event_type, signal_group, signal_weight, created_at) VALUES (:bid, :ev, :sg, :sw, :cat)");
+$insRows316 = [
+    ['profile_checkout', 'profile_checkout', 1.0, $mbNow - 3600],
+    ['profile_checkout', 'profile_checkout', 1.0, $mbNow - (5 * 86400)],
+    ['call', 'direct_contact', 4.0, $mbNow - (45 * 86400)],
+    ['directions', 'directions_ref', 2.5, $mbNow - (100 * 86400)],
+    ['shortlist', null, 1.0, $mbNow - 3600],
+];
+foreach ($insRows316 as [$ev, $sg, $sw, $tsRow]) {
+    $insClick316->execute([':bid' => $insBizId, ':ev' => $ev, ':sg' => $sg, ':sw' => $sw, ':cat' => gmdate('Y-m-d H:i:s', $tsRow)]);
+}
+$ownerSum316 = \BusherianBiasharas\Services\EngagementRanker::getOwnerEngagementSummary($pdo, $insBizId, $mbNow);
+$ownerHtml316 = \BusherianBiasharas\Services\EngagementRanker::renderOwnerInsightsHtml($insBizId, $ownerSum316);
+$pdo->prepare("DELETE FROM click_events WHERE business_id = :bid")->execute([':bid' => $insBizId]);
+
+$ownerPortalSrc316 = (string)file_get_contents(dirname(__DIR__) . '/public/owner/index.php');
+$indexSrc314 = (string)file_get_contents(dirname(__DIR__) . '/public/index.php');
+$dirJsSrc314 = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+
+assertTrue(
+    $ownerSum316['window_30d']['profile_checkout'] === 2 &&
+    $ownerSum316['window_30d']['direct_contact'] === 0 &&
+    $ownerSum316['window_90d']['direct_contact'] === 1 &&
+    $ownerSum316['window_90d']['directions_ref'] === 0 &&
+    $ownerSum316['total_30d'] === 2 &&
+    $ownerSum316['total_90d'] === 3 &&
+    str_contains($ownerHtml316, 'data-testid="owner-engagement-insights"') &&
+    str_contains($ownerHtml316, 'data-testid="owner-eng-30d-profile_checkout" style="padding:0.3rem 0.5rem;text-align:right;font-weight:700;">2<') &&
+    str_contains($ownerHtml316, 'only you can see this') &&
+    str_contains($ownerPortalSrc316, 'EngagementRanker::renderOwnerInsightsHtml(') &&
+    str_contains($indexSrc314, 'data-testid="sort-select"') &&
+    str_contains($dirJsSrc314, 'syncSortToUrl') &&
+    str_contains($dirJsSrc314, 'biz-card-popular-badge'),
+    'Owner insights count 30d/90d windows correctly (ignoring >90d & legacy rows), render owner-only panel, and sort selector + badges are wired (#314, #315, #316)'
+);
+
+// 53d. Public API exposes only momentum_badge (never engagement_score / reference_count_90d)
+$pdo = null;
+Database::resetConnection();
+$resBadge315 = $runBizApiGet(['per_page' => '50']);
+$pdo = Database::getConnection();
+$badgeLeak = false;
+$badgeValuesOk = true;
+foreach (($resBadge315['businesses'] ?? []) as $bRow) {
+    if (array_key_exists('engagement_score', $bRow) || array_key_exists('reference_count_90d', $bRow) || array_key_exists('created_at', $bRow)) {
+        $badgeLeak = true;
+    }
+    if (!array_key_exists('momentum_badge', $bRow) || !in_array($bRow['momentum_badge'], [null, 'popular', 'new'], true)) {
+        $badgeValuesOk = false;
+    }
+}
+assertTrue(
+    ($resBadge315['status'] ?? '') === 'ok' && count($resBadge315['businesses'] ?? []) > 0 && !$badgeLeak && $badgeValuesOk,
+    '/api/businesses.php emits momentum_badge (popular|new|null) without leaking engagement_score, reference_count_90d or created_at (#315)'
+);
+
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);
 }

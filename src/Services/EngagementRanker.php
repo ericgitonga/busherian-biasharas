@@ -29,6 +29,25 @@ final class EngagementRanker
     public const COLD_START_MAX_BOOST = 3.5;
 
     public const TIE_ROTATION_BUCKET_SECONDS = 7200;
+
+    // Chunk 12 (#315): Dignified momentum badges (boolean cue only, zero public counters)
+    public const POPULAR_TOP_FRACTION = 0.10;
+    public const POPULAR_MIN_REFS_90D = 3;
+    public const NEW_BADGE_WINDOW_DAYS = 14;
+    public const NEW_BADGE_MAX_SHARE = 0.30;
+
+    /**
+     * Owner-facing labels for private engagement insights (#316).
+     *
+     * @var array<string, string>
+     */
+    public const OWNER_INSIGHT_LABELS = [
+        'profile_checkout' => 'Profile Checkouts',
+        'direct_contact' => 'Direct Contacts (Call, WhatsApp, Email, Booking)',
+        'directions_ref' => 'Direction Requests',
+        'external_link' => 'Website & Social Visits',
+        'concierge_ref' => 'Concierge Recommendations',
+    ];
     public const TIE_ROTATION_PRIME = 65521;
 
     /**
@@ -678,5 +697,162 @@ final class EngagementRanker
             'directory_number' => "b.business_number ASC, b.id ASC",
             default => "({$bandExpr}) DESC, ({$jitterExpr}) DESC, b.id DESC",
         };
+    }
+    /**
+     * Compute the popularity context for momentum badges in one pass (#315).
+     *
+     * @return array{popular_cutoff:?float, new_badges_enabled:bool}
+     */
+    public static function computeMomentumContext(PDO $pdo, ?int $nowTs = null): array
+    {
+        $ts = $nowTs ?? time();
+        $rows = $pdo->query("
+            SELECT engagement_score, reference_count_90d, verified_at, created_at
+            FROM businesses
+            WHERE status = 'approved'
+        ")->fetchAll();
+
+        $n = count($rows);
+        if ($n === 0) {
+            return ['popular_cutoff' => null, 'new_badges_enabled' => false];
+        }
+
+        $scores = array_map(static fn(array $r): float => (float)($r['engagement_score'] ?? 0.0), $rows);
+        rsort($scores, SORT_NUMERIC);
+        $k = max(1, (int)ceil($n * self::POPULAR_TOP_FRACTION));
+        $cutoff = $scores[$k - 1] ?? 0.0;
+
+        $newCount = 0;
+        foreach ($rows as $r) {
+            if (self::isWithinNewWindow($r['verified_at'] ?? null, $r['created_at'] ?? null, $ts)) {
+                $newCount++;
+            }
+        }
+
+        return [
+            'popular_cutoff' => $cutoff > 0.0 ? $cutoff : null,
+            // A "New" cue only means something when newcomers are a distinctive minority (e.g. not at launch).
+            'new_badges_enabled' => ($newCount / $n) <= self::NEW_BADGE_MAX_SHARE,
+        ];
+    }
+
+    public static function isWithinNewWindow(?string $verifiedAt, ?string $createdAt, int $nowTs): bool
+    {
+        $anchorRaw = trim((string)($verifiedAt ?? '')) !== '' ? $verifiedAt : $createdAt;
+        if ($anchorRaw === null || trim((string)$anchorRaw) === '') {
+            return false;
+        }
+        $anchorTs = self::parseUtcTimestamp($anchorRaw, 0);
+        if ($anchorTs <= 0) {
+            return false;
+        }
+        return (($nowTs - $anchorTs) / 86400.0) < self::NEW_BADGE_WINDOW_DAYS;
+    }
+
+    /**
+     * Resolve a single listing's public momentum cue: 'popular' | 'new' | null (#315).
+     * Never returns a "low" or "unpopular" label, and never exposes the underlying numbers.
+     *
+     * @param array<string, mixed> $row
+     * @param array{popular_cutoff:?float, new_badges_enabled:bool} $ctx
+     */
+    public static function resolveMomentumBadge(array $row, array $ctx, ?int $nowTs = null): ?string
+    {
+        $ts = $nowTs ?? time();
+        if (!empty($ctx['new_badges_enabled'])
+            && self::isWithinNewWindow($row['verified_at'] ?? null, $row['created_at'] ?? null, $ts)) {
+            return 'new';
+        }
+        $cutoff = $ctx['popular_cutoff'] ?? null;
+        if ($cutoff !== null
+            && (float)($row['engagement_score'] ?? 0.0) >= (float)$cutoff
+            && (int)($row['reference_count_90d'] ?? 0) >= self::POPULAR_MIN_REFS_90D) {
+            return 'popular';
+        }
+        return null;
+    }
+
+    /**
+     * Private 30d / 90d engagement breakdown for a verified owner's listing (#316).
+     *
+     * @return array{window_30d: array<string,int>, window_90d: array<string,int>, total_30d:int, total_90d:int}
+     */
+    public static function getOwnerEngagementSummary(PDO $pdo, int $businessId, ?int $nowTs = null): array
+    {
+        $ts = $nowTs ?? time();
+        $w30 = array_fill_keys(array_keys(self::OWNER_INSIGHT_LABELS), 0);
+        $w90 = $w30;
+
+        $stmt = $pdo->prepare("
+            SELECT signal_group,
+                   SUM(CASE WHEN created_at >= :since30 THEN 1 ELSE 0 END) AS c30,
+                   COUNT(*) AS c90
+            FROM click_events
+            WHERE business_id = :bid
+              AND signal_group IS NOT NULL
+              AND created_at >= :since90
+            GROUP BY signal_group
+        ");
+        $stmt->execute([
+            ':since30' => gmdate('Y-m-d H:i:s', $ts - (30 * 86400)),
+            ':since90' => gmdate('Y-m-d H:i:s', $ts - (90 * 86400)),
+            ':bid' => $businessId,
+        ]);
+        foreach ($stmt->fetchAll() as $r) {
+            $g = (string)($r['signal_group'] ?? '');
+            if (!array_key_exists($g, $w30)) {
+                continue;
+            }
+            $w30[$g] = (int)$r['c30'];
+            $w90[$g] = (int)$r['c90'];
+        }
+
+        return [
+            'window_30d' => $w30,
+            'window_90d' => $w90,
+            'total_30d' => array_sum($w30),
+            'total_90d' => array_sum($w90),
+        ];
+    }
+
+    /**
+     * Render the private Owner Portal insights panel (#316). Output is HTML-escaped and owner-only.
+     *
+     * @param array{window_30d: array<string,int>, window_90d: array<string,int>, total_30d:int, total_90d:int} $summary
+     */
+    public static function renderOwnerInsightsHtml(int $businessId, array $summary): string
+    {
+        $rowsHtml = '';
+        foreach (self::OWNER_INSIGHT_LABELS as $group => $label) {
+            $c30 = (int)($summary['window_30d'][$group] ?? 0);
+            $c90 = (int)($summary['window_90d'][$group] ?? 0);
+            $g = htmlspecialchars($group, ENT_QUOTES, 'UTF-8');
+            $rowsHtml .= '<tr data-testid="owner-eng-row-' . $g . '">'
+                . '<td style="padding:0.3rem 0.5rem;">' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</td>'
+                . '<td data-testid="owner-eng-30d-' . $g . '" style="padding:0.3rem 0.5rem;text-align:right;font-weight:700;">' . $c30 . '</td>'
+                . '<td data-testid="owner-eng-90d-' . $g . '" style="padding:0.3rem 0.5rem;text-align:right;">' . $c90 . '</td>'
+                . '</tr>';
+        }
+        $total30 = (int)($summary['total_30d'] ?? 0);
+        $total90 = (int)($summary['total_90d'] ?? 0);
+        $hint = $total90 === 0
+            ? '<p style="margin:0.45rem 0 0 0;font-size:0.76rem;color:#6B7280;">No recorded visits yet. Sharing your listing link on WhatsApp or with fellow Busherians is the quickest way to get noticed.</p>'
+            : '';
+
+        return '<div data-testid="owner-engagement-insights" data-business-id="' . $businessId . '" '
+            . 'style="margin-top:0.75rem;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:0.7rem 0.85rem;max-width:520px;">'
+            . '<div style="font-size:0.82rem;font-weight:800;color:#114B3E;">📊 Private Engagement Insights '
+            . '<span style="font-weight:600;color:#6B7280;font-size:0.74rem;">(only you can see this)</span></div>'
+            . '<table style="width:100%;border-collapse:collapse;font-size:0.8rem;margin-top:0.35rem;color:#374151;">'
+            . '<thead><tr style="color:#6B7280;font-size:0.74rem;"><th style="text-align:left;padding:0.2rem 0.5rem;">Activity</th>'
+            . '<th style="text-align:right;padding:0.2rem 0.5rem;">Last 30 days</th><th style="text-align:right;padding:0.2rem 0.5rem;">Last 90 days</th></tr></thead>'
+            . '<tbody>' . $rowsHtml . '</tbody>'
+            . '<tfoot><tr style="border-top:1px solid #E5E7EB;font-weight:800;"><td style="padding:0.3rem 0.5rem;">Total</td>'
+            . '<td data-testid="owner-eng-total-30d" style="padding:0.3rem 0.5rem;text-align:right;">' . $total30 . '</td>'
+            . '<td data-testid="owner-eng-total-90d" style="padding:0.3rem 0.5rem;text-align:right;">' . $total90 . '</td></tr></tfoot>'
+            . '</table>'
+            . '<p style="margin:0.4rem 0 0 0;font-size:0.72rem;color:#6B7280;">Counted once per visitor network per day. Your own visits while signed in are never counted.</p>'
+            . $hint
+            . '</div>';
     }
 }

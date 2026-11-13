@@ -2503,6 +2503,88 @@ def test_playwright_ch3_chunk11_default_ranking_sort_modes_and_concierge_hook():
         ctx.close()
 
 
+def test_playwright_ch3_chunk12_sort_selector_and_momentum_badges():
+    """Verify Chunk 12 (#313..#316): sort selector + URL sync, dignified Popular badge, and zero public engagement counters."""
+    dir_ordered = _fetch_api_businesses("sort=directory_number&per_page=100")
+    assert len(dir_ordered) >= 3
+    target = dir_ordered[len(dir_ordered) // 2]
+    target_id = int(target["id"])
+
+    tok = f"human_verified_{int(time.time() * 1000)}"
+    for ua in (
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148",
+        "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) Chrome/126.0.0.0",
+    ):
+        for sig in ("profile_checkout", "website", "directions", "concierge_ref", "whatsapp"):
+            st, body, _ = _request(
+                "/api/record-checkout.php",
+                method="POST",
+                data=json.dumps({"business_id": target_id, "signal_type": sig, "interaction_token": tok}).encode("utf-8"),
+                headers={"Content-Type": "application/json", "User-Agent": ua},
+            )
+            assert st == 200 and json.loads(body).get("status") == "ok", body
+
+    payload = _fetch_api_payload("per_page=100")
+    assert payload.get("sort") == "most_referenced"
+    rows = payload["businesses"]
+    for b in rows:
+        assert "engagement_score" not in b and "reference_count_90d" not in b, f"Raw engagement leaked for {b.get('id')}"
+        assert b.get("momentum_badge") in (None, "popular", "new"), b.get("momentum_badge")
+    tgt_row = next(b for b in rows if int(b["id"]) == target_id)
+    assert tgt_row["momentum_badge"] in ("popular", "new"), tgt_row["momentum_badge"]
+    assert int(rows[0]["id"]) == target_id, f"Expected heavily referenced {target['name']!r} at #1, got {rows[0]['name']!r}"
+
+    az_first = _fetch_api_businesses("sort=az&per_page=1")[0]["name"]
+
+    def _wait_first_title(page, expected: str):
+        page.wait_for_function(
+            """(expected) => {
+                const el = document.querySelector('[data-testid="biz-card-title"]');
+                return Boolean(el && el.textContent && el.textContent.trim() === expected);
+            }""",
+            arg=expected,
+            timeout=6000,
+        )
+
+    ctx = _new_browser_context()
+    try:
+        page = ctx.new_page()
+        page.goto(f"{BASE_URL}/", wait_until="domcontentloaded")
+        if page.get_by_test_id("cookie-reject-btn").is_visible():
+            page.get_by_test_id("cookie-reject-btn").click()
+
+        sort_sel = page.get_by_test_id("sort-select")
+        sort_sel.wait_for(state="visible", timeout=5000)
+        assert sort_sel.input_value() == "most_referenced"
+        _wait_first_title(page, target["name"])
+
+        badge_id = "biz-card-popular-badge" if tgt_row["momentum_badge"] == "popular" else "biz-card-new-badge"
+        page.get_by_test_id("biz-card").first.get_by_test_id(badge_id).wait_for(state="visible", timeout=5000)
+
+        html = page.content()
+        assert "reference_count_90d" not in html and "engagement_score" not in html
+
+        sort_sel.select_option("az")
+        _wait_first_title(page, az_first)
+        assert "sort=az" in page.url
+
+        sort_sel.select_option("directory_number")
+        _wait_first_title(page, dir_ordered[0]["name"])
+        assert "sort=directory_number" in page.url
+
+        sort_sel.select_option("most_referenced")
+        _wait_first_title(page, target["name"])
+        assert "sort=" not in page.url
+
+        # Deep-linked ?sort=az restores the selector state on load
+        page.goto(f"{BASE_URL}/?sort=az", wait_until="domcontentloaded")
+        _wait_first_title(page, az_first)
+        assert page.get_by_test_id("sort-select").input_value() == "az"
+    finally:
+        ctx.close()
+
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -2524,4 +2606,5 @@ TESTS = [
     test_playwright_ch1_chunk4_community_charter,
     test_playwright_ch3_chunk10_engagement_checkout_recorder,
     test_playwright_ch3_chunk11_default_ranking_sort_modes_and_concierge_hook,
+    test_playwright_ch3_chunk12_sort_selector_and_momentum_badges,
 ]

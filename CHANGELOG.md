@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.27.0] - 2026-11-13
+### Added
+- **Directory Sort Selector (`#313`, `#314`)**: Added a `Sort:` dropdown beside the per-page control on `public/index.php` (Most Referenced, Trending This Week, Newest Added, Nearest to Me, Alphabetical, Directory #), wired in `public/assets/js/directory.js` with `?sort=` URL sync via `history.replaceState`, server-resolved sort reflection, and automatic browser-location request when *Nearest to Me* is chosen without coordinates.
+- **Dignified Momentum Badges (`#315`)**: Added `EngagementRanker::computeMomentumContext()` / `resolveMomentumBadge()` emitting only a `momentum_badge` flag (`popular` | `new` | `null`) from `/api/businesses.php` and homepage SSR. `🔥 Popular with Busherians` marks top-decile listings with at least 3 references in 90 days; `✨ New on Biasharas` marks listings in their first 14 days, shown only while newcomers are a distinctive minority (≤ 30% of listings) so launch-week directories are not blanketed. No raw counts, scores, or "low engagement" labels are ever shown publicly.
+- **Private Owner Engagement Insights (`#316`)**: Added `EngagementRanker::getOwnerEngagementSummary()` and `renderOwnerInsightsHtml()`, rendering a per-listing 30-day / 90-day breakdown (Profile Checkouts, Direct Contacts, Direction Requests, Website & Social Visits, Concierge Recommendations) on `/owner/index.php`, visible only to the signed-in linked owner.
+
 ## [0.26.0] - 2026-11-13
 ### Added & Changed
 - **Default Engagement-Ranked Directory Ordering, Explicit Sort Modes & 2-Hour Tie Rotation (`#309`, `#310`)**: Updated `public/index.php` (SSR Page 1) and `public/api/businesses.php` (both standard SQL pagination and batched `open_now=1` scanning) to default to descending time-decayed engagement band order (`most_referenced`) with deterministic 2-hour bijective near-tie rotation (`EngagementRanker::buildEngagementBandSqlExpr` & `buildTieJitterSqlExpr`) and automatic `nearest` fallback when proximity coordinates (`lat`/`lng`) are supplied without an explicit override. Added explicit `sort=most_referenced|trending|newest|nearest|az|directory_number` query modes across SQLite and MySQL 8.0 without exposing raw click counts publicly.

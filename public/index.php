@@ -52,7 +52,8 @@ $stmt = $pdo->prepare("
         b.booking_enabled, b.booking_url,
         CASE WHEN (b.email_public IS NOT NULL AND b.email_public != '') OR (b.owner_email IS NOT NULL AND b.owner_email != '') THEN 1 ELSE 0 END AS has_booking_email,
         b.social_instagram, b.social_linkedin, b.social_x,
-        b.social_facebook, b.social_tiktok, b.social_youtube
+        b.social_facebook, b.social_tiktok, b.social_youtube,
+        b.verified_at, b.created_at, b.engagement_score, b.reference_count_90d
     FROM businesses b
     INNER JOIN categories sec ON sec.id = b.sector_id
     INNER JOIN categories spec ON spec.id = b.specialty_id
@@ -77,6 +78,7 @@ $batchedInitialHints = ($isAuthenticatedViewer && $initialPageIds !== [])
     ? OwnerAuth::getMaskedOwnerEmailHintsForBusinesses($pdo, $initialPageIds)
     : [];
 
+$initialMomentumCtx = EngagementRanker::computeMomentumContext($pdo);
 $initialBusinesses = [];
 foreach ($rows as $r) {
     $bizId = (int)$r['id'];
@@ -128,6 +130,7 @@ foreach ($rows as $r) {
         'google_maps_url' => $r['google_maps_url'],
         'distance_km' => null,
         'hours_status' => HoursEngine::evaluateStatus((string)$r['operating_hours_json']),
+        'momentum_badge' => EngagementRanker::resolveMomentumBadge($r, $initialMomentumCtx),
         'photos' => PhotoUploader::decodePhotosJson(isset($r['photos_json']) ? (string)$r['photos_json'] : null),
         'phone_primary' => $r['phone_primary'],
         'whatsapp_number' => $r['whatsapp_number'],
@@ -281,7 +284,16 @@ $initialPagination = [
             Click any card or map pin for Website, WhatsApp, Call, Hours &amp; Exact Pin
           </span>
         </div>
-        <div style="display:flex;align-items:center;gap:0.4rem;">
+        <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">
+          <label for="sort-select" style="font-size:0.78rem;font-weight:700;color:#374151;">Sort:</label>
+          <select id="sort-select" data-testid="sort-select" class="select-control" aria-label="Sort directory listings" style="width:auto;padding:0.32rem 0.6rem;font-size:0.8rem;">
+            <option value="most_referenced"<?= $initialSort === 'most_referenced' ? ' selected' : '' ?>>Most Referenced</option>
+            <option value="trending"<?= $initialSort === 'trending' ? ' selected' : '' ?>>Trending This Week</option>
+            <option value="newest"<?= $initialSort === 'newest' ? ' selected' : '' ?>>Newest Added</option>
+            <option value="nearest"<?= $initialSort === 'nearest' ? ' selected' : '' ?>>Nearest to Me</option>
+            <option value="az"<?= $initialSort === 'az' ? ' selected' : '' ?>>Alphabetical (A–Z)</option>
+            <option value="directory_number"<?= $initialSort === 'directory_number' ? ' selected' : '' ?>>Directory #</option>
+          </select>
           <label for="per-page-select" style="font-size:0.78rem;font-weight:700;color:#374151;">Show:</label>
           <select id="per-page-select" data-testid="per-page-select" class="select-control" aria-label="Listings per page" style="width:auto;padding:0.32rem 0.6rem;font-size:0.8rem;">
             <option value="10" selected>10 per page</option>

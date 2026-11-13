@@ -162,7 +162,7 @@ try {
             CASE WHEN (b.email_public IS NOT NULL AND b.email_public != '') OR (b.owner_email IS NOT NULL AND b.owner_email != '') THEN 1 ELSE 0 END AS has_booking_email,
             b.social_instagram, b.social_linkedin, b.social_x,
             b.social_facebook, b.social_tiktok, b.social_youtube,
-            b.logo_path, b.verified_at
+            b.logo_path, b.verified_at, b.created_at, b.engagement_score, b.reference_count_90d
     ";
 
     // SQL Haversine helper using distinct named parameters for MySQL 8.0 native prepared-statement compatibility (#218 M-10)
@@ -314,6 +314,8 @@ try {
         ? OwnerAuth::getMaskedOwnerEmailHintsForBusinesses($pdo, $pageBizIds)
         : [];
 
+    $momentumCtx = EngagementRanker::computeMomentumContext($pdo);
+
     $results = [];
     foreach ($pagedRows as $row) {
         $bizId = (int)$row['id'];
@@ -365,6 +367,8 @@ try {
             'google_maps_url' => $row['google_maps_url'],
             'distance_km' => $distanceKm,
             'hours_status' => $hoursStatus,
+            // Dignified boolean cue only (#315): raw engagement_score / reference_count_90d are never exposed publicly
+            'momentum_badge' => EngagementRanker::resolveMomentumBadge($row, $momentumCtx),
             'photos' => PhotoUploader::decodePhotosJson(isset($row['photos_json']) ? (string)$row['photos_json'] : null),
             'phone_primary' => $row['phone_primary'],
             'whatsapp_number' => $row['whatsapp_number'],
