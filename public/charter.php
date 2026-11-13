@@ -58,7 +58,7 @@ if (!headers_sent()) {
           <span style="font-size:0.88rem;color:#374151;">Never on direct bookings or self-served leads. Whether a client opens your external scheduler (Calendly, Cal.com, Google) or sends a built-in WhatsApp/Email slot request, 100% of that relationship is directly between you and your client with zero platform fee.</span>
         </div>
         <div style="background:#FAF8F5;border:1px solid #E5E7EB;border-radius:10px;padding:0.95rem 1.1rem;">
-          <strong style="color:#111827;display:block;margin-bottom:0.25rem;">Can a corporate sponsor or Pro upgrade override organic search oralumni verification?</strong>
+          <strong style="color:#111827;display:block;margin-bottom:0.25rem;">Can a corporate sponsor or Pro upgrade override organic search or alumni verification?</strong>
           <span style="font-size:0.88rem;color:#374151;">No. Every alumni business undergoes the exact same one-time AHS/AGHS verification. Non-alumni companies can never buy an alumni listing; any corporate partner is restricted to at most 1 clearly labeled Sponsor slot per sector, and any optional alumni spotlight is capped at 2 clearly badged spots per category.</span>
         </div>
       </div>

@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.24.1] - 2026-11-13
+
+### Fixed
+- **Community Charter FAQ Copy Typo (`#302`)**: Corrected `"override organic search oralumni verification?"` to `"override organic search or alumni verification?"` in `public/charter.php`, bumped Service Worker cache key to `bbiz-pwa-v0.24.1` (`public/sw.js`), and added regression assertion in `tests/run_unit_tests.php`.
+
 ## [0.24.0] - 2026-11-13
 
 ### Added
