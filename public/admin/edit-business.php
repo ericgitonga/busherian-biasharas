@@ -308,6 +308,8 @@ $vettingRow = $vetStmt->fetch() ?: null;
         </div>
       </div>
 
+      <?= bbiz_render_booking_fields(!empty($biz['booking_enabled']), (string)($biz['booking_url'] ?? '')) ?>
+
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.9rem;margin-top:0.9rem;">
         <div>
           <label style="font-weight:700;font-size:0.84rem;display:block;margin-bottom:0.25rem;">Building Name</label>

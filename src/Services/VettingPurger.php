@@ -285,6 +285,63 @@ final class VettingPurger
         ];
     }
 
+    /**
+     * Normalize and validate optional Appointment Booking configuration (`booking_enabled` + `booking_url`, #283).
+     *
+     * @return array{booking_enabled: int, booking_url: ?string}
+     */
+    public static function normalizeBookingFields(array $data, ?array $existingRow = null): array
+    {
+        $fieldsPresent = !empty($data['booking_fields_present']);
+        if (array_key_exists('booking_url', $data)) {
+            $rawUrl = is_scalar($data['booking_url']) ? (string)$data['booking_url'] : null;
+        } elseif (!$fieldsPresent && $existingRow !== null) {
+            $rawUrl = isset($existingRow['booking_url']) && is_scalar($existingRow['booking_url']) ? (string)$existingRow['booking_url'] : null;
+        } else {
+            $rawUrl = null;
+        }
+
+        $bookingUrl = self::validateHttpUrl($rawUrl, 'Appointment Booking URL', 350);
+        if ($bookingUrl !== null && AntiSpamGate::isBlockedSpamOrShortenerUrl($bookingUrl)) {
+            throw new \InvalidArgumentException('Appointment Booking URL cannot use a blocked URL shortener or spam domain. Please enter your direct booking page URL.');
+        }
+
+        $prevBookingUrl = ($existingRow !== null && !empty($existingRow['booking_url'])) ? trim((string)$existingRow['booking_url']) : '';
+        if ($bookingUrl !== null && $prevBookingUrl === '') {
+            // Entering a brand-new External Booking URL automatically enables booking (#283)
+            $bookingEnabled = 1;
+        } elseif (array_key_exists('booking_enabled', $data)) {
+            $bookingEnabled = (!empty($data['booking_enabled']) && (string)$data['booking_enabled'] !== '0') ? 1 : 0;
+            if ($bookingEnabled === 0 && $fieldsPresent) {
+                $bookingUrl = null;
+            }
+        } elseif ($fieldsPresent) {
+            $bookingEnabled = 0;
+            $bookingUrl = null;
+        } elseif ($existingRow !== null) {
+            $bookingEnabled = !empty($existingRow['booking_enabled']) ? 1 : 0;
+        } else {
+            $bookingEnabled = 0;
+        }
+
+        if ($bookingEnabled === 1 && $bookingUrl === null) {
+            $merged = $existingRow !== null ? array_merge($existingRow, $data) : $data;
+            $hasChannel = trim((string)($merged['phone_primary'] ?? '')) !== ''
+                || trim((string)($merged['whatsapp_number'] ?? '')) !== ''
+                || trim((string)($merged['email_public'] ?? '')) !== ''
+                || trim((string)($merged['owner_email'] ?? '')) !== ''
+                || trim((string)($merged['submitter_email'] ?? '')) !== '';
+            if (!$hasChannel) {
+                throw new \InvalidArgumentException('Built-in appointment booking requires a Phone number, WhatsApp number, or Business/Owner Email (or an External Booking URL).');
+            }
+        }
+
+        return [
+            'booking_enabled' => $bookingEnabled,
+            'booking_url' => $bookingUrl,
+        ];
+    }
+
     public static function validateListingWritePayload(
         PDO $pdo,
         array $data,
@@ -298,6 +355,7 @@ final class VettingPurger
             throw new \InvalidArgumentException('Selected Specialty does not belong to the chosen Industry Sector.');
         }
         self::normalizeSecondaryCategoryPair($pdo, $data, $specialtyId);
+        self::normalizeBookingFields($data);
 
         $name = trim((string)($data['name'] ?? ''));
         if ($name === '' || mb_strlen($name) > 180) {
@@ -346,6 +404,7 @@ final class VettingPurger
 
         $urlFields = [
             'website_url' => ['Website URL', 350],
+            'booking_url' => ['Appointment Booking URL', 350],
             'google_maps_url' => ['Google Maps URL', 500],
             'social_instagram' => ['Instagram URL', 255],
             'social_linkedin' => ['LinkedIn URL', 255],
@@ -1234,7 +1293,7 @@ final class VettingPurger
      */
     public static function updateBusiness(PDO $pdo, int $businessId, array $data): void
     {
-        $existingRowStmt = $pdo->prepare("SELECT operating_hours_json, photos_json, latitude, longitude, plus_code, google_maps_url FROM businesses WHERE id = :id LIMIT 1");
+        $existingRowStmt = $pdo->prepare("SELECT operating_hours_json, photos_json, latitude, longitude, plus_code, google_maps_url, booking_enabled, booking_url, phone_primary, whatsapp_number, email_public, owner_email FROM businesses WHERE id = :id LIMIT 1");
         $existingRowStmt->execute([':id' => $businessId]);
         $existingRow = (array)($existingRowStmt->fetch() ?: []);
 
@@ -1246,9 +1305,12 @@ final class VettingPurger
             : HoursEngine::buildScheduleJsonFromPost($data, (string)($existingRow['operating_hours_json'] ?? ''));
 
         $secondaryPair = self::normalizeSecondaryCategoryPair($pdo, $data, (int)($data['specialty_id'] ?? 0));
+        $bookingPair = self::normalizeBookingFields($data, $existingRow);
         $validationData = $data;
         $validationData['secondary_sector_id'] = $secondaryPair['secondary_sector_id'];
         $validationData['secondary_specialty_id'] = $secondaryPair['secondary_specialty_id'];
+        $validationData['booking_enabled'] = $bookingPair['booking_enabled'];
+        $validationData['booking_url'] = $bookingPair['booking_url'];
         $validationData['google_maps_url'] = $coordsMeta['google_maps_url'];
         self::validateListingWritePayload($pdo, $validationData, $resolvedLat, $resolvedLng, $hoursJson);
 
@@ -1307,6 +1369,8 @@ final class VettingPurger
                 email_public = :email_public,
                 owner_email = :owner_email,
                 website_url = :website_url,
+                booking_enabled = :booking_enabled,
+                booking_url = :booking_url,
                 social_instagram = :social_instagram,
                 social_linkedin = :social_linkedin,
                 social_x = :social_x,
@@ -1352,6 +1416,8 @@ final class VettingPurger
             ':email_public' => trim((string)($data['email_public'] ?? '')) ?: null,
             ':owner_email' => strtolower(trim((string)($data['owner_email'] ?? ''))) ?: null,
             ':website_url' => trim((string)($data['website_url'] ?? '')) ?: null,
+            ':booking_enabled' => $bookingPair['booking_enabled'],
+            ':booking_url' => $bookingPair['booking_url'],
             ':social_instagram' => trim((string)($data['social_instagram'] ?? '')) ?: null,
             ':social_linkedin' => trim((string)($data['social_linkedin'] ?? '')) ?: null,
             ':social_x' => trim((string)($data['social_x'] ?? '')) ?: null,
@@ -1476,6 +1542,7 @@ final class VettingPurger
             : HoursEngine::buildScheduleJsonFromPost($data, (string)$defaultHours);
 
         $secondaryPair = self::normalizeSecondaryCategoryPair($pdo, $data, $specialtyId);
+        $bookingPair = self::normalizeBookingFields($data, null);
         $validationPayload = $data;
         $validationPayload['name'] = $name;
         $validationPayload['tagline'] = $tagline;
@@ -1484,6 +1551,8 @@ final class VettingPurger
         $validationPayload['specialty_id'] = $specialtyId;
         $validationPayload['secondary_sector_id'] = $secondaryPair['secondary_sector_id'];
         $validationPayload['secondary_specialty_id'] = $secondaryPair['secondary_specialty_id'];
+        $validationPayload['booking_enabled'] = $bookingPair['booking_enabled'];
+        $validationPayload['booking_url'] = $bookingPair['booking_url'];
         $validationPayload['google_maps_url'] = $coordsMeta['google_maps_url'];
         self::validateListingWritePayload($pdo, $validationPayload, $lat, $lng, $hoursJson);
 
@@ -1527,7 +1596,7 @@ final class VettingPurger
                 area_neighborhood, country, city_county, landmark_directions,
                 plus_code, latitude, longitude, google_maps_url,
                 operating_hours_json, photos_json, phone_primary, whatsapp_number,
-                email_public, owner_email, website_url, social_instagram, social_linkedin,
+                email_public, owner_email, website_url, booking_enabled, booking_url, social_instagram, social_linkedin,
                 social_x, social_facebook, social_tiktok, social_youtube,
                 status, privacy_notice_version, age_attested_at, listing_provenance, admin_provenance_note,
                 verified_at, last_confirmed_at
@@ -1539,7 +1608,7 @@ final class VettingPurger
                 :area_neighborhood, :country, :city_county, :landmark_directions,
                 :plus_code, :latitude, :longitude, :google_maps_url,
                 :operating_hours_json, :photos_json, :phone_primary, :whatsapp_number,
-                :email_public, :owner_email, :website_url, :social_instagram, :social_linkedin,
+                :email_public, :owner_email, :website_url, :booking_enabled, :booking_url, :social_instagram, :social_linkedin,
                 :social_x, :social_facebook, :social_tiktok, :social_youtube,
                 :status, :pver, :age_at, 'admin_curated', :pnote,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -1583,6 +1652,8 @@ final class VettingPurger
             ':email_public' => trim((string)($data['email_public'] ?? '')) ?: null,
             ':owner_email' => strtolower(trim((string)($data['owner_email'] ?? ''))) ?: null,
             ':website_url' => trim((string)($data['website_url'] ?? '')) ?: null,
+            ':booking_enabled' => $bookingPair['booking_enabled'],
+            ':booking_url' => $bookingPair['booking_url'],
             ':social_instagram' => trim((string)($data['social_instagram'] ?? '')) ?: null,
             ':social_linkedin' => trim((string)($data['social_linkedin'] ?? '')) ?: null,
             ':social_x' => trim((string)($data['social_x'] ?? '')) ?: null,
@@ -1691,12 +1762,15 @@ final class VettingPurger
             'secondary_specialty_id' => array_key_exists('secondary_specialty_id', $data) ? $data['secondary_specialty_id'] : ($oldBiz['secondary_specialty_id'] ?? null),
         ];
         $ownerSecondaryPair = self::normalizeSecondaryCategoryPair($pdo, $secMergeInput, $newSpecCheck);
+        $ownerBookingPair = self::normalizeBookingFields($data, (array)$oldBiz);
         $valPayload = array_merge((array)$oldBiz, $data, [
             'name' => $newNameCheck,
             'sector_id' => $newSectorCheck,
             'specialty_id' => $newSpecCheck,
             'secondary_sector_id' => $ownerSecondaryPair['secondary_sector_id'],
             'secondary_specialty_id' => $ownerSecondaryPair['secondary_specialty_id'],
+            'booking_enabled' => $ownerBookingPair['booking_enabled'],
+            'booking_url' => $ownerBookingPair['booking_url'],
             'google_maps_url' => $coordsMeta['google_maps_url'],
         ]);
         self::validateListingWritePayload($pdo, $valPayload, $resolvedLat, $resolvedLng, $hoursJson);
@@ -1759,6 +1833,8 @@ final class VettingPurger
                 whatsapp_number = :whatsapp_number,
                 email_public = :email_public,
                 website_url = :website_url,
+                booking_enabled = :booking_enabled,
+                booking_url = :booking_url,
                 social_instagram = :social_instagram,
                 social_linkedin = :social_linkedin,
                 social_x = :social_x,
@@ -1807,6 +1883,8 @@ final class VettingPurger
             ':whatsapp_number' => trim((string)($data['whatsapp_number'] ?? '')) ?: null,
             ':email_public' => trim((string)($data['email_public'] ?? '')) ?: null,
             ':website_url' => trim((string)($data['website_url'] ?? '')) ?: null,
+            ':booking_enabled' => $ownerBookingPair['booking_enabled'],
+            ':booking_url' => $ownerBookingPair['booking_url'],
             ':social_instagram' => trim((string)($data['social_instagram'] ?? '')) ?: null,
             ':social_linkedin' => trim((string)($data['social_linkedin'] ?? '')) ?: null,
             ':social_x' => trim((string)($data['social_x'] ?? '')) ?: null,

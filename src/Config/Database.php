@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v21-sec-spec';
+    public const SCHEMA_INIT_VERSION = '2026-11-v22-booking';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -399,6 +399,8 @@ final class Database
                     email_public TEXT NULL,
                     owner_email TEXT NULL,
                     website_url TEXT NULL,
+                    booking_enabled INTEGER NOT NULL DEFAULT 0,
+                    booking_url TEXT NULL,
                     social_instagram TEXT NULL,
                     social_linkedin TEXT NULL,
                     social_x TEXT NULL,
@@ -602,6 +604,13 @@ final class Database
                 $pdo->exec("ALTER TABLE businesses ADD COLUMN secondary_specialty_id INTEGER NULL REFERENCES categories(id) ON DELETE SET NULL");
             }
             $pdo->exec("CREATE INDEX IF NOT EXISTS idx_status_sec_sector_spec ON businesses (status, secondary_sector_id, secondary_specialty_id)");
+            if (!isset($bizCols['booking_enabled'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN booking_enabled INTEGER NOT NULL DEFAULT 0");
+            }
+            if (!isset($bizCols['booking_url'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN booking_url TEXT NULL");
+            }
+            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_status_booking ON businesses (status, booking_enabled)");
 
             $tokCols = [];
             foreach ($pdo->query("PRAGMA table_info(owner_auth_tokens)")->fetchAll() as $tc) {
@@ -669,6 +678,16 @@ final class Database
             $idxRows = $pdo->query("SHOW INDEX FROM businesses WHERE Key_name = 'idx_status_sec_sector_spec'")->fetchAll();
             if ($idxRows === []) {
                 $pdo->exec("ALTER TABLE businesses ADD INDEX idx_status_sec_sector_spec (status, secondary_sector_id, secondary_specialty_id)");
+            }
+            if (!isset($bizCols['booking_enabled'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN booking_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER website_url");
+            }
+            if (!isset($bizCols['booking_url'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN booking_url VARCHAR(350) NULL DEFAULT NULL AFTER booking_enabled");
+            }
+            $idxBookRows = $pdo->query("SHOW INDEX FROM businesses WHERE Key_name = 'idx_status_booking'")->fetchAll();
+            if ($idxBookRows === []) {
+                $pdo->exec("ALTER TABLE businesses ADD INDEX idx_status_booking (status, booking_enabled)");
             }
 
             $tokCols = [];

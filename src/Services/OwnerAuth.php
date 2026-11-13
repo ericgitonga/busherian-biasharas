@@ -456,6 +456,7 @@ final class OwnerAuth
                 spec.name AS specialty_name,
                 sec2.name AS secondary_sector_name,
                 spec2.name AS secondary_specialty_name,
+                (SELECT COUNT(*) FROM click_events ce WHERE ce.business_id = b.id AND ce.event_type = 'booking') AS booking_clicks_total,
                 l.linked_via,
                 l.created_at AS linked_at
             FROM business_owner_links l
@@ -1931,9 +1932,13 @@ final class OwnerAuth
             $mRow['recipient_email'] = $redactThirdPartyEmails((string)($mRow['recipient_email'] ?? ''));
             $mRow['reply_to'] = isset($mRow['reply_to']) ? $redactThirdPartyEmails((string)$mRow['reply_to']) : null;
             $mRow['subject'] = $redactThirdPartyEmails((string)($mRow['subject'] ?? ''));
+            $rawReplyTo = strtolower(trim((string)($mRow['reply_to'] ?? '')));
             $bodySanitized = $redactThirdPartyEmails((string)($mRow['body_html'] ?? ''));
             if ($bodySanitized !== null && $bodySanitized !== '') {
                 $bodySanitized = (string)preg_replace('/([?&](?:token|sig|code)=)[^&"\'\s<>]+/i', '$1[redacted-token]', $bodySanitized);
+                if ($rawReplyTo !== $normEmail) {
+                    $bodySanitized = (string)preg_replace('#<span data-visitor-pii=[\'"]1[\'"]>.*?</span>#is', '[redacted-third-party-inquiry-detail]', $bodySanitized);
+                }
             }
             $mRow['body_html'] = $bodySanitized;
             $correspondence[] = $mRow;

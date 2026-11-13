@@ -211,6 +211,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Please enter a primary business phone number.';
             }
 
+            $bookingPair = ['booking_enabled' => 0, 'booking_url' => null];
+            try {
+                $bookingPair = VettingPurger::normalizeBookingFields(array_merge($_POST, [
+                    'phone_primary' => $phonePrimary,
+                    'whatsapp_number' => $whatsappNum,
+                    'email_public' => $emailPublic,
+                    'owner_email' => $submitterEmail,
+                ]), null);
+            } catch (\InvalidArgumentException $bookEx) {
+                $errors[] = $bookEx->getMessage();
+            }
+
             $resolvedCoords = LocationEngine::resolveCoordinatesFromListingData(
                 $_POST,
                 getenv('BBIZ_OFFLINE_ROUTING') !== '1'
@@ -258,6 +270,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'whatsapp_number' => $whatsappNum,
                         'email_public' => $emailPublic,
                         'website_url' => $websiteUrl,
+                        'booking_enabled' => $bookingPair['booking_enabled'],
+                        'booking_url' => $bookingPair['booking_url'],
                         'plus_code' => $plusCode,
                         'google_maps_url' => $gmapsUrl,
                         'social_instagram' => trim((string)($_POST['social_instagram'] ?? '')),
@@ -293,7 +307,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             area_neighborhood, country, city_county, landmark_directions,
                             plus_code, latitude, longitude, google_maps_url,
                             operating_hours_json, photos_json, phone_primary, whatsapp_number,
-                            email_public, website_url,
+                            email_public, website_url, booking_enabled, booking_url,
                             social_instagram, social_linkedin, social_x,
                             social_facebook, social_tiktok, social_youtube,
                             status, consent_recorded_at, privacy_notice_version, age_attested_at, listing_provenance
@@ -305,7 +319,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             :area_neighborhood, :country, :city_county, :landmark_directions,
                             :plus_code, :latitude, :longitude, :google_maps_url,
                             :operating_hours_json, :photos_json, :phone_primary, :whatsapp_number,
-                            :email_public, :website_url,
+                            :email_public, :website_url, :booking_enabled, :booking_url,
                             :social_instagram, :social_linkedin, :social_x,
                             :social_facebook, :social_tiktok, :social_youtube,
                             'pending', :consent_at, :privacy_ver, :age_at, 'owner_submitted'
@@ -348,6 +362,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':whatsapp_number' => $whatsappNum !== '' ? $whatsappNum : null,
                         ':email_public' => $emailPublic !== '' ? $emailPublic : null,
                         ':website_url' => $websiteUrl !== '' ? $websiteUrl : null,
+                        ':booking_enabled' => $bookingPair['booking_enabled'],
+                        ':booking_url' => $bookingPair['booking_url'],
                         ':social_instagram' => trim((string)($_POST['social_instagram'] ?? '')) ?: null,
                         ':social_linkedin' => trim((string)($_POST['social_linkedin'] ?? '')) ?: null,
                         ':social_x' => trim((string)($_POST['social_x'] ?? '')) ?: null,
@@ -837,6 +853,8 @@ $aghsHouses = Houses::AGHS_HOUSES;
           </div>
         </div>
 
+        <?= bbiz_render_booking_fields(!empty($_POST['booking_enabled']), (string)($_POST['booking_url'] ?? '')) ?>
+
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0.9rem;margin-top:0.9rem;">
           <div>
             <label for="social_instagram" style="font-weight:600;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Instagram URL</label>
@@ -1162,7 +1180,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
   <script>
     window.BBIZ_SUBMIT_SUCCESS = <?= $successMessage !== '' ? 'true' : 'false' ?>;
     window.BBIZ_SUBMIT_POST_DRAFT = <?= ($_SERVER['REQUEST_METHOD'] === 'POST' && $successMessage === '')
-      ? bbiz_json_for_html_script(array_diff_key($_POST, array_flip(['csrf_token', 'form_ts', 'form_nonce', 'form_sig', 'js_interaction_token', 'website', 'owner_password', 'owner_password_confirm', 'house_name', 'house_custom', 'year_left', 'school_number', 'business_photos_data_json', 'age_attestation_18', 'dpa_consent_directory'])))
+      ? bbiz_json_for_html_script(array_diff_key($_POST, array_flip(['csrf_token', 'form_ts', 'form_nonce', 'form_sig', 'js_interaction_token', 'website', 'owner_password', 'owner_password_confirm', 'house_name', 'house_custom', 'year_left', 'school_number', 'business_photos_data_json', 'booking_fields_present', 'age_attestation_18', 'dpa_consent_directory'])))
       : 'null' ?>;
   </script>
   <script src="/assets/js/form-enhancements.js"></script>

@@ -39,6 +39,7 @@ try {
     $openNow    = !empty($_GET['open_now']) && $_GET['open_now'] !== '0' && $_GET['open_now'] !== 'false';
     $hasPerk    = !empty($_GET['has_perk']) && $_GET['has_perk'] !== '0' && $_GET['has_perk'] !== 'false';
     $b2bReady   = !empty($_GET['b2b_ready']) && $_GET['b2b_ready'] !== '0' && $_GET['b2b_ready'] !== 'false';
+    $bookable   = !empty($_GET['bookable']) && $_GET['bookable'] !== '0' && $_GET['bookable'] !== 'false';
     $userLat    = isset($_GET['lat']) && $_GET['lat'] !== '' ? (float)$_GET['lat'] : null;
     $userLng    = isset($_GET['lng']) && $_GET['lng'] !== '' ? (float)$_GET['lng'] : null;
     $radiusKm   = isset($_GET['radius_km']) && $_GET['radius_km'] !== '' ? max(0.0, min(20000.0, (float)$_GET['radius_km'])) : null;
@@ -98,6 +99,9 @@ try {
     if ($b2bReady) {
         $fromWhereSql .= " AND b.b2b_ready = 1";
     }
+    if ($bookable) {
+        $fromWhereSql .= " AND (b.booking_enabled = 1 OR (b.booking_url IS NOT NULL AND b.booking_url != ''))";
+    }
 
     $hasCoordsQuery = ($userLat !== null && $userLng !== null);
     if ($hasCoordsQuery && $radiusKm !== null && $radiusKm > 0) {
@@ -146,6 +150,8 @@ try {
             b.plus_code, b.latitude, b.longitude, b.google_maps_url,
             b.operating_hours_json, b.photos_json,
             b.phone_primary, b.whatsapp_number, b.email_public, b.website_url,
+            b.booking_enabled, b.booking_url,
+            CASE WHEN (b.email_public IS NOT NULL AND b.email_public != '') OR (b.owner_email IS NOT NULL AND b.owner_email != '') THEN 1 ELSE 0 END AS has_booking_email,
             b.social_instagram, b.social_linkedin, b.social_x,
             b.social_facebook, b.social_tiktok, b.social_youtube,
             b.logo_path, b.verified_at
@@ -350,6 +356,10 @@ try {
             'whatsapp_number' => $row['whatsapp_number'],
             'email_public' => $row['email_public'],
             'website_url' => $row['website_url'],
+            'booking_enabled' => (bool)$row['booking_enabled'],
+            'booking_url' => !empty($row['booking_url']) ? $row['booking_url'] : null,
+            'has_booking_email' => (bool)$row['has_booking_email'],
+            'is_bookable' => ((int)$row['booking_enabled'] === 1 || !empty($row['booking_url'])),
             'socials' => array_filter([
                 'instagram' => $row['social_instagram'],
                 'linkedin'  => $row['social_linkedin'],

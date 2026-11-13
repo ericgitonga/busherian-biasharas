@@ -44,6 +44,7 @@ $bizStmt = $pdo->prepare("
         COALESCE(c.whatsapp_clicks, 0) AS whatsapp_clicks,
         COALESCE(c.call_clicks, 0) AS call_clicks,
         COALESCE(c.email_clicks, 0) AS email_clicks,
+        COALESCE(c.booking_clicks, 0) AS booking_clicks,
         COALESCE(c.total_clicks, 0) AS total_clicks
     FROM businesses b
     LEFT JOIN (
@@ -60,6 +61,7 @@ $bizStmt = $pdo->prepare("
                SUM(CASE WHEN event_type = 'whatsapp' THEN 1 ELSE 0 END) AS whatsapp_clicks,
                SUM(CASE WHEN event_type = 'call' THEN 1 ELSE 0 END) AS call_clicks,
                SUM(CASE WHEN event_type = 'email' THEN 1 ELSE 0 END) AS email_clicks,
+               SUM(CASE WHEN event_type = 'booking' THEN 1 ELSE 0 END) AS booking_clicks,
                COUNT(*) AS total_clicks
         FROM click_events
         WHERE created_at >= :ccut
@@ -92,7 +94,7 @@ $dailyStmt = $pdo->prepare("
     SELECT SUBSTR(created_at, 1, 10) AS day_utc,
            SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS views,
            COUNT(DISTINCT visitor_hash) AS visitors,
-           SUM(CASE WHEN event_type IN ('modal_open', 'route_request', 'search') THEN 1 ELSE 0 END) AS actions
+           SUM(CASE WHEN event_type IN ('modal_open', 'route_request', 'search', 'booking') THEN 1 ELSE 0 END) AS actions
     FROM usage_metrics
     WHERE created_at >= :dcut
     GROUP BY SUBSTR(created_at, 1, 10)
@@ -176,6 +178,7 @@ $dailyRows = $dailyStmt->fetchAll();
               <th style="padding:0.75rem 1rem;text-align:right;">Website</th>
               <th style="padding:0.75rem 1rem;text-align:right;">WhatsApp</th>
               <th style="padding:0.75rem 1rem;text-align:right;">Calls / Email</th>
+              <th style="padding:0.75rem 1rem;text-align:right;">Bookings</th>
               <th style="padding:0.75rem 1rem;text-align:right;">Total Leads</th>
             </tr>
           </thead>
@@ -190,6 +193,7 @@ $dailyRows = $dailyStmt->fetchAll();
                 <td style="padding:0.7rem 1rem;text-align:right;"><?= (int)$bs['website_clicks'] ?></td>
                 <td style="padding:0.7rem 1rem;text-align:right;"><?= (int)$bs['whatsapp_clicks'] ?></td>
                 <td style="padding:0.7rem 1rem;text-align:right;"><?= (int)$bs['call_clicks'] + (int)$bs['email_clicks'] ?></td>
+                <td style="padding:0.7rem 1rem;text-align:right;font-weight:700;color:#065F46;"><?= (int)$bs['booking_clicks'] ?></td>
                 <td style="padding:0.7rem 1rem;text-align:right;font-weight:800;color:#7B1113;"><?= (int)$bs['total_clicks'] ?></td>
               </tr>
             <?php endforeach; ?>

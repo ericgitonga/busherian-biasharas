@@ -721,6 +721,47 @@ HTML;
     }
 }
 
+if (!function_exists('bbiz_render_booking_fields')) {
+    /**
+     * Render optional Appointment & Consultation Booking configuration across all 4 listing forms (#282, #283).
+     */
+    function bbiz_render_booking_fields(bool $bookingEnabled = false, string $bookingUrl = ''): string
+    {
+        $checkedAttr = ($bookingEnabled || trim($bookingUrl) !== '') ? 'checked' : '';
+        $safeUrl = htmlspecialchars(trim($bookingUrl), ENT_QUOTES, 'UTF-8');
+
+        return <<<HTML
+        <div class="booking-config-box" data-booking-config-box="1" data-testid="booking-config-box">
+          <input type="hidden" name="booking_fields_present" value="1">
+          <label for="booking_enabled" class="booking-config-toggle-label">
+            <input type="checkbox" id="booking_enabled" name="booking_enabled" value="1" data-testid="booking-enabled-checkbox" {$checkedAttr}>
+            <span>📅 Enable Direct Appointment / Consultation Booking on This Listing <span class="booking-config-optional">(Optional — Free)</span></span>
+          </label>
+          <p class="booking-config-hint">
+            Turn your listing into a direct client booking channel — ideal for clinics, advocates, consultants, salons, photographers, tutors, and service studios.
+          </p>
+          <div class="booking-config-url-row">
+            <label for="booking_url" style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;color:#114B3E;">
+              External Booking Page URL <span style="font-weight:500;color:#6B7280;">(Optional — Calendly, Cal.com, Google Appointments, Booksy, Fresha, or your own booking page)</span>
+            </label>
+            <input
+              type="url"
+              id="booking_url"
+              name="booking_url"
+              maxlength="350"
+              data-testid="booking-url-input"
+              class="input-control"
+              value="{$safeUrl}"
+              placeholder="https://calendly.com/your-practice/consultation (or leave blank to receive WhatsApp / Email slot requests)">
+            <div style="font-size:0.76rem;color:#4B5563;margin-top:0.3rem;line-height:1.4;">
+              If you paste an external scheduler link above, the <strong>📅 Book Appointment</strong> button opens your scheduler directly. If left blank while enabled, visitors can pick a preferred date &amp; time window and send a structured request via WhatsApp or spam-protected Email.
+            </div>
+          </div>
+        </div>
+HTML;
+    }
+}
+
 /**
  * Non-blocking CLI process overlap guard using OS flock() (#235 R3-LOW-03).
  * Returns the open file handle (caller MUST keep variable in scope until exit), or null if another instance holds the lock.

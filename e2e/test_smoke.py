@@ -1935,6 +1935,168 @@ def test_playwright_ch1_chunk2_secondary_specialty_and_multi_business_guidance()
         ctx.close()
 
 
+
+def test_playwright_ch1_chunk3_appointment_booking():
+    """Chapter 1 Chunk 3 (#282, #283, #284, #285): External booking URL + UTM attribution, 7-layer built-in booking inquiry, filter pill & zero owner_email leak."""
+    ctx = _new_browser_context()
+    try:
+        page = ctx.new_page()
+        page.goto(f"{BASE_URL}/submit.php", wait_until="networkidle")
+
+        # 1. Verify booking configuration box on /submit.php and auto-check when typing an external booking URL
+        booking_box = page.get_by_test_id("booking-config-box")
+        booking_box.wait_for(state="visible", timeout=5000)
+        booking_chk = page.get_by_test_id("booking-enabled-checkbox")
+        booking_url_in = page.get_by_test_id("booking-url-input")
+        assert not booking_chk.is_checked()
+        booking_url_in.fill("https://calendly.com/busherian-practice/30min")
+        assert booking_chk.is_checked(), "Typing a booking_url should automatically check booking_enabled"
+
+        assert ADMIN_ACCESS_TOKEN, "ADMIN_ACCESS_TOKEN required for Chunk 3 E2E"
+        _, cat_body, _ = _request("/api/categories.php")
+        sectors = json.loads(cat_body)["sectors"]
+        sec_id = str(sectors[0]["id"])
+        spec_id = str(sectors[0]["specialties"][0]["id"])
+
+        page.goto(f"{BASE_URL}/admin/login.php", wait_until="networkidle")
+        page.locator("#admin_token").fill(ADMIN_ACCESS_TOKEN)
+        page.locator("form button[type='submit']").click()
+        page.wait_for_url("**/admin/index.php**", timeout=8000)
+
+        ts284 = int(time.time() * 1000) % 1000000
+        ext_biz_name = f"Calendly Advocates {ts284}"
+        builtin_biz_name = f"Direct Consult Studio {ts284}"
+        private_owner_email = f"private.founder.{ts284}@directstudio284.co.ke"
+
+        # 2a. Curate Business A: External scheduler URL (Calendly)
+        page.goto(f"{BASE_URL}/admin/add-business.php", wait_until="networkidle")
+        page.locator("#name").fill(ext_biz_name)
+        page.locator("select[name='school_badge']").select_option("AHS")
+        page.locator("#tagline").fill("Corporate law consultations via Calendly")
+        page.locator("#description").fill("Book a 30-minute legal consultation directly via our external Calendly scheduler.")
+        page.locator("#sector_id").select_option(sec_id)
+        page.locator("#specialty_id").select_option(spec_id)
+        if page.locator("#regulated-fields-wrap").is_visible():
+            reg_opts = page.locator("#regulator_name option").all_text_contents()
+            if len(reg_opts) > 1:
+                page.locator("#regulator_name").select_option(index=1)
+        page.locator("#phone_primary").fill("+254722284001")
+        page.get_by_test_id("booking-url-input").fill("https://calendly.com/busherian-advocates/consultation")
+        page.locator("select[name='admin_provenance_basis']").select_option("alumni_direct_authorization")
+        page.locator("input[name='admin_provenance_note']").fill("Authorized for Chunk 3 E2E external booking test")
+        page.locator("input[name='admin_adult_subject_attested']").check()
+        page.locator("form[action='/admin/add-business.php'] button[type='submit']").click()
+        page.wait_for_url("**/admin/index.php?added=**", timeout=10000)
+
+        # 2b. Curate Business B: Built-in appointment booking (no external URL, private owner_email set in admin edit)
+        page.goto(f"{BASE_URL}/admin/add-business.php", wait_until="networkidle")
+        page.locator("#name").fill(builtin_biz_name)
+        page.locator("select[name='school_badge']").select_option("AGHS")
+        page.locator("#tagline").fill("Direct appointment requests via WhatsApp & Email")
+        page.locator("#description").fill("Request a preferred consultation date and time slot directly from our directory profile.")
+        page.locator("#sector_id").select_option(sec_id)
+        page.locator("#specialty_id").select_option(spec_id)
+        if page.locator("#regulated-fields-wrap").is_visible():
+            reg_opts = page.locator("#regulator_name option").all_text_contents()
+            if len(reg_opts) > 1:
+                page.locator("#regulator_name").select_option(index=1)
+        page.locator("#phone_primary").fill("+254722284002")
+        page.locator("#whatsapp_number").fill("+254722284002")
+        page.get_by_test_id("booking-enabled-checkbox").check()
+        page.locator("select[name='admin_provenance_basis']").select_option("alumni_direct_authorization")
+        page.locator("input[name='admin_provenance_note']").fill("Authorized for Chunk 3 E2E built-in booking test")
+        page.locator("input[name='admin_adult_subject_attested']").check()
+        page.locator("form[action='/admin/add-business.php'] button[type='submit']").click()
+        page.wait_for_url("**/admin/index.php?added=**", timeout=10000)
+        added_builtin_id = int(page.url.split("added=")[1].split("&")[0])
+
+        # Assign private owner_email (leaving email_public blank!) so we verify server-side owner_email routing with ZERO client leak!
+        page.goto(f"{BASE_URL}/admin/edit-business.php?id={added_builtin_id}", wait_until="networkidle")
+        page.locator("#owner_email").fill(private_owner_email)
+        page.get_by_role("button", name="💾 Save Changes").click()
+        page.wait_for_load_state("networkidle")
+
+        # 3. Verify /api/businesses.php?bookable=1 returns both bookable listings and NEVER leaks private_owner_email
+        st_bk, bk_body, _ = _request("/api/businesses.php?bookable=1&per_page=50")
+        assert st_bk == 200, bk_body
+        assert private_owner_email not in bk_body, "CRITICAL: private owner_email leaked in /api/businesses.php!"
+        bk_items = json.loads(bk_body).get("businesses", [])
+        ext_item = next((b for b in bk_items if b["name"] == ext_biz_name), None)
+        bi_item = next((b for b in bk_items if b["name"] == builtin_biz_name), None)
+        assert ext_item is not None and ext_item["is_bookable"] is True
+        assert bi_item is not None and bi_item["is_bookable"] is True and bi_item["has_booking_email"] is True
+
+        # 4. Browse directory in fresh anonymous visitor context -> test Book Appointment filter pill, external CTA & built-in booking drawer
+        ctx_vis = _new_browser_context()
+        try:
+            pv = ctx_vis.new_page()
+            pv.goto(f"{BASE_URL}/", wait_until="networkidle")
+            if pv.get_by_test_id("cookie-reject-btn").is_visible():
+                pv.get_by_test_id("cookie-reject-btn").click()
+
+            # Click 📅 Book Appointment quick filter pill
+            pv.get_by_test_id("quick-filter-bookable").click()
+            pv.get_by_test_id("search-input").fill(str(ts284))
+
+            ext_card = pv.locator("[data-testid='biz-card']", has_text=ext_biz_name)
+            bi_card = pv.locator("[data-testid='biz-card']", has_text=builtin_biz_name)
+            ext_card.wait_for(state="visible", timeout=8000)
+            bi_card.wait_for(state="visible", timeout=8000)
+            assert ext_card.get_by_test_id("biz-card-bookable-badge").is_visible()
+            assert bi_card.get_by_test_id("biz-card-bookable-badge").is_visible()
+
+            # 4a. Open External Scheduler modal -> verify UTM-attributed anchor
+            ext_card.get_by_test_id("biz-card-title").click()
+            ext_cta = pv.get_by_test_id("modal-book-appointment-cta")
+            ext_cta.wait_for(state="visible", timeout=5000)
+            ext_href = ext_cta.get_attribute("href") or ""
+            assert ext_href.startswith("https://calendly.com/busherian-advocates/consultation?")
+            assert "utm_source=busherianbiasharas.com" in ext_href
+            assert "utm_campaign=appointment_booking" in ext_href
+            pv.locator("#btn-close-modal").click()
+
+            # 4b. Open Built-In Booking modal -> open drawer -> fill fields -> wait >= 4.2s time-trap -> submit Email inquiry
+            bi_card.get_by_test_id("biz-card-title").click()
+            bi_cta = pv.get_by_test_id("modal-book-appointment-cta")
+            bi_cta.wait_for(state="visible", timeout=5000)
+            drawer_open_ts = time.monotonic()
+            bi_cta.click()
+
+            drawer = pv.get_by_test_id("modal-booking-drawer")
+            drawer.wait_for(state="visible", timeout=5000)
+            assert pv.get_by_test_id("booking-submit-whatsapp-btn").is_visible()
+            assert pv.get_by_test_id("booking-submit-email-btn").is_visible()
+
+            pv.get_by_test_id("booking-requester-name").click()
+            pv.get_by_test_id("booking-requester-name").type("Grace Muthoni", delay=25)
+            pv.get_by_test_id("booking-requester-email").fill(f"grace.{ts284}@visitor-example.co.ke")
+            pv.get_by_test_id("booking-requester-phone").fill("+254711284284")
+            pv.get_by_test_id("booking-topic").fill("Would like a 30-minute strategy consultation next week.")
+            pv.get_by_test_id("booking-age-checkbox").check()
+            pv.get_by_test_id("booking-privacy-checkbox").check()
+
+            # Wait until booking form tokens have loaded AND >= 4.3s elapsed since token minting (Layer 2 MIN_FILL_SECONDS = 4)
+            pv.wait_for_function(
+                "() => { const el = document.querySelector('[data-booking-inquiry-form] input[name=form_sig]'); return Boolean(el && el.value); }",
+                timeout=5000,
+            )
+            remain = 4.4 - (time.monotonic() - drawer_open_ts)
+            if remain > 0:
+                time.sleep(remain)
+
+            pv.get_by_test_id("booking-submit-email-btn").click()
+            status_box = pv.get_by_test_id("booking-drawer-status")
+            pv.wait_for_function(
+                "() => { const el = document.querySelector('[data-testid=booking-drawer-status]'); return Boolean(el && (el.textContent || '').includes('appointment request has been sent')); }",
+                timeout=8000,
+            )
+            assert private_owner_email not in pv.content(), "CRITICAL: private owner_email leaked in modal DOM!"
+        finally:
+            ctx_vis.close()
+    finally:
+        ctx.close()
+
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -1951,4 +2113,5 @@ TESTS = [
     test_playwright_r3_medium_regressions,
     test_playwright_ch1_chunk1_publishing_specialty_finder,
     test_playwright_ch1_chunk2_secondary_specialty_and_multi_business_guidance,
+    test_playwright_ch1_chunk3_appointment_booking,
 ]

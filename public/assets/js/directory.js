@@ -25,6 +25,7 @@
     openNow: false,
     hasPerk: false,
     b2bReady: false,
+    bookable: false,
     userLat: null,
     userLng: null,
     userAccuracy: null,
@@ -93,6 +94,39 @@
       return u.toString();
     } catch (_) {
       return '';
+    }
+  }
+
+  function withBookingAttribution(rawUrl) {
+    const clean = sanitizeHttpUrl(rawUrl);
+    if (!clean) return '';
+    try {
+      const u = new URL(clean);
+      if (!u.searchParams.has('utm_source')) {
+        u.searchParams.set('utm_source', 'busherianbiasharas.com');
+      }
+      if (!u.searchParams.has('utm_medium')) {
+        u.searchParams.set('utm_medium', 'referral');
+      }
+      if (!u.searchParams.has('utm_campaign')) {
+        u.searchParams.set('utm_campaign', 'appointment_booking');
+      }
+      return u.toString();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function getTodayEatIsoDate() {
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Africa/Nairobi',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+    } catch (_) {
+      return new Date().toISOString().slice(0, 10);
     }
   }
 
@@ -235,6 +269,7 @@
     if (state.openNow) params.set('open_now', '1');
     if (state.hasPerk) params.set('has_perk', '1');
     if (state.b2bReady) params.set('b2b_ready', '1');
+    if (state.bookable) params.set('bookable', '1');
     if (state.userLat !== null && state.userLng !== null) {
       params.set('lat', String(state.userLat));
       params.set('lng', String(state.userLng));
@@ -455,7 +490,10 @@
           <div>
             ${cardPhotosHtml}
             <div class="card-top-badges" style="justify-content:space-between;">
-              ${biz.can_edit ? `<span style="background:#ECFDF5;color:#065F46;border:1px solid #059669;border-radius:999px;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:800;">✓ Your Linked Business</span>` : '<span></span>'}
+              <span style="display:inline-flex;gap:0.35rem;align-items:center;flex-wrap:wrap;">
+                ${biz.can_edit ? `<span style="background:#ECFDF5;color:#065F46;border:1px solid #059669;border-radius:999px;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:800;">✓ Your Linked Business</span>` : ''}
+                ${(biz.is_bookable || biz.booking_enabled || biz.booking_url) ? `<span class="badge-bookable" data-testid="biz-card-bookable-badge">📅 Book Appointment</span>` : ''}
+              </span>
               ${distBadge}
             </div>
             <h3 class="card-title" data-testid="biz-card-title">${escapeHtml(biz.name)}</h3>
@@ -1074,6 +1112,9 @@
       : '';
 
     const safeWebsiteHref = withOutboundAttribution(biz.website_url);
+    const safeBookingHref = withBookingAttribution(biz.booking_url);
+    const isBuiltInBookable = !safeBookingHref && Boolean(biz.booking_enabled || biz.is_bookable);
+    const minBookingDate = getTodayEatIsoDate();
 
     const socials = biz.socials || {};
     const socialBadges = [
@@ -1120,6 +1161,7 @@
         <div>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem;">
             <span class="status-dot status-${escapeHtml(hours.state)}">● ${escapeHtml(hours.badge_text)}</span>
+            ${(safeBookingHref || isBuiltInBookable) ? '<span class="badge-bookable">📅 Direct Booking Available</span>' : ''}
             ${biz.b2b_ready ? '<span class="badge-distance">🏢 B2B & LPO Ready</span>' : ''}
             ${biz.regulator_name ? `<span class="badge-distance">🛡️ ${escapeHtml(biz.regulator_name)}${biz.regulator_license ? ': ' + escapeHtml(biz.regulator_license) : ''}</span>` : ''}
           </div>
@@ -1149,11 +1191,93 @@
         ` : ''}
 
         <div class="cta-grid">
+          ${safeBookingHref
+            ? `<a href="${escapeHtml(safeBookingHref)}" target="_blank" rel="noopener noreferrer" data-track="booking" data-testid="modal-book-appointment-cta" class="btn btn-booking">📅 Book Appointment &nearr;</a>`
+            : (isBuiltInBookable
+                ? `<button type="button" data-open-booking-drawer="${biz.id}" data-testid="modal-book-appointment-cta" aria-expanded="false" aria-controls="modal-booking-drawer-${biz.id}" class="btn btn-booking">📅 Book Appointment</button>`
+                : '')}
           ${safeWebsiteHref ? `<a href="${escapeHtml(safeWebsiteHref)}" target="_blank" rel="noopener noreferrer" data-track="website" class="btn btn-crimson">🌐 Visit Website &nearr;</a>` : ''}
           ${biz.phone_primary ? `<a href="tel:${escapeHtml(biz.phone_primary)}" data-track="call" class="btn btn-green">📞 Call ${escapeHtml(biz.phone_primary)}</a>` : ''}
           ${waUrl ? `<a href="${escapeHtml(waUrl)}" target="_blank" rel="noopener noreferrer" data-track="whatsapp" class="btn btn-gold">💬 WhatsApp Now</a>` : ''}
           ${biz.email_public ? `<a href="mailto:${escapeHtml(biz.email_public)}" data-track="email" class="btn btn-outline">✉️ Email Business</a>` : ''}
         </div>
+
+        ${isBuiltInBookable ? `
+          <div id="modal-booking-drawer-${biz.id}" data-testid="modal-booking-drawer" class="modal-booking-drawer" hidden>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:0.65rem;flex-wrap:wrap;margin-bottom:0.65rem;">
+              <div>
+                <h4 style="margin:0;color:#114B3E;font-size:0.98rem;">📅 Request an Appointment / Consultation with ${escapeHtml(biz.name)}</h4>
+                <p style="margin:0.15rem 0 0 0;font-size:0.78rem;color:#4B5563;">Share your preferred slot below — your request goes directly to the business with zero platform commission.</p>
+              </div>
+              <button type="button" data-close-booking-drawer="${biz.id}" class="btn btn-outline" style="padding:0.25rem 0.6rem;font-size:0.76rem;">✕ Close</button>
+            </div>
+            <form data-booking-inquiry-form="${biz.id}" data-testid="modal-booking-form" novalidate>
+              <input type="hidden" name="business_id" value="${biz.id}">
+              <input type="hidden" name="csrf_token" value="">
+              <input type="hidden" name="form_ts" value="">
+              <input type="hidden" name="form_nonce" value="">
+              <input type="hidden" name="form_sig" value="">
+              <input type="hidden" name="js_interaction_token" value="">
+              <div class="bbiz-contact-ext-field" aria-hidden="true">
+                <label for="booking-ext-web-${biz.id}">Organization Website</label>
+                <input type="text" id="booking-ext-web-${biz.id}" name="website" value="" autocomplete="nope" tabindex="-1">
+              </div>
+
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:0.7rem;">
+                <div>
+                  <label for="booking-name-${biz.id}" style="font-weight:700;font-size:0.79rem;display:block;margin-bottom:0.2rem;">Your Full Name *</label>
+                  <input type="text" id="booking-name-${biz.id}" name="requester_name" data-testid="booking-requester-name" class="input-control" maxlength="120" required placeholder="e.g. Jane Wanjiku">
+                </div>
+                <div>
+                  <label for="booking-email-${biz.id}" style="font-weight:700;font-size:0.79rem;display:block;margin-bottom:0.2rem;">Your Email *</label>
+                  <input type="email" id="booking-email-${biz.id}" name="requester_email" data-testid="booking-requester-email" class="input-control" maxlength="190" required placeholder="you@example.com">
+                </div>
+                <div>
+                  <label for="booking-phone-${biz.id}" style="font-weight:700;font-size:0.79rem;display:block;margin-bottom:0.2rem;">Your Phone / WhatsApp</label>
+                  <input type="tel" id="booking-phone-${biz.id}" name="requester_phone" data-testid="booking-requester-phone" class="input-control" maxlength="40" placeholder="+2547...">
+                </div>
+              </div>
+
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:0.7rem;margin-top:0.7rem;">
+                <div>
+                  <label for="booking-date-${biz.id}" style="font-weight:700;font-size:0.79rem;display:block;margin-bottom:0.2rem;">Preferred Date (EAT) *</label>
+                  <input type="date" id="booking-date-${biz.id}" name="preferred_date" data-testid="booking-preferred-date" class="input-control" min="${escapeHtml(minBookingDate)}" value="${escapeHtml(minBookingDate)}" required>
+                </div>
+                <div>
+                  <label for="booking-slot-${biz.id}" style="font-weight:700;font-size:0.79rem;display:block;margin-bottom:0.2rem;">Preferred Time Window *</label>
+                  <select id="booking-slot-${biz.id}" name="preferred_slot" data-testid="booking-preferred-slot" class="select-control" required>
+                    <option value="Morning (8:00 AM - 12:00 PM EAT)">Morning (8:00 AM – 12:00 PM EAT)</option>
+                    <option value="Midday / Early Afternoon (12:00 PM - 3:00 PM EAT)">Midday / Early Afternoon (12:00 PM – 3:00 PM EAT)</option>
+                    <option value="Late Afternoon (3:00 PM - 6:00 PM EAT)">Late Afternoon (3:00 PM – 6:00 PM EAT)</option>
+                    <option value="Evening / Flexible (By Arrangement)">Evening / Flexible (By Arrangement)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="margin-top:0.7rem;">
+                <label for="booking-topic-${biz.id}" style="font-weight:700;font-size:0.79rem;display:block;margin-bottom:0.2rem;">Brief Consultation Topic / Note *</label>
+                <textarea id="booking-topic-${biz.id}" name="topic" data-testid="booking-topic" rows="2" maxlength="500" class="input-control" required placeholder="Briefly describe the service or consultation you would like to book..."></textarea>
+              </div>
+
+              <div style="margin-top:0.65rem;background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:0.6rem 0.75rem;font-size:0.77rem;color:#374151;">
+                <label for="booking-age-${biz.id}" style="display:flex;align-items:flex-start;gap:0.45rem;margin-bottom:0.35rem;cursor:pointer;">
+                  <input type="checkbox" id="booking-age-${biz.id}" name="age_attestation_18" data-testid="booking-age-checkbox" value="1" required style="margin-top:0.15rem;">
+                  <span>I confirm that I am 18 years of age or older. *</span>
+                </label>
+                <label for="booking-privacy-${biz.id}" style="display:flex;align-items:flex-start;gap:0.45rem;cursor:pointer;">
+                  <input type="checkbox" id="booking-privacy-${biz.id}" name="privacy_acknowledged" data-testid="booking-privacy-checkbox" value="1" required style="margin-top:0.15rem;">
+                  <span>I consent to sharing the details above with <strong>${escapeHtml(biz.name)}</strong> to arrange this appointment in accordance with the <a href="/privacy.php" target="_blank" style="color:#7B1113;text-decoration:underline;">Privacy Notice</a>. *</span>
+                </label>
+              </div>
+
+              <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;margin-top:0.75rem;">
+                ${biz.has_booking_email ? `<button type="submit" data-testid="booking-submit-email-btn" class="btn btn-crimson" style="font-size:0.82rem;">✉️ Send Request by Email</button>` : ''}
+                ${waNumber ? `<button type="button" data-booking-whatsapp-btn="${biz.id}" data-wa-digits="${escapeHtml(waNumber)}" data-testid="booking-submit-whatsapp-btn" class="btn btn-green" style="font-size:0.82rem;">💬 Request via WhatsApp &nearr;</button>` : ''}
+              </div>
+              <div id="booking-drawer-status-${biz.id}" data-testid="booking-drawer-status" role="status" aria-live="polite" style="margin-top:0.6rem;font-size:0.82rem;font-weight:600;display:none;"></div>
+            </form>
+          </div>
+        ` : ''}
 
         ${socialBadges ? `
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.6rem;">
@@ -1222,7 +1346,7 @@
       alert('Select at least one business using "+ B2B Shortlist" on any card to export a procurement summary.');
       return;
     }
-    const headers = ['Business Name', 'Industry Sector', 'Specialty', 'City/Area', 'B2B Ready', 'Accepts LPO', 'Regulator', 'Phone', 'Email', 'Website'];
+    const headers = ['Business Name', 'Industry Sector', 'Specialty', 'City/Area', 'B2B Ready', 'Accepts LPO', 'Regulator', 'Phone', 'Email', 'Website', 'Booking'];
     const sanitizeCsv = (val) => {
       const s = String(val ?? '').trim();
       const safe = (/^[=+\-@|\t\r]/.test(s)) ? ("'" + s) : s;
@@ -1239,6 +1363,7 @@
       b.phone_primary,
       b.email_public,
       b.website_url,
+      b.booking_url || ((b.booking_enabled || b.is_bookable) ? 'Direct Request' : 'No'),
     ].map(sanitizeCsv).join(','));
 
     const csvContent = [headers.map(sanitizeCsv).join(','), ...rows].join('\n');
@@ -1341,6 +1466,7 @@
         state.openNow = false;
         state.hasPerk = false;
         state.b2bReady = false;
+        state.bookable = false;
         state.selectedSchool = '';
         state.selectedCountry = '';
         state.selectedCity = '';
@@ -1360,6 +1486,9 @@
       } else if (f === 'b2b_ready') {
         state.b2bReady = !state.b2bReady;
         btn.classList.toggle('active', state.b2bReady);
+      } else if (f === 'bookable') {
+        state.bookable = !state.bookable;
+        btn.classList.toggle('active', state.bookable);
       } else if (f === 'AHS' || f === 'AGHS') {
         state.selectedSchool = (state.selectedSchool === f) ? '' : f;
         document.querySelectorAll('[data-quick-filter="AHS"],[data-quick-filter="AGHS"]').forEach(b => {
@@ -1371,7 +1500,117 @@
     });
   });
 
-  document.addEventListener('submit', (e) => {
+  async function ensureBookingFormTokens(formEl, statusEl) {
+    if (!formEl) return false;
+    const csrfInput = formEl.querySelector('input[name="csrf_token"]');
+    const tsInput = formEl.querySelector('input[name="form_ts"]');
+    const nonceInput = formEl.querySelector('input[name="form_nonce"]');
+    const sigInput = formEl.querySelector('input[name="form_sig"]');
+    if (csrfInput && csrfInput.value && nonceInput && nonceInput.value && sigInput && sigInput.value) {
+      return true;
+    }
+    try {
+      const res = await fetch('/api/book-appointment.php?action=tokens', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (!res.ok || !data || data.status !== 'ok' || !data.tokens) {
+        throw new Error((data && data.message) || 'Could not initialize booking security token.');
+      }
+      if (csrfInput) csrfInput.value = String(data.tokens.csrf_token || '');
+      if (tsInput) tsInput.value = String(data.tokens.form_ts || '');
+      if (nonceInput) nonceInput.value = String(data.tokens.form_nonce || '');
+      if (sigInput) sigInput.value = String(data.tokens.form_sig || '');
+      return true;
+    } catch (err) {
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#991B1B';
+        statusEl.textContent = '⚠️ ' + ((err && err.message) || 'Could not prepare booking form. You can still contact the business directly.');
+      }
+      return false;
+    }
+  }
+
+  document.addEventListener('submit', async (e) => {
+    const bookingForm = e.target.closest('[data-booking-inquiry-form]');
+    if (bookingForm) {
+      e.preventDefault();
+      const bizId = Number(bookingForm.getAttribute('data-booking-inquiry-form'));
+      const statusEl = document.getElementById(`booking-drawer-status-${bizId}`);
+      const submitBtn = bookingForm.querySelector('[data-testid="booking-submit-email-btn"]');
+
+      const nameVal = (bookingForm.querySelector('[name="requester_name"]')?.value || '').trim();
+      const emailVal = (bookingForm.querySelector('[name="requester_email"]')?.value || '').trim();
+      const dateVal = (bookingForm.querySelector('[name="preferred_date"]')?.value || '').trim();
+      const slotVal = (bookingForm.querySelector('[name="preferred_slot"]')?.value || '').trim();
+      const topicVal = (bookingForm.querySelector('[name="topic"]')?.value || '').trim();
+      const ageChecked = Boolean(bookingForm.querySelector('[name="age_attestation_18"]')?.checked);
+      const privChecked = Boolean(bookingForm.querySelector('[name="privacy_acknowledged"]')?.checked);
+
+      if (!nameVal || !emailVal || !dateVal || !slotVal || !topicVal) {
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = '#991B1B';
+          statusEl.textContent = '⚠️ Please fill in your name, email, preferred date, time window, and brief consultation topic.';
+        }
+        return;
+      }
+      if (!ageChecked || !privChecked) {
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = '#991B1B';
+          statusEl.textContent = '⚠️ Please confirm both the 18+ attestation and Privacy Notice consent checkboxes.';
+        }
+        return;
+      }
+
+      const tokenReady = await ensureBookingFormTokens(bookingForm, statusEl);
+      if (!tokenReady) return;
+
+      if (submitBtn) submitBtn.disabled = true;
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#114B3E';
+        statusEl.textContent = '⏳ Sending your appointment request...';
+      }
+
+      try {
+        const fd = new FormData(bookingForm);
+        const res = await fetch('/api/book-appointment.php', {
+          method: 'POST',
+          body: fd,
+          credentials: 'same-origin',
+        });
+        const payload = await res.json();
+        if (!res.ok || !payload || payload.status !== 'ok') {
+          const nonceEl = bookingForm.querySelector('input[name="form_nonce"]');
+          if (nonceEl) nonceEl.value = '';
+          await ensureBookingFormTokens(bookingForm, null);
+          throw new Error((payload && payload.message) || 'Could not send appointment request right now.');
+        }
+
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = '#065F46';
+          statusEl.textContent = '✓ ' + (payload.message || 'Your appointment request has been sent!');
+        }
+        if (window.BBizMetrics && state.activeBusiness) {
+          window.BBizMetrics.track('booking', { business_id: bizId, meta_label: state.activeBusiness.name });
+        }
+        bookingForm.reset();
+        const nonceEl = bookingForm.querySelector('input[name="form_nonce"]');
+        if (nonceEl) nonceEl.value = '';
+      } catch (err) {
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = '#991B1B';
+          statusEl.textContent = '⚠️ ' + ((err && err.message) || 'Could not send appointment request.');
+        }
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+      return;
+    }
+
     const originForm = e.target.closest('[data-origin-search-form]');
     if (originForm) {
       e.preventDefault();
@@ -1493,9 +1732,94 @@
       return;
     }
 
+    const openBookingBtn = e.target.closest('[data-open-booking-drawer]');
+    if (openBookingBtn) {
+      e.stopPropagation();
+      const bizId = Number(openBookingBtn.getAttribute('data-open-booking-drawer'));
+      const drawer = document.getElementById(`modal-booking-drawer-${bizId}`);
+      if (drawer) {
+        const willOpen = drawer.hidden;
+        drawer.hidden = !willOpen;
+        openBookingBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        if (willOpen) {
+          const bForm = drawer.querySelector('[data-booking-inquiry-form]');
+          const statusEl = document.getElementById(`booking-drawer-status-${bizId}`);
+          if (bForm && !drawer.dataset.humanBound) {
+            drawer.dataset.humanBound = '1';
+            const markBookingHuman = () => {
+              const jt = bForm.querySelector('input[name="js_interaction_token"]');
+              if (jt && !jt.value) {
+                jt.value = 'human_verified_' + Date.now();
+              }
+            };
+            ['focusin', 'keydown', 'pointerdown', 'touchstart'].forEach(evName => {
+              drawer.addEventListener(evName, markBookingHuman, { passive: true });
+            });
+          }
+          ensureBookingFormTokens(bForm, statusEl);
+          const firstField = drawer.querySelector('input[name="requester_name"]');
+          if (firstField) firstField.focus();
+        }
+      }
+      return;
+    }
+
+    const closeBookingBtn = e.target.closest('[data-close-booking-drawer]');
+    if (closeBookingBtn) {
+      e.stopPropagation();
+      const bizId = Number(closeBookingBtn.getAttribute('data-close-booking-drawer'));
+      const drawer = document.getElementById(`modal-booking-drawer-${bizId}`);
+      const toggleBtn = els.modalContent ? els.modalContent.querySelector(`[data-open-booking-drawer="${bizId}"]`) : null;
+      if (drawer) drawer.hidden = true;
+      if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'false');
+      return;
+    }
+
+    const waBookingBtn = e.target.closest('[data-booking-whatsapp-btn]');
+    if (waBookingBtn) {
+      e.stopPropagation();
+      const bizId = Number(waBookingBtn.getAttribute('data-booking-whatsapp-btn'));
+      const waDigits = waBookingBtn.getAttribute('data-wa-digits') || '';
+      const bForm = els.modalContent ? els.modalContent.querySelector(`[data-booking-inquiry-form="${bizId}"]`) : null;
+      const statusEl = document.getElementById(`booking-drawer-status-${bizId}`);
+      if (!bForm || !waDigits) return;
+
+      const nameVal = (bForm.querySelector('[name="requester_name"]')?.value || '').trim();
+      const dateVal = (bForm.querySelector('[name="preferred_date"]')?.value || '').trim();
+      const slotVal = (bForm.querySelector('[name="preferred_slot"]')?.value || '').trim();
+      const topicVal = (bForm.querySelector('[name="topic"]')?.value || '').trim();
+      const ageChecked = Boolean(bForm.querySelector('[name="age_attestation_18"]')?.checked);
+      const privChecked = Boolean(bForm.querySelector('[name="privacy_acknowledged"]')?.checked);
+
+      if (!nameVal || !dateVal || !slotVal || !topicVal || !ageChecked || !privChecked) {
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = '#991B1B';
+          statusEl.textContent = '⚠️ Please enter your name, preferred date, time window, topic, and confirm both checkboxes before opening WhatsApp.';
+        }
+        return;
+      }
+
+      const bizName = (state.activeBusiness && state.activeBusiness.name) ? state.activeBusiness.name : 'your business';
+      const msgLines = [
+        `Hi ${bizName}, I'd like to request an appointment via Busherian Biasharas:`,
+        `• Name: ${nameVal}`,
+        `• Preferred Date: ${dateVal} (${slotVal})`,
+        `• Topic: ${topicVal}`,
+      ];
+      trackClick(bizId, 'booking');
+      if (window.BBizMetrics) window.BBizMetrics.track('booking', { business_id: bizId, meta_label: bizName });
+      window.open(`https://wa.me/${waDigits}?text=${encodeURIComponent(msgLines.join('\n'))}`, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
     const trackEl = e.target.closest('[data-track]');
     if (trackEl && state.activeBusiness) {
-      trackClick(state.activeBusiness.id, trackEl.getAttribute('data-track'));
+      const evtType = trackEl.getAttribute('data-track');
+      trackClick(state.activeBusiness.id, evtType);
+      if (evtType === 'booking' && window.BBizMetrics) {
+        window.BBizMetrics.track('booking', { business_id: state.activeBusiness.id, meta_label: state.activeBusiness.name });
+      }
     }
   });
 

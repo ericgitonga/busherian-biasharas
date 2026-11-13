@@ -989,6 +989,7 @@
     'website',
     'business_photos[]',
     'business_photos_data_json',
+    'booking_fields_present',
     'house_name',
     'house_custom',
     'year_left',
@@ -1025,7 +1026,7 @@
     const checkKeys = [
       'name', 'tagline', 'description', 'submitter_name', 'submitter_email',
       'submitter_phone', 'phone_primary', 'whatsapp_number', 'email_public',
-      'website_url', 'building_name', 'street_road', 'area_neighborhood',
+      'website_url', 'booking_url', 'building_name', 'street_road', 'area_neighborhood',
       'alumni_perk', 'regulator_license'
     ];
     return checkKeys.some(k => typeof draft[k] === 'string' && draft[k].trim() !== '');
@@ -1288,5 +1289,22 @@
     }
   }
 
+  function bindBookingConfigAutoToggle() {
+    const bookingCheckbox = document.getElementById('booking_enabled');
+    const bookingUrlInput = document.getElementById('booking_url');
+    if (!bookingCheckbox || !bookingUrlInput) return;
+
+    const syncCheckFromUrl = () => {
+      if (bookingUrlInput.value.trim() !== '' && !bookingCheckbox.checked) {
+        bookingCheckbox.checked = true;
+        bookingCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    };
+    bookingUrlInput.addEventListener('input', syncCheckFromUrl);
+    bookingUrlInput.addEventListener('change', syncCheckFromUrl);
+    bookingUrlInput.addEventListener('paste', () => setTimeout(syncCheckFromUrl, 30));
+  }
+
   bindMapsPinAutoFill();
+  bindBookingConfigAutoToggle();
 })();

@@ -128,6 +128,56 @@ final class Mailer
         return self::enqueueAndSend($pdo, $adminEmail, $subject, $bodyHtml, $submitterEmail, $bizId);
     }
 
+    /**
+     * Enqueue and dispatch an Appointment / Consultation Booking Request to a verified approved business (#284).
+     * Wraps visitor contact & topic fields in `data-visitor-pii="1"` so third-party PII is automatically redacted
+     * if a different person exports correspondence under Kenya DPA s. 38.
+     */
+    public static function sendBookingInquiry(PDO $pdo, array $business, string $recipientEmail, array $inquiry): int
+    {
+        $bizId = (int)($business['id'] ?? 0);
+        $bizNameRaw = AntiSpamGate::sanitizeHeaderValue((string)($business['name'] ?? 'Busherian Business'));
+        $bizName = htmlspecialchars($bizNameRaw, ENT_QUOTES, 'UTF-8');
+
+        $reqNameClean = AntiSpamGate::sanitizeHeaderValue((string)($inquiry['requester_name'] ?? ''));
+        $reqEmailClean = strtolower(trim(AntiSpamGate::sanitizeHeaderValue((string)($inquiry['requester_email'] ?? ''))));
+        $reqPhoneClean = AntiSpamGate::sanitizeHeaderValue((string)($inquiry['requester_phone'] ?? ''));
+        $prefDateClean = AntiSpamGate::sanitizeHeaderValue((string)($inquiry['preferred_date'] ?? ''));
+        $prefTimeClean = AntiSpamGate::sanitizeHeaderValue((string)($inquiry['preferred_time'] ?? $inquiry['preferred_slot'] ?? ''));
+        $topicClean = trim((string)($inquiry['topic'] ?? ''));
+
+        $reqNameHtml = htmlspecialchars($reqNameClean, ENT_QUOTES, 'UTF-8');
+        $reqEmailHtml = htmlspecialchars($reqEmailClean, ENT_QUOTES, 'UTF-8');
+        $reqPhoneHtml = htmlspecialchars($reqPhoneClean !== '' ? $reqPhoneClean : 'Not provided', ENT_QUOTES, 'UTF-8');
+        $prefDateHtml = htmlspecialchars($prefDateClean, ENT_QUOTES, 'UTF-8');
+        $prefTimeHtml = htmlspecialchars($prefTimeClean, ENT_QUOTES, 'UTF-8');
+        $topicHtml = nl2br(htmlspecialchars($topicClean, ENT_QUOTES, 'UTF-8'));
+
+        $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
+        $ownerPortalUrl = htmlspecialchars("{$baseUrl}/owner/index.php", ENT_QUOTES, 'UTF-8');
+
+        $subject = "[Busherian Biasharas] Appointment Request for {$bizNameRaw} ({$prefDateClean})";
+        $bodyHtml = "
+            <div style='font-family:sans-serif;max-width:620px;color:#111827;'>
+                <h2 style='color:#7B1113;margin-bottom:4px;'>📅 New Appointment / Consultation Request</h2>
+                <p style='color:#4B5563;margin-top:0;'>A visitor on <strong>Busherian Biasharas</strong> requested an appointment with <strong>{$bizName}</strong>.</p>
+                <div style='background:#FAF6F0;border:1px solid #D4AF37;border-radius:10px;padding:14px;margin:16px 0;'>
+                    <p style='margin:5px 0;'><strong>Requester Name:</strong> <span data-visitor-pii='1'>{$reqNameHtml}</span></p>
+                    <p style='margin:5px 0;'><strong>Requester Email:</strong> <span data-visitor-pii='1'>{$reqEmailHtml}</span></p>
+                    <p style='margin:5px 0;'><strong>Phone / WhatsApp:</strong> <span data-visitor-pii='1'>{$reqPhoneHtml}</span></p>
+                    <p style='margin:5px 0;'><strong>Preferred Date:</strong> {$prefDateHtml}</p>
+                    <p style='margin:5px 0;'><strong>Preferred Time (EAT):</strong> {$prefTimeHtml}</p>
+                    <p style='margin:8px 0 0 0;'><strong>Consultation Topic / Note:</strong><br><span data-visitor-pii='1'>{$topicHtml}</span></p>
+                </div>
+                <p style='font-size:13px;color:#374151;'>
+                    Reply directly to this email to confirm or reschedule with the requester. You can update or pause appointment booking anytime in your <a href='{$ownerPortalUrl}' style='color:#114B3E;font-weight:bold;'>Owner Portal</a>.
+                </p>
+            </div>
+        ";
+
+        return self::enqueueAndSend($pdo, $recipientEmail, $subject, $bodyHtml, $reqEmailClean, $bizId);
+    }
+
     public static function enqueueAndSend(
         PDO $pdo,
         string $recipient,

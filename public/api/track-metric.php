@@ -27,7 +27,7 @@ $raw = file_get_contents('php://input') ?: '';
 $data = json_decode($raw, true) ?: $_POST;
 
 $eventType = strtolower(trim((string)($data['event_type'] ?? '')));
-$allowedTypes = ['page_view', 'search', 'filter', 'modal_open', 'route_request'];
+$allowedTypes = ['page_view', 'search', 'filter', 'modal_open', 'route_request', 'booking'];
 if (!in_array($eventType, $allowedTypes, true)) {
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => 'Invalid metric event_type']);
