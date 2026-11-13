@@ -54,6 +54,7 @@
     citySelect: document.getElementById('filter-city'),
     radiusSelect: document.getElementById('filter-radius'),
     nearMeBtn: document.getElementById('btn-near-me'),
+    sortSelect: document.getElementById('sort-select'),
     cardsGrid: document.getElementById('cards-grid'),
     resultsCount: document.getElementById('results-count'),
     mapCanvas: document.getElementById('map-canvas'),
@@ -386,6 +387,7 @@
       } else {
         state.businesses = Array.isArray(data.businesses) ? data.businesses : [];
         if (data.sort) state.activeSort = String(data.sort);
+        syncSortSelect();
         if (!state.searchQuery && !state.selectedSectorId && !state.selectedSpecialtyId && state.currentPage === 1 && state.businesses.length >= offlineCatalogCache.length) {
           offlineCatalogCache = state.businesses.slice();
         }
@@ -499,6 +501,50 @@
     });
   }
 
+  // Directory Sort Selector (#314)
+  const ALLOWED_SORT_MODES = ['most_referenced', 'trending', 'newest', 'nearest', 'az', 'directory_number'];
+
+  function syncSortSelect() {
+    if (els.sortSelect && ALLOWED_SORT_MODES.includes(state.activeSort) && els.sortSelect.value !== state.activeSort) {
+      els.sortSelect.value = state.activeSort;
+    }
+  }
+
+  function syncSortToUrl(mode) {
+    try {
+      const u = new URL(window.location.href);
+      if (mode && mode !== 'most_referenced') {
+        u.searchParams.set('sort', mode);
+      } else {
+        u.searchParams.delete('sort');
+      }
+      window.history.replaceState(null, '', u.pathname + u.search + u.hash);
+    } catch (_) {}
+  }
+
+  if (els.sortSelect) {
+    els.sortSelect.addEventListener('change', async (e) => {
+      const next = ALLOWED_SORT_MODES.includes(e.target.value) ? e.target.value : 'most_referenced';
+      if (next === 'nearest' && (state.userLat === null || state.userLng === null)) {
+        try {
+          await captureBrowserLocation(true);
+          if (els.nearMeBtn) {
+            els.nearMeBtn.textContent = '📍 Near Me (Active)';
+            els.nearMeBtn.classList.add('active');
+          }
+        } catch (err) {
+          e.target.value = state.activeSort || 'most_referenced';
+          alert((err && err.message) || 'Please allow browser location access to sort businesses by distance.');
+          return;
+        }
+      }
+      state.explicitSort = next;
+      state.activeSort = next;
+      syncSortToUrl(next);
+      fetchBusinesses({ resetPage: true });
+    });
+  }
+
   document.addEventListener('click', (e) => {
     const retryBtn = e.target.closest('[data-testid="directory-fetch-retry"]');
     if (retryBtn) {
@@ -608,6 +654,8 @@
               <span style="display:inline-flex;gap:0.35rem;align-items:center;flex-wrap:wrap;">
                 ${biz.can_edit ? `<span style="background:#ECFDF5;color:#065F46;border:1px solid #059669;border-radius:999px;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:800;">✓ Your Linked Business</span>` : ''}
                 ${(biz.is_bookable || biz.booking_enabled || biz.booking_url) ? `<span class="badge-bookable" data-testid="biz-card-bookable-badge">📅 Book Appointment</span>` : ''}
+                ${biz.momentum_badge === 'popular' ? `<span class="badge-momentum badge-popular" data-testid="biz-card-popular-badge" title="Frequently checked out by fellow Busherians recently">🔥 Popular with Busherians</span>` : ''}
+                ${biz.momentum_badge === 'new' ? `<span class="badge-momentum badge-new" data-testid="biz-card-new-badge" title="Joined the directory within the last two weeks">✨ New on Biasharas</span>` : ''}
               </span>
               ${distBadge}
             </div>
@@ -2221,6 +2269,7 @@
     if (initSort && allowedInitSorts.includes(initSort)) {
       state.explicitSort = initSort;
       state.activeSort = initSort;
+      syncSortSelect();
       if (initSort !== (initialPagination && initialPagination.sort)) {
         needsInitialFetch = true;
       }

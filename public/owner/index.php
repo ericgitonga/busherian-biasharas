@@ -5,6 +5,7 @@ require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\AntiSpamGate;
+use BusherianBiasharas\Services\EngagementRanker;
 use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\VettingPurger;
 
@@ -115,6 +116,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 }
 
 $myBusinesses = OwnerAuth::getBusinessesForOwner($pdo, (int)$owner['id']);
+$engagementSummaries = [];
+foreach ($myBusinesses as $engBiz) {
+    $engagementSummaries[(int)$engBiz['id']] = EngagementRanker::getOwnerEngagementSummary($pdo, (int)$engBiz['id']);
+}
 $domainClaimSuggestions = OwnerAuth::getCorporateDomainClaimSuggestions($pdo, (string)$owner['email'], (int)$owner['id']);
 $tokens = AntiSpamGate::generateFormTokens();
 ?>
@@ -211,6 +216,7 @@ $tokens = AntiSpamGate::generateFormTokens();
                 </div>
                 <?php endif; ?>
                 <p style="margin:0.35rem 0 0 0;font-size:0.86rem;color:#4B5563;"><?= htmlspecialchars((string)$biz['tagline'], ENT_QUOTES, 'UTF-8') ?></p>
+                <?= EngagementRanker::renderOwnerInsightsHtml($bid, $engagementSummaries[$bid] ?? EngagementRanker::getOwnerEngagementSummary($pdo, $bid)) ?>
               </div>
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
                 <a href="/owner/edit-business.php?id=<?= $bid ?>" data-testid="owner-edit-business-link" class="btn btn-green">✏️ Edit Business Details</a>
