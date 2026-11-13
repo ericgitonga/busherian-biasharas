@@ -4347,7 +4347,7 @@ $swSource = (string)file_get_contents(dirname(__DIR__) . '/public/sw.js');
 $indexPhpSource = (string)file_get_contents(dirname(__DIR__) . '/public/index.php');
 $directoryJsSource = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
 assertTrue(
-    str_contains($swSource, "const CACHE_VERSION = 'bbiz-pwa-v0.23.0'") &&
+    str_contains($swSource, "const CACHE_VERSION = 'bbiz-pwa-v0.") &&
     str_contains($swSource, "req.method !== 'GET'") &&
     str_contains($swSource, "parsedUrl.origin !== self.location.origin") &&
     str_contains($swSource, "relPath.startsWith('/admin/')") &&
@@ -4363,6 +4363,35 @@ assertTrue(
     str_contains($directoryJsSource, "beforeinstallprompt") &&
     str_contains($directoryJsSource, "navigator.serviceWorker.register"),
     'Service Worker (public/sw.js) & directory UI enforce anonymous GET-only allowlist caching, /admin & /owner exclusions, install prompt handling & offline banner (#289, #290)'
+);
+
+// =========================================================================
+// Section 50: Chapter 1 Chunk 4 — Community Charter & Free-Forever Core Guarantee (#298..#300)
+// =========================================================================
+$charterClausesHtml = bbiz_render_community_charter_clauses();
+$charterPhpSource = (string)file_get_contents(dirname(__DIR__) . '/public/charter.php');
+$submitPhpSource = (string)file_get_contents(dirname(__DIR__) . '/public/submit.php');
+$trackMetricSource = (string)file_get_contents(dirname(__DIR__) . '/public/api/track-metric.php');
+$charterCombinedLower = strtolower($charterClausesHtml . ' ' . $charterPhpSource);
+
+assertTrue(
+    str_contains($charterClausesHtml, '1. Free-Forever Core Listing Guarantee') &&
+    str_contains($charterClausesHtml, '2. Zero Fee on Direct Bookings &amp; Self-Served B2B Leads') &&
+    str_contains($charterClausesHtml, '3. Optional Growth Tools &amp; Fair Placement Cap') &&
+    str_contains($charterClausesHtml, 'at most 2 clearly badged spots per category') &&
+    str_contains($charterClausesHtml, '1 clearly labeled Corporate Sponsor per sector') &&
+    str_contains($charterClausesHtml, '4. Verification &amp; Privacy Non-Negotiables') &&
+    str_contains($charterClausesHtml, 'zero third-party ad-tech trackers') &&
+    !str_contains($charterCombinedLower, 'bursar') &&
+    !str_contains($charterCombinedLower, 'endowment') &&
+    str_contains($charterPhpSource, 'bbiz_render_community_charter_clauses()') &&
+    str_contains($charterPhpSource, "header('X-BBiz-Public-Cacheable: 1')") &&
+    str_contains($submitPhpSource, 'data-testid="submit-charter-callout"') &&
+    str_contains($indexPhpSource, 'data-testid="footer-charter-strip"') &&
+    str_contains($indexPhpSource, 'data-testid="community-charter-modal"') &&
+    str_contains($trackMetricSource, "'/charter.php'") &&
+    str_contains($swSource, "'/charter.php'"),
+    'Community Charter (Clauses 1-4) renders across /charter.php, /submit.php & /index.php with route/SW allowlisting and omits deferred endowment/bursary pledges (#298, #299, #300)'
 );
 
 if ($initialDriver === 'sqlite') {

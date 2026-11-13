@@ -53,6 +53,7 @@ if ($rawPageInput !== '') {
         '/',
         '/index.php',
         '/submit.php',
+        '/charter.php',
         '/privacy.php',
         '/takedown.php',
         '/owner/login.php',

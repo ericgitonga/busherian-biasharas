@@ -766,6 +766,46 @@ HTML;
     }
 }
 
+if (!function_exists('bbiz_render_community_charter_clauses')) {
+    /**
+     * Render the 4 approved Community Charter & Free-Forever Guarantee clauses (#298, #299, #300).
+     */
+    function bbiz_render_community_charter_clauses(): string
+    {
+        return <<<'HTML'
+        <div class="charter-clauses-grid" data-testid="charter-clauses-grid">
+          <section class="charter-clause-card" data-testid="charter-clause-1">
+            <div class="charter-clause-badge">1. Free-Forever Core Listing Guarantee</div>
+            <p class="charter-clause-body">
+              Standard listings for verified <strong>AHS &amp; AGHS</strong> alumni businesses are <strong>100% free forever</strong> &mdash; including up to 5 photos, Primary + Secondary specialties, live map pin &amp; turn-by-turn directions, and direct Call, WhatsApp, Email, and Website buttons.
+            </p>
+          </section>
+
+          <section class="charter-clause-card" data-testid="charter-clause-2">
+            <div class="charter-clause-badge">2. Zero Fee on Direct Bookings &amp; Self-Served B2B Leads</div>
+            <p class="charter-clause-body">
+              Linking your own booking page (Calendly, Cal.com, Google, or your website) or receiving built-in WhatsApp/Email appointment requests and B2B shortlist inquiries is <strong>100% free with zero platform commission</strong>.
+            </p>
+          </section>
+
+          <section class="charter-clause-card" data-testid="charter-clause-3">
+            <div class="charter-clause-badge">3. Optional Growth Tools &amp; Fair Placement Cap</div>
+            <p class="charter-clause-body">
+              To fund secure hosting, verification, and ongoing engineering without ever charging at the front door, we may offer strictly optional <strong>Biashara Pro</strong> upgrades (such as automated SMS reminders, extended galleries/brochures, or priority spotlights capped at <strong>at most 2 clearly badged spots per category</strong>) and <strong>1 clearly labeled Corporate Sponsor per sector</strong>.
+            </p>
+          </section>
+
+          <section class="charter-clause-card" data-testid="charter-clause-4">
+            <div class="charter-clause-badge">4. Verification &amp; Privacy Non-Negotiables</div>
+            <p class="charter-clause-body">
+              No non-alumni business can ever buy an alumni listing. School vetting details (<strong>House</strong>, <strong>Year Left</strong>, <strong>School Number</strong>) are permanently deleted immediately upon verification, never shown or sold, and the directory runs <strong>zero third-party ad-tech trackers</strong>.
+            </p>
+          </section>
+        </div>
+HTML;
+    }
+}
+
 /**
  * Non-blocking CLI process overlap guard using OS flock() (#235 R3-LOW-03).
  * Returns the open file handle (caller MUST keep variable in scope until exit), or null if another instance holds the lock.

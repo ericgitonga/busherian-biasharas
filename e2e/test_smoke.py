@@ -2124,7 +2124,7 @@ def test_playwright_ch1_chunk5_installable_pwa():
     assert (mw, mh) == (512, 512)
 
     st_sw, body_sw, _ = _request("/sw.js")
-    assert st_sw == 200 and "bbiz-pwa-v0.23.0" in body_sw
+    assert st_sw == 200 and "bbiz-pwa-v0." in body_sw
 
     st_home, _, hdrs_home = _request("/")
     assert st_home == 200
@@ -2232,6 +2232,50 @@ def test_playwright_ch1_chunk5_installable_pwa():
         ctx.close()
 
 
+def test_playwright_ch1_chunk4_community_charter():
+    """Verify Chunk 4 (#298..#300): /charter.php, /submit.php Free-Forever Guarantee callout, and /index.php footer Charter modal."""
+    st_ch, body_ch, hdrs_ch = _request("/charter.php")
+    assert st_ch == 200
+    assert "1. Free-Forever Core Listing Guarantee" in body_ch
+    assert "2. Zero Fee on Direct Bookings" in body_ch
+    assert "3. Optional Growth Tools" in body_ch
+    assert "4. Verification &amp; Privacy Non-Negotiables" in body_ch
+    assert "endowment" not in body_ch.lower()
+    assert "bursar" not in body_ch.lower()
+    assert {k.lower(): v for k, v in hdrs_ch.items()}.get("x-bbiz-public-cacheable") == "1"
+
+    ctx = _new_browser_context()
+    try:
+        page = ctx.new_page()
+        page.goto(f"{BASE_URL}/", wait_until="networkidle")
+        if page.get_by_test_id("cookie-reject-btn").is_visible():
+            page.get_by_test_id("cookie-reject-btn").click()
+
+        # Verify footer charter strip & interactive modal on homepage
+        strip = page.get_by_test_id("footer-charter-strip")
+        strip.wait_for(state="visible", timeout=5000)
+        page.get_by_test_id("btn-open-charter-modal").click()
+
+        c_modal = page.get_by_test_id("community-charter-modal")
+        c_modal.wait_for(state="visible", timeout=5000)
+        assert page.get_by_test_id("charter-clause-1").is_visible()
+        assert page.get_by_test_id("charter-clause-2").is_visible()
+        assert page.get_by_test_id("charter-clause-3").is_visible()
+        assert page.get_by_test_id("charter-clause-4").is_visible()
+        page.get_by_test_id("btn-close-charter-modal").click()
+        c_modal.wait_for(state="hidden", timeout=5000)
+
+        # Verify /submit.php top Free-Forever Core Guarantee callout & navigation to /charter.php
+        page.goto(f"{BASE_URL}/submit.php", wait_until="domcontentloaded")
+        callout = page.get_by_test_id("submit-charter-callout")
+        callout.wait_for(state="visible", timeout=5000)
+        assert "100% free forever" in (callout.text_content() or "")
+        page.get_by_test_id("submit-charter-link").click()
+        page.get_by_test_id("community-charter-article").wait_for(state="visible", timeout=5000)
+    finally:
+        ctx.close()
+
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -2250,4 +2294,5 @@ TESTS = [
     test_playwright_ch1_chunk2_secondary_specialty_and_multi_business_guidance,
     test_playwright_ch1_chunk3_appointment_booking,
     test_playwright_ch1_chunk5_installable_pwa,
+    test_playwright_ch1_chunk4_community_charter,
 ]

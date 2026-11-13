@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.24.0] - 2026-11-13
+
+### Added
+- **Community Charter & Founder FAQ Page (`#299`, Parent `#298`)**: Added shared single-source-of-truth charter renderer `bbiz_render_community_charter_clauses()` (`src/bootstrap.php`) and standalone `public/charter.php` (`X-BBiz-Public-Cacheable: 1`) publishing Clauses 1–4 (*Free-Forever Core Listing Guarantee*, *Zero Fee on Direct Bookings & Self-Served B2B Leads*, *Optional Growth Tools & Fair Placement Cap — max 2 badged Pro spots/category & max 1 labeled Corporate Sponsor/sector*, and *Verification & Privacy Non-Negotiables — zero non-alumni listings, immediate school vetting purge & zero ad-tech trackers*), and allowlisted `/charter.php` in `public/api/track-metric.php` and `public/sw.js` (`bbiz-pwa-v0.24.0`).
+- **Registration & Homepage Free-Forever Guarantee Callouts + Charter Modal (`#300`, Parent `#298`)**: Added top `100% Free-Forever Core Guarantee` callout (`data-testid="submit-charter-callout"`) on `public/submit.php`, added footer Charter summary strip + interactive `#community-charter-modal` on `public/index.php` (`public/assets/js/directory.js`, `public/assets/css/app.css`), and added Section 50 PHP unit assertions (`tests/run_unit_tests.php`) + `test_playwright_ch1_chunk4_community_charter` (`e2e/test_smoke.py`).
+
 ## [0.23.0] - 2026-11-13
 
 ### Added

@@ -558,6 +558,17 @@ $aghsHouses = Houses::AGHS_HOUSES;
       </div>
     <?php endif; ?>
 
+    <!-- COMMUNITY CHARTER & FREE-FOREVER CORE GUARANTEE (#298, #300) -->
+    <section class="charter-callout-box" data-testid="submit-charter-callout" aria-label="100% Free-Forever Core Guarantee">
+      <div class="charter-callout-header">
+        <span class="charter-callout-pill">📜 100% Free-Forever Core Guarantee</span>
+        <a href="/charter.php" class="charter-callout-link" data-testid="submit-charter-link">Read Full Community Charter &rarr;</a>
+      </div>
+      <p class="charter-callout-text">
+        Standard listings for verified <strong>AHS &amp; AGHS</strong> alumni businesses are <strong>100% free forever</strong> &mdash; with <strong>zero listing fees</strong> and <strong>zero platform commission</strong> on your direct Call/WhatsApp/Website clicks, external booking links, built-in appointment requests, or B2B shortlist inquiries. Your school vetting details (<em>House, Year Left, School Number</em>) are permanently deleted the moment verification completes.
+      </p>
+    </section>
+
     <!-- ONE-CLICK WEBSITE URL AUTO-FILL BAR -->
     <section class="autofill-box" aria-label="One-Click Website Auto-Fill">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.55rem;">
