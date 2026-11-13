@@ -384,6 +384,8 @@ final class WebsiteEnricher
      */
     public static function extractFromHtml(string $html, string $sourceUrl, ?PDO $pdo = null): array
     {
+        // Country hint from the site's ccTLD only (e.g. .co.ke, .ch); generic TLDs never guess a country (#318)
+        $siteCountry = PhoneNormalizer::countryFromUrl($sourceUrl);
         if (!preg_match('#^https?://#i', $sourceUrl)) {
             $sourceUrl = 'https://' . trim($sourceUrl);
         }
@@ -441,7 +443,7 @@ final class WebsiteEnricher
                         $data['description'] = self::cleanText($node['description'], 800);
                     }
                     if ($data['phone_primary'] === '' && !empty($node['telephone']) && is_string($node['telephone'])) {
-                        $data['phone_primary'] = self::normalizeKenyanPhone($node['telephone']);
+                        $data['phone_primary'] = PhoneNormalizer::normalize($node['telephone'], $siteCountry);
                     }
                     if ($data['email_public'] === '' && !empty($node['email']) && is_string($node['email'])) {
                         $data['email_public'] = trim(str_replace('mailto:', '', $node['email']));
@@ -511,14 +513,15 @@ final class WebsiteEnricher
             foreach ($hrefMatches[1] as $href) {
                 $href = html_entity_decode(trim($href), ENT_QUOTES | ENT_HTML5, 'UTF-8');
                 if (str_starts_with(strtolower($href), 'tel:') && $data['phone_primary'] === '') {
-                    $data['phone_primary'] = self::normalizeKenyanPhone(substr($href, 4));
+                    $data['phone_primary'] = PhoneNormalizer::normalize(rawurldecode(substr($href, 4)), $siteCountry);
                 } elseif (str_starts_with(strtolower($href), 'mailto:') && $data['email_public'] === '') {
                     $mail = explode('?', substr($href, 7))[0];
                     if (filter_var($mail, FILTER_VALIDATE_EMAIL)) {
                         $data['email_public'] = strtolower(trim($mail));
                     }
                 } elseif (preg_match('#(?:wa\.me/|api\.whatsapp\.com/send\?[^"\']*phone=)([+0-9]+)#i', $href, $wm)) {
-                    $data['whatsapp_number'] = self::normalizeKenyanPhone($wm[1]);
+                    // wa.me numbers are always full international numbers without '+'
+                    $data['whatsapp_number'] = '+' . ltrim(preg_replace('/\D+/', '', $wm[1]) ?? '', '0');
                 } elseif (LocationEngine::isMapsUrl($href) || str_contains($href, 'google.com/maps') || str_contains($href, 'maps.app.goo.gl') || str_contains($href, 'goo.gl/maps')) {
                     if ($data['google_maps_url'] === '') {
                         $data['google_maps_url'] = $href;
@@ -535,11 +538,13 @@ final class WebsiteEnricher
             }
         }
 
-        // Regex fallback for Kenyan phone numbers in visible text (+254 7xx xxx xxx or 07xx xxx xxx or 01xx xxx xxx)
+        // Visible-text fallback: international "+<digits>" numbers anywhere; Kenyan local formats only on Kenyan sites (#318)
         $plainText = strip_tags(preg_replace('#<(script|style)[^>]*>.*?</\1>#is', ' ', $html) ?? $html);
         if ($data['phone_primary'] === '') {
-            if (preg_match('/(?:\+254|0)\s*[17]\d{1,2}[\s\-]?\d{3}[\s\-]?\d{3}/', $plainText, $pm)) {
-                $data['phone_primary'] = self::normalizeKenyanPhone($pm[0]);
+            if (preg_match('/\+\d{1,3}[\s\-]?\(?\d{1,4}\)?(?:[\s\-]?\d{2,4}){2,4}/', $plainText, $pm)) {
+                $data['phone_primary'] = PhoneNormalizer::normalize($pm[0], $siteCountry);
+            } elseif ($siteCountry === 'Kenya' && preg_match('/0\s*[17]\d{1,2}[\s\-]?\d{3}[\s\-]?\d{3}/', $plainText, $pm)) {
+                $data['phone_primary'] = PhoneNormalizer::normalize($pm[0], 'Kenya');
             }
         }
         if ($data['whatsapp_number'] === '' && $data['phone_primary'] !== '') {
@@ -654,16 +659,12 @@ final class WebsiteEnricher
         }
     }
 
+    /**
+     * @deprecated since v0.27.1 (#318) — use PhoneNormalizer::normalize($raw, $country). Kept for backward compatibility.
+     */
     public static function normalizeKenyanPhone(string $raw): string
     {
-        $digits = preg_replace('/[^0-9+]/', '', trim($raw)) ?? '';
-        if (preg_match('/^0([17]\d{8})$/', $digits, $m)) {
-            return '+254' . $m[1];
-        }
-        if (preg_match('/^254([17]\d{8})$/', $digits, $m)) {
-            return '+254' . $m[1];
-        }
-        return $digits;
+        return PhoneNormalizer::normalize($raw, 'Kenya');
     }
 
     private static function cleanText(string $text, int $maxLength = 500): string

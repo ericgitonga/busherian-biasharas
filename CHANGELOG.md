@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.27.1] - 2026-11-13
+### Fixed
+- **Non-Kenyan Phone Numbers Rewritten as +254 (`#318`)**: Every submitted phone was passed through the Kenya-only `normalizeKenyanPhone()`, so Swiss mobiles (`079 123 45 67`) were silently stored as `+254791234567` and other local numbers lacked a country code (breaking `wa.me` links). Added `src/Services/PhoneNormalizer.php` (country-aware E.164 normalization for all 197 supported countries — calling codes, trunk prefixes incl. NANP `1`, Hungary `06`, Russia/Kazakhstan `8`, and Italy's significant leading `0`), applied it with the listing's selected country across `public/submit.php` and all `VettingPurger` write paths (admin add/edit and owner edit, which previously stored phones un-normalized), and made website auto-fill infer country only from ccTLDs (`.co.ke`, `.ch`, `.co.uk`) without ever guessing for generic TLDs. Live audit confirmed all 25 existing listings were unaffected. Added Section 54 unit assertions.
+
 ## [0.27.0] - 2026-11-13
 ### Added
 - **Directory Sort Selector (`#313`, `#314`)**: Added a `Sort:` dropdown beside the per-page control on `public/index.php` (Most Referenced, Trending This Week, Newest Added, Nearest to Me, Alphabetical, Directory #), wired in `public/assets/js/directory.js` with `?sort=` URL sync via `history.replaceState`, server-resolved sort reflection, and automatic browser-location request when *Nearest to Me* is chosen without coordinates.
