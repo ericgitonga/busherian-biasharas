@@ -4384,6 +4384,8 @@ assertTrue(
     str_contains($charterClausesHtml, 'zero third-party ad-tech trackers') &&
     !str_contains($charterCombinedLower, 'bursar') &&
     !str_contains($charterCombinedLower, 'endowment') &&
+    !str_contains($charterCombinedLower, 'oralumni') &&
+    str_contains($charterPhpSource, 'override organic search or alumni verification?') &&
     str_contains($charterPhpSource, 'bbiz_render_community_charter_clauses()') &&
     str_contains($charterPhpSource, "header('X-BBiz-Public-Cacheable: 1')") &&
     str_contains($submitPhpSource, 'data-testid="submit-charter-callout"') &&
