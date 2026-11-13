@@ -5,8 +5,20 @@ Options -Indexes
     Require all denied
 </FilesMatch>
 
+<IfModule mod_mime.c>
+    AddType application/manifest+json .webmanifest
+    AddType application/javascript .js
+</IfModule>
+
 <IfModule mod_headers.c>
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-Frame-Options "SAMEORIGIN"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+    <FilesMatch "^(sw\.js|site\.webmanifest|manifest\.webmanifest)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+    <FilesMatch "^sw\.js$">
+        Header set Service-Worker-Allowed "/"
+    </FilesMatch>
 </IfModule>

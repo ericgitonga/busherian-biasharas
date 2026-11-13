@@ -2,6 +2,9 @@
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/src/bootstrap.php';
 bbiz_send_security_headers(false);
+if (!headers_sent()) {
+    header('X-BBiz-Public-Cacheable: 1');
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">

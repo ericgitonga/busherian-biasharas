@@ -64,6 +64,9 @@ $editableInitialIds = ($currentOwner !== null && $initialPageIds !== [])
     ? OwnerAuth::getEditableBusinessIdsForOwner($pdo, (int)$currentOwner['id'], $initialPageIds)
     : [];
 $isAuthenticatedViewer = ($currentOwner !== null || $isAdminVisitor);
+if (!$isAuthenticatedViewer && !headers_sent()) {
+    header('X-BBiz-Public-Cacheable: 1');
+}
 $batchedInitialHints = ($isAuthenticatedViewer && $initialPageIds !== [])
     ? OwnerAuth::getMaskedOwnerEmailHintsForBusinesses($pdo, $initialPageIds)
     : [];
@@ -173,6 +176,9 @@ $initialPagination = [
         </div>
       </a>
       <nav class="header-actions" aria-label="Primary Navigation">
+        <button type="button" id="btn-install-app" data-testid="btn-install-app" class="btn btn-outline-light btn-install-pwa" hidden title="Install Busherian Biasharas on your phone or desktop">
+          📲 Install App
+        </button>
         <button type="button" id="btn-export-shortlist" class="btn btn-outline-light" title="Export selected B2B vendors as CSV">
           🏢 B2B Shortlist (<span id="shortlist-count">0</span>/5)
         </button>
@@ -184,6 +190,9 @@ $initialPagination = [
   </header>
 
   <!-- Search & 2-Level Category Filter Dock -->
+  <div id="pwa-offline-banner" data-testid="pwa-offline-banner" class="pwa-offline-banner" role="status" aria-live="polite" hidden>
+    📶 <strong>Offline Mode:</strong> Showing your saved Busherian Biasharas snapshot. Connect to the internet for live EAT hours, map routes &amp; latest updates.
+  </div>
   <section class="filter-dock" aria-label="Directory Search and Category Filters">
     <div class="filter-inner">
       <div class="search-grid">
@@ -301,6 +310,40 @@ $initialPagination = [
   <!-- Rich Business Detail Modal -->
   <div id="biz-modal-backdrop" data-testid="biz-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-label="Business Details">
     <div id="biz-modal-content" data-testid="biz-modal-content" class="modal-dialog"></div>
+  </div>
+
+  <!-- PWA Home-Screen Install Guide Modal (#290) -->
+  <div id="pwa-install-modal" data-testid="pwa-install-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pwa-install-modal-title" hidden>
+    <div class="modal-dialog" style="max-width:540px;">
+      <div class="modal-header">
+        <div>
+          <span class="badge badge-ahs" style="margin-bottom:0.35rem;display:inline-block;">📲 In Your Pocket</span>
+          <h2 id="pwa-install-modal-title" style="margin:0;font-size:1.2rem;color:#111827;">Install Busherian Biasharas on Your Device</h2>
+        </div>
+        <button type="button" id="btn-close-pwa-modal" data-testid="btn-close-pwa-modal" class="modal-close" aria-label="Close install instructions">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin:0 0 0.9rem 0;font-size:0.88rem;color:#374151;line-height:1.5;">
+          Add <strong>Biasharas</strong> directly to your home screen for one-tap full-screen launch and offline access to verified alumni contacts, WhatsApp links, and building directions — with zero app-store bloat.
+        </p>
+        <div class="pwa-install-steps-grid">
+          <div id="pwa-guide-ios" data-testid="pwa-guide-ios" class="pwa-platform-card">
+            <div class="pwa-platform-title">🍎 iPhone &amp; iPad (Safari)</div>
+            <ol class="pwa-platform-steps">
+              <li>Tap the <strong>Share</strong> icon (<span aria-hidden="true">⬆️</span> square with upward arrow) in Safari's toolbar.</li>
+              <li>Scroll down and tap <strong>&ldquo;Add to Home Screen&rdquo;</strong>, then tap <strong>Add</strong>.</li>
+            </ol>
+          </div>
+          <div id="pwa-guide-other" data-testid="pwa-guide-other" class="pwa-platform-card">
+            <div class="pwa-platform-title">🤖 Android &amp; 💻 Desktop Browser</div>
+            <ol class="pwa-platform-steps">
+              <li>Open your browser menu (<strong>⋮</strong>) or click the install icon in the address bar.</li>
+              <li>Tap <strong>&ldquo;Install app&rdquo;</strong> or <strong>&ldquo;Add to Home screen&rdquo;</strong>.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Footer -->

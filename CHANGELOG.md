@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.23.0] - 2026-11-13
+
+### Added
+- **Installable Progressive Web App (PWA) Manifest, Maskable Heritage Icon & Standalone Meta Tags (`#288`, Parent `#287`)**: Generated full-bleed W3C safe-zone maskable icon `public/assets/img/bb-icon-maskable-512.png` (`512x512` opaque RGB `#114B3E` -> `#7B1113` heritage gradient), upgraded `public/site.webmanifest` and mirrored `public/manifest.webmanifest` (`display: "standalone"`, `start_url: "/?source=pwa"`, `scope: "/"`, `theme_color: "#7B1113"`, `short_name: "Biasharas"`, separate `purpose: "any"` and `purpose: "maskable"` icon entries, and 4 quick-launch `shortcuts`), added `application/manifest+json` MIME + `Service-Worker-Allowed: /` + `no-cache` headers in `public/.htaccess`, and emitted standalone mobile-web-app / iOS home-screen meta tags in `bbiz_head_meta_tags()` (`src/bootstrap.php`).
+- **Privacy-Safe Network-First Service Worker & Offline Directory Snapshot (`#289`, Parent `#287`)**: Added `public/sw.js` (`bbiz-pwa-v0.23.0`) enforcing a strict same-origin `GET`-only allowlist (explicitly excluding cross-origin tile servers, non-`GET` requests, `/admin/*`, `/owner/*`, `/submit.php`, `/takedown.php`, `/uploads/*`, and write/tracking APIs), anonymous `{ credentials: 'omit' }` pre-caching plus `X-BBiz-Public-Cacheable: 1` runtime cache gating on unauthenticated `public/index.php`, `public/privacy.php`, and `public/api/businesses.php` responses (ensuring `owner_email_hints` and edit links never enter Cache Storage), Network-First live delivery so Kenya DPA s. 40 takedowns and live EAT hours take effect immediately when online, and `X-BBiz-Offline-Snapshot: 1` + client-side offline search/filter fallback + `#pwa-offline-banner` when offline (`public/assets/js/directory.js`, `public/assets/css/app.css`).
+- **Smart `📲 Install App` Header CTA, 2-Step Home-Screen Guide Modal & PWA Shortcut Deep-Links (`#290`, Parent `#287`)**: Added `#btn-install-app` and accessible `#pwa-install-modal` (`public/index.php`) capturing native `beforeinstallprompt` on Android/Chromium while providing a 2-step platform-aware install guide on iOS/iPadOS Safari and desktop browsers (auto-hidden when running in `standalone` mode), added `?filter=bookable|has_perk|b2b_ready|open_now|AHS|AGHS` and `?q=...` URL shortcut deep-links in `public/assets/js/directory.js`, and added Section 49 unit tests (`tests/run_unit_tests.php`) + `test_playwright_ch1_chunk5_installable_pwa` (`e2e/test_smoke.py`).
+
 ## [0.22.0] - 2026-11-13
 
 ### Added

@@ -237,6 +237,73 @@
   let activeFetchController = null;
   let latestRequestSeq = 0;
 
+  let offlineCatalogCache = Array.isArray(initialBusinesses) ? initialBusinesses.slice() : [];
+
+  function setOfflineBannerVisible(visible) {
+    const banner = document.getElementById('pwa-offline-banner');
+    if (!banner) return;
+    banner.hidden = !visible;
+  }
+
+  function filterBusinessesClientSide(pool) {
+    const list = Array.isArray(pool) ? pool : [];
+    const qLower = (state.searchQuery || '').trim().toLowerCase();
+    return list.filter((b) => {
+      if (state.selectedSectorId) {
+        const secMatch = String(b.sector_id) === String(state.selectedSectorId)
+          || (b.secondary_sector_id && String(b.secondary_sector_id) === String(state.selectedSectorId));
+        if (!secMatch) return false;
+      }
+      if (state.selectedSpecialtyId) {
+        const specMatch = String(b.specialty_id) === String(state.selectedSpecialtyId)
+          || (b.secondary_specialty_id && String(b.secondary_specialty_id) === String(state.selectedSpecialtyId));
+        if (!specMatch) return false;
+      }
+      if (state.selectedCountry && String(b.country || 'Kenya').toLowerCase() !== String(state.selectedCountry).toLowerCase()) {
+        return false;
+      }
+      if (state.selectedCity && String(b.city_county || '').toLowerCase() !== String(state.selectedCity).toLowerCase()) {
+        return false;
+      }
+      if (state.selectedSchool === 'AHS' && b.school_badge !== 'AHS' && b.school_badge !== 'BOTH') {
+        return false;
+      }
+      if (state.selectedSchool === 'AGHS' && b.school_badge !== 'AGHS' && b.school_badge !== 'BOTH') {
+        return false;
+      }
+      if (state.openNow && (!b.hours_status || b.hours_status.state !== 'OPEN')) {
+        return false;
+      }
+      if (state.hasPerk && !b.alumni_perk) {
+        return false;
+      }
+      if (state.b2bReady && !b.b2b_ready && !b.accepts_lpo) {
+        return false;
+      }
+      if (state.bookable && !b.is_bookable && !b.booking_enabled && !b.booking_url) {
+        return false;
+      }
+      if (qLower) {
+        const hay = [
+          b.name,
+          b.tagline,
+          b.description,
+          b.sector_name,
+          b.specialty_name,
+          b.secondary_sector_name,
+          b.secondary_specialty_name,
+          b.area_neighborhood,
+          b.city_county,
+          b.street_road,
+          b.building_name,
+          b.alumni_perk,
+        ].filter(Boolean).join(' ').toLowerCase();
+        if (!hay.includes(qLower)) return false;
+      }
+      return true;
+    });
+  }
+
   async function fetchBusinesses(options) {
     const opts = options || {};
     if (opts.resetPage !== false) {
@@ -284,6 +351,7 @@
       if (!res.ok) {
         throw new Error(`Directory request failed (HTTP ${res.status}).`);
       }
+      const isOfflineSnapshot = res.headers.get('X-BBiz-Offline-Snapshot') === '1';
       const data = await res.json();
       if (reqSeq !== latestRequestSeq) return;
       if (!data || data.status !== 'ok') {
@@ -292,18 +360,42 @@
 
       state.isLoading = false;
       state.fetchError = '';
-      state.businesses = Array.isArray(data.businesses) ? data.businesses : [];
-      const pag = (data.pagination && typeof data.pagination === 'object')
-        ? data.pagination
-        : {
-            page: state.currentPage,
-            per_page: state.perPage,
-            total: typeof data.total_count === 'number' ? data.total_count : state.businesses.length,
-            total_pages: Math.max(1, Math.ceil((typeof data.total_count === 'number' ? data.total_count : state.businesses.length) / state.perPage)),
-          };
-      state.pagination = pag;
-      state.currentPage = Number(pag.page) || 1;
-      state.perPage = ALLOWED_PAGE_SIZES.includes(Number(pag.per_page)) ? Number(pag.per_page) : state.perPage;
+      if (isOfflineSnapshot) {
+        const rawPool = Array.isArray(data.businesses) ? data.businesses : [];
+        if (rawPool.length > offlineCatalogCache.length) {
+          offlineCatalogCache = rawPool.slice();
+        }
+        const filtered = filterBusinessesClientSide(rawPool);
+        const totalFiltered = filtered.length;
+        const totalPages = Math.max(1, Math.ceil(totalFiltered / state.perPage));
+        state.currentPage = Math.min(state.currentPage, totalPages);
+        const startOffset = (state.currentPage - 1) * state.perPage;
+        state.businesses = filtered.slice(startOffset, startOffset + state.perPage);
+        state.pagination = {
+          page: state.currentPage,
+          per_page: state.perPage,
+          total: totalFiltered,
+          total_pages: totalPages,
+        };
+        setOfflineBannerVisible(true);
+      } else {
+        state.businesses = Array.isArray(data.businesses) ? data.businesses : [];
+        if (!state.searchQuery && !state.selectedSectorId && !state.selectedSpecialtyId && state.currentPage === 1 && state.businesses.length >= offlineCatalogCache.length) {
+          offlineCatalogCache = state.businesses.slice();
+        }
+        const pag = (data.pagination && typeof data.pagination === 'object')
+          ? data.pagination
+          : {
+              page: state.currentPage,
+              per_page: state.perPage,
+              total: typeof data.total_count === 'number' ? data.total_count : state.businesses.length,
+              total_pages: Math.max(1, Math.ceil((typeof data.total_count === 'number' ? data.total_count : state.businesses.length) / state.perPage)),
+            };
+        state.pagination = pag;
+        state.currentPage = Number(pag.page) || 1;
+        state.perPage = ALLOWED_PAGE_SIZES.includes(Number(pag.per_page)) ? Number(pag.per_page) : state.perPage;
+        setOfflineBannerVisible(!navigator.onLine);
+      }
 
       state.businesses.forEach(b => {
         if (state.shortlistIds.has(b.id)) {
@@ -327,7 +419,24 @@
         return;
       }
       state.isLoading = false;
-      state.fetchError = (err && err.message) ? err.message : 'Network error while loading directory listings.';
+      if (navigator.onLine === false && offlineCatalogCache.length > 0) {
+        const filtered = filterBusinessesClientSide(offlineCatalogCache);
+        const totalFiltered = filtered.length;
+        const totalPages = Math.max(1, Math.ceil(totalFiltered / state.perPage));
+        state.currentPage = Math.min(state.currentPage, totalPages);
+        const startOffset = (state.currentPage - 1) * state.perPage;
+        state.businesses = filtered.slice(startOffset, startOffset + state.perPage);
+        state.pagination = {
+          page: state.currentPage,
+          per_page: state.perPage,
+          total: totalFiltered,
+          total_pages: totalPages,
+        };
+        state.fetchError = '';
+        setOfflineBannerVisible(true);
+      } else {
+        state.fetchError = (err && err.message) ? err.message : 'Network error while loading directory listings.';
+      }
       if (els.cardsGrid) {
         els.cardsGrid.removeAttribute('aria-busy');
       }
@@ -1852,7 +1961,158 @@
     renderInteractiveMap();
   });
 
-  // Initial Render
+  // Progressive Web App (PWA): Install Prompt, Guide Modal, Offline Status & Service Worker (#287, #289, #290)
+  const btnInstallApp = document.getElementById('btn-install-app');
+  const pwaInstallModal = document.getElementById('pwa-install-modal');
+  const btnClosePwaModal = document.getElementById('btn-close-pwa-modal');
+  const pwaGuideIos = document.getElementById('pwa-guide-ios');
+  const pwaGuideOther = document.getElementById('pwa-guide-other');
+  let deferredInstallPrompt = null;
+
+  function isStandaloneApp() {
+    try {
+      if (window.navigator && window.navigator.standalone === true) return true;
+      if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  function isAppleTouchDevice() {
+    const ua = String((window.navigator && window.navigator.userAgent) || '');
+    if (/iPad|iPhone|iPod/i.test(ua)) return true;
+    return /Macintosh/i.test(ua) && Number((window.navigator && window.navigator.maxTouchPoints) || 0) > 1;
+  }
+
+  function openPwaInstallModal() {
+    if (!pwaInstallModal) return;
+    const onIos = isAppleTouchDevice();
+    if (pwaGuideIos) pwaGuideIos.classList.toggle('recommended', onIos);
+    if (pwaGuideOther) pwaGuideOther.classList.toggle('recommended', !onIos);
+    pwaInstallModal.hidden = false;
+    pwaInstallModal.classList.add('open');
+  }
+
+  function closePwaInstallModal() {
+    if (!pwaInstallModal) return;
+    pwaInstallModal.classList.remove('open');
+    pwaInstallModal.hidden = true;
+  }
+
+  if (btnInstallApp) {
+    if (!isStandaloneApp()) {
+      btnInstallApp.hidden = false;
+    }
+
+    window.addEventListener('beforeinstallprompt', (ev) => {
+      ev.preventDefault();
+      deferredInstallPrompt = ev;
+      if (!isStandaloneApp()) {
+        btnInstallApp.hidden = false;
+      }
+    });
+
+    window.addEventListener('appinstalled', () => {
+      deferredInstallPrompt = null;
+      btnInstallApp.hidden = true;
+      closePwaInstallModal();
+    });
+
+    btnInstallApp.addEventListener('click', async () => {
+      if (deferredInstallPrompt && typeof deferredInstallPrompt.prompt === 'function') {
+        const promptEvt = deferredInstallPrompt;
+        deferredInstallPrompt = null;
+        try {
+          await promptEvt.prompt();
+          const choice = promptEvt.userChoice ? await promptEvt.userChoice : null;
+          if (choice && choice.outcome === 'accepted') {
+            btnInstallApp.hidden = true;
+          }
+        } catch (_) {
+          openPwaInstallModal();
+        }
+        return;
+      }
+      openPwaInstallModal();
+    });
+  }
+
+  if (btnClosePwaModal) {
+    btnClosePwaModal.addEventListener('click', closePwaInstallModal);
+  }
+  if (pwaInstallModal) {
+    pwaInstallModal.addEventListener('click', (ev) => {
+      if (ev.target === pwaInstallModal) {
+        closePwaInstallModal();
+      }
+    });
+  }
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && pwaInstallModal && !pwaInstallModal.hidden) {
+      closePwaInstallModal();
+    }
+  });
+
+  window.addEventListener('offline', () => setOfflineBannerVisible(true));
+  window.addEventListener('online', () => {
+    setOfflineBannerVisible(false);
+    fetchBusinesses({ resetPage: false });
+  });
+  if (!navigator.onLine) {
+    setOfflineBannerVisible(true);
+  }
+
+  function registerPwaServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    const swBase = (typeof window.BBIZ_BASE_PATH === 'string' && window.BBIZ_BASE_PATH)
+      ? window.BBIZ_BASE_PATH.replace(/\/$/, '')
+      : '';
+    if (!swBase && window.location.pathname.startsWith('/admin/')) {
+      return;
+    }
+    navigator.serviceWorker.register((swBase || '') + '/sw.js', { scope: (swBase || '') + '/' }).catch(() => {});
+  }
+
+  if (document.readyState === 'complete') {
+    registerPwaServiceWorker();
+  } else {
+    window.addEventListener('load', registerPwaServiceWorker, { once: true });
+  }
+
+  // Initial Render + PWA Shortcut Query Deep-Links (?filter=bookable|has_perk|b2b_ready|open_now|AHS|AGHS, ?q=...)
   renderCards();
   renderInteractiveMap();
+
+  try {
+    const initParams = new URLSearchParams(window.location.search);
+    const initQ = (initParams.get('q') || '').trim();
+    const initFilter = (initParams.get('filter') || '').trim();
+    let needsInitialFetch = false;
+
+    if (initQ && els.searchInput) {
+      els.searchInput.value = initQ;
+      state.searchQuery = initQ;
+      if (els.searchClearBtn) els.searchClearBtn.style.display = 'inline-flex';
+      needsInitialFetch = true;
+    }
+
+    if (initFilter && ['open_now', 'has_perk', 'b2b_ready', 'bookable', 'AHS', 'AGHS'].includes(initFilter)) {
+      document.querySelectorAll('[data-quick-filter="all"]').forEach(b => b.classList.remove('active'));
+      if (initFilter === 'open_now') state.openNow = true;
+      if (initFilter === 'has_perk') state.hasPerk = true;
+      if (initFilter === 'b2b_ready') state.b2bReady = true;
+      if (initFilter === 'bookable') state.bookable = true;
+      if (initFilter === 'AHS' || initFilter === 'AGHS') state.selectedSchool = initFilter;
+      const targetPill = document.querySelector(`[data-quick-filter="${initFilter}"]`);
+      if (targetPill) targetPill.classList.add('active');
+      needsInitialFetch = true;
+    }
+
+    if (window.location.hash === '#search-q' && els.searchInput) {
+      els.searchInput.focus();
+    }
+
+    if (needsInitialFetch) {
+      fetchBusinesses();
+    }
+  } catch (_) {}
 })();

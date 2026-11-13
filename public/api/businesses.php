@@ -378,6 +378,10 @@ try {
         $results[] = $item;
     }
 
+    if (!$isAuthenticatedViewer && !headers_sent()) {
+        header('X-BBiz-Public-Cacheable: 1');
+    }
+
     echo json_encode([
         'status' => 'ok',
         'count' => count($results),

@@ -4261,6 +4261,110 @@ assertTrue(
     'Mailer::sendBookingInquiry & OwnerAuth::exportOwnerPersonalData deliver booking inquiries cleanly while redacting third-party visitor PII from owner exports (#284)'
 );
 
+// =========================================================================
+// Section 49: Chapter 1 Chunk 5 — Installable PWA Manifest, Icons, SW & UI (#287..#290)
+// =========================================================================
+$siteManifestRaw = (string)file_get_contents(dirname(__DIR__) . '/public/site.webmanifest');
+$pwaManifestRaw = (string)file_get_contents(dirname(__DIR__) . '/public/manifest.webmanifest');
+$siteManifest = json_decode($siteManifestRaw, true);
+$pwaManifest = json_decode($pwaManifestRaw, true);
+
+$hasAny192 = false;
+$hasAny512 = false;
+$hasMaskable512 = false;
+if (is_array($siteManifest) && isset($siteManifest['icons']) && is_array($siteManifest['icons'])) {
+    foreach ($siteManifest['icons'] as $ic) {
+        $src = (string)($ic['src'] ?? '');
+        $sizes = (string)($ic['sizes'] ?? '');
+        $purpose = (string)($ic['purpose'] ?? 'any');
+        if ($src === '/favicon-192x192.png' && $sizes === '192x192' && $purpose === 'any') {
+            $hasAny192 = true;
+        }
+        if ($src === '/assets/img/bb-icon-512.png' && $sizes === '512x512' && $purpose === 'any') {
+            $hasAny512 = true;
+        }
+        if ($src === '/assets/img/bb-icon-maskable-512.png' && $sizes === '512x512' && $purpose === 'maskable') {
+            $hasMaskable512 = true;
+        }
+    }
+}
+
+assertTrue(
+    is_array($siteManifest) &&
+    is_array($pwaManifest) &&
+    $siteManifest === $pwaManifest &&
+    ($siteManifest['display'] ?? '') === 'standalone' &&
+    ($siteManifest['start_url'] ?? '') === '/?source=pwa' &&
+    ($siteManifest['scope'] ?? '') === '/' &&
+    ($siteManifest['theme_color'] ?? '') === '#7B1113' &&
+    ($siteManifest['short_name'] ?? '') === 'Biasharas' &&
+    $hasAny192 && $hasAny512 && $hasMaskable512 &&
+    isset($siteManifest['shortcuts']) && is_array($siteManifest['shortcuts']) && count($siteManifest['shortcuts']) === 4,
+    'Web App Manifests (site.webmanifest & manifest.webmanifest) declare valid standalone PWA config, separate any/maskable icons, and 4 quick-launch shortcuts (#288)'
+);
+
+$checkPngDimensions = static function (string $relPublicPath): array {
+    $full = dirname(__DIR__) . '/public/' . ltrim($relPublicPath, '/');
+    if (!is_file($full)) {
+        return ['ok' => false, 'w' => 0, 'h' => 0, 'color_type' => -1];
+    }
+    $bytes = (string)file_get_contents($full);
+    if (strlen($bytes) < 26 || substr($bytes, 0, 8) !== "\x89PNG\r\n\x1a\n" || substr($bytes, 12, 4) !== 'IHDR') {
+        return ['ok' => false, 'w' => 0, 'h' => 0, 'color_type' => -1];
+    }
+    $unpacked = unpack('Nw/Nh/Cbit/Ccolor', substr($bytes, 16, 10));
+    return [
+        'ok' => true,
+        'w' => (int)($unpacked['w'] ?? 0),
+        'h' => (int)($unpacked['h'] ?? 0),
+        'color_type' => (int)($unpacked['color'] ?? -1),
+    ];
+};
+
+$png192 = $checkPngDimensions('/favicon-192x192.png');
+$png180 = $checkPngDimensions('/apple-touch-icon.png');
+$png512 = $checkPngDimensions('/assets/img/bb-icon-512.png');
+$pngMask512 = $checkPngDimensions('/assets/img/bb-icon-maskable-512.png');
+assertTrue(
+    $png192['ok'] && $png192['w'] === 192 && $png192['h'] === 192 &&
+    $png180['ok'] && $png180['w'] === 180 && $png180['h'] === 180 &&
+    $png512['ok'] && $png512['w'] === 512 && $png512['h'] === 512 &&
+    $pngMask512['ok'] && $pngMask512['w'] === 512 && $pngMask512['h'] === 512 && $pngMask512['color_type'] === 2,
+    'All self-hosted PWA PNG icons exist with exact IHDR dimensions and opaque RGB full-bleed maskable 512x512 safe-zone icon (#288)'
+);
+
+$pwaMetaHtml = bbiz_head_meta_tags();
+assertTrue(
+    str_contains($pwaMetaHtml, 'rel="manifest" href="/site.webmanifest"') &&
+    str_contains($pwaMetaHtml, 'name="theme-color" content="#7B1113"') &&
+    str_contains($pwaMetaHtml, 'name="mobile-web-app-capable" content="yes"') &&
+    str_contains($pwaMetaHtml, 'name="apple-mobile-web-app-capable" content="yes"') &&
+    str_contains($pwaMetaHtml, 'name="apple-mobile-web-app-title" content="Biasharas"'),
+    'bbiz_head_meta_tags emits standalone mobile-web-app and Apple home-screen meta tags (#288)'
+);
+
+$swSource = (string)file_get_contents(dirname(__DIR__) . '/public/sw.js');
+$indexPhpSource = (string)file_get_contents(dirname(__DIR__) . '/public/index.php');
+$directoryJsSource = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+assertTrue(
+    str_contains($swSource, "const CACHE_VERSION = 'bbiz-pwa-v0.23.0'") &&
+    str_contains($swSource, "req.method !== 'GET'") &&
+    str_contains($swSource, "parsedUrl.origin !== self.location.origin") &&
+    str_contains($swSource, "relPath.startsWith('/admin/')") &&
+    str_contains($swSource, "relPath.startsWith('/owner/')") &&
+    str_contains($swSource, "relPath === '/submit.php'") &&
+    str_contains($swSource, "relPath === '/takedown.php'") &&
+    str_contains($swSource, "relPath.startsWith('/uploads/')") &&
+    str_contains($swSource, "credentials: 'omit'") &&
+    str_contains($swSource, "X-BBiz-Public-Cacheable") &&
+    str_contains($indexPhpSource, 'data-testid="btn-install-app"') &&
+    str_contains($indexPhpSource, 'data-testid="pwa-install-modal"') &&
+    str_contains($indexPhpSource, 'data-testid="pwa-offline-banner"') &&
+    str_contains($directoryJsSource, "beforeinstallprompt") &&
+    str_contains($directoryJsSource, "navigator.serviceWorker.register"),
+    'Service Worker (public/sw.js) & directory UI enforce anonymous GET-only allowlist caching, /admin & /owner exclusions, install prompt handling & offline banner (#289, #290)'
+);
+
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);
 }
