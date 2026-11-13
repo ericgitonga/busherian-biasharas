@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const CACHE_VERSION = 'bbiz-pwa-v0.23.0';
+const CACHE_VERSION = 'bbiz-pwa-v0.24.0';
 const CACHE_PREFIX = 'bbiz-pwa-';
 
 function getBasePath() {
@@ -42,6 +42,7 @@ const STATIC_ASSET_PATHS = [
 const PUBLIC_DYNAMIC_PATHS = [
   '/',
   '/?source=pwa',
+  '/charter.php',
   '/privacy.php',
   '/api/businesses.php?page=1&per_page=100',
 ];
@@ -66,6 +67,7 @@ function isDynamicAllowlisted(relPath) {
     relPath === '' ||
     relPath === '/' ||
     relPath === '/index.php' ||
+    relPath === '/charter.php' ||
     relPath === '/privacy.php' ||
     relPath === '/api/businesses.php'
   );

@@ -346,15 +346,47 @@ $initialPagination = [
     </div>
   </div>
 
-  <!-- Footer -->
-  <footer style="max-width:1440px;margin:2rem auto 0 auto;padding:1.5rem 1.25rem;border-top:1px solid #E5E7EB;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;font-size:0.82rem;color:#6B7280;">
-    <div>
-      <strong>Busherian Biasharas</strong> — Strong to Serve &amp; Walk in the Light.
+  <!-- Community Charter Quick-View Modal (#298, #300) -->
+  <div id="community-charter-modal" data-testid="community-charter-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="community-charter-modal-title" hidden>
+    <div class="modal-dialog" style="max-width:680px;">
+      <div class="modal-header">
+        <div>
+          <span class="badge badge-ahs" style="margin-bottom:0.35rem;display:inline-block;">📜 Community Charter</span>
+          <h2 id="community-charter-modal-title" style="margin:0;font-size:1.2rem;color:#111827;">Free-Forever Core Guarantee &amp; Platform Charter</h2>
+        </div>
+        <button type="button" id="btn-close-charter-modal" data-testid="btn-close-charter-modal" class="modal-close" aria-label="Close Community Charter">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin:0 0 0.95rem 0;font-size:0.88rem;color:#374151;line-height:1.5;">
+          <strong>Busherian Biasharas</strong> keeps the front door 100% free for verified <strong>AHS &amp; AGHS</strong> alumni founders while maintaining strict verification and privacy boundaries:
+        </p>
+<?= bbiz_render_community_charter_clauses() ?>
+        <div style="margin-top:1.1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.65rem;">
+          <a href="/charter.php" data-testid="modal-full-charter-link" style="font-size:0.82rem;font-weight:700;color:#114B3E;text-decoration:underline;">Open standalone Charter &amp; Founder FAQ page &rarr;</a>
+          <a href="/submit.php" class="btn btn-crimson" style="font-size:0.82rem;padding:0.45rem 0.9rem;">+ List Your Biashara (Free)</a>
+        </div>
+      </div>
     </div>
-    <div style="display:flex;gap:1rem;">
-      <a href="/submit.php" style="color:#7B1113;font-weight:600;">Register a Business</a>
-      <a href="/privacy.php">Privacy Notice</a>
-      <a href="/takedown.php">Report or Remove a Listing</a>
+  </div>
+
+  <!-- Footer -->
+  <footer style="max-width:1440px;margin:2rem auto 0 auto;padding:1.5rem 1.25rem;border-top:1px solid #E5E7EB;font-size:0.82rem;color:#6B7280;">
+    <div class="footer-charter-strip" data-testid="footer-charter-strip">
+      <span>
+        📜 <strong>100% Free-Forever Core Directory:</strong> Verified AHS &amp; AGHS standard listings, map pins, direct contacts &amp; self-served bookings carry <strong>zero listing or commission fees</strong>.
+      </span>
+      <a href="/charter.php" id="btn-open-charter-modal" data-testid="btn-open-charter-modal" class="footer-charter-btn">Read Community Charter</a>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+      <div>
+        <strong>Busherian Biasharas</strong> — Strong to Serve &amp; Walk in the Light.
+      </div>
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+        <a href="/submit.php" style="color:#7B1113;font-weight:600;">Register a Business</a>
+        <a href="/charter.php" data-testid="footer-charter-link">Community Charter</a>
+        <a href="/privacy.php">Privacy Notice</a>
+        <a href="/takedown.php">Report or Remove a Listing</a>
+      </div>
     </div>
   </footer>
 

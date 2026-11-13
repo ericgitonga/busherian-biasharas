@@ -2050,7 +2050,45 @@
     if (ev.key === 'Escape' && pwaInstallModal && !pwaInstallModal.hidden) {
       closePwaInstallModal();
     }
+    if (ev.key === 'Escape' && charterModal && !charterModal.hidden) {
+      closeCharterModal();
+    }
   });
+
+  // Community Charter Quick-View Modal (#298, #300)
+  const btnOpenCharterModal = document.getElementById('btn-open-charter-modal');
+  const charterModal = document.getElementById('community-charter-modal');
+  const btnCloseCharterModal = document.getElementById('btn-close-charter-modal');
+
+  function openCharterModal() {
+    if (!charterModal) return;
+    charterModal.hidden = false;
+    charterModal.classList.add('open');
+  }
+
+  function closeCharterModal() {
+    if (!charterModal) return;
+    charterModal.classList.remove('open');
+    charterModal.hidden = true;
+  }
+
+  if (btnOpenCharterModal && charterModal) {
+    btnOpenCharterModal.addEventListener('click', (ev) => {
+      if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+      ev.preventDefault();
+      openCharterModal();
+    });
+  }
+  if (btnCloseCharterModal) {
+    btnCloseCharterModal.addEventListener('click', closeCharterModal);
+  }
+  if (charterModal) {
+    charterModal.addEventListener('click', (ev) => {
+      if (ev.target === charterModal) {
+        closeCharterModal();
+      }
+    });
+  }
 
   window.addEventListener('offline', () => setOfflineBannerVisible(true));
   window.addEventListener('online', () => {
