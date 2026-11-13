@@ -4851,6 +4851,63 @@ assertTrue(
     '/api/businesses.php emits momentum_badge (popular|new|null) without leaking engagement_score, reference_count_90d or created_at (#315)'
 );
 
+// =========================================================================
+// 54. G0 (#318): Country-aware international phone normalization (no Kenyan assumption)
+// =========================================================================
+$PN = \BusherianBiasharas\Services\PhoneNormalizer::class;
+$phoneCases318 = [
+    // [raw, country, expected]
+    ['0722 334 455', 'Kenya', '+254722334455'],
+    ['254722334455', 'Kenya', '+254722334455'],
+    ['0110 123 456', 'Kenya', '+254110123456'],
+    ['079 123 45 67', 'Switzerland', '+41791234567'],      // regression: previously became +254791234567
+    ['044 668 18 00', 'Switzerland', '+41446681800'],
+    ['41791234567', 'Switzerland', '+41791234567'],
+    ['(415) 555-0132', 'United States', '+14155550132'],
+    ['1-415-555-0132', 'United States', '+14155550132'],
+    ['07911 123456', 'United Kingdom', '+447911123456'],
+    ['06 1234 5678', 'Italy', '+390612345678'],             // Italy keeps its leading 0
+    ['391 234 5678', 'Italy', '+393912345678'],             // Italian mobile starting 39 is not mistaken for a prefix
+    ['06 30 123 4567', 'Hungary', '+36301234567'],
+    ['+41 79 123 45 67', 'Kenya', '+41791234567'],          // explicit international always wins over listing country
+    ['0041 79 123 45 67', null, '+41791234567'],
+    ['079 123 45 67', null, '0791234567'],                  // unknown country: never guess
+    ['', 'Kenya', ''],
+];
+$phoneFailures318 = [];
+foreach ($phoneCases318 as [$raw, $ctry, $want]) {
+    $got = $PN::normalize($raw, $ctry);
+    if ($got !== $want) {
+        $phoneFailures318[] = "{$raw} [{$ctry}] => {$got} (want {$want})";
+    }
+}
+assertTrue(
+    $phoneFailures318 === [],
+    'PhoneNormalizer normalizes Kenya, Switzerland, USA, UK, Italy & Hungary numbers and never converts non-Kenyan numbers to +254 (#318)' . ($phoneFailures318 ? ' :: ' . implode('; ', $phoneFailures318) : '')
+);
+
+$countryMapOk318 = true;
+foreach (array_keys(\BusherianBiasharas\Services\LocationEngine::getPlaceHierarchy()) as $ctryName) {
+    if ($PN::callingCodeFor($ctryName) === null) {
+        $countryMapOk318 = false;
+        break;
+    }
+}
+$swissHtml318 = '<html><head><title>Café Zürich AG</title></head><body><a href="tel:+41 44 123 45 67">Anrufen</a></body></html>';
+$swissEnriched318 = WebsiteEnricher::extractFromHtml($swissHtml318, 'https://www.cafe-zuerich.ch', $pdo);
+$comHtml318 = '<html><head><title>Global Co</title></head><body><p>Call 079 123 45 67</p></body></html>';
+$comEnriched318 = WebsiteEnricher::extractFromHtml($comHtml318, 'https://www.globalco.com', $pdo);
+assertTrue(
+    $countryMapOk318 &&
+    $PN::countryFromUrl('https://www.simbadental.co.ke') === 'Kenya' &&
+    $PN::countryFromUrl('https://shop.example.ch/de') === 'Switzerland' &&
+    $PN::countryFromUrl('https://example.com') === null &&
+    $PN::countryFromUrl('https://example.co.uk') === 'United Kingdom' &&
+    ($swissEnriched318['phone_primary'] ?? '') === '+41441234567' &&
+    !str_starts_with((string)($comEnriched318['phone_primary'] ?? ''), '+254'),
+    'Every supported country has a calling code, ccTLD hints resolve (.co.ke, .ch, .co.uk) and generic .com sites never get a guessed +254 number (#318)'
+);
+
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);
 }

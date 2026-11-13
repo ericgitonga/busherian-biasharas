@@ -9,6 +9,7 @@ use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\CategoryMatcher;
 use BusherianBiasharas\Services\HoursEngine;
 use BusherianBiasharas\Services\LocationEngine;
+use BusherianBiasharas\Services\PhoneNormalizer;
 use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\PhotoUploader;
@@ -62,7 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $submitterName = trim((string)($_POST['submitter_name'] ?? ''));
             $submitterEmail = strtolower(trim((string)($_POST['submitter_email'] ?? '')));
             $rawSubmitterPhone = trim((string)($_POST['submitter_phone'] ?? ''));
-            $submitterPhone = WebsiteEnricher::normalizeKenyanPhone($rawSubmitterPhone);
+            $listingCountryForPhones = LocationEngine::resolvePlaceFromPost($_POST)['country'];
+            $submitterPhone = PhoneNormalizer::normalize($rawSubmitterPhone, $listingCountryForPhones);
 
             if (!in_array($schoolCode, ['AHS', 'AGHS'], true)) {
                 $errors[] = 'Please select your School (AHS or AGHS).';
@@ -202,8 +204,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($rawWhatsappPhone === '') {
                 $rawWhatsappPhone = $rawPrimaryPhone;
             }
-            $phonePrimary = WebsiteEnricher::normalizeKenyanPhone($rawPrimaryPhone);
-            $whatsappNum  = WebsiteEnricher::normalizeKenyanPhone($rawWhatsappPhone);
+            $phonePrimary = PhoneNormalizer::normalize($rawPrimaryPhone, $listingCountryForPhones);
+            $whatsappNum  = PhoneNormalizer::normalize($rawWhatsappPhone, $listingCountryForPhones);
             $emailPublic  = strtolower(trim((string)($_POST['email_public'] ?? '')));
             $websiteUrl   = trim((string)($_POST['website_url'] ?? ''));
 
