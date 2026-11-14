@@ -37,6 +37,10 @@ final class OwnerAuth
     public static function startSecureSession(): void
     {
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+            $savePath = session_save_path();
+            if ($savePath === '' || !@is_writable($savePath)) {
+                @session_save_path(sys_get_temp_dir());
+            }
             @ini_set('session.use_strict_mode', '1');
             @ini_set('session.use_only_cookies', '1');
             $basePath = PreprodSandbox::basePath();
@@ -1896,10 +1900,15 @@ final class OwnerAuth
             $mailStmt = $pdo->prepare("
                 SELECT id, business_id, recipient_email, reply_to, subject, body_html, status, created_at, sent_at
                 FROM email_outbox
-                WHERE LOWER(recipient_email) = :em1
-                   OR LOWER(reply_to) = :em2
-                   OR business_id IN ({$inMail})
-                   OR (LOWER(recipient_email) = :adm AND (LOWER(body_html) LIKE :lk1 OR LOWER(subject) LIKE :lk2))
+                WHERE (
+                    LOWER(recipient_email) = :em1
+                    OR LOWER(reply_to) = :em2
+                    OR business_id IN ({$inMail})
+                    OR (LOWER(recipient_email) = :adm AND (LOWER(body_html) LIKE :lk1 OR LOWER(subject) LIKE :lk2))
+                )
+                AND LOWER(subject) NOT LIKE '%[review required]%'
+                AND LOWER(subject) NOT LIKE '%[moderation]%'
+                AND LOWER(body_html) NOT LIKE '%review-action.php%'
                 ORDER BY id DESC
             ");
             $mailStmt->execute([
@@ -1913,9 +1922,14 @@ final class OwnerAuth
             $mailStmt = $pdo->prepare("
                 SELECT id, business_id, recipient_email, reply_to, subject, body_html, status, created_at, sent_at
                 FROM email_outbox
-                WHERE LOWER(recipient_email) = :em1
-                   OR LOWER(reply_to) = :em2
-                   OR (LOWER(recipient_email) = :adm AND (LOWER(body_html) LIKE :lk1 OR LOWER(subject) LIKE :lk2))
+                WHERE (
+                    LOWER(recipient_email) = :em1
+                    OR LOWER(reply_to) = :em2
+                    OR (LOWER(recipient_email) = :adm AND (LOWER(body_html) LIKE :lk1 OR LOWER(subject) LIKE :lk2))
+                )
+                AND LOWER(subject) NOT LIKE '%[review required]%'
+                AND LOWER(subject) NOT LIKE '%[moderation]%'
+                AND LOWER(body_html) NOT LIKE '%review-action.php%'
                 ORDER BY id DESC
             ");
             $mailStmt->execute([
@@ -1935,7 +1949,8 @@ final class OwnerAuth
             $rawReplyTo = strtolower(trim((string)($mRow['reply_to'] ?? '')));
             $bodySanitized = $redactThirdPartyEmails((string)($mRow['body_html'] ?? ''));
             if ($bodySanitized !== null && $bodySanitized !== '') {
-                $bodySanitized = (string)preg_replace('/([?&](?:token|sig|code)=)[^&"\'\s<>]+/i', '$1[redacted-token]', $bodySanitized);
+                $bodySanitized = (string)preg_replace('/(?:[?&]|&amp;)(?:token|sig|code|jti|nonce|action_token)=[^&"\'\s<>]+/i', '&[redacted-token]', $bodySanitized);
+                $bodySanitized = (string)preg_replace('#https?://[^\s"\'<>]+/admin/[^\s"\'<>]*#i', '[redacted-admin-link]', $bodySanitized);
                 if ($rawReplyTo !== $normEmail) {
                     $bodySanitized = (string)preg_replace('#<span data-visitor-pii=[\'"]1[\'"]>.*?</span>#is', '[redacted-third-party-inquiry-detail]', $bodySanitized);
                 }

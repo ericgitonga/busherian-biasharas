@@ -4908,6 +4908,112 @@ assertTrue(
     'Every supported country has a calling code, ccTLD hints resolve (.co.ke, .ch, .co.uk) and generic .com sites never get a guessed +254 number (#318)'
 );
 
+// 55. Pass-4 Adversarial & Kenya DPA 2019 Audit Remediations (#320, #321, #322, #323, #324)
+
+// 55a. C-01 (#321): Owner export excludes internal admin moderation correspondence and strips &amp;sig= capabilities
+$ownerRow321 = OwnerAuth::upsertOwner($pdo, 'owner321@busherian-audit.co.ke', 'Owner 321', '+254711999888');
+$ownerId321 = (int)$ownerRow321['id'];
+$bizPending321 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Pending Audit Co',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'phone_primary' => '+254711999888',
+    'status' => 'pending',
+    'owner_email' => 'owner321@busherian-audit.co.ke',
+]);
+OwnerAuth::linkOwnerToBusiness($pdo, $ownerId321, $bizPending321, 'primary_owner');
+
+// Insert an internal admin review notification with unencoded &amp;sig= URL
+$adminEmailNorm321 = strtolower(trim((string)Database::env('ADMIN_EMAIL', 'admin@busherianbiasharas.com')));
+$pdo->prepare("
+    INSERT INTO email_outbox (business_id, recipient_email, reply_to, subject, body_html, status)
+    VALUES (:bid, :rec, :rep, :sub, :body, 'simulated')
+")->execute([
+    ':bid' => $bizPending321,
+    ':rec' => $adminEmailNorm321,
+    ':rep' => 'owner321@busherian-audit.co.ke',
+    ':sub' => '[Review Required] Pending Audit Co needs moderation',
+    ':body' => '<p>Review link: <a href="https://busherianbiasharas.com/admin/review-action.php?id=' . $bizPending321 . '&action=approve&exp=' . (time() + 86400) . '&merge=0&jti=jti321&amp;sig=secretSigVal123">Approve</a></p>',
+]);
+$modMailId321 = (int)$pdo->lastInsertId();
+
+// Also insert a direct owner notification that happens to mention admin URL
+$pdo->prepare("
+    INSERT INTO email_outbox (business_id, recipient_email, reply_to, subject, body_html, status)
+    VALUES (:bid, :rec, :rep, :sub, :body, 'simulated')
+")->execute([
+    ':bid' => $bizPending321,
+    ':rec' => 'owner321@busherian-audit.co.ke',
+    ':rep' => $adminEmailNorm321,
+    ':sub' => 'Your submission has been received',
+    ':body' => '<p>Thank you for submitting. Check status: <a href="https://busherianbiasharas.com/owner/index.php?token=ownerToken456&amp;sig=ownerSig789">Dashboard</a></p>',
+]);
+
+$export321 = OwnerAuth::exportOwnerPersonalData($pdo, $ownerId321);
+$exportedJson321 = (string)json_encode($export321);
+$modMailFoundInExport321 = false;
+foreach ($export321['correspondence_metadata'] as $cm) {
+    if ((int)$cm['id'] === $modMailId321) {
+        $modMailFoundInExport321 = true;
+        break;
+    }
+}
+
+assertTrue(
+    $modMailFoundInExport321 === false &&
+    !str_contains($exportedJson321, 'secretSigVal123') &&
+    !str_contains($exportedJson321, 'review-action.php') &&
+    !str_contains($exportedJson321, 'ownerSig789') &&
+    str_contains($exportedJson321, '[redacted-token]'),
+    'C-01 (#321): Owner data export excludes internal admin moderation correspondence and strips &amp;sig= capabilities'
+);
+
+// 55b. H-01 (#322): track-click.php rejects unapproved businesses and unifies engagement ranking with 24h dedup
+$bizUnapproved322 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Rejected Co 322',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'phone_primary' => '+254711322322',
+    'status' => 'rejected',
+]);
+$bizApproved322 = VettingPurger::createBusinessDirectly($pdo, [
+    'name' => 'Approved Co 322',
+    'sector_id' => 1,
+    'specialty_id' => 2,
+    'phone_primary' => '+254711322323',
+    'status' => 'approved',
+]);
+$validInteractionToken322 = 'human_verified_' . (time() - 5);
+
+$rec1 = \BusherianBiasharas\Services\EngagementRanker::recordCheckout($pdo, $bizApproved322, 'call', '198.51.100.22', 'TestAgent/1.0', $validInteractionToken322);
+$rec2 = \BusherianBiasharas\Services\EngagementRanker::recordCheckout($pdo, $bizApproved322, 'call', '198.51.100.22', 'TestAgent/1.0', $validInteractionToken322);
+$recUnapproved = \BusherianBiasharas\Services\EngagementRanker::recordCheckout($pdo, $bizUnapproved322, 'call', '198.51.100.22', 'TestAgent/1.0', $validInteractionToken322);
+
+assertTrue(
+    $rec1['recorded'] === true &&
+    $rec1['deduplicated'] === false &&
+    $rec2['recorded'] === false &&
+    $rec2['deduplicated'] === true &&
+    $recUnapproved['recorded'] === false &&
+    $recUnapproved['reason'] === 'business_not_approved',
+    'H-01/M-03 (#322, #324): recordCheckout rejects unapproved businesses, deduplicates across 24h window, and executes atomically'
+);
+
+// 55c. M-04 (#324): computeMomentumContext returns valid popular_cutoff and new_badges_enabled via SQL index scans
+$ctx324 = \BusherianBiasharas\Services\EngagementRanker::computeMomentumContext($pdo);
+assertTrue(
+    is_array($ctx324) &&
+    array_key_exists('popular_cutoff', $ctx324) &&
+    array_key_exists('new_badges_enabled', $ctx324),
+    'M-04 (#324): computeMomentumContext returns valid popular_cutoff and new_badges_enabled via SQL index scans'
+);
+
+// Cleanup 55 fixtures
+VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
+VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');
+VettingPurger::deleteBusiness($pdo, $bizApproved322, 'admin_dashboard', 'audit_cleanup_322b');
+OwnerAuth::deleteOwnerAccountAndData($pdo, $ownerId321, true, '198.51.100.321');
+
 if ($initialDriver === 'sqlite') {
     @unlink($unitTempSqlite);
 }

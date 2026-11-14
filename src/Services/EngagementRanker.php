@@ -342,48 +342,66 @@ final class EngagementRanker
             ? "INSERT OR IGNORE INTO engagement_dedup_24h (dedup_hash, expires_at) VALUES (:h, :exp)"
             : "INSERT IGNORE INTO engagement_dedup_24h (dedup_hash, expires_at) VALUES (:h, :exp)";
 
-        $dedupStmt = $pdo->prepare($dedupSql);
-        $dedupStmt->execute([
-            ':h' => $dedupHash,
-            ':exp' => $expiresAt,
-        ]);
+        $alreadyInTx = $pdo->inTransaction();
+        if (!$alreadyInTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            $dedupStmt = $pdo->prepare($dedupSql);
+            $dedupStmt->execute([
+                ':h' => $dedupHash,
+                ':exp' => $expiresAt,
+            ]);
 
-        if ($dedupStmt->rowCount() !== 1) {
+            if ($dedupStmt->rowCount() !== 1) {
+                if (!$alreadyInTx) {
+                    $pdo->commit();
+                }
+                return [
+                    'status' => 'ok',
+                    'recorded' => false,
+                    'deduplicated' => true,
+                    'signal_group' => $signalGroup,
+                    'signal_weight' => $signalWeight,
+                    'engagement_score' => round((float)($biz['engagement_score'] ?? 0.0), 4),
+                    'reference_count_90d' => (int)($biz['reference_count_90d'] ?? 0),
+                ];
+            }
+
+            $nowUtc = gmdate('Y-m-d H:i:s', $ts);
+            $insClick = $pdo->prepare("
+                INSERT INTO click_events (business_id, event_type, signal_group, signal_weight, created_at)
+                VALUES (:bid, :ev, :sg, :sw, :cat)
+            ");
+            $insClick->execute([
+                ':bid' => $businessId,
+                ':ev' => $eventType,
+                ':sg' => $signalGroup,
+                ':sw' => $signalWeight,
+                ':cat' => $nowUtc,
+            ]);
+
+            $recomp = self::recomputeBusinessScore($pdo, $businessId, $ts);
+
+            if (!$alreadyInTx) {
+                $pdo->commit();
+            }
+
             return [
                 'status' => 'ok',
-                'recorded' => false,
-                'deduplicated' => true,
+                'recorded' => true,
+                'deduplicated' => false,
                 'signal_group' => $signalGroup,
                 'signal_weight' => $signalWeight,
-                'engagement_score' => round((float)($biz['engagement_score'] ?? 0.0), 4),
-                'reference_count_90d' => (int)($biz['reference_count_90d'] ?? 0),
+                'engagement_score' => $recomp['engagement_score'],
+                'reference_count_90d' => $recomp['reference_count_90d'],
             ];
+        } catch (\Throwable $e) {
+            if (!$alreadyInTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
         }
-
-        $nowUtc = gmdate('Y-m-d H:i:s', $ts);
-        $insClick = $pdo->prepare("
-            INSERT INTO click_events (business_id, event_type, signal_group, signal_weight, created_at)
-            VALUES (:bid, :ev, :sg, :sw, :cat)
-        ");
-        $insClick->execute([
-            ':bid' => $businessId,
-            ':ev' => $eventType,
-            ':sg' => $signalGroup,
-            ':sw' => $signalWeight,
-            ':cat' => $nowUtc,
-        ]);
-
-        $recomp = self::recomputeBusinessScore($pdo, $businessId, $ts);
-
-        return [
-            'status' => 'ok',
-            'recorded' => true,
-            'deduplicated' => false,
-            'signal_group' => $signalGroup,
-            'signal_weight' => $signalWeight,
-            'engagement_score' => $recomp['engagement_score'],
-            'reference_count_90d' => $recomp['reference_count_90d'],
-        ];
     }
 
     /**
@@ -706,28 +724,35 @@ final class EngagementRanker
     public static function computeMomentumContext(PDO $pdo, ?int $nowTs = null): array
     {
         $ts = $nowTs ?? time();
-        $rows = $pdo->query("
-            SELECT engagement_score, reference_count_90d, verified_at, created_at
-            FROM businesses
-            WHERE status = 'approved'
-        ")->fetchAll();
-
-        $n = count($rows);
+        $cntStmt = $pdo->query("SELECT COUNT(*) AS total_count FROM businesses WHERE status = 'approved'");
+        $n = (int)($cntStmt->fetchColumn() ?: 0);
         if ($n === 0) {
             return ['popular_cutoff' => null, 'new_badges_enabled' => false];
         }
 
-        $scores = array_map(static fn(array $r): float => (float)($r['engagement_score'] ?? 0.0), $rows);
-        rsort($scores, SORT_NUMERIC);
         $k = max(1, (int)ceil($n * self::POPULAR_TOP_FRACTION));
-        $cutoff = $scores[$k - 1] ?? 0.0;
+        $offset = (int)($k - 1);
+        $cutoffStmt = $pdo->query("
+            SELECT engagement_score
+            FROM businesses
+            WHERE status = 'approved'
+            ORDER BY engagement_score DESC, id DESC
+            LIMIT 1 OFFSET {$offset}
+        ");
+        $cutoff = (float)($cutoffStmt->fetchColumn() ?: 0.0);
 
-        $newCount = 0;
-        foreach ($rows as $r) {
-            if (self::isWithinNewWindow($r['verified_at'] ?? null, $r['created_at'] ?? null, $ts)) {
-                $newCount++;
-            }
-        }
+        $since14dUtc = gmdate('Y-m-d H:i:s', $ts - (int)(self::NEW_BADGE_WINDOW_DAYS * 86400));
+        $newStmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM businesses
+            WHERE status = 'approved'
+              AND (
+                  (verified_at IS NOT NULL AND TRIM(verified_at) != '' AND verified_at >= :since1)
+                  OR ((verified_at IS NULL OR TRIM(verified_at) = '') AND created_at >= :since2)
+              )
+        ");
+        $newStmt->execute([':since1' => $since14dUtc, ':since2' => $since14dUtc]);
+        $newCount = (int)($newStmt->fetchColumn() ?: 0);
 
         return [
             'popular_cutoff' => $cutoff > 0.0 ? $cutoff : null,

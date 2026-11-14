@@ -4,12 +4,14 @@ declare(strict_types=1);
 require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
+use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\VettingPurger;
 
 bbiz_send_security_headers(false);
+AdminAuth::startSecureSession();
 OwnerAuth::startSecureSession();
 
 $pdo = Database::getConnection();
@@ -60,6 +62,15 @@ if ($businessId <= 0 || !in_array($action, ['approve', 'reject'], true)) {
 
 if (!Mailer::verifySignedAdminAction($businessId, $action, $exp, $mergeId, $sig, $jti)) {
     $sendJsonOrHtmlError(403, 'invalid_signature', 'Invalid or expired cryptographic signature on admin action link.');
+}
+
+// Pass-4 C-01 Defense-in-Depth: require active administrator authentication to view confirmation or execute moderation actions.
+if (!AdminAuth::isAuthenticated($pdo)) {
+    if ($wantsJson) {
+        $sendJsonOrHtmlError(401, 'unauthorized', 'Administrator session required to execute moderation actions.');
+    }
+    AdminAuth::requireAdmin();
+    exit;
 }
 
 $nonceHash = Mailer::adminActionNonceHash($businessId, $action, $exp, $mergeId, $jti);
