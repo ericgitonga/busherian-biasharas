@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.32.0] - 2026-11-14
+### Added
+- **Conversational "Ask Biashara Advisor" Search Toggle (`#344`, Parent `#343`)**: Introduced dual-mode search switch in `public/index.php` and `public/assets/css/app.css` allowing visitors to toggle between standard keyword/sector search and natural-language Biashara Advisor mode (`#btn-concierge-toggle`).
+- **Interactive Kenya DPA 2019 Transparency Modal (`#344`, Parent `#343`)**: Gated Biashara Advisor on explicit statutory opt-in consent (`#concierge-consent-modal`) detailing ss. 25, 32, 48–49 data protection safeguards (automatic scrubbing of phones, emails, national IDs, and URLs before processing, zero visitor tracking profiles, and strict hydration from verified directory records), persisted locally in `localStorage.bbiz_concierge_consent`.
+- **Kenyan Biashara Starter Prompt Chips & Panel (`#344`, Parent `#343`)**: Added curated starter chips covering corporate formation, commercial construction, corporate retreats in Naivasha, agricultural export logistics, and publishing / book launches to guide users into high-context conversational queries.
+- **Two-Tier Card Partitioning & Underlying Need Badges (`#345`, Parent `#343`)**: Updated `public/assets/js/directory.js` to render conversational advisor guidance with animated typing states, partitioning results into Direct Matches and Smart Ecosystem Suggestions (`.biz-card-ecosystem`). Ecosystem cards showcase `★ Underlying Need: [label]` badges and plain-English adjacency rationales (`card-adjacency-reason`).
+- **Ecosystem Growth Callout & WhatsApp Invitation Shortcut (`#346`, Parent `#343`)**: When unmet adjacent specialties are returned with zero directory listings (`unmet_ecosystem_specialties`), renders a community growth card (`concierge-unmet-card`) with a 1-click WhatsApp share invitation linking directly to `/submit.php`.
+- **Interactive Journey Follow-Up Chips (`#345`, Parent `#343`)**: Rendered context-aware follow-up chips (`[data-followup]`) for explored business journeys, allowing visitors to drill deeper into companion requirements with a single click.
+- **Service Worker Cache Identifier (`#343`)**: Bumped client cache version to `bbiz-pwa-v0.32.0` in `public/sw.js`.
+
 ## [0.31.0] - 2026-11-14
 ### Added
 - **Visitor PII Redaction & Prompt Hygiene (`QueryScrubber`) (`#339`, Parent `#338`)**: Created `src/Services/QueryScrubber.php` to redact telephone numbers (+254/07/01 and international 7+ digits), email addresses, national ID / passport numbers, and URLs from visitor questions before external inference, enforcing Kenya DPA 2019 ss. 25, 32, 48–49. Updated `public/privacy.php` with transparent disclosures on AI Concierge processing.

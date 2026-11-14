@@ -2585,6 +2585,55 @@ def test_playwright_ch3_chunk12_sort_selector_and_momentum_badges():
         ctx.close()
 
 
+def test_playwright_ch2_chunk9_biashara_concierge_ui():
+    """Chunk 9 (#343, #344, #345, #346): Conversational Advisor UI, DPA modal, starter prompts & cards."""
+    ctx = _new_browser_context()
+    try:
+        page = ctx.new_page()
+        page.goto(f"{BASE_URL}/", wait_until="domcontentloaded")
+        if page.get_by_test_id("cookie-reject-btn").is_visible():
+            page.get_by_test_id("cookie-reject-btn").click()
+
+        toggle_pill = page.get_by_test_id("concierge-toggle-pill")
+        toggle_pill.wait_for(state="visible", timeout=5000)
+
+        # 1. First click without consent opens DPA modal
+        toggle_pill.click()
+        modal = page.get_by_test_id("concierge-consent-modal")
+        modal.wait_for(state="visible", timeout=5000)
+        assert "Kenya DPA 2019" in modal.inner_text()
+
+        # 2. Accept consent -> modal closes, advisor mode activates
+        accept_btn = page.get_by_test_id("concierge-consent-accept")
+        accept_btn.click()
+        modal.wait_for(state="hidden", timeout=5000)
+
+        panel = page.get_by_test_id("concierge-panel")
+        panel.wait_for(state="visible", timeout=5000)
+        assert "active" in (toggle_pill.get_attribute("class") or "")
+
+        # 3. Welcome state or starter chips visible
+        starter_chips = page.locator(".starter-prompt-chip")
+        assert starter_chips.count() >= 3
+
+        # 4. Click a starter chip to trigger concierge query
+        first_chip = starter_chips.first
+        first_chip.click()
+
+        # 5. Concierge guidance card and results render
+        guidance = page.get_by_test_id("concierge-guidance-card")
+        guidance.wait_for(state="visible", timeout=12000)
+        assert "Biashara Advisor Guidance" in guidance.inner_text()
+
+        # 6. Exit advisor mode -> restores standard directory
+        exit_btn = page.get_by_test_id("btn-concierge-exit")
+        exit_btn.click()
+        panel.wait_for(state="hidden", timeout=5000)
+        page.get_by_test_id("biz-card").first.wait_for(state="visible", timeout=5000)
+    finally:
+        ctx.close()
+
+
 TESTS = [
     test_health_endpoint,
     test_playwright_pre_consent_network_and_cookie_gate,
@@ -2607,4 +2656,5 @@ TESTS = [
     test_playwright_ch3_chunk10_engagement_checkout_recorder,
     test_playwright_ch3_chunk11_default_ranking_sort_modes_and_concierge_hook,
     test_playwright_ch3_chunk12_sort_selector_and_momentum_badges,
+    test_playwright_ch2_chunk9_biashara_concierge_ui,
 ]

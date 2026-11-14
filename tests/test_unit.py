@@ -685,3 +685,35 @@ def test_ftps_deploy_mid_promotion_failure_restores_backup_and_rollback_failure_
     assert gate_raw is not None, "Maintenance gate must remain active when rollback restoration fails"
     gate_obj = json.loads(gate_raw.decode("utf-8"))
     assert gate_obj.get("rollback_failed") is True
+
+
+def test_concierge_ui_and_two_tier_components():
+    """Chunk 9 (#343, #344, #345, #346): Verify Concierge UI elements, DPA transparency and CSS."""
+    repo_root = Path(__file__).resolve().parent.parent
+    index_html = (repo_root / "public" / "index.php").read_text(encoding="utf-8")
+    dir_js = (repo_root / "public" / "assets" / "js" / "directory.js").read_text(encoding="utf-8")
+    app_css = (repo_root / "public" / "assets" / "css" / "app.css").read_text(encoding="utf-8")
+
+    # 1. Toggle & DPA Modal
+    assert "btn-concierge-toggle" in index_html
+    assert "concierge-toggle-pill" in index_html
+    assert "concierge-consent-modal" in index_html
+    assert "btn-concierge-consent-accept" in index_html
+    assert "btn-concierge-consent-cancel" in index_html
+    assert "starter-prompt-chip" in index_html
+
+    # 2. Directory JS Two-Tier & Unmet Needs
+    assert "renderConciergeResults" in dir_js
+    assert "runConciergeSearch" in dir_js
+    assert "concierge-tier-direct-header" in dir_js
+    assert "concierge-tier-ecosystem-header" in dir_js
+    assert "badge-underlying-need" in dir_js
+    assert "concierge-unmet-card" in dir_js
+    assert "btn-whatsapp-invite" in dir_js
+
+    # 3. CSS styling
+    assert ".pill-concierge-toggle" in app_css
+    assert ".concierge-loading" in app_css
+    assert ".biz-card-ecosystem" in app_css
+    assert ".btn-whatsapp-invite" in app_css
+
