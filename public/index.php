@@ -257,6 +257,7 @@ $initialPagination = [
 
       <div class="quick-pills" data-testid="quick-pills">
         <button type="button" class="pill active" data-quick-filter="all" data-testid="quick-filter-all">All Verified</button>
+        <button type="button" class="pill pill-concierge-toggle" id="btn-concierge-toggle" data-testid="concierge-toggle-pill" aria-pressed="false" title="Switch to natural-language AI advisor mode">★ Ask Biashara Advisor</button>
         <button type="button" class="pill" data-quick-filter="open_now" data-testid="quick-filter-open-now">🟢 Open Now (EAT)</button>
         <button type="button" class="pill" data-quick-filter="has_perk" data-testid="quick-filter-has-perk">🎁 Busherian Alumni Perks</button>
         <button type="button" class="pill" data-quick-filter="b2b_ready" data-testid="quick-filter-b2b">🏢 B2B &amp; LPO Ready</button>
@@ -266,6 +267,27 @@ $initialPagination = [
       </div>
     </div>
   </section>
+
+  <!-- Biashara Advisor Panel (#344) -->
+  <div id="concierge-panel" data-testid="concierge-panel" class="concierge-panel" hidden>
+    <div class="concierge-panel-inner">
+      <div class="concierge-panel-header">
+        <div class="concierge-panel-title">
+          <span class="concierge-badge">★ Biashara Advisor</span>
+          <span class="concierge-subtitle">Describe your complex business need or project in plain language</span>
+        </div>
+        <button type="button" id="btn-concierge-exit" data-testid="btn-concierge-exit" class="btn-concierge-exit" title="Return to standard keyword search">✕ Exit Advisor Mode</button>
+      </div>
+      <div class="concierge-starter-prompts" data-testid="concierge-starter-prompts">
+        <span class="concierge-starter-label">Try asking:</span>
+        <button type="button" class="starter-prompt-chip" data-prompt="Launching a new company in Nairobi">🚀 Launching a new company in Nairobi</button>
+        <button type="button" class="starter-prompt-chip" data-prompt="Looking for an architect & contractor for a commercial build">🏗️ Commercial architecture &amp; build</button>
+        <button type="button" class="starter-prompt-chip" data-prompt="Planning a corporate leadership offsite in Naivasha">🏕️ Corporate offsite in Naivasha</button>
+        <button type="button" class="starter-prompt-chip" data-prompt="Exporting avocados & organic produce to Europe">🥑 Exporting avocados &amp; organic produce</button>
+        <button type="button" class="starter-prompt-chip" data-prompt="Publishing an industry whitepaper & book launch">📚 Book publishing &amp; whitepaper launch</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Main Split-Screen Workspace -->
   <main class="directory-workspace">
@@ -384,6 +406,36 @@ $initialPagination = [
         <div style="margin-top:1.1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.65rem;">
           <a href="/charter.php" data-testid="modal-full-charter-link" style="font-size:0.82rem;font-weight:700;color:#114B3E;text-decoration:underline;">Open standalone Charter &amp; Founder FAQ page &rarr;</a>
           <a href="/submit.php" class="btn btn-crimson" style="font-size:0.82rem;padding:0.45rem 0.9rem;">+ List Your Biashara (Free)</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Biashara Advisor Kenya DPA Consent Modal (#344) -->
+  <div id="concierge-consent-modal" data-testid="concierge-consent-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="concierge-consent-modal-title" hidden>
+    <div class="modal-dialog" style="max-width:560px;">
+      <div class="modal-header">
+        <div>
+          <span class="badge badge-ahs" style="margin-bottom:0.35rem;display:inline-block;">🛡️ Kenya DPA 2019 Transparency</span>
+          <h2 id="concierge-consent-modal-title" style="margin:0;font-size:1.2rem;color:#111827;">Ask Biashara Advisor</h2>
+        </div>
+        <button type="button" id="btn-close-concierge-modal" data-testid="btn-close-concierge-modal" class="modal-close" aria-label="Close modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin:0 0 0.85rem 0;font-size:0.9rem;color:#374151;line-height:1.5;">
+          <strong>Biashara Advisor</strong> uses natural-language synthesis to match your projects with verified alumni businesses and adjacent partners (legal counsel, commercial contractors, tax accountants, marketing, logistics).
+        </p>
+        <div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:8px;padding:0.85rem;margin-bottom:1rem;font-size:0.82rem;color:#166534;line-height:1.45;">
+          <strong>🔒 Your Privacy is Protected (Kenya DPA ss. 25, 32, 48–49):</strong>
+          <ul style="margin:0.4rem 0 0 1.1rem;padding:0;">
+            <li>An automated privacy filter strips all phone numbers, email addresses, national IDs, and URLs before processing.</li>
+            <li>Zero personal profiles are retained or shared with external AI services.</li>
+            <li>All recommended contacts are hydrated strictly from verified alumni directory records.</li>
+          </ul>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.6rem;align-items:center;">
+          <button type="button" id="btn-concierge-consent-cancel" data-testid="concierge-consent-cancel" class="btn btn-outline" style="font-size:0.85rem;">Cancel</button>
+          <button type="button" id="btn-concierge-consent-accept" data-testid="concierge-consent-accept" class="btn btn-green" style="font-size:0.85rem;">Agree &amp; Open Advisor</button>
         </div>
       </div>
     </div>

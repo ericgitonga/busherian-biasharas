@@ -43,6 +43,9 @@
     activeRoute: null, // { biz, fromLat, fromLng, originLabel, data }
     isLoading: false,
     fetchError: '',
+    isConciergeMode: false,
+    conciergeLoading: false,
+    conciergeData: null,
   };
 
   const els = {
@@ -64,6 +67,13 @@
     modalContent: document.getElementById('biz-modal-content'),
     shortlistCount: document.getElementById('shortlist-count'),
     shortlistExportBtn: document.getElementById('btn-export-shortlist'),
+    conciergeToggleBtn: document.getElementById('btn-concierge-toggle'),
+    conciergePanel: document.getElementById('concierge-panel'),
+    conciergeExitBtn: document.getElementById('btn-concierge-exit'),
+    conciergeModal: document.getElementById('concierge-consent-modal'),
+    conciergeAcceptBtn: document.getElementById('btn-concierge-consent-accept'),
+    conciergeCancelBtn: document.getElementById('btn-concierge-consent-cancel'),
+    conciergeCloseBtn: document.getElementById('btn-close-concierge-modal'),
   };
 
   // Security (#186): Strictly enforce explicit http:// or https:// absolute URLs; reject javascript:, data:, vbscript:, or malformed inputs.
@@ -579,6 +589,86 @@
     }
   });
 
+  function renderSingleBusinessCard(biz, opts = {}) {
+    const isEcosystem = opts.isEcosystem || biz.match_tier === 'ecosystem';
+    const isConcierge = opts.isConcierge || !!opts.isEcosystem || biz.match_tier === 'direct';
+    const distBadge = (biz.distance_km !== null && biz.distance_km !== undefined)
+      ? `<span class="badge-distance">📍 ${Number(biz.distance_km).toFixed(1)} km away</span>`
+      : `<span style="font-size:0.75rem;color:#6B7280;">📍 ${escapeHtml(biz.area_neighborhood || biz.city_county || '')}</span>`;
+    const hours = biz.hours_status || { state: 'CLOSED', badge_text: 'Closed' };
+    const perkHtml = biz.alumni_perk
+      ? `<div class="card-Perk">🎁 <strong>Busherian Perk:</strong> ${escapeHtml(biz.alumni_perk)}</div>`
+      : '';
+    const inShortlist = state.shortlistIds.has(biz.id);
+    const hasCoords = biz.latitude !== null && biz.longitude !== null;
+    const photos = Array.isArray(biz.photos) ? biz.photos : [];
+    const cardPhotosHtml = photos.length > 0 ? `
+      <div class="card-photo-strip">
+        ${photos.slice(0, 4).map((url, idx) => `<img src="${escapeHtml(url)}" alt="${escapeHtml(biz.name)} photo ${idx + 1}" loading="lazy">`).join('')}
+        ${photos.length > 4 ? `<span class="card-photo-more">+${photos.length - 4}</span>` : ''}
+      </div>
+    ` : '';
+
+    const needBadge = isEcosystem
+      ? `<span class="badge-underlying-need" data-testid="badge-underlying-need">★ Underlying Need: ${escapeHtml(biz.underlying_need_label || opts.underlyingNeedLabel || 'Ecosystem Partner')}</span>`
+      : '';
+
+    const reasonHtml = isEcosystem && (biz.tailored_reason || opts.tailoredReason)
+      ? `<div class="card-adjacency-reason" data-testid="card-adjacency-reason">💡 <strong>Why this biashara:</strong> ${escapeHtml(biz.tailored_reason || opts.tailoredReason)}</div>`
+      : (!isEcosystem && isConcierge && (biz.tailored_reason || opts.tailoredReason)
+        ? `<div class="card-adjacency-reason" data-testid="card-adjacency-reason" style="background:#F0FDF4;border-left-color:#059669;color:#065F46;">🎯 <strong>Match Context:</strong> ${escapeHtml(biz.tailored_reason || opts.tailoredReason)}</div>`
+        : '');
+
+    const cardClasses = isEcosystem ? 'biz-card biz-card-ecosystem' : 'biz-card';
+    const openSource = isConcierge ? 'concierge' : 'directory';
+
+    // STRICT PRIVACY GUARANTEE: Zero House, Year Left, or School Number ever rendered
+    return `
+      <article class="${cardClasses}" data-testid="biz-card" data-biz-id="${biz.id}" data-open-biz-source="${openSource}">
+        <div>
+          ${cardPhotosHtml}
+          <div class="card-top-badges" style="justify-content:space-between;">
+            <span style="display:inline-flex;gap:0.35rem;align-items:center;flex-wrap:wrap;">
+              ${biz.can_edit ? `<span style="background:#ECFDF5;color:#065F46;border:1px solid #059669;border-radius:999px;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:800;">✓ Your Linked Business</span>` : ''}
+              ${needBadge}
+              ${(biz.is_bookable || biz.booking_enabled || biz.booking_url) ? `<span class="badge-bookable" data-testid="biz-card-bookable-badge">📅 Book Appointment</span>` : ''}
+              ${biz.momentum_badge === 'popular' ? `<span class="badge-momentum badge-popular" data-testid="biz-card-popular-badge" title="Frequently checked out by fellow Busherians recently">🔥 Popular with Busherians</span>` : ''}
+              ${biz.momentum_badge === 'new' ? `<span class="badge-momentum badge-new" data-testid="biz-card-new-badge" title="Joined the directory within the last two weeks">✨ New on Biasharas</span>` : ''}
+            </span>
+            ${distBadge}
+          </div>
+          <h3 class="card-title" data-testid="biz-card-title">${escapeHtml(biz.name)}</h3>
+          <div class="card-taxonomy">${escapeHtml(biz.sector_name || '')} &rarr; ${escapeHtml(biz.specialty_name || '')}</div>
+          ${biz.secondary_sector_name && biz.secondary_specialty_name
+            ? `<div class="card-taxonomy card-taxonomy-secondary" data-testid="biz-card-secondary-taxonomy">+ Also: ${escapeHtml(biz.secondary_sector_name)} &rarr; ${escapeHtml(biz.secondary_specialty_name)}</div>`
+            : ''}
+          <p class="card-tagline">${escapeHtml(biz.tagline || '')}</p>
+          ${perkHtml}
+          ${reasonHtml}
+        </div>
+        <div class="card-footer">
+          <span class="status-dot status-${escapeHtml(hours.state)}">● ${escapeHtml(hours.badge_text)}</span>
+          <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
+            ${hasCoords ? `
+              <button type="button" data-route-biz-id="${biz.id}" title="Get distance and directions to ${escapeHtml(biz.name)}" style="background:#FFFBEB;color:#78350F;border:1px solid #D4AF37;border-radius:6px;padding:0.25rem 0.55rem;font-size:0.74rem;font-weight:700;cursor:pointer;">
+                🧭 Directions
+              </button>
+            ` : ''}
+            ${biz.can_edit && biz.edit_url ? `
+              <a href="${escapeHtml(biz.edit_url)}" data-edit-biz-link="1" title="Edit ${escapeHtml(biz.name)}" style="background:#114B3E;color:#fff;text-decoration:none;border-radius:6px;padding:0.25rem 0.6rem;font-size:0.74rem;font-weight:700;display:inline-flex;align-items:center;gap:0.25rem;">
+                ✏️ Edit My Business
+              </a>
+            ` : ''}
+            <button type="button" class="btn-shortlist-toggle" data-shortlist-id="${biz.id}" title="Add to B2B Procurement Shortlist" style="background:${inShortlist ? '#114B3E' : '#F3F4F6'};color:${inShortlist ? '#fff' : '#374151'};border:none;border-radius:6px;padding:0.25rem 0.55rem;font-size:0.74rem;font-weight:600;cursor:pointer;">
+              ${inShortlist ? '✓ Shortlisted' : '+ B2B Shortlist'}
+            </button>
+            <span style="font-weight:700;color:#7B1113;">Details &rarr;</span>
+          </div>
+        </div>
+      </article>
+    `;
+  }
+
   function renderCards() {
     if (!els.cardsGrid) return;
 
@@ -627,70 +717,283 @@
       return;
     }
 
-    els.cardsGrid.innerHTML = pagedBusinesses.map(biz => {
-      const distBadge = (biz.distance_km !== null && biz.distance_km !== undefined)
-        ? `<span class="badge-distance">📍 ${Number(biz.distance_km).toFixed(1)} km away</span>`
-        : `<span style="font-size:0.75rem;color:#6B7280;">📍 ${escapeHtml(biz.area_neighborhood || biz.city_county)}</span>`;
-      const hours = biz.hours_status || { state: 'CLOSED', badge_text: 'Closed' };
-      const perkHtml = biz.alumni_perk
-        ? `<div class="card-Perk">🎁 <strong>Busherian Perk:</strong> ${escapeHtml(biz.alumni_perk)}</div>`
-        : '';
-      const inShortlist = state.shortlistIds.has(biz.id);
-      const hasCoords = biz.latitude !== null && biz.longitude !== null;
-      const photos = Array.isArray(biz.photos) ? biz.photos : [];
-      const cardPhotosHtml = photos.length > 0 ? `
-        <div class="card-photo-strip">
-          ${photos.slice(0, 4).map((url, idx) => `<img src="${escapeHtml(url)}" alt="${escapeHtml(biz.name)} photo ${idx + 1}" loading="lazy">`).join('')}
-          ${photos.length > 4 ? `<span class="card-photo-more">+${photos.length - 4}</span>` : ''}
-        </div>
-      ` : '';
-
-      // STRICT PRIVACY GUARANTEE: Zero House, Year Left, or School Number ever rendered
-      return `
-        <article class="biz-card" data-testid="biz-card" data-biz-id="${biz.id}">
-          <div>
-            ${cardPhotosHtml}
-            <div class="card-top-badges" style="justify-content:space-between;">
-              <span style="display:inline-flex;gap:0.35rem;align-items:center;flex-wrap:wrap;">
-                ${biz.can_edit ? `<span style="background:#ECFDF5;color:#065F46;border:1px solid #059669;border-radius:999px;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:800;">✓ Your Linked Business</span>` : ''}
-                ${(biz.is_bookable || biz.booking_enabled || biz.booking_url) ? `<span class="badge-bookable" data-testid="biz-card-bookable-badge">📅 Book Appointment</span>` : ''}
-                ${biz.momentum_badge === 'popular' ? `<span class="badge-momentum badge-popular" data-testid="biz-card-popular-badge" title="Frequently checked out by fellow Busherians recently">🔥 Popular with Busherians</span>` : ''}
-                ${biz.momentum_badge === 'new' ? `<span class="badge-momentum badge-new" data-testid="biz-card-new-badge" title="Joined the directory within the last two weeks">✨ New on Biasharas</span>` : ''}
-              </span>
-              ${distBadge}
-            </div>
-            <h3 class="card-title" data-testid="biz-card-title">${escapeHtml(biz.name)}</h3>
-            <div class="card-taxonomy">${escapeHtml(biz.sector_name)} &rarr; ${escapeHtml(biz.specialty_name)}</div>
-            ${biz.secondary_sector_name && biz.secondary_specialty_name
-              ? `<div class="card-taxonomy card-taxonomy-secondary" data-testid="biz-card-secondary-taxonomy">+ Also: ${escapeHtml(biz.secondary_sector_name)} &rarr; ${escapeHtml(biz.secondary_specialty_name)}</div>`
-              : ''}
-            <p class="card-tagline">${escapeHtml(biz.tagline)}</p>
-            ${perkHtml}
-          </div>
-          <div class="card-footer">
-            <span class="status-dot status-${escapeHtml(hours.state)}">● ${escapeHtml(hours.badge_text)}</span>
-            <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
-              ${hasCoords ? `
-                <button type="button" data-route-biz-id="${biz.id}" title="Get distance and directions to ${escapeHtml(biz.name)}" style="background:#FFFBEB;color:#78350F;border:1px solid #D4AF37;border-radius:6px;padding:0.25rem 0.55rem;font-size:0.74rem;font-weight:700;cursor:pointer;">
-                  🧭 Directions
-                </button>
-              ` : ''}
-              ${biz.can_edit && biz.edit_url ? `
-                <a href="${escapeHtml(biz.edit_url)}" data-edit-biz-link="1" title="Edit ${escapeHtml(biz.name)}" style="background:#114B3E;color:#fff;text-decoration:none;border-radius:6px;padding:0.25rem 0.6rem;font-size:0.74rem;font-weight:700;display:inline-flex;align-items:center;gap:0.25rem;">
-                  ✏️ Edit My Business
-                </a>
-              ` : ''}
-              <button type="button" class="btn-shortlist-toggle" data-shortlist-id="${biz.id}" title="Add to B2B Procurement Shortlist" style="background:${inShortlist ? '#114B3E' : '#F3F4F6'};color:${inShortlist ? '#fff' : '#374151'};border:none;border-radius:6px;padding:0.25rem 0.55rem;font-size:0.74rem;font-weight:600;cursor:pointer;">
-                ${inShortlist ? '✓ Shortlisted' : '+ B2B Shortlist'}
-              </button>
-              <span style="font-weight:700;color:#7B1113;">Details &rarr;</span>
-            </div>
-          </div>
-        </article>
-      `;
-    }).join('');
+    els.cardsGrid.innerHTML = pagedBusinesses.map(biz => renderSingleBusinessCard(biz)).join('');
 
     renderPaginationControls(totalItems, state.currentPage, totalPages, startIdx, endIdx);
+  }
+
+  function renderConciergeWelcome() {
+    if (!els.cardsGrid) return;
+    if (els.resultsCount) {
+      els.resultsCount.textContent = 'Biashara Advisor is ready';
+    }
+    els.cardsGrid.innerHTML = `
+      <div data-testid="concierge-welcome" style="grid-column:1/-1;background:linear-gradient(180deg, #FFFDF8 0%, #FFFFFF 100%);padding:2rem;border-radius:12px;text-align:center;border:1.5px dashed #FCD34D;">
+        <span style="font-size:2rem;display:block;margin-bottom:0.5rem;" aria-hidden="true">🤖</span>
+        <h3 style="margin:0 0 0.5rem 0;color:#78350F;font-size:1.15rem;">Ask Biashara Advisor</h3>
+        <p style="margin:0 0 1.25rem 0;color:#6B7280;font-size:0.9rem;max-width:540px;margin-left:auto;margin-right:auto;line-height:1.5;">
+          Describe your complex project, journey, or business challenge. The Advisor uses our Kenyan need graph to recommend verified alumni practitioners and companion partners.
+        </p>
+        <div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;">
+          <button type="button" class="starter-prompt-chip" data-prompt="Launching a new company in Nairobi">🚀 Launching a new company in Nairobi</button>
+          <button type="button" class="starter-prompt-chip" data-prompt="Looking for an architect & contractor for a commercial build">🏗️ Commercial architecture &amp; build</button>
+          <button type="button" class="starter-prompt-chip" data-prompt="Planning a corporate leadership offsite in Naivasha">🏕️ Corporate offsite in Naivasha</button>
+          <button type="button" class="starter-prompt-chip" data-prompt="Exporting avocados & organic produce to Europe">🥑 Exporting avocados &amp; organic produce</button>
+        </div>
+      </div>
+    `;
+    renderPaginationControls(0, 1, 1, 0, 0);
+  }
+
+  function getFollowUpPrompts(intent) {
+    const map = {
+      company_launch: [
+        'Corporate legal counsel & governance',
+        'Tax structuring & statutory compliance',
+        'Brand design & web development',
+      ],
+      property_construction: [
+        'Commercial architects & planning',
+        'Structural & civil engineering',
+        'Property conveyancing lawyer',
+      ],
+      events_retreats: [
+        'Corporate retreat venue in Naivasha',
+        'Team leadership facilitator & coach',
+        'Event catering & audiovisual production',
+      ],
+      health_wellness: [
+        'Occupational health & wellness consultant',
+        'Diagnostic laboratory services',
+      ],
+      agribusiness_value_chain: [
+        'Agricultural export logistics & phytosanitary',
+        'Cold storage & haulage',
+        'Food safety & GLOBALG.A.P. certification',
+      ],
+      tech_digital_scaling: [
+        'Cybersecurity audit & penetration testing',
+        'Cloud infrastructure & DevOps',
+        'Data protection compliance auditor',
+      ],
+      creative_publishing: [
+        'Book publishing & editorial layout',
+        'Commercial video & photography studio',
+        'Intellectual property advocate',
+      ],
+      relocation_facility: [
+        'Commercial office interior fit-out',
+        'Facilities management & security',
+      ],
+    };
+    return map[intent] || [
+      'Corporate legal counsel & registration',
+      'Tax accounting & audit',
+      'Digital marketing & brand strategy',
+    ];
+  }
+
+  function renderConciergeResults(data) {
+    if (!els.cardsGrid) return;
+
+    const directMatches = Array.isArray(data.direct_recommendations) ? data.direct_recommendations : [];
+    const ecosystemMatches = Array.isArray(data.ecosystem_recommendations) ? data.ecosystem_recommendations : [];
+
+    // Cache extra loaded businesses for modal lookup and update map
+    const allMatches = [...directMatches, ...ecosystemMatches];
+    allMatches.forEach(b => {
+      extraLoadedBusinesses.set(Number(b.id), b);
+    });
+    state.businesses = allMatches;
+    renderInteractiveMap();
+
+    let html = '';
+
+    // 1. Conversational Guidance Card
+    const modeBadge = data.mode === 'gemini'
+      ? '<span class="badge-gemini" title="Synthesized with Gemini REST inference with strict candidate verification">★ Grounded AI</span>'
+      : '<span class="badge-local" title="Synthesized with deterministic Local Smart Mode">★ Local Smart Mode</span>';
+    const piiNotice = data.pii_was_redacted
+      ? '<div class="concierge-pii-notice">🛡️ Private contact details in your query were automatically redacted before analysis.</div>'
+      : '';
+    const guidanceParas = escapeHtml(data.conversational_response || '')
+      .split(/\n\n+/)
+      .map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`)
+      .join('');
+
+    html += `
+      <div class="concierge-guidance-card" data-testid="concierge-guidance-card">
+        <div class="concierge-guidance-header">
+          <span style="font-size:1.2rem;" aria-hidden="true">🤖</span>
+          <strong>Biashara Advisor Guidance</strong>
+          ${modeBadge}
+        </div>
+        <div class="concierge-guidance-text">
+          ${guidanceParas}
+        </div>
+        ${piiNotice}
+      </div>
+    `;
+
+    // 2. Direct Matches
+    if (directMatches.length > 0) {
+      html += `
+        <div class="concierge-tier-header" data-testid="concierge-tier-direct-header">
+          <h3 style="margin:0.8rem 0 0.35rem 0;font-size:1.05rem;color:#114B3E;display:flex;align-items:center;gap:0.4rem;">
+            🎯 Direct Matches <span class="concierge-tier-count">(${directMatches.length})</span>
+          </h3>
+          <p style="margin:0 0 0.6rem 0;font-size:0.8rem;color:#6B7280;">Verified alumni biasharas matching your immediate search specialty.</p>
+        </div>
+      `;
+      html += directMatches.map(b => renderSingleBusinessCard(b, { isConcierge: true, isEcosystem: false })).join('');
+    }
+
+    // 3. Smart Ecosystem Suggestions
+    if (ecosystemMatches.length > 0) {
+      html += `
+        <div class="concierge-tier-header" data-testid="concierge-tier-ecosystem-header" style="margin-top:1.5rem;">
+          <h3 style="margin:0.8rem 0 0.35rem 0;font-size:1.05rem;color:#7B1113;display:flex;align-items:center;gap:0.4rem;">
+            🌐 Smart Ecosystem Suggestions <span class="concierge-tier-count">(${ecosystemMatches.length})</span>
+          </h3>
+          <p style="margin:0 0 0.6rem 0;font-size:0.8rem;color:#6B7280;">Adjacent partners (upstream prerequisites, downstream execution, companion services) from the Kenyan need graph.</p>
+        </div>
+      `;
+      html += ecosystemMatches.map(b => renderSingleBusinessCard(b, { isConcierge: true, isEcosystem: true })).join('');
+    }
+
+    if (directMatches.length === 0 && ecosystemMatches.length === 0) {
+      html += `
+        <div style="grid-column:1/-1;background:#fff;padding:2rem;border-radius:12px;text-align:center;border:1px dashed #D1D5DB;">
+          <h3 style="margin:0 0 0.5rem 0;color:#7B1113;">No direct or ecosystem matches found</h3>
+          <p style="margin:0;color:#6B7280;font-size:0.9rem;">Try broadening your inquiry or phrasing your project in different words.</p>
+        </div>
+      `;
+    }
+
+    // 4. Unmet Community Demand Card (Child 9C)
+    if (Array.isArray(data.unmet_ecosystem_specialties) && data.unmet_ecosystem_specialties.length > 0) {
+      const unmetList = data.unmet_ecosystem_specialties;
+      const specText = unmetList.join(', ');
+      const inviteMsg = `Habari! We are looking for an Alliance alumnus in ${specText} on Busherian Biasharas. If you or someone you know runs this biashara, please list it here: https://www.busherianbiasharas.com/submit.php`;
+      html += `
+        <div class="concierge-unmet-card" data-testid="concierge-unmet-card">
+          <div style="display:flex;gap:0.75rem;align-items:flex-start;">
+            <span style="font-size:1.3rem;" aria-hidden="true">💡</span>
+            <div>
+              <h4 style="margin:0;font-size:0.95rem;color:#78350F;">Ecosystem Growth Opportunity</h4>
+              <p style="margin:0.25rem 0 0 0;font-size:0.84rem;color:#92400E;line-height:1.45;">
+                Your project may need <strong>${escapeHtml(specText)}</strong>, but no Busherian has listed in these specialties yet.
+              </p>
+            </div>
+          </div>
+          <div style="margin-top:0.85rem;display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;">
+            <a href="https://api.whatsapp.com/send?text=${encodeURIComponent(inviteMsg)}"
+               target="_blank" rel="noopener noreferrer"
+               class="btn-whatsapp-invite" data-testid="btn-whatsapp-invite">
+              💬 Invite a Busherian via WhatsApp &rarr;
+            </a>
+            <a href="/submit.php" style="font-size:0.8rem;color:#114B3E;text-decoration:underline;font-weight:600;">Or list your business in this field</a>
+          </div>
+        </div>
+      `;
+    }
+
+    // 5. Follow-Up Journey Chips
+    const followups = getFollowUpPrompts(data.query_intent);
+    if (followups.length > 0) {
+      html += `
+        <div class="concierge-followup-wrap" data-testid="concierge-followup-wrap">
+          <span class="concierge-followup-label">Explore related needs:</span>
+          ${followups.map(f => `<button type="button" class="followup-chip" data-followup="${escapeHtml(f)}">${escapeHtml(f)}</button>`).join('')}
+        </div>
+      `;
+    }
+
+    els.cardsGrid.innerHTML = html;
+    if (els.resultsCount) {
+      els.resultsCount.textContent = `Biashara Advisor: ${directMatches.length} Direct, ${ecosystemMatches.length} Ecosystem Suggestions`;
+    }
+    renderPaginationControls(0, 1, 1, 0, 0);
+  }
+
+  async function runConciergeSearch(queryText) {
+    const q = (queryText || '').trim();
+    if (!q) {
+      renderConciergeWelcome();
+      return;
+    }
+
+    state.conciergeLoading = true;
+    if (els.resultsCount) {
+      els.resultsCount.textContent = 'Biashara Advisor is analyzing your inquiry…';
+    }
+    if (els.cardsGrid) {
+      els.cardsGrid.innerHTML = `
+        <div class="concierge-loading" data-testid="concierge-loading" role="status" aria-live="polite">
+          <div class="concierge-typing-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <p>Consulting Kenyan biashara network &amp; need graph…</p>
+        </div>
+      `;
+    }
+
+    try {
+      const payload = {
+        query: q,
+        consent: 1,
+        b2b_only: state.b2bReady ? 1 : 0,
+        open_now_only: state.openNow ? 1 : 0,
+        latitude: state.userLat,
+        longitude: state.userLng,
+      };
+      const res = await fetch('/api/concierge.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-BBIZ-Consent': '1',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const errMsg = errData.message || 'Unable to retrieve Biashara Advisor recommendations at this moment.';
+        els.cardsGrid.innerHTML = `
+          <div data-testid="concierge-error" role="alert" style="grid-column:1/-1;background:#FEF2F2;padding:1.5rem;border-radius:12px;text-align:center;border:2px solid #DC2626;">
+            <h3 style="margin:0 0 0.45rem 0;color:#991B1B;">Biashara Advisor Notice</h3>
+            <p style="margin:0 0 0.9rem 0;color:#7F1D1D;font-size:0.88rem;">${escapeHtml(errMsg)}</p>
+            <button type="button" id="btn-retry-concierge" data-testid="concierge-retry" class="btn btn-crimson">🔄 Try Again</button>
+          </div>
+        `;
+        const retryBtn = document.getElementById('btn-retry-concierge');
+        if (retryBtn) {
+          retryBtn.addEventListener('click', () => runConciergeSearch(q));
+        }
+        renderPaginationControls(0, 1, 1, 0, 0);
+        state.conciergeLoading = false;
+        return;
+      }
+
+      const data = await res.json();
+      state.conciergeData = data;
+      renderConciergeResults(data);
+    } catch (err) {
+      els.cardsGrid.innerHTML = `
+        <div data-testid="concierge-error" role="alert" style="grid-column:1/-1;background:#FEF2F2;padding:1.5rem;border-radius:12px;text-align:center;border:2px solid #DC2626;">
+          <h3 style="margin:0 0 0.45rem 0;color:#991B1B;">Could not reach Biashara Advisor</h3>
+          <p style="margin:0 0 0.9rem 0;color:#7F1D1D;font-size:0.88rem;">${escapeHtml(err.message || 'Network error')}</p>
+          <button type="button" id="btn-retry-concierge" data-testid="concierge-retry" class="btn btn-crimson">🔄 Try Again</button>
+        </div>
+      `;
+      const retryBtn = document.getElementById('btn-retry-concierge');
+      if (retryBtn) {
+        retryBtn.addEventListener('click', () => runConciergeSearch(q));
+      }
+      renderPaginationControls(0, 1, 1, 0, 0);
+    } finally {
+      state.conciergeLoading = false;
+    }
   }
 
   let leafletMap = null;
@@ -1603,7 +1906,33 @@
       syncClearBtn();
       state.searchQuery = e.target.value.trim();
       clearTimeout(timer);
-      timer = setTimeout(() => { if (state.searchQuery.length >= 2 && window.BBizMetrics) window.BBizMetrics.track('search', { meta_label: state.searchQuery }); fetchBusinesses(); }, 220);
+      if (state.isConciergeMode) {
+        timer = setTimeout(() => {
+          if (state.searchQuery.length >= 3) {
+            runConciergeSearch(state.searchQuery);
+          } else if (state.searchQuery.length === 0) {
+            renderConciergeWelcome();
+          }
+        }, 400);
+      } else {
+        timer = setTimeout(() => {
+          if (state.searchQuery.length >= 2 && window.BBizMetrics) {
+            window.BBizMetrics.track('search', { meta_label: state.searchQuery });
+          }
+          fetchBusinesses();
+        }, 220);
+      }
+    });
+    els.searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        clearTimeout(timer);
+        if (state.isConciergeMode) {
+          runConciergeSearch(state.searchQuery);
+        } else {
+          fetchBusinesses();
+        }
+      }
     });
     if (els.searchClearBtn) {
       els.searchClearBtn.addEventListener('click', () => {
@@ -1611,7 +1940,11 @@
         syncClearBtn();
         state.searchQuery = '';
         clearTimeout(timer);
-        fetchBusinesses();
+        if (state.isConciergeMode) {
+          renderConciergeWelcome();
+        } else {
+          fetchBusinesses();
+        }
         els.searchInput.focus();
       });
     }
@@ -2205,6 +2538,137 @@
     });
   }
 
+  // Chapter 2 Chunk 9 (#343, #344, #345, #346): Biashara Concierge Modal & Interactions
+  function openConciergeConsentModal() {
+    if (!els.conciergeModal) return;
+    els.conciergeModal.hidden = false;
+    els.conciergeModal.classList.add('open');
+  }
+
+  function closeConciergeConsentModal() {
+    if (!els.conciergeModal) return;
+    els.conciergeModal.classList.remove('open');
+    els.conciergeModal.hidden = true;
+  }
+
+  function setConciergeMode(active) {
+    state.isConciergeMode = active;
+    if (els.conciergeToggleBtn) {
+      if (active) {
+        els.conciergeToggleBtn.classList.add('active');
+        els.conciergeToggleBtn.setAttribute('aria-pressed', 'true');
+      } else {
+        els.conciergeToggleBtn.classList.remove('active');
+        els.conciergeToggleBtn.setAttribute('aria-pressed', 'false');
+      }
+    }
+    if (els.conciergePanel) {
+      els.conciergePanel.hidden = !active;
+    }
+    if (els.searchInput) {
+      els.searchInput.placeholder = active
+        ? "Describe your business need (e.g. Launching a company in Nairobi, building a commercial warehouse, planning an offsite)..."
+        : "Search businesses, services, or Swahili terms (e.g., wakili, daktari, solar, coffee, Westlands)...";
+    }
+
+    if (active) {
+      if (state.searchQuery && state.searchQuery.length >= 2) {
+        runConciergeSearch(state.searchQuery);
+      } else {
+        renderConciergeWelcome();
+      }
+    } else {
+      fetchBusinesses();
+    }
+  }
+
+  if (els.conciergeToggleBtn) {
+    els.conciergeToggleBtn.addEventListener('click', () => {
+      const hasConsent = localStorage.getItem('bbiz_concierge_consent') === 'granted';
+      if (!hasConsent && !state.isConciergeMode) {
+        openConciergeConsentModal();
+        return;
+      }
+      setConciergeMode(!state.isConciergeMode);
+    });
+  }
+
+  if (els.conciergeAcceptBtn) {
+    els.conciergeAcceptBtn.addEventListener('click', () => {
+      localStorage.setItem('bbiz_concierge_consent', 'granted');
+      closeConciergeConsentModal();
+      setConciergeMode(true);
+      if (els.searchInput) els.searchInput.focus();
+    });
+  }
+
+  if (els.conciergeCancelBtn) {
+    els.conciergeCancelBtn.addEventListener('click', closeConciergeConsentModal);
+  }
+  if (els.conciergeCloseBtn) {
+    els.conciergeCloseBtn.addEventListener('click', closeConciergeConsentModal);
+  }
+  if (els.conciergeModal) {
+    els.conciergeModal.addEventListener('click', (ev) => {
+      if (ev.target === els.conciergeModal) {
+        closeConciergeConsentModal();
+      }
+    });
+  }
+
+  if (els.conciergeExitBtn) {
+    els.conciergeExitBtn.addEventListener('click', () => {
+      if (els.searchInput) {
+        els.searchInput.value = '';
+      }
+      state.searchQuery = '';
+      if (els.searchClearBtn) {
+        els.searchClearBtn.style.display = 'none';
+      }
+      setConciergeMode(false);
+    });
+  }
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && els.conciergeModal && !els.conciergeModal.hidden) {
+      closeConciergeConsentModal();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    const starterChip = e.target.closest('.starter-prompt-chip');
+    if (starterChip) {
+      const p = starterChip.getAttribute('data-prompt');
+      if (p) {
+        if (!state.isConciergeMode) {
+          localStorage.setItem('bbiz_concierge_consent', 'granted');
+          setConciergeMode(true);
+        }
+        if (els.searchInput) {
+          els.searchInput.value = p;
+          state.searchQuery = p;
+          if (els.searchClearBtn) els.searchClearBtn.style.display = 'inline-flex';
+        }
+        runConciergeSearch(p);
+      }
+      return;
+    }
+
+    const followupChip = e.target.closest('[data-followup]');
+    if (followupChip) {
+      const f = followupChip.getAttribute('data-followup');
+      if (f) {
+        if (els.searchInput) {
+          els.searchInput.value = f;
+          state.searchQuery = f;
+          if (els.searchClearBtn) els.searchClearBtn.style.display = 'inline-flex';
+        }
+        runConciergeSearch(f);
+      }
+      return;
+    }
+  });
+
   window.addEventListener('offline', () => setOfflineBannerVisible(true));
   window.addEventListener('online', () => {
     setOfflineBannerVisible(false);
@@ -2275,7 +2739,13 @@
       }
     }
 
-    if (needsInitialFetch) {
+    const initMode = (initParams.get('mode') || '').trim().toLowerCase();
+    const initAdvisor = initParams.get('advisor');
+    if (initMode === 'concierge' || initAdvisor === '1') {
+      localStorage.setItem('bbiz_concierge_consent', 'granted');
+      setConciergeMode(true);
+      needsInitialFetch = false;
+    } else if (needsInitialFetch) {
       fetchBusinesses();
     }
 

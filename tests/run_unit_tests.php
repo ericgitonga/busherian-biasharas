@@ -5649,6 +5649,60 @@ assertTrue(
     '59d (#341): /api/concierge.php serves identical query from 15-minute response cache'
 );
 
+// ==========================================
+// 60. Chapter 2 Chunk 9: Conversational UI & Two-Tier Cards (#343, #344, #345, #346)
+// ==========================================
+$indexSource = file_get_contents(dirname(__DIR__) . '/public/index.php');
+$dirJsSource = file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+$appCssSource = file_get_contents(dirname(__DIR__) . '/public/assets/css/app.css');
+
+// 60a (#344): index.php contains concierge toggle, modal, panel and starter chips
+assertTrue(
+    str_contains($indexSource, 'btn-concierge-toggle') &&
+    str_contains($indexSource, 'concierge-toggle-pill') &&
+    str_contains($indexSource, 'concierge-consent-modal') &&
+    str_contains($indexSource, 'concierge-panel') &&
+    str_contains($indexSource, 'starter-prompt-chip'),
+    '60a (#344): public/index.php contains Biashara Advisor toggle, modal, panel and starter prompt chips'
+);
+
+// 60b (#344): Modal contains DPA 2019 transparency notice without code tags
+assertTrue(
+    str_contains($indexSource, 'Kenya DPA 2019 Transparency') &&
+    str_contains($indexSource, 'btn-concierge-consent-accept') &&
+    str_contains($indexSource, 'btn-concierge-consent-cancel'),
+    '60b (#344): public/index.php provides interactive DPA 2019 consent dialog with accept/cancel controls'
+);
+
+// 60c (#345): directory.js implements concierge execution, two-tier rendering & need badges
+assertTrue(
+    str_contains($dirJsSource, 'runConciergeSearch') &&
+    str_contains($dirJsSource, 'renderConciergeResults') &&
+    str_contains($dirJsSource, 'renderSingleBusinessCard') &&
+    str_contains($dirJsSource, 'concierge-tier-direct-header') &&
+    str_contains($dirJsSource, 'concierge-tier-ecosystem-header') &&
+    str_contains($dirJsSource, 'badge-underlying-need'),
+    '60c (#345): public/assets/js/directory.js implements concierge query execution, two-tier card partitioning & need badges'
+);
+
+// 60d (#346): directory.js renders unmet ecosystem demand card with WhatsApp share link
+assertTrue(
+    str_contains($dirJsSource, 'concierge-unmet-card') &&
+    str_contains($dirJsSource, 'btn-whatsapp-invite') &&
+    str_contains($dirJsSource, 'api.whatsapp.com/send?text=') &&
+    str_contains($dirJsSource, 'concierge-followup-wrap'),
+    '60d (#346): public/assets/js/directory.js renders unmet ecosystem community invite card with WhatsApp shortcut'
+);
+
+// 60e (#343): app.css contains dedicated styles for concierge toggle, loading dots & ecosystem cards
+assertTrue(
+    str_contains($appCssSource, '.pill-concierge-toggle') &&
+    str_contains($appCssSource, '.concierge-loading') &&
+    str_contains($appCssSource, '.biz-card-ecosystem') &&
+    str_contains($appCssSource, '.btn-whatsapp-invite'),
+    '60e (#343): public/assets/css/app.css defines styling for concierge toggle, typing indicator, ecosystem cards & WhatsApp invite'
+);
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');

@@ -1240,3 +1240,303 @@ a {
   color: #3730A3;
   border: 1px solid #A5B4FC;
 }
+
+/* Chapter 2 Chunk 9 (#343, #344, #345, #346): Biashara Concierge Conversational UI */
+.pill-concierge-toggle {
+  background: linear-gradient(135deg, #FFFDF0 0%, #FEF3C7 100%) !important;
+  color: #78350F !important;
+  border: 1.5px solid #F59E0B !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.01em;
+  transition: all 0.2s ease !important;
+}
+.pill-concierge-toggle:hover {
+  background: #FDE68A !important;
+  border-color: #D97706 !important;
+  color: #78350F !important;
+  transform: translateY(-1px);
+}
+.pill-concierge-toggle.active {
+  background: linear-gradient(135deg, #78350F 0%, #92400E 100%) !important;
+  color: #FFFFFF !important;
+  border-color: #78350F !important;
+  box-shadow: 0 2px 10px rgba(120, 53, 15, 0.3) !important;
+}
+
+.concierge-panel {
+  background: #FFFDF7;
+  border-bottom: 2px solid #FDE68A;
+  padding: 0.85rem 1.25rem;
+  box-shadow: 0 2px 6px rgba(120, 53, 15, 0.04);
+}
+.concierge-panel-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+}
+.concierge-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+.concierge-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.concierge-badge {
+  background: #78350F;
+  color: #FFFFFF;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.concierge-subtitle {
+  font-size: 0.84rem;
+  color: #92400E;
+  font-weight: 600;
+}
+.btn-concierge-exit {
+  background: #FFFFFF;
+  border: 1px solid #D97706;
+  color: #92400E;
+  border-radius: 6px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-concierge-exit:hover {
+  background: #FEF3C7;
+}
+
+.concierge-starter-prompts {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.concierge-starter-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #78350F;
+  margin-right: 0.15rem;
+}
+.starter-prompt-chip {
+  background: #FFFFFF;
+  border: 1px solid #FCD34D;
+  color: #78350F;
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.starter-prompt-chip:hover {
+  background: #FEF3C7;
+  border-color: #D97706;
+  transform: translateY(-1px);
+}
+
+.concierge-loading {
+  grid-column: 1 / -1;
+  background: #FFFFFF;
+  border: 1.5px solid #FDE68A;
+  border-radius: 12px;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+}
+.concierge-typing-dots {
+  display: inline-flex;
+  gap: 6px;
+  margin-bottom: 0.75rem;
+}
+.concierge-typing-dots span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #D4AF37;
+  animation: conciergeBlink 1.4s infinite ease-in-out both;
+}
+.concierge-typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+.concierge-typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+@keyframes conciergeBlink {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.35; }
+  40% { transform: scale(1); opacity: 1; }
+}
+.concierge-loading p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #78350F;
+  font-weight: 600;
+}
+
+.concierge-guidance-card {
+  grid-column: 1 / -1;
+  background: linear-gradient(180deg, #FFFDF9 0%, #FFFFFF 100%);
+  border: 1.5px solid #FDE68A;
+  border-left: 6px solid #D4AF37;
+  border-radius: 12px;
+  padding: 1.25rem 1.4rem;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 0.5rem;
+}
+.concierge-guidance-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.95rem;
+  color: #78350F;
+  font-weight: 700;
+}
+.badge-gemini, .badge-local {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+}
+.badge-gemini {
+  background: #ECFDF5;
+  color: #065F46;
+  border: 1px solid #10B981;
+}
+.badge-local {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #F59E0B;
+}
+.concierge-guidance-text {
+  font-size: 0.9rem;
+  color: var(--ink-700);
+  line-height: 1.6;
+}
+.concierge-guidance-text p {
+  margin: 0 0 0.5rem 0;
+}
+.concierge-guidance-text p:last-child {
+  margin-bottom: 0;
+}
+.concierge-pii-notice {
+  margin-top: 0.65rem;
+  font-size: 0.76rem;
+  color: #059669;
+  font-weight: 600;
+}
+
+.concierge-tier-header {
+  grid-column: 1 / -1;
+  border-bottom: 1px solid var(--border-200);
+  padding-bottom: 0.35rem;
+  margin-top: 0.5rem;
+}
+.concierge-tier-count {
+  font-size: 0.85rem;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.biz-card-ecosystem {
+  border: 1.5px solid #D4AF37 !important;
+  background: #FFFEFB;
+  position: relative;
+}
+.biz-card-ecosystem::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #7B1113 0%, #D4AF37 100%);
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+.badge-underlying-need {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FCD34D;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.card-adjacency-reason {
+  margin-top: 0.6rem;
+  background: #FFFBEB;
+  border-left: 3px solid #D97706;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.78rem;
+  color: #78350F;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+
+.concierge-unmet-card {
+  grid-column: 1 / -1;
+  background: #FFFBEB;
+  border: 1.5px dashed #F59E0B;
+  border-radius: 12px;
+  padding: 1.15rem 1.35rem;
+  margin-top: 1rem;
+}
+.btn-whatsapp-invite {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #25D366;
+  color: #FFFFFF !important;
+  text-decoration: none;
+  border-radius: 8px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  transition: background 0.15s ease;
+}
+.btn-whatsapp-invite:hover {
+  background: #1EBE5B;
+  color: #FFFFFF;
+}
+
+.concierge-followup-wrap {
+  grid-column: 1 / -1;
+  margin-top: 1.25rem;
+  padding-top: 0.85rem;
+  border-top: 1px dashed var(--border-200);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.concierge-followup-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-700);
+}
+.followup-chip {
+  background: #F3F4F6;
+  border: 1px solid #D1D5DB;
+  border-radius: 999px;
+  padding: 0.24rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--ink-700);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.followup-chip:hover {
+  background: #E5E7EB;
+  border-color: #9CA3AF;
+  color: var(--ink-900);
+}
