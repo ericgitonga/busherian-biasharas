@@ -113,13 +113,31 @@ final class HoursEngine
     }
 
     /**
-     * Evaluate operating status in Africa/Nairobi (EAT, UTC+3), including previous-day overnight
-     * carryover shifts after midnight and unambiguous ["00:00", "24:00"] 24-hour service (#184, #202).
+     * Resolve and validate a target timezone identifier, falling back to Africa/Nairobi (EAT, UTC+3) (#328).
      */
-    public static function evaluateStatus(string|array $hoursJson, ?DateTimeImmutable $nowOverride = null): array
+    public static function resolveTimezone(?string $timezone): DateTimeZone
     {
-        $tz = new DateTimeZone(self::TIMEZONE);
+        if ($timezone !== null && $timezone !== '') {
+            try {
+                return new DateTimeZone($timezone);
+            } catch (\Throwable) {
+                // fallback to default
+            }
+        }
+        return new DateTimeZone(self::TIMEZONE);
+    }
+
+    /**
+     * Evaluate operating status in local target timezone (default Africa/Nairobi EAT, UTC+3),
+     * including previous-day overnight carryover shifts after midnight and unambiguous ["00:00", "24:00"]
+     * 24-hour service (#184, #202, #328).
+     */
+    public static function evaluateStatus(string|array $hoursJson, ?DateTimeImmutable $nowOverride = null, ?string $timezone = null): array
+    {
+        $tz = self::resolveTimezone($timezone);
         $now = $nowOverride ? $nowOverride->setTimezone($tz) : new DateTimeImmutable('now', $tz);
+        $tzName = $tz->getName();
+        $tzAbbr = $now->format('T');
 
         $schedule = is_array($hoursJson)
             ? $hoursJson
@@ -136,6 +154,8 @@ final class HoursEngine
                 'badge_text' => 'By Appointment Only',
                 'today_key' => $todayKey,
                 'schedule_table' => self::formatScheduleTable($schedule),
+                'timezone' => $tzName,
+                'timezone_abbr' => $tzAbbr,
             ];
         }
 
@@ -160,9 +180,11 @@ final class HoursEngine
                         return [
                             'state' => 'CLOSING_SOON',
                             'is_open' => true,
-                            'badge_text' => "Closing Soon • {$formattedClose} EAT",
+                            'badge_text' => "Closing Soon • {$formattedClose} {$tzAbbr}",
                             'today_key' => $todayKey,
                             'schedule_table' => self::formatScheduleTable($schedule),
+                            'timezone' => $tzName,
+                            'timezone_abbr' => $tzAbbr,
                         ];
                     }
                     return [
@@ -171,6 +193,8 @@ final class HoursEngine
                         'badge_text' => "Open Now • Closes {$formattedClose}",
                         'today_key' => $todayKey,
                         'schedule_table' => self::formatScheduleTable($schedule),
+                        'timezone' => $tzName,
+                        'timezone_abbr' => $tzAbbr,
                     ];
                 }
             }
@@ -200,6 +224,8 @@ final class HoursEngine
                             'badge_text' => 'Open Now • Open 24 Hours',
                             'today_key' => $todayKey,
                             'schedule_table' => self::formatScheduleTable($schedule),
+                            'timezone' => $tzName,
+                            'timezone_abbr' => $tzAbbr,
                         ];
                     }
                     if ($rawCloseMin === 1440 && self::dayStartsAtMidnight($schedule, $nextDayKey)) {
@@ -209,6 +235,8 @@ final class HoursEngine
                             'badge_text' => 'Open Now • Open Past Midnight',
                             'today_key' => $todayKey,
                             'schedule_table' => self::formatScheduleTable($schedule),
+                            'timezone' => $tzName,
+                            'timezone_abbr' => $tzAbbr,
                         ];
                     }
                     $remaining = $closeMin - $nowMinutes;
@@ -217,9 +245,11 @@ final class HoursEngine
                         return [
                             'state' => 'CLOSING_SOON',
                             'is_open' => true,
-                            'badge_text' => "Closing Soon • {$formattedClose} EAT",
+                            'badge_text' => "Closing Soon • {$formattedClose} {$tzAbbr}",
                             'today_key' => $todayKey,
                             'schedule_table' => self::formatScheduleTable($schedule),
+                            'timezone' => $tzName,
+                            'timezone_abbr' => $tzAbbr,
                         ];
                     }
                     $badge = ($openMin === 0 && $rawCloseMin === 1440)
@@ -231,6 +261,8 @@ final class HoursEngine
                         'badge_text' => $badge,
                         'today_key' => $todayKey,
                         'schedule_table' => self::formatScheduleTable($schedule),
+                        'timezone' => $tzName,
+                        'timezone_abbr' => $tzAbbr,
                     ];
                 }
             }
@@ -242,6 +274,8 @@ final class HoursEngine
             'badge_text' => 'Closed Now',
             'today_key' => $todayKey,
             'schedule_table' => self::formatScheduleTable($schedule),
+            'timezone' => $tzName,
+            'timezone_abbr' => $tzAbbr,
         ];
     }
 

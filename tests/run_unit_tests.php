@@ -5008,6 +5008,110 @@ assertTrue(
     'M-04 (#324): computeMomentumContext returns valid popular_cutoff and new_badges_enabled via SQL index scans'
 );
 
+// 56. Going Global (G1, G2, #327, #328): Phone Extensions, ITU-T Lengths, Country-Aware Timezones & Local Hours
+// 56a. G1 (#327): Phone extension extraction, dialable E.164 sanitization & national length bounds
+$splitExt1 = \BusherianBiasharas\Services\PhoneNormalizer::splitExtension('+1 (415) 555-0132 ext 104');
+$splitExt2 = \BusherianBiasharas\Services\PhoneNormalizer::splitExtension('+1 415 555 0132 x205');
+$splitExt3 = \BusherianBiasharas\Services\PhoneNormalizer::splitExtension('+254 20 2712345 #12');
+$splitExt4 = \BusherianBiasharas\Services\PhoneNormalizer::splitExtension('+1 415 555 0132,104');
+$splitExt5 = \BusherianBiasharas\Services\PhoneNormalizer::splitExtension('+254 712 345678');
+
+$normDialable = \BusherianBiasharas\Services\PhoneNormalizer::normalize('+1 (415) 555-0132 ext 104', 'United States');
+$normExt = \BusherianBiasharas\Services\PhoneNormalizer::normalizeWithExtension('+1 (415) 555-0132 ext 104', 'United States');
+
+assertTrue(
+    $splitExt1['extension'] === '104' &&
+    $splitExt2['extension'] === '205' &&
+    $splitExt3['extension'] === '12' &&
+    $splitExt4['extension'] === '104' &&
+    $splitExt5['extension'] === null &&
+    $normDialable === '+14155550132' &&
+    $normExt['e164'] === '+14155550132' &&
+    $normExt['extension'] === '104' &&
+    $normExt['display'] === '+14155550132 ext. 104' &&
+    $normExt['is_valid_len'] === true,
+    'G1 (#327): PhoneNormalizer extracts extensions, preserves clean dialable E.164, and formats display extensions'
+);
+
+assertTrue(
+    \BusherianBiasharas\Services\PhoneNormalizer::isValidE164Length('+299123456') === true &&
+    \BusherianBiasharas\Services\PhoneNormalizer::isValidE164Length('+123456789012345') === true &&
+    \BusherianBiasharas\Services\PhoneNormalizer::isValidE164Length('+12345') === false &&
+    \BusherianBiasharas\Services\PhoneNormalizer::isValidE164Length('+1234567890123456') === false,
+    'G1 (#327): PhoneNormalizer enforces ITU-T E.164 digit boundaries (7 to 15 digits)'
+);
+
+// 56b. G2 (#328): Country-aware IANA timezones and sub-national mappings
+$tzKe = LocationEngine::getTimezoneForCountry('Kenya');
+$tzCh = LocationEngine::getTimezoneForCountry('Switzerland');
+$tzUk = LocationEngine::getTimezoneForCountry('United Kingdom');
+$tzUsNy = LocationEngine::getTimezoneForCountry('United States', 'New York');
+$tzUsCa = LocationEngine::getTimezoneForCountry('United States', 'Los Angeles');
+$tzCaBc = LocationEngine::getTimezoneForCountry('Canada', 'Vancouver');
+$tzAuWa = LocationEngine::getTimezoneForCountry('Australia', 'Perth');
+$tzUnknown = LocationEngine::getTimezoneForCountry('Unknown Land');
+
+assertTrue(
+    $tzKe === 'Africa/Nairobi' &&
+    $tzCh === 'Europe/Zurich' &&
+    $tzUk === 'Europe/London' &&
+    $tzUsNy === 'America/New_York' &&
+    $tzUsCa === 'America/Los_Angeles' &&
+    $tzCaBc === 'America/Vancouver' &&
+    $tzAuWa === 'Australia/Perth' &&
+    $tzUnknown === 'Africa/Nairobi' &&
+    count(LocationEngine::COUNTRY_TIMEZONES) === 197,
+    'G2 (#328): LocationEngine maps all 197 countries to IANA timezones with US/Canada/Australia state/city overrides'
+);
+
+// 56c. G2 (#328): Local operating hours evaluation in business timezone
+$swissSchedJson = json_encode([
+    'wed' => [['09:00', '17:00']],
+]);
+$instantEat = new \DateTimeImmutable('2026-01-14 18:30:00', new \DateTimeZone('Africa/Nairobi'));
+
+$statusLocal = HoursEngine::evaluateStatus($swissSchedJson, $instantEat, 'Europe/Zurich');
+$statusDefault = HoursEngine::evaluateStatus($swissSchedJson, $instantEat);
+
+assertTrue(
+    $statusLocal['state'] === 'CLOSING_SOON' &&
+    $statusLocal['is_open'] === true &&
+    $statusLocal['timezone'] === 'Europe/Zurich' &&
+    $statusLocal['timezone_abbr'] === 'CET' &&
+    str_contains($statusLocal['badge_text'], '5:00 PM CET') &&
+    $statusDefault['state'] === 'CLOSED' &&
+    $statusDefault['is_open'] === false &&
+    $statusDefault['timezone'] === 'Africa/Nairobi',
+    'G2 (#328): HoursEngine evaluates local operating hours in business timezone rather than server timezone'
+);
+
+// 56d. G2 (#328): Mailer reflections of business timezone abbreviation
+$fakeBiz328 = [
+    'id' => 328,
+    'name' => 'Zurich Tech GmbH',
+    'email_public' => 'zurich@example.com',
+    'country' => 'Switzerland',
+    'city_county' => 'Zurich',
+];
+$outboxId328 = Mailer::sendBookingInquiry($pdo, $fakeBiz328, 'zurich@example.com', [
+    'requester_name' => 'Alumnus Tester',
+    'requester_email' => 'alumnus@example.com',
+    'preferred_date' => '2026-11-20',
+    'preferred_time' => '14:00',
+    'topic' => 'Going Global G2 consultation',
+    'timezone_abbr' => 'CET',
+]);
+$mailRow328 = $pdo->query("SELECT body_html FROM email_outbox WHERE id = {$outboxId328}")->fetch();
+$mailHtml328 = (string)($mailRow328['body_html'] ?? '');
+
+assertTrue(
+    $outboxId328 > 0 &&
+    str_contains($mailHtml328, 'Preferred Time (CET):') &&
+    !str_contains($mailHtml328, 'Preferred Time (EAT):'),
+    'G2 (#328): Mailer::sendBookingInquiry formats appointment email with local business timezone abbreviation'
+);
+$pdo->exec("DELETE FROM email_outbox WHERE id = {$outboxId328}");
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');

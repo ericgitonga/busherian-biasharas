@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.28.0] - 2026-11-14
+### Added & Changed
+- **Phone Extension Parsing, Dialable E.164 Cleaning & Length Validation (`#327`, Parent `#326`)**: Added `PhoneNormalizer::splitExtension()` to reliably separate extensions (`ext 104`, `x205`, `#12`, `,104`) from base phone digits, returning dialable numbers for `tel:` and `wa.me` links without trailing extension digits corrupting calls. Added `PhoneNormalizer::normalizeWithExtension()` to preserve cleanly formatted display strings (`+14155550132 ext. 104`), and enforced ITU-T E.164 bounds (7 to 15 digits) via `PhoneNormalizer::isValidE164Length()`.
+- **Country-Aware IANA Timezones & Local Operating Hours (`#328`, Parent `#326`)**: Added `LocationEngine::COUNTRY_TIMEZONES` mapping all 197 supported countries to primary canonical IANA timezones with sub-national US/Canada/Australia state and major city overrides (`LocationEngine::getTimezoneForCountry()`). Updated `HoursEngine::evaluateStatus()` to accept an optional target timezone, returning `'timezone'` and `'timezone_abbr'` and evaluating `🟢 Open Now` and closing countdowns against the business's local clock rather than server EAT.
+- **Timezone-Aware Directory Feeds & Appointment Booking (`#328`, Parent `#326`)**: Wired local business timezones into `public/api/businesses.php` (both SQL pagination and `open_now` candidate chunk scanning) and `public/index.php`. Updated `public/api/book-appointment.php` to evaluate past-date checks against the listing's local date, validate calendar dates with `checkdate()`, and pass the business's timezone abbreviation to `Mailer::sendBookingInquiry()`, formatting booking notifications with dynamic local timezones (`({$tzAbbr})`) instead of hardcoded `(EAT)`.
+
 ## [0.27.2] - 2026-11-14
 ### Security & Data Integrity
 - **Redact Moderation Capabilities from Owner Personal Data Export (`#321`, Parent `#320`)**: Excluded internal administrator review correspondence (`[Review Required]`, moderation emails containing `/admin/review-action.php`) from `OwnerAuth::exportOwnerPersonalData()`, fixed regex to redact HTML-encoded `&amp;sig=` capability tokens, and enforced an active administrator session via `AdminAuth::requireAdminSession()` on `/admin/review-action.php` as defense in depth against self-approval (remediating Adversarial CRITICAL C-01).
