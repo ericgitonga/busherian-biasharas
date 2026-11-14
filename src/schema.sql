@@ -319,3 +319,17 @@ CREATE TABLE IF NOT EXISTS pending_media_deletions (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_pending_media_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 16. Prompt-Injection-Safe Biashara Concierge AI Capability Index (#330, #331)
+CREATE TABLE IF NOT EXISTS business_ai_index (
+    business_id INT UNSIGNED NOT NULL PRIMARY KEY,
+    capability_digest TEXT NOT NULL,
+    keywords_norm VARCHAR(500) NOT NULL,
+    embedding_json MEDIUMTEXT NULL,
+    content_hash CHAR(64) NOT NULL,
+    indexed_at INT UNSIGNED NOT NULL,
+    updated_at INT UNSIGNED NOT NULL,
+    INDEX idx_ai_content_hash (content_hash),
+    INDEX idx_ai_updated_at (updated_at),
+    CONSTRAINT fk_ai_index_business FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v25-engagement';
+    public const SCHEMA_INIT_VERSION = '2026-11-v29-ai-index';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -225,6 +225,7 @@ final class Database
             'business_sequences',
             'pending_media_deletions',
             'engagement_dedup_24h',
+            'business_ai_index',
             'app_settings',
         ];
         $existing = [];
@@ -480,6 +481,7 @@ final class Database
         self::ensureOutboxAndTakedownTables($pdo, $driver);
         self::ensureProvenanceAuditAndSequenceTables($pdo, $driver);
         self::ensureEngagementRankingSchema($pdo, $driver);
+        self::ensureAiIndexSchema($pdo, $driver);
 
         // Seed default taxonomy if empty; NEVER seed sample businesses in production (#169)
         $appEnv = strtolower(self::env('APP_ENV', 'development'));
@@ -548,6 +550,14 @@ final class Database
                 self::setSetting($pdo, 'engagement_scores_backfill_v1', 'done');
             } catch (\Throwable $engErr) {
                 error_log('[Database::migrateAndSeed] engagement_scores_backfill_v1 failed: ' . $engErr->getMessage());
+            }
+        }
+        if (self::getSetting($pdo, 'ai_index_backfill_v1') !== 'done') {
+            try {
+                \BusherianBiasharas\Services\AiListingIndexer::rebuildAllApproved($pdo);
+                self::setSetting($pdo, 'ai_index_backfill_v1', 'done');
+            } catch (\Throwable $aiErr) {
+                error_log('[Database::migrateAndSeed] ai_index_backfill_v1 failed: ' . $aiErr->getMessage());
             }
         }
         self::setSetting($pdo, 'schema_init_version', self::SCHEMA_INIT_VERSION);
@@ -849,6 +859,41 @@ final class Database
                 END
             WHERE signal_group IS NULL
         ");
+    }
+
+    private static function ensureAiIndexSchema(PDO $pdo, string $driver): void
+    {
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS business_ai_index (
+                    business_id INTEGER PRIMARY KEY,
+                    capability_digest TEXT NOT NULL,
+                    keywords_norm TEXT NOT NULL,
+                    embedding_json TEXT NULL,
+                    content_hash TEXT NOT NULL,
+                    indexed_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_content_hash ON business_ai_index (content_hash);
+                CREATE INDEX IF NOT EXISTS idx_ai_updated_at ON business_ai_index (updated_at);
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS business_ai_index (
+                    business_id INT UNSIGNED NOT NULL PRIMARY KEY,
+                    capability_digest TEXT NOT NULL,
+                    keywords_norm VARCHAR(500) NOT NULL,
+                    embedding_json MEDIUMTEXT NULL,
+                    content_hash CHAR(64) NOT NULL,
+                    indexed_at INT UNSIGNED NOT NULL,
+                    updated_at INT UNSIGNED NOT NULL,
+                    INDEX idx_ai_content_hash (content_hash),
+                    INDEX idx_ai_updated_at (updated_at),
+                    CONSTRAINT fk_ai_index_business FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        }
     }
 
     private static function ensureBusinessIdentityAndNumberColumns(PDO $pdo, string $driver): void
