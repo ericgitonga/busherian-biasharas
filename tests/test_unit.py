@@ -48,6 +48,20 @@ def test_business_ai_index_table_schema():
     assert "REFERENCES businesses(id) ON DELETE CASCADE" in ai_block
 
 
+def test_concierge_retriever_and_need_graph_services():
+    need_graph_php = (ROOT / "src" / "Services" / "NeedGraph.php").read_text()
+    assert "class NeedGraph" in need_graph_php
+    assert "ECOSYSTEM_CLUSTERS" in need_graph_php
+    assert "ADJACENCY_MAP" in need_graph_php
+    assert "explainAdjacency" in need_graph_php
+
+    retriever_php = (ROOT / "src" / "Services" / "ConciergeRetriever.php").read_text()
+    assert "class ConciergeRetriever" in retriever_php
+    assert "retrieveCandidates" in retriever_php
+    assert "applyPeerFairnessRotation" in retriever_php
+    assert "unmet_ecosystem_specialties" in retriever_php
+
+
 def test_zero_external_cdn_links_in_public_pages():
     forbidden_cdns = [
         "fonts.googleapis.com",

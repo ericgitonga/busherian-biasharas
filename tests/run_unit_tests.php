@@ -5245,6 +5245,233 @@ assertTrue(
     '57e (#331): AiListingIndexer::rebuildAllApproved indexes all approved listings to 100% coverage and skips unchanged records'
 );
 
+
+// ============================================================================
+// SECTION 58: BIASHARA CONCIERGE CHUNK 7 (#334, #335, #336)
+// Kenyan Business Need-Adjacency Graph & Hybrid Candidate Retriever
+// ============================================================================
+
+// 58a (#335): NeedGraph Adjacency Mappings, Rationale & Ecosystem Clusters
+$lawAdj = \BusherianBiasharas\Services\NeedGraph::getAdjacentSpecialties('Advocates & Law Firm');
+assertTrue(!empty($lawAdj), '58a (#335): NeedGraph returns adjacent specialties for Advocates & Law Firm');
+
+$lawTargetNames = array_column($lawAdj, 'target_specialty');
+assertTrue(
+    in_array('Audit, Tax & Accounting (CPA)', $lawTargetNames, true) &&
+    in_array('Company Secretarial & Governance', $lawTargetNames, true) &&
+    in_array('Intellectual Property & Trademarks', $lawTargetNames, true),
+    '58a (#335): NeedGraph links legal services to tax, company secretarial, and IP companion specialties'
+);
+
+$taxExp = \BusherianBiasharas\Services\NeedGraph::explainAdjacency('Advocates & Law Firm', 'Audit, Tax & Accounting (CPA)');
+assertTrue(
+    str_contains(strtolower($taxExp), 'tax') && str_contains(strtolower($taxExp), 'contract'),
+    '58a (#335): NeedGraph::explainAdjacency returns contextual rationale mentioning tax and contracts'
+);
+
+$needLbl = \BusherianBiasharas\Services\NeedGraph::getNeedLabel('Advocates & Law Firm', 'Audit, Tax & Accounting (CPA)');
+assertTrue(
+    $needLbl === 'Tax & Financial Compliance',
+    '58a (#335): NeedGraph::getNeedLabel returns human-facing badge Tax & Financial Compliance'
+);
+
+$clusters = \BusherianBiasharas\Services\NeedGraph::getEcosystemClusters();
+assertTrue(
+    isset($clusters['company_launch']) &&
+    isset($clusters['property_construction']) &&
+    isset($clusters['events_retreats']) &&
+    isset($clusters['health_wellness']) &&
+    isset($clusters['agribusiness_value_chain']) &&
+    isset($clusters['tech_digital_scaling']) &&
+    isset($clusters['creative_publishing']) &&
+    isset($clusters['relocation_facility']),
+    '58a (#335): NeedGraph::getEcosystemClusters registers all 8 Kenyan biashara journey clusters'
+);
+
+$detectedCluster = \BusherianBiasharas\Services\NeedGraph::getClusterForSpecialties(['Custom Software & Mobile App Dev', 'Cloud, DevOps & Hosting']);
+assertTrue(
+    ($detectedCluster['cluster_key'] ?? '') === 'tech_digital_scaling',
+    '58a (#335): NeedGraph resolves tech specialties to tech_digital_scaling cluster'
+);
+
+// 58b (#336): ConciergeRetriever Query Intent Parsing
+$parsedIntent1 = \BusherianBiasharas\Services\ConciergeRetriever::parseQueryIntent(
+    $pdo,
+    'Planning a 40-person corporate retreat near Nairobi that accepts LPOs'
+);
+assertTrue(
+    $parsedIntent1['has_b2b_intent'] === true &&
+    ($parsedIntent1['detected_cluster']['cluster_key'] ?? '') === 'events_retreats',
+    '58b (#336): ConciergeRetriever parses corporate retreat query into B2B intent and events_retreats cluster'
+);
+
+$parsedIntent2 = \BusherianBiasharas\Services\ConciergeRetriever::parseQueryIntent(
+    $pdo,
+    'Urgent dental consultation needed open now'
+);
+assertTrue(
+    $parsedIntent2['has_open_now_intent'] === true,
+    '58b (#336): ConciergeRetriever detects open_now intent from urgent query tokens'
+);
+
+// 58c & 58d (#336): Two-Tier Direct vs Ecosystem Candidate Retrieval, Distance & Operational Context
+// Create test fixtures
+$secLegal = (int)$pdo->query("SELECT id FROM categories WHERE name = 'Advocates & Law Firm'")->fetchColumn();
+$secAccounting = (int)$pdo->query("SELECT id FROM categories WHERE name = 'Audit, Tax & Accounting (CPA)'")->fetchColumn();
+$secGym = (int)$pdo->query("SELECT id FROM categories WHERE name = 'Gym, Fitness & Yoga Studio'")->fetchColumn();
+
+// Seed test direct law firm (Karen, accepts LPO, open now schedule)
+$pdo->exec("INSERT INTO businesses (
+    business_id, business_number, name, slug, tagline, description,
+    school_badge, sector_id, specialty_id, service_mode, b2b_ready, accepts_lpo,
+    city_county, area_neighborhood, country, latitude, longitude,
+    operating_hours_json, phone_primary, status, engagement_score
+) VALUES (
+    'BBIZ-TESTLAW58', 5801, 'Bush & Partners Advocates LLP', 'bush-partners-advocates-58',
+    'Premier commercial conveyancing and corporate litigation counsel.',
+    'Specialized corporate legal advisory, commercial contract drafting, and company registration for Kenyan enterprises.',
+    'AHS', 1, {$secLegal}, 'physical', 1, 1,
+    'Nairobi', 'Karen', 'Kenya', -1.3195, 36.7065,
+    '{\"mon\":[[\"08:00\",\"18:00\"]],\"tue\":[[\"08:00\",\"18:00\"]],\"wed\":[[\"08:00\",\"18:00\"]],\"thu\":[[\"08:00\",\"18:00\"]],\"fri\":[[\"08:00\",\"18:00\"]],\"sat\":[[\"09:00\",\"13:00\"]],\"sun\":[]}',
+    '+254711580100', 'approved', 8.5000
+)");
+$lawBizId58 = (int)$pdo->lastInsertId();
+\BusherianBiasharas\Services\AiListingIndexer::indexBusiness($pdo, $lawBizId58);
+
+// Seed test ecosystem tax firm (Westlands, accepts LPO)
+$pdo->exec("INSERT INTO businesses (
+    business_id, business_number, name, slug, tagline, description,
+    school_badge, sector_id, specialty_id, service_mode, b2b_ready, accepts_lpo,
+    city_county, area_neighborhood, country, latitude, longitude,
+    operating_hours_json, phone_primary, status, engagement_score
+) VALUES (
+    'BBIZ-TESTTAX58', 5802, 'Nairobi Tax & Advisory Associates', 'nairobi-tax-advisory-58',
+    'Certified public accountants offering corporate tax and audit compliance.',
+    'Comprehensive statutory tax filing, book-keeping, KRA audit defense, and payroll management.',
+    'BOTH', 1, {$secAccounting}, 'hybrid', 1, 1,
+    'Nairobi', 'Westlands', 'Kenya', -1.2683, 36.8111,
+    '{\"mon\":[[\"08:30\",\"17:00\"]],\"tue\":[[\"08:30\",\"17:00\"]],\"wed\":[[\"08:30\",\"17:00\"]],\"thu\":[[\"08:30\",\"17:00\"]],\"fri\":[[\"08:30\",\"17:00\"]],\"sat\":[],\"sun\":[]}',
+    '+254711580200', 'approved', 5.2000
+)");
+$taxBizId58 = (int)$pdo->lastInsertId();
+\BusherianBiasharas\Services\AiListingIndexer::indexBusiness($pdo, $taxBizId58);
+
+// Seed unrelated gym firm
+$pdo->exec("INSERT INTO businesses (
+    business_id, business_number, name, slug, tagline, description,
+    school_badge, sector_id, specialty_id, service_mode, b2b_ready, accepts_lpo,
+    city_county, area_neighborhood, country, latitude, longitude,
+    operating_hours_json, phone_primary, status, engagement_score
+) VALUES (
+    'BBIZ-TESTGYM58', 5803, 'Savannah Fitness Hub', 'savannah-fitness-hub-58',
+    'Modern strength gym, yoga classes, and cross-training studio.',
+    'Full fitness center offering personal training, group yoga sessions, and steam wellness in Lavington.',
+    'AGHS', 2, {$secGym}, 'physical', 0, 0,
+    'Nairobi', 'Lavington', 'Kenya', -1.2855, 36.7725,
+    '{\"mon\":[\"06:00\",\"21:00\"],\"tue\":[\"06:00\",\"21:00\"],\"wed\":[\"06:00\",\"21:00\"],\"thu\":[\"06:00\",\"21:00\"],\"fri\":[\"06:00\",\"21:00\"],\"sat\":[\"07:00\",\"19:00\"],\"sun\":[\"08:00\",\"16:00\"]}',
+    '+254711580300', 'approved', 2.1000
+)");
+$gymBizId58 = (int)$pdo->lastInsertId();
+\BusherianBiasharas\Services\AiListingIndexer::indexBusiness($pdo, $gymBizId58);
+
+// Test retrieval with Karen user coordinates (close to Law firm)
+$retrievalRes58 = \BusherianBiasharas\Services\ConciergeRetriever::retrieveCandidates($pdo, [
+    'query' => 'commercial corporate lawyer and legal registration',
+    'latitude' => -1.3190,
+    'longitude' => 36.7060,
+    'b2b_only' => true,
+    'timestamp' => strtotime('2026-11-16 10:00:00 EAT'), // Monday 10am EAT (open)
+]);
+
+$directIds58 = array_column($retrievalRes58['direct_matches'], 'id');
+$ecosystemIds58 = array_column($retrievalRes58['ecosystem_matches'], 'id');
+
+assertTrue(
+    in_array($lawBizId58, $directIds58, true),
+    '58c (#336): Direct matches contains Bush & Partners Advocates LLP for legal query'
+);
+assertTrue(
+    in_array($taxBizId58, $ecosystemIds58, true),
+    '58c (#336): Ecosystem matches contains Nairobi Tax & Advisory Associates discovered via NeedGraph'
+);
+assertTrue(
+    !in_array($gymBizId58, $directIds58, true) && !in_array($gymBizId58, $ecosystemIds58, true),
+    '58c (#336): Unrelated Savannah Fitness Hub is excluded from legal & tax recommendations'
+);
+
+// Verify candidate metadata & score breakdown
+$lawMatch58 = null;
+foreach ($retrievalRes58['direct_matches'] as $dm) {
+    if ((int)$dm['id'] === $lawBizId58) {
+        $lawMatch58 = $dm;
+        break;
+    }
+}
+assertTrue(
+    $lawMatch58 !== null &&
+    $lawMatch58['match_tier'] === 'direct' &&
+    $lawMatch58['open_status'] === 'OPEN_NOW' &&
+    $lawMatch58['distance_km'] < 1.0 &&
+    isset($lawMatch58['score_breakdown']['proximity_boost_5km']) &&
+    isset($lawMatch58['score_breakdown']['open_now_boost']) &&
+    isset($lawMatch58['score_breakdown']['b2b_lpo_boost']),
+    '58d (#336): Candidate receives multi-factor boosts for proximity, open now, and B2B LPO acceptance'
+);
+
+$taxMatch58 = null;
+foreach ($retrievalRes58['ecosystem_matches'] as $em) {
+    if ((int)$em['id'] === $taxBizId58) {
+        $taxMatch58 = $em;
+        break;
+    }
+}
+assertTrue(
+    $taxMatch58 !== null &&
+    $taxMatch58['match_tier'] === 'ecosystem' &&
+    $taxMatch58['underlying_need_label'] === 'Tax & Financial Compliance' &&
+    !empty($taxMatch58['match_rationale']),
+    '58d (#336): Ecosystem suggestion includes underlying_need_label Tax & Financial Compliance and plain-English rationale'
+);
+
+// 58e (#336): Seeded Peer Fairness Rotation (Near-Tie 2-Hour Slot Rotation)
+$candidateA = ['id' => 101, 'relevance_score' => 12.0];
+$candidateB = ['id' => 102, 'relevance_score' => 12.1];
+$candidateC = ['id' => 103, 'relevance_score' => 12.0];
+$peerList = [$candidateA, $candidateB, $candidateC];
+
+$tSlot1 = 1794700800; // Slot 1
+$tSlot2 = 1794700800 + 7200; // Slot 2 (+2 hours)
+
+$rotatedSlot1 = \BusherianBiasharas\Services\ConciergeRetriever::applyPeerFairnessRotation($peerList, $tSlot1, 'user_seed_test');
+$rotatedSlot2 = \BusherianBiasharas\Services\ConciergeRetriever::applyPeerFairnessRotation($peerList, $tSlot2, 'user_seed_test');
+
+$idsSlot1 = array_column($rotatedSlot1, 'id');
+$idsSlot2 = array_column($rotatedSlot2, 'id');
+
+assertTrue(
+    count($idsSlot1) === 3 && count($idsSlot2) === 3,
+    '58e (#336): applyPeerFairnessRotation preserves candidate count within near-tie band'
+);
+
+// 58f (#335, #336): Unmet Demand Detection
+assertTrue(
+    !empty($retrievalRes58['unmet_ecosystem_specialties']),
+    '58f (#335, #336): ConciergeRetriever detects unmet adjacent specialties with 0 listings in directory'
+);
+$firstUnmet = $retrievalRes58['unmet_ecosystem_specialties'][0];
+assertTrue(
+    isset($firstUnmet['specialty_name']) &&
+    isset($firstUnmet['underlying_need_label']) &&
+    isset($firstUnmet['invite_prompt']) &&
+    str_contains($firstUnmet['invite_prompt'], 'Know a fellow Busherian in'),
+    '58f (#335, #336): Unmet demand item includes specialty name and community invite prompt'
+);
+
+// Cleanup Section 58 fixtures
+\BusherianBiasharas\Services\VettingPurger::deleteBusiness($pdo, $lawBizId58, 'admin_dashboard', 'cleanup_58_law');
+\BusherianBiasharas\Services\VettingPurger::deleteBusiness($pdo, $taxBizId58, 'admin_dashboard', 'cleanup_58_tax');
+\BusherianBiasharas\Services\VettingPurger::deleteBusiness($pdo, $gymBizId58, 'admin_dashboard', 'cleanup_58_gym');
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');
