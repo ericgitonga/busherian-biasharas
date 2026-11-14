@@ -151,6 +151,8 @@ final class Mailer
         $reqPhoneHtml = htmlspecialchars($reqPhoneClean !== '' ? $reqPhoneClean : 'Not provided', ENT_QUOTES, 'UTF-8');
         $prefDateHtml = htmlspecialchars($prefDateClean, ENT_QUOTES, 'UTF-8');
         $prefTimeHtml = htmlspecialchars($prefTimeClean, ENT_QUOTES, 'UTF-8');
+        $tzAbbrClean = !empty($inquiry['timezone_abbr']) ? AntiSpamGate::sanitizeHeaderValue((string)$inquiry['timezone_abbr']) : 'EAT';
+        $tzAbbrHtml = htmlspecialchars($tzAbbrClean, ENT_QUOTES, 'UTF-8');
         $topicHtml = nl2br(htmlspecialchars($topicClean, ENT_QUOTES, 'UTF-8'));
 
         $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
@@ -166,7 +168,7 @@ final class Mailer
                     <p style='margin:5px 0;'><strong>Requester Email:</strong> <span data-visitor-pii='1'>{$reqEmailHtml}</span></p>
                     <p style='margin:5px 0;'><strong>Phone / WhatsApp:</strong> <span data-visitor-pii='1'>{$reqPhoneHtml}</span></p>
                     <p style='margin:5px 0;'><strong>Preferred Date:</strong> {$prefDateHtml}</p>
-                    <p style='margin:5px 0;'><strong>Preferred Time (EAT):</strong> {$prefTimeHtml}</p>
+                    <p style='margin:5px 0;'><strong>Preferred Time ({$tzAbbrHtml}):</strong> {$prefTimeHtml}</p>
                     <p style='margin:8px 0 0 0;'><strong>Consultation Topic / Note:</strong><br><span data-visitor-pii='1'>{$topicHtml}</span></p>
                 </div>
                 <p style='font-size:13px;color:#374151;'>

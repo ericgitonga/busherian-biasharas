@@ -428,6 +428,209 @@ final class LocationEngine
         'Zimbabwe' => 'Province',
     ];
 
+    /**
+     * Primary canonical IANA timezone for all 197 supported countries (Going Global G2, #328).
+     */
+    public const COUNTRY_TIMEZONES = [
+        'Afghanistan' => 'Asia/Kabul',
+        'Albania' => 'Europe/Tirane',
+        'Algeria' => 'Africa/Algiers',
+        'Andorra' => 'Europe/Andorra',
+        'Angola' => 'Africa/Luanda',
+        'Antigua and Barbuda' => 'America/Antigua',
+        'Argentina' => 'America/Argentina/Buenos_Aires',
+        'Armenia' => 'Asia/Yerevan',
+        'Australia' => 'Australia/Sydney',
+        'Austria' => 'Europe/Vienna',
+        'Azerbaijan' => 'Asia/Baku',
+        'Bahamas' => 'America/Nassau',
+        'Bahrain' => 'Asia/Bahrain',
+        'Bangladesh' => 'Asia/Dhaka',
+        'Barbados' => 'America/Barbados',
+        'Belarus' => 'Europe/Minsk',
+        'Belgium' => 'Europe/Brussels',
+        'Belize' => 'America/Belize',
+        'Benin' => 'Africa/Porto-Novo',
+        'Bhutan' => 'Asia/Thimphu',
+        'Bolivia' => 'America/La_Paz',
+        'Bosnia and Herzegovina' => 'Europe/Sarajevo',
+        'Botswana' => 'Africa/Gaborone',
+        'Brazil' => 'America/Sao_Paulo',
+        'Brunei' => 'Asia/Brunei',
+        'Bulgaria' => 'Europe/Sofia',
+        'Burkina Faso' => 'Africa/Ouagadougou',
+        'Burundi' => 'Africa/Bujumbura',
+        'Cabo Verde' => 'Atlantic/Cape_Verde',
+        'Cambodia' => 'Asia/Phnom_Penh',
+        'Cameroon' => 'Africa/Douala',
+        'Canada' => 'America/Toronto',
+        'Central African Republic' => 'Africa/Bangui',
+        'Chad' => 'Africa/Ndjamena',
+        'Chile' => 'America/Santiago',
+        'China' => 'Asia/Shanghai',
+        'Colombia' => 'America/Bogota',
+        'Comoros' => 'Indian/Comoro',
+        'Congo (Brazzaville)' => 'Africa/Brazzaville',
+        'Congo (Kinshasa)' => 'Africa/Kinshasa',
+        'Costa Rica' => 'America/Costa_Rica',
+        'Croatia' => 'Europe/Zagreb',
+        'Cuba' => 'America/Havana',
+        'Cyprus' => 'Asia/Nicosia',
+        'Czechia' => 'Europe/Prague',
+        'Côte d’Ivoire' => 'Africa/Abidjan',
+        'Denmark' => 'Europe/Copenhagen',
+        'Djibouti' => 'Africa/Djibouti',
+        'Dominica' => 'America/Dominica',
+        'Dominican Republic' => 'America/Santo_Domingo',
+        'Ecuador' => 'America/Guayaquil',
+        'Egypt' => 'Africa/Cairo',
+        'El Salvador' => 'America/El_Salvador',
+        'Equatorial Guinea' => 'Africa/Malabo',
+        'Eritrea' => 'Africa/Asmara',
+        'Estonia' => 'Europe/Tallinn',
+        'Eswatini' => 'Africa/Mbabane',
+        'Ethiopia' => 'Africa/Addis_Ababa',
+        'Fiji' => 'Pacific/Fiji',
+        'Finland' => 'Europe/Helsinki',
+        'France' => 'Europe/Paris',
+        'Gabon' => 'Africa/Libreville',
+        'Gambia' => 'Africa/Banjul',
+        'Georgia' => 'Asia/Tbilisi',
+        'Germany' => 'Europe/Berlin',
+        'Ghana' => 'Africa/Accra',
+        'Greece' => 'Europe/Athens',
+        'Grenada' => 'America/Grenada',
+        'Guatemala' => 'America/Guatemala',
+        'Guinea' => 'Africa/Conakry',
+        'Guinea-Bissau' => 'Africa/Bissau',
+        'Guyana' => 'America/Guyana',
+        'Haiti' => 'America/Port-au-Prince',
+        'Honduras' => 'America/Tegucigalpa',
+        'Hungary' => 'Europe/Budapest',
+        'Iceland' => 'Atlantic/Reykjavik',
+        'India' => 'Asia/Kolkata',
+        'Indonesia' => 'Asia/Jakarta',
+        'Iran' => 'Asia/Tehran',
+        'Iraq' => 'Asia/Baghdad',
+        'Ireland' => 'Europe/Dublin',
+        'Israel' => 'Asia/Jerusalem',
+        'Italy' => 'Europe/Rome',
+        'Jamaica' => 'America/Jamaica',
+        'Japan' => 'Asia/Tokyo',
+        'Jordan' => 'Asia/Amman',
+        'Kazakhstan' => 'Asia/Almaty',
+        'Kenya' => 'Africa/Nairobi',
+        'Kiribati' => 'Pacific/Tarawa',
+        'Kosovo' => 'Europe/Belgrade',
+        'Kuwait' => 'Asia/Kuwait',
+        'Kyrgyzstan' => 'Asia/Bishkek',
+        'Laos' => 'Asia/Vientiane',
+        'Latvia' => 'Europe/Riga',
+        'Lebanon' => 'Asia/Beirut',
+        'Lesotho' => 'Africa/Maseru',
+        'Liberia' => 'Africa/Monrovia',
+        'Libya' => 'Africa/Tripoli',
+        'Liechtenstein' => 'Europe/Vaduz',
+        'Lithuania' => 'Europe/Vilnius',
+        'Luxembourg' => 'Europe/Luxembourg',
+        'Madagascar' => 'Indian/Antananarivo',
+        'Malawi' => 'Africa/Blantyre',
+        'Malaysia' => 'Asia/Kuala_Lumpur',
+        'Maldives' => 'Indian/Maldives',
+        'Mali' => 'Africa/Bamako',
+        'Malta' => 'Europe/Malta',
+        'Marshall Islands' => 'Pacific/Majuro',
+        'Mauritania' => 'Africa/Nouakchott',
+        'Mauritius' => 'Indian/Mauritius',
+        'Mexico' => 'America/Mexico_City',
+        'Micronesia' => 'Pacific/Pohnpei',
+        'Moldova' => 'Europe/Chisinau',
+        'Monaco' => 'Europe/Monaco',
+        'Mongolia' => 'Asia/Ulaanbaatar',
+        'Montenegro' => 'Europe/Podgorica',
+        'Morocco' => 'Africa/Casablanca',
+        'Mozambique' => 'Africa/Maputo',
+        'Myanmar' => 'Asia/Yangon',
+        'Namibia' => 'Africa/Windhoek',
+        'Nauru' => 'Pacific/Nauru',
+        'Nepal' => 'Asia/Kathmandu',
+        'Netherlands' => 'Europe/Amsterdam',
+        'New Zealand' => 'Pacific/Auckland',
+        'Nicaragua' => 'America/Managua',
+        'Niger' => 'Africa/Niamey',
+        'Nigeria' => 'Africa/Lagos',
+        'North Korea' => 'Asia/Pyongyang',
+        'North Macedonia' => 'Europe/Skopje',
+        'Norway' => 'Europe/Oslo',
+        'Oman' => 'Asia/Muscat',
+        'Pakistan' => 'Asia/Karachi',
+        'Palau' => 'Pacific/Palau',
+        'Palestine' => 'Asia/Gaza',
+        'Panama' => 'America/Panama',
+        'Papua New Guinea' => 'Pacific/Port_Moresby',
+        'Paraguay' => 'America/Asuncion',
+        'Peru' => 'America/Lima',
+        'Philippines' => 'Asia/Manila',
+        'Poland' => 'Europe/Warsaw',
+        'Portugal' => 'Europe/Lisbon',
+        'Qatar' => 'Asia/Qatar',
+        'Romania' => 'Europe/Bucharest',
+        'Russia' => 'Europe/Moscow',
+        'Rwanda' => 'Africa/Kigali',
+        'Saint Kitts and Nevis' => 'America/St_Kitts',
+        'Saint Lucia' => 'America/St_Lucia',
+        'Saint Vincent and the Grenadines' => 'America/St_Vincent',
+        'Samoa' => 'Pacific/Apia',
+        'San Marino' => 'Europe/San_Marino',
+        'Saudi Arabia' => 'Asia/Riyadh',
+        'Senegal' => 'Africa/Dakar',
+        'Serbia' => 'Europe/Belgrade',
+        'Seychelles' => 'Indian/Mahe',
+        'Sierra Leone' => 'Africa/Freetown',
+        'Singapore' => 'Asia/Singapore',
+        'Slovakia' => 'Europe/Bratislava',
+        'Slovenia' => 'Europe/Ljubljana',
+        'Solomon Islands' => 'Pacific/Guadalcanal',
+        'Somalia' => 'Africa/Mogadishu',
+        'South Africa' => 'Africa/Johannesburg',
+        'South Korea' => 'Asia/Seoul',
+        'South Sudan' => 'Africa/Juba',
+        'Spain' => 'Europe/Madrid',
+        'Sri Lanka' => 'Asia/Colombo',
+        'Sudan' => 'Africa/Khartoum',
+        'Suriname' => 'America/Paramaribo',
+        'Sweden' => 'Europe/Stockholm',
+        'Switzerland' => 'Europe/Zurich',
+        'Syria' => 'Asia/Damascus',
+        'São Tomé and Príncipe' => 'Africa/Sao_Tome',
+        'Taiwan' => 'Asia/Taipei',
+        'Tajikistan' => 'Asia/Dushanbe',
+        'Tanzania' => 'Africa/Dar_es_Salaam',
+        'Thailand' => 'Asia/Bangkok',
+        'Timor-Leste' => 'Asia/Dili',
+        'Togo' => 'Africa/Lome',
+        'Tonga' => 'Pacific/Tongatapu',
+        'Trinidad and Tobago' => 'America/Port_of_Spain',
+        'Tunisia' => 'Africa/Tunis',
+        'Turkey' => 'Europe/Istanbul',
+        'Turkmenistan' => 'Asia/Ashgabat',
+        'Tuvalu' => 'Pacific/Funafuti',
+        'Uganda' => 'Africa/Kampala',
+        'Ukraine' => 'Europe/Kyiv',
+        'United Arab Emirates' => 'Asia/Dubai',
+        'United Kingdom' => 'Europe/London',
+        'United States' => 'America/New_York',
+        'Uruguay' => 'America/Montevideo',
+        'Uzbekistan' => 'Asia/Tashkent',
+        'Vanuatu' => 'Pacific/Efate',
+        'Vatican City' => 'Europe/Vatican',
+        'Venezuela' => 'America/Caracas',
+        'Vietnam' => 'Asia/Ho_Chi_Minh',
+        'Yemen' => 'Asia/Aden',
+        'Zambia' => 'Africa/Lusaka',
+        'Zimbabwe' => 'Africa/Harare',
+    ];
+
     public static function getPlaceHierarchy(): array
     {
         return self::PLACE_HIERARCHY;
@@ -441,6 +644,49 @@ final class LocationEngine
     public static function getUnitLabelForCountry(string $country): string
     {
         return self::PLACE_UNIT_LABELS[$country] ?? 'County / State / District';
+    }
+
+    public static function getTimezoneForCountry(?string $country, ?string $cityOrCounty = null): string
+    {
+        $raw = trim((string)($country ?? ''));
+        if ($raw === '') {
+            return 'Africa/Nairobi';
+        }
+        $canon = PhoneNormalizer::resolveCountry($raw);
+        $key = $canon ?? $raw;
+
+        if ($key === 'United States' && $cityOrCounty !== null) {
+            $c = strtolower(trim($cityOrCounty));
+            if (in_array($c, ['california', 'washington', 'oregon', 'nevada', 'los angeles', 'san francisco', 'seattle', 'san diego', 'san jose', 'portland', 'las vegas'], true)) {
+                return 'America/Los_Angeles';
+            }
+            if (in_array($c, ['colorado', 'arizona', 'utah', 'new mexico', 'idaho', 'montana', 'wyoming', 'denver', 'phoenix', 'salt lake city'], true)) {
+                return ($c === 'arizona' || $c === 'phoenix') ? 'America/Phoenix' : 'America/Denver';
+            }
+            if (in_array($c, ['illinois', 'texas', 'chicago', 'houston', 'dallas', 'austin', 'minnesota', 'wisconsin', 'missouri', 'louisiana', 'tennessee', 'alabama', 'oklahoma', 'kansas', 'nebraska', 'iowa'], true)) {
+                return 'America/Chicago';
+            }
+        }
+        if ($key === 'Canada' && $cityOrCounty !== null) {
+            $c = strtolower(trim($cityOrCounty));
+            if (in_array($c, ['british columbia', 'vancouver', 'victoria'], true)) {
+                return 'America/Vancouver';
+            }
+            if (in_array($c, ['alberta', 'calgary', 'edmonton'], true)) {
+                return 'America/Edmonton';
+            }
+        }
+        if ($key === 'Australia' && $cityOrCounty !== null) {
+            $c = strtolower(trim($cityOrCounty));
+            if (in_array($c, ['western australia', 'perth'], true)) {
+                return 'Australia/Perth';
+            }
+            if (in_array($c, ['south australia', 'adelaide'], true)) {
+                return 'Australia/Adelaide';
+            }
+        }
+
+        return self::COUNTRY_TIMEZONES[$key] ?? 'Africa/Nairobi';
     }
 
     /**

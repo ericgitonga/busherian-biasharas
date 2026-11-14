@@ -299,11 +299,50 @@ final class PhoneNormalizer
     }
 
     /**
-     * Normalize a phone number to "+<calling code><national number>" using the listing's country.
+     * Separate dialable base phone digits from trailing extensions (e.g. "ext 104", "x205", "#12").
+     *
+     * @return array{number: string, extension: ?string}
      */
-    public static function normalize(string $raw, ?string $country): string
+    public static function splitExtension(string $raw): array
     {
         $trimmed = trim($raw);
+        if ($trimmed === '') {
+            return ['number' => '', 'extension' => null];
+        }
+
+        // Match trailing extension indicators: ext, ext., extension, post, x, #, or dialer pause (,)
+        $pattern = '/(?:[\s,;]*(?:ext\.?|extension|post|x|#)[\s.:#]*|[,;]+)(\d+)\s*$/i';
+        if (preg_match($pattern, $trimmed, $matches, PREG_OFFSET_CAPTURE)) {
+            $offset = (int)$matches[0][1];
+            $extDigits = (string)$matches[1][0];
+            $baseNumber = trim(substr($trimmed, 0, $offset));
+            if ($baseNumber !== '') {
+                return ['number' => $baseNumber, 'extension' => $extDigits];
+            }
+        }
+
+        return ['number' => $trimmed, 'extension' => null];
+    }
+
+    /**
+     * Check if a normalized phone string has a valid ITU-T E.164 length (7 to 15 digits).
+     */
+    public static function isValidE164Length(string $normalized): bool
+    {
+        $digits = preg_replace('/\D+/', '', $normalized) ?? '';
+        $len = strlen($digits);
+        return $len >= 7 && $len <= 15;
+    }
+
+    /**
+     * Normalize a phone number to "+<calling code><national number>" using the listing's country.
+     * Trailing extensions are separated so dialable links (wa.me, tel:) remain clean and valid.
+     */
+    public static function normalize(string $raw, ?string $country, bool $stripExtension = true): string
+    {
+        $split = self::splitExtension($raw);
+        $target = $stripExtension ? $split['number'] : $raw;
+        $trimmed = trim($target);
         if ($trimmed === '') {
             return '';
         }
@@ -354,5 +393,24 @@ final class PhoneNormalizer
             return '+' . $code . $digits;
         }
         return $digits;
+    }
+
+    /**
+     * Normalize a phone number and preserve any extension for formatted display.
+     *
+     * @return array{e164: string, extension: ?string, display: string, is_valid_len: bool}
+     */
+    public static function normalizeWithExtension(string $raw, ?string $country): array
+    {
+        $split = self::splitExtension($raw);
+        $e164 = self::normalize($split['number'], $country, true);
+        $ext = $split['extension'];
+        $display = $e164 !== '' ? ($ext !== null ? "{$e164} ext. {$ext}" : $e164) : '';
+        return [
+            'e164' => $e164,
+            'extension' => $ext,
+            'display' => $display,
+            'is_valid_len' => self::isValidE164Length($e164),
+        ];
     }
 }

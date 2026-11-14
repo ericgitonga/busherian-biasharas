@@ -232,13 +232,13 @@ try {
             if ($hasCoordsQuery) {
                 $openHavExpr = $buildHaversineExpr('oh', $openParams);
                 $openOrderSql = EngagementRanker::buildDirectoryOrderBySql($activeSort, $openParams, 'so', true);
-                $openSql = "SELECT b.id, b.operating_hours_json, CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL THEN ROUND({$openHavExpr}, 2) ELSE NULL END AS _sql_dist "
+                $openSql = "SELECT b.id, b.operating_hours_json, b.country, b.city_county, CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL THEN ROUND({$openHavExpr}, 2) ELSE NULL END AS _sql_dist "
                     . $fromWhereSql
                     . " ORDER BY {$openOrderSql}"
                     . " LIMIT 250 OFFSET " . (int)$batchOffset;
             } else {
                 $openOrderSql = EngagementRanker::buildDirectoryOrderBySql($activeSort, $openParams, 'so', false);
-                $openSql = "SELECT b.id, b.operating_hours_json "
+                $openSql = "SELECT b.id, b.operating_hours_json, b.country, b.city_county "
                     . $fromWhereSql
                     . " ORDER BY {$openOrderSql}"
                     . " LIMIT 250 OFFSET " . (int)$batchOffset;
@@ -250,7 +250,8 @@ try {
                 break;
             }
             foreach ($candidateBatch as $cRow) {
-                $hoursStatus = HoursEngine::evaluateStatus((string)$cRow['operating_hours_json']);
+                $cTz = LocationEngine::getTimezoneForCountry($cRow['country'] ?? null, $cRow['city_county'] ?? null);
+                $hoursStatus = HoursEngine::evaluateStatus((string)$cRow['operating_hours_json'], null, $cTz);
                 if (!$hoursStatus['is_open']) {
                     continue;
                 }
@@ -319,7 +320,8 @@ try {
     $results = [];
     foreach ($pagedRows as $row) {
         $bizId = (int)$row['id'];
-        $hoursStatus = $row['_eval_hours'] ?? HoursEngine::evaluateStatus((string)$row['operating_hours_json']);
+        $bizTz = LocationEngine::getTimezoneForCountry($row['country'] ?? null, $row['city_county'] ?? null);
+        $hoursStatus = $row['_eval_hours'] ?? HoursEngine::evaluateStatus((string)$row['operating_hours_json'], null, $bizTz);
         $distanceKm = array_key_exists('_eval_dist', $row) ? $row['_eval_dist'] : null;
 
         $canOwnerEdit = !empty($editableBizIds[$bizId]);
@@ -360,6 +362,7 @@ try {
             'area_neighborhood' => $row['area_neighborhood'],
             'country' => $row['country'] ?? 'Kenya',
             'city_county' => $row['city_county'],
+            'timezone' => $bizTz,
             'landmark_directions' => $row['landmark_directions'],
             'plus_code' => $row['plus_code'],
             'latitude' => $row['latitude'] !== null ? (float)$row['latitude'] : null,

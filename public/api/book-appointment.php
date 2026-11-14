@@ -5,6 +5,7 @@ require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\AntiSpamGate;
+use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\OwnerAuth;
 
@@ -137,15 +138,14 @@ try {
         echo json_encode(['status' => 'error', 'message' => 'Phone number must be 40 characters or fewer.', 'next_tokens' => AntiSpamGate::generateFormTokens()]);
         exit;
     }
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $preferredDate)) {
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $preferredDate, $dateParts)) {
         http_response_code(422);
         echo json_encode(['status' => 'error', 'message' => 'Please choose a valid preferred date (YYYY-MM-DD).', 'next_tokens' => AntiSpamGate::generateFormTokens()]);
         exit;
     }
-    $eatToday = (new \DateTimeImmutable('now', new \DateTimeZone('Africa/Nairobi')))->format('Y-m-d');
-    if ($preferredDate < $eatToday) {
+    if (!checkdate((int)$dateParts[2], (int)$dateParts[3], (int)$dateParts[1])) {
         http_response_code(422);
-        echo json_encode(['status' => 'error', 'message' => 'Preferred appointment date cannot be in the past.', 'next_tokens' => AntiSpamGate::generateFormTokens()]);
+        echo json_encode(['status' => 'error', 'message' => 'Please choose a valid calendar date.', 'next_tokens' => AntiSpamGate::generateFormTokens()]);
         exit;
     }
     if ($preferredTime === '' || mb_strlen($preferredTime) > 80) {
@@ -160,7 +160,7 @@ try {
     }
 
     $bizStmt = $pdo->prepare("
-        SELECT id, name, email_public, owner_email, booking_enabled, booking_url
+        SELECT id, name, email_public, owner_email, booking_enabled, booking_url, country, city_county
         FROM businesses
         WHERE id = :id AND status = 'approved'
         LIMIT 1
@@ -170,6 +170,15 @@ try {
     if (!$biz || ((int)$biz['booking_enabled'] !== 1 && trim((string)($biz['booking_url'] ?? '')) === '')) {
         http_response_code(404);
         echo json_encode(['status' => 'error', 'message' => 'Appointment booking is not currently enabled for this business.', 'next_tokens' => AntiSpamGate::generateFormTokens()]);
+        exit;
+    }
+
+    $bizTz = LocationEngine::getTimezoneForCountry($biz['country'] ?? null, $biz['city_county'] ?? null);
+    $bizDt = new \DateTimeImmutable('now', new \DateTimeZone($bizTz));
+    $bizToday = $bizDt->format('Y-m-d');
+    if ($preferredDate < $bizToday) {
+        http_response_code(422);
+        echo json_encode(['status' => 'error', 'message' => 'Preferred appointment date cannot be in the past.', 'next_tokens' => AntiSpamGate::generateFormTokens()]);
         exit;
     }
 
@@ -196,6 +205,8 @@ try {
             'preferred_date' => $preferredDate,
             'preferred_time' => $preferredTime,
             'topic' => $topic,
+            'timezone' => $bizTz,
+            'timezone_abbr' => $bizDt->format('T'),
         ]);
     }
 
