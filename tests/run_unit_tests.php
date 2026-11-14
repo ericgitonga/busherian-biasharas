@@ -5472,6 +5472,183 @@ assertTrue(
 \BusherianBiasharas\Services\VettingPurger::deleteBusiness($pdo, $taxBizId58, 'admin_dashboard', 'cleanup_58_tax');
 \BusherianBiasharas\Services\VettingPurger::deleteBusiness($pdo, $gymBizId58, 'admin_dashboard', 'cleanup_58_gym');
 
+
+// ============================================================================
+// SECTION 59: BIASHARA CONCIERGE CHUNK 8 (#338, #339, #340, #341)
+// Grounded LLM Advisor API, Visitor PII Scrubber & Cost Circuit-Breakers
+// ============================================================================
+
+// 59a (#339): QueryScrubber PII Redaction
+$scrubTest1 = \BusherianBiasharas\Services\QueryScrubber::scrub(
+    'Contact me at 0722123456 or director@mycompany.co.ke regarding National ID 12345678 on https://mycompany.co.ke'
+);
+assertTrue(
+    $scrubTest1['pii_detected'] === true &&
+    in_array('phone', $scrubTest1['redacted_types'], true) &&
+    in_array('email', $scrubTest1['redacted_types'], true) &&
+    in_array('national_id', $scrubTest1['redacted_types'], true) &&
+    in_array('url', $scrubTest1['redacted_types'], true) &&
+    str_contains($scrubTest1['clean_query'], '[phone redacted]') &&
+    str_contains($scrubTest1['clean_query'], '[email redacted]') &&
+    str_contains($scrubTest1['clean_query'], '[id redacted]') &&
+    str_contains($scrubTest1['clean_query'], '[link redacted]') &&
+    !str_contains($scrubTest1['clean_query'], '0722123456') &&
+    !str_contains($scrubTest1['clean_query'], 'director@mycompany.co.ke'),
+    '59a (#339): QueryScrubber redacts phones, emails, national IDs, and URLs from query'
+);
+
+$scrubTestClean = \BusherianBiasharas\Services\QueryScrubber::scrub('Looking for corporate event catering and sound hire');
+assertTrue(
+    $scrubTestClean['pii_detected'] === false &&
+    empty($scrubTestClean['redacted_types']) &&
+    $scrubTestClean['clean_query'] === 'Looking for corporate event catering and sound hire',
+    '59a (#339): Clean query without visitor PII is preserved untouched'
+);
+
+// 59b (#340): ConciergeService Strict Grounding & Anti-Hallucination
+$mockCandidateSet = [
+    'direct_matches' => [
+        [
+            'id' => 901,
+            'business_id' => 'BBIZ-VALID-LAW',
+            'name' => 'Alliance Legal LLP',
+            'category_name' => 'Advocates & Law Firm',
+            'secondary_category_name' => null,
+            'phone' => '+254711901000',
+            'whatsapp' => '+254711901000',
+            'website' => 'https://alliancelegal.ke',
+            'town' => 'Nairobi',
+            'estate' => 'Upperhill',
+            'country' => 'Kenya',
+            'open_status' => 'OPEN_NOW',
+            'distance_km' => 2.5,
+            'match_rationale' => 'Top corporate law firm in Nairobi',
+        ],
+    ],
+    'ecosystem_matches' => [
+        [
+            'id' => 902,
+            'business_id' => 'BBIZ-VALID-TAX',
+            'name' => 'Highland Tax Advisors',
+            'category_name' => 'Audit, Tax & Accounting (CPA)',
+            'secondary_category_name' => null,
+            'underlying_need_label' => 'Tax & Financial Compliance',
+            'relationship_type' => 'companion',
+            'phone' => '+254711902000',
+            'whatsapp' => null,
+            'website' => null,
+            'town' => 'Nairobi',
+            'estate' => 'Westlands',
+            'country' => 'Kenya',
+            'open_status' => 'OPEN_NOW',
+            'distance_km' => 3.0,
+            'match_rationale' => 'Comprehensive tax registration and compliance',
+        ],
+    ],
+    'unmet_ecosystem_specialties' => [],
+    'total_candidates' => 2,
+];
+
+$mockLlmWithHallucinations = [
+    'conversational_response' => 'Karibu! Here are tailored recommendations for your company setup.',
+    'direct_recommendations' => [
+        ['business_id' => 'BBIZ-VALID-LAW', 'tailored_reason' => 'Premier corporate attorneys for company formation.'],
+        ['business_id' => 'BBIZ-HALLUCINATED-99', 'tailored_reason' => 'Completely invented fake law firm.'],
+    ],
+    'ecosystem_recommendations' => [
+        ['business_id' => 'BBIZ-VALID-TAX', 'underlying_need_label' => 'Tax & Compliance', 'tailored_reason' => 'Handles your KRA tax and accounting.'],
+        ['business_id' => 'BBIZ-GHOST-44', 'underlying_need_label' => 'Ghost', 'tailored_reason' => 'Invented tax consultancy.'],
+    ],
+    'unmet_needs_commentary' => null,
+];
+
+$groundedResult = \BusherianBiasharas\Services\ConciergeService::verifyAndHydrateGrounding(
+    $mockLlmWithHallucinations,
+    $mockCandidateSet,
+    'Company formation and corporate legal advice'
+);
+
+assertTrue(
+    $groundedResult !== null &&
+    count($groundedResult['direct_recommendations']) === 1 &&
+    $groundedResult['direct_recommendations'][0]['business_id'] === 'BBIZ-VALID-LAW' &&
+    $groundedResult['direct_recommendations'][0]['name'] === 'Alliance Legal LLP' &&
+    count($groundedResult['ecosystem_recommendations']) === 1 &&
+    $groundedResult['ecosystem_recommendations'][0]['business_id'] === 'BBIZ-VALID-TAX' &&
+    $groundedResult['ecosystem_recommendations'][0]['name'] === 'Highland Tax Advisors',
+    '59b (#340): Strict Grounding Verifier drops hallucinated IDs (BBIZ-HALLUCINATED-99, BBIZ-GHOST-44) and hydrates valid cards'
+);
+
+// 59c (#340): ConciergeService Local Smart Mode Fallback
+$localSmartRes = \BusherianBiasharas\Services\ConciergeService::synthesizeLocalSmartMode(
+    $mockCandidateSet,
+    'Company formation and corporate legal advice'
+);
+assertTrue(
+    $localSmartRes['mode'] === 'local_smart' &&
+    !empty($localSmartRes['conversational_response']) &&
+    count($localSmartRes['direct_recommendations']) === 1 &&
+    count($localSmartRes['ecosystem_recommendations']) === 1,
+    '59c (#340): Local Smart Mode produces structured alumni recommendations deterministically without external API'
+);
+
+// 59d (#341): /api/concierge.php Endpoint, Consent Gate, Rate Limiting & Response Cache
+$runConciergeSubrequest = static function (array $payload, array $serverEnv = []) use ($unitTempSqlite, $initialDriver): array {
+    $cliPrefix = $initialDriver === 'sqlite'
+        ? 'DB_DRIVER=sqlite DB_SQLITE_PATH=' . escapeshellarg($unitTempSqlite) . ' '
+        : '';
+    $runner = sprintf(
+        '$_SERVER["REQUEST_METHOD"]="POST"; $_SERVER["REMOTE_ADDR"]=%s; '
+        . (isset($serverEnv['HTTP_X_BBIZ_CONSENT']) ? '$_SERVER["HTTP_X_BBIZ_CONSENT"]=' . var_export($serverEnv['HTTP_X_BBIZ_CONSENT'], true) . '; ' : '')
+        . '$_POST=%s; require %s;',
+        var_export($serverEnv['REMOTE_ADDR'] ?? '127.0.0.1', true),
+        var_export($payload, true),
+        var_export(dirname(__DIR__) . '/public/api/concierge.php', true)
+    );
+    $raw = (string)shell_exec($cliPrefix . 'php -r ' . escapeshellarg($runner));
+    $dec = json_decode($raw, true);
+    return is_array($dec) ? $dec : ['status' => 'decode_err', 'raw' => $raw];
+};
+
+// 1. Missing Consent -> 400 consent_required
+$resNoConsent = $runConciergeSubrequest(['query' => 'Need a lawyer']);
+assertTrue(
+    ($resNoConsent['status'] ?? '') === 'error' && ($resNoConsent['code'] ?? '') === 'consent_required',
+    '59d (#341): /api/concierge.php blocks requests without explicit Kenya DPA consent'
+);
+
+// 2. Empty Query -> 422 empty_query
+$resEmptyQuery = $runConciergeSubrequest(['query' => '   ', 'consent' => 1]);
+assertTrue(
+    ($resEmptyQuery['status'] ?? '') === 'error' && ($resEmptyQuery['code'] ?? '') === 'empty_query',
+    '59d (#341): /api/concierge.php rejects whitespace-only query'
+);
+
+// 3. Valid Request with PII -> 200 ok, scrubbed query and pii_was_redacted = true
+$resValid = $runConciergeSubrequest([
+    'query' => 'Contact me at 0722000000 for event planning and catering',
+    'consent' => 1,
+], ['REMOTE_ADDR' => '192.0.2.159']);
+assertTrue(
+    ($resValid['status'] ?? '') === 'ok' &&
+    $resValid['pii_was_redacted'] === true &&
+    str_contains((string)$resValid['scrubbed_query'], '[phone redacted]') &&
+    !empty($resValid['conversational_response']) &&
+    is_array($resValid['direct_recommendations']),
+    '59d (#341): /api/concierge.php returns HTTP 200 with scrubbed query and structured recommendations'
+);
+
+// 4. Repeated Query -> Response Cache hit (cached = true)
+$resCached = $runConciergeSubrequest([
+    'query' => 'Contact me at 0722000000 for event planning and catering',
+    'consent' => 1,
+], ['REMOTE_ADDR' => '192.0.2.159']);
+assertTrue(
+    ($resCached['status'] ?? '') === 'ok' &&
+    ($resCached['cached'] ?? false) === true,
+    '59d (#341): /api/concierge.php serves identical query from 15-minute response cache'
+);
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');

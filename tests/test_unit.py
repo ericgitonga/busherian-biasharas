@@ -62,6 +62,26 @@ def test_concierge_retriever_and_need_graph_services():
     assert "unmet_ecosystem_specialties" in retriever_php
 
 
+def test_concierge_service_and_query_scrubber():
+    scrubber_php = (ROOT / "src" / "Services" / "QueryScrubber.php").read_text()
+    assert "class QueryScrubber" in scrubber_php
+    assert "EMAIL_PATTERN" in scrubber_php
+    assert "PHONE_PATTERN" in scrubber_php
+    assert "redacted_types" in scrubber_php
+
+    service_php = (ROOT / "src" / "Services" / "ConciergeService.php").read_text()
+    assert "class ConciergeService" in service_php
+    assert "callGeminiInference" in service_php
+    assert "verifyAndHydrateGrounding" in service_php
+    assert "synthesizeLocalSmartMode" in service_php
+
+    api_php = (ROOT / "public" / "api" / "concierge.php").read_text()
+    assert "QueryScrubber::scrub" in api_php
+    assert "ConciergeRetriever::retrieveCandidates" in api_php
+    assert "ConciergeService::synthesizeRecommendations" in api_php
+    assert "consent_required" in api_php
+
+
 def test_zero_external_cdn_links_in_public_pages():
     forbidden_cdns = [
         "fonts.googleapis.com",
