@@ -87,21 +87,19 @@ HTML;
 }
 
 if (PHP_SAPI !== 'cli') {
-    // Release-promotion maintenance gate (#219 M-11): prevent mixed old/new PHP execution during atomic FTPS rename window.
-    // Auto-expires after 120 seconds so an interrupted FTPS disconnect can never wedge the site indefinitely.
+    // Release-promotion maintenance gate (Adversarial H-02): fail-closed during active or interrupted deployment.
+    // If .maintenance_deploy.json is present, promotion has not finished and the site remains in 503 maintenance
+    // until the deployment script completes or explicit administrator recovery.
     $bbizDeployGateFile = dirname(__DIR__) . '/.maintenance_deploy.json';
     if (is_file($bbizDeployGateFile)) {
         $gateRaw = @file_get_contents($bbizDeployGateFile);
         $gateJson = is_string($gateRaw) ? json_decode($gateRaw, true) : null;
         $rollbackFailed = is_array($gateJson) && !empty($gateJson['rollback_failed']);
-        $gateMtime = @filemtime($bbizDeployGateFile);
-        if ($rollbackFailed || (is_int($gateMtime) && (time() - $gateMtime) <= 120)) {
-            if (!headers_sent()) {
-                header('Retry-After: ' . ($rollbackFailed ? '60' : '5'));
-            }
-            echo bbiz_render_maintenance_503();
-            exit;
+        if (!headers_sent()) {
+            header('Retry-After: ' . ($rollbackFailed ? '60' : '5'));
         }
+        echo bbiz_render_maintenance_503();
+        exit;
     }
 
     set_exception_handler(static function (\Throwable $e): void {

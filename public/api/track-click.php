@@ -37,16 +37,45 @@ if ($businessId <= 0 || !in_array($eventType, $allowedEvents, true)) {
 try {
     $pdo = Database::getConnection();
     $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+    $userAgent = substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255);
+    $interactionToken = trim((string)($data['interaction_token'] ?? $data['js_interaction_token'] ?? ''));
+
+    // Check if business exists and is approved (Adversarial H-01)
+    $bizStmt = $pdo->prepare("SELECT id, status FROM businesses WHERE id = :id LIMIT 1");
+    $bizStmt->execute([':id' => $businessId]);
+    $biz = $bizStmt->fetch();
+    if (!$biz || (string)($biz['status'] ?? '') !== 'approved') {
+        echo json_encode(['status' => 'ignored', 'reason' => 'business_not_approved']);
+        exit;
+    }
+
     $rate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'track_click', 30, 120, 500);
     if (!$rate['allowed']) {
         echo json_encode(['status' => 'ok', 'rate_limited' => true]);
         exit;
     }
+
     $resolvedSig = EngagementRanker::resolveSignal($eventType);
-    $sigGroup = $resolvedSig !== null ? $resolvedSig['signal_group'] : 'other';
-    $sigWeight = $resolvedSig !== null ? $resolvedSig['weight'] : 0.0;
-    $stmt = $pdo->prepare("INSERT INTO click_events (business_id, event_type, signal_group, signal_weight) VALUES (:bid, :ev, :sg, :sw)");
-    $stmt->execute([':bid' => $businessId, ':ev' => $eventType, ':sg' => $sigGroup, ':sw' => $sigWeight]);
+    if ($resolvedSig !== null) {
+        // Route through EngagementRanker with 24h HMAC deduplication, bot filtering, and owner/admin exclusion (H-01)
+        $viewer = EngagementRanker::resolveViewerWithoutStartingAnonymousSession($pdo);
+        $result = EngagementRanker::recordCheckout(
+            $pdo,
+            $businessId,
+            $eventType,
+            $clientIp,
+            $userAgent,
+            $interactionToken,
+            $viewer['owner_id'],
+            $viewer['is_admin']
+        );
+        echo json_encode($result);
+        exit;
+    }
+
+    // For unweighted UI events (e.g. 'shortlist'), record with zero weight
+    $stmt = $pdo->prepare("INSERT INTO click_events (business_id, event_type, signal_group, signal_weight) VALUES (:bid, :ev, 'other', 0.00)");
+    $stmt->execute([':bid' => $businessId, ':ev' => $eventType]);
     echo json_encode(['status' => 'ok']);
 } catch (\Throwable $e) {
     http_response_code(500);
