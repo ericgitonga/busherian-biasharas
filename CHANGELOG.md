@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.31.0] - 2026-11-14
+### Added
+- **Visitor PII Redaction & Prompt Hygiene (`QueryScrubber`) (`#339`, Parent `#338`)**: Created `src/Services/QueryScrubber.php` to redact telephone numbers (+254/07/01 and international 7+ digits), email addresses, national ID / passport numbers, and URLs from visitor questions before external inference, enforcing Kenya DPA 2019 ss. 25, 32, 48–49. Updated `public/privacy.php` with transparent disclosures on AI Concierge processing.
+- **Grounded LLM Advisor & Strict Grounding Verifier (`ConciergeService`) (`#340`, Parent `#338`)**: Built `src/Services/ConciergeService.php` supporting Google Gemini REST inference with strict anti-hallucination post-verification (`verifyAndHydrateGrounding()`). Automatically drops any unapproved or unknown business ID, hydrating authoritative contact, location, and operational data directly from MySQL records.
+- **Deterministic Local Smart Mode Fallback (`#340`, Parent `#338`)**: Implemented local rule-based synthesis (`synthesizeLocalSmartMode()`) providing dignified, structured recommendations and unmet-need commentary whenever the external inference API is unconfigured, timed out, or quota-limited, ensuring the advisor never fails with a broken screen.
+- **Public Concierge API Endpoint & AntiSpam Circuit-Breakers (`#341`, Parent `#338`)**: Created `public/api/concierge.php` with explicit Kenya DPA consent verification (`consent_required`), per-IP rate limiting (<=10/15m) and global hourly budget (<=100/1h) via `AntiSpamGate`, and a 15-minute response cache for normalized queries to avoid redundant API costs.
+- **Service Worker Cache Version (`#338`)**: Bumped client cache version to `bbiz-pwa-v0.31.0` in `public/sw.js`.
+
 ## [0.30.0] - 2026-11-14
 ### Added
 - **Kenyan Business Need-Adjacency Graph (`NeedGraph`) (`#335`, Parent `#334`)**: Implemented `src/Services/NeedGraph.php` defining real-world business lifecycles and companion synergies across the 15 Level 1 Sectors and 116+ Level 2 Specialties. Mapped upstream prerequisites, downstream operational steps, and companion services with human-facing badge labels (`underlying_need_label`) and plain-English rationale templates (`explainAdjacency()`). Registered 8 named Kenyan biashara journey clusters (`company_launch`, `property_construction`, `events_retreats`, `health_wellness`, `agribusiness_value_chain`, `tech_digital_scaling`, `creative_publishing`, `relocation_facility`) with automatic cluster resolution (`getClusterForSpecialties()`).
