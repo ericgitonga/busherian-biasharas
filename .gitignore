@@ -23,6 +23,8 @@ e2e/__pycache__/
 storage/*.sqlite
 storage/*.db
 storage/*.log
+storage/locks/
+storage/quarantined_media/
 
 # Uploaded user files (keep directory structure)
 public/assets/uploads/logos/*

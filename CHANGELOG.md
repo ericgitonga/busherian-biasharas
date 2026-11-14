@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.29.0] - 2026-11-14
+### Added
+- **Sanitized AI Capability Index (`business_ai_index`) (`#331`, Parent `#330`)**: Added `business_ai_index` table (`business_id`, `capability_digest`, `keywords_norm`, `embedding_json`, `content_hash`, `indexed_at`, `updated_at`) with foreign key cascading to `businesses(id)`, and bumped `Database::SCHEMA_INIT_VERSION` to `'2026-11-v29-ai-index'` with idempotent schema migrations across SQLite and MySQL 8.0 (`src/schema.sql`, `src/Config/Database.php`).
+- **Prompt-Injection Defense & Capability Digest Builder (`#332`, Parent `#330`)**: Created `src/Services/AiListingIndexer.php` to distill verified public fields into prompt-injection-safe capability summaries. Implemented `AiListingIndexer::sanitizePromptInjection()` to neutralize instruction override phrases, role delimiters (ChatML tokens, `system:`, `[INST]`), and markdown/HTML data exfiltration cues. Added `buildNormalizedKeywords()` producing deduplicated, stop-word-filtered keyword tokens, and `computeContentHash()` for deterministic dirty-checking.
+- **Transactional Moderation Lifecycle Sync (`#332`, Parent `#330`)**: Wired `AiListingIndexer::indexBusiness()` into `VettingPurger::approveBusiness()`, `updateBusiness()`, `updateBusinessByOwner()`, `createBusinessDirectly()`, and `restoreQuarantinedBusiness()`, and wired `AiListingIndexer::purgeBusiness()` into `rejectBusiness()`, `quarantineBusinessDpa()`, and `deleteBusiness()`, ensuring unapproved, quarantined, or deleted listings are purged from the AI index immediately.
+- **CLI Index Rebuild & Audit Utility (`#331`, Parent `#330`)**: Added `bin/rebuild-ai-index.php` (`--audit-only` or full rebuild) to audit index coverage, rebuild stale or missing records, and prune orphan entries.
+
 ## [0.28.0] - 2026-11-14
 ### Added & Changed
 - **Phone Extension Parsing, Dialable E.164 Cleaning & Length Validation (`#327`, Parent `#326`)**: Added `PhoneNormalizer::splitExtension()` to reliably separate extensions (`ext 104`, `x205`, `#12`, `,104`) from base phone digits, returning dialable numbers for `tel:` and `wa.me` links without trailing extension digits corrupting calls. Added `PhoneNormalizer::normalizeWithExtension()` to preserve cleanly formatted display strings (`+14155550132 ext. 104`), and enforced ITU-T E.164 bounds (7 to 15 digits) via `PhoneNormalizer::isValidE164Length()`.

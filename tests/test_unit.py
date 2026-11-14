@@ -38,6 +38,16 @@ def test_schema_has_no_vetting_fields_on_businesses_table():
     assert "admission_number" not in schema_sql.lower()
 
 
+def test_business_ai_index_table_schema():
+    schema_sql = (ROOT / "src" / "schema.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS business_ai_index" in schema_sql
+    ai_block = schema_sql.split("CREATE TABLE IF NOT EXISTS business_ai_index")[1].split("ENGINE=InnoDB")[0]
+    assert "capability_digest" in ai_block
+    assert "keywords_norm" in ai_block
+    assert "content_hash" in ai_block
+    assert "REFERENCES businesses(id) ON DELETE CASCADE" in ai_block
+
+
 def test_zero_external_cdn_links_in_public_pages():
     forbidden_cdns = [
         "fonts.googleapis.com",

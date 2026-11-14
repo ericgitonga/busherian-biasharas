@@ -567,6 +567,7 @@ final class VettingPurger
                 $clientIp
             );
             EngagementRanker::recomputeBusinessScore($pdo, $businessId);
+            AiListingIndexer::indexBusiness($pdo, $businessId);
 
             if ($ownTx) {
                 $pdo->commit();
@@ -637,6 +638,7 @@ final class VettingPurger
                 null,
                 $clientIp
             );
+            AiListingIndexer::purgeBusiness($pdo, $businessId);
 
             if ($ownTx) {
                 $pdo->commit();
@@ -718,6 +720,7 @@ final class VettingPurger
                     null,
                     $clientIp
                 );
+                AiListingIndexer::purgeBusiness($pdo, $businessId);
             }
             PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
             if ($ownTx) {
@@ -775,6 +778,11 @@ final class VettingPurger
             ':id' => $businessId,
         ]);
         EngagementRanker::recomputeBusinessScore($pdo, $businessId);
+        if ($targetStatus === 'approved') {
+            AiListingIndexer::indexBusiness($pdo, $businessId);
+        } else {
+            AiListingIndexer::purgeBusiness($pdo, $businessId);
+        }
 
         self::recordModerationAudit(
             $pdo,
@@ -1256,6 +1264,8 @@ final class VettingPurger
             $pdo->prepare("DELETE FROM business_owner_links WHERE business_id = :id")->execute([':id' => $businessId]);
             $pdo->prepare("DELETE FROM click_events WHERE business_id = :id")->execute([':id' => $businessId]);
             $pdo->prepare("DELETE FROM usage_metrics WHERE business_id = :id")->execute([':id' => $businessId]);
+            $pdo->prepare("DELETE FROM business_ai_index WHERE business_id = :id")->execute([':id' => $businessId]);
+            AiListingIndexer::purgeBusiness($pdo, $businessId);
             $del = $pdo->prepare("DELETE FROM businesses WHERE id = :id");
             $del->execute([':id' => $businessId]);
             $deleted = $del->rowCount() > 0;
@@ -1452,6 +1462,11 @@ final class VettingPurger
         }
         if ($targetStatus === 'quarantined_dpa') {
             PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+        }
+        if ($targetStatus === 'approved') {
+            AiListingIndexer::indexBusiness($pdo, $businessId);
+        } else {
+            AiListingIndexer::purgeBusiness($pdo, $businessId);
         }
         if ($ownTx) {
             $pdo->commit();
@@ -1685,6 +1700,7 @@ final class VettingPurger
             PhotoUploader::quarantineBusinessPhotos($newId, $photosJson);
         } elseif ($status === 'approved') {
             EngagementRanker::recomputeBusinessScore($pdo, $newId);
+            AiListingIndexer::indexBusiness($pdo, $newId);
         }
         return $newId;
     }
@@ -1945,6 +1961,12 @@ final class VettingPurger
         ");
         $newStmt->execute([':id' => $businessId]);
         $newBiz = (array)$newStmt->fetch();
+
+        if ($lockedOwnerStatus === 'approved') {
+            AiListingIndexer::indexBusiness($pdo, $businessId, $newBiz);
+        } else {
+            AiListingIndexer::purgeBusiness($pdo, $businessId);
+        }
 
         $criticalChanges = [];
         if (strcasecmp((string)$oldBiz['name'], (string)$newBiz['name']) !== 0) {
