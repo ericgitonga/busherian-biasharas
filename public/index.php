@@ -14,7 +14,7 @@ use BusherianBiasharas\Services\PhotoUploader;
 
 bbiz_send_security_headers(false);
 
-$appVersion = trim((string)@file_get_contents(dirname(__DIR__) . '/VERSION') ?: '0.32.3');
+$appVersion = trim((string)@file_get_contents(dirname(__DIR__) . '/VERSION') ?: '0.32.4');
 $pdo = Database::getConnection();
 $currentOwner = OwnerAuth::getCurrentOwner($pdo);
 $isAdminVisitor = AdminAuth::isAuthenticated();

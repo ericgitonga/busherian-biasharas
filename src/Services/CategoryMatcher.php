@@ -309,6 +309,74 @@ final class CategoryMatcher
         'podcast' => ['Podcast', 'Broadcast', 'Content Studio'],
         'app' => ['Mobile App Dev', 'Custom Software', 'Web Design'],
         'website' => ['Web Design', 'Custom Software', 'E-Commerce'],
+
+        // Compound phrase semantic entities & retreat / venue synonyms (#370)
+        'teambuilding' => ['Team Building & Bush Expeditions', 'Team Building', 'Hotel, Boutique Resort & Airbnb', 'Hotel', 'Boutique Resort', 'Event Planning, Tent/Sound & Decor', 'Conference & MICE Tourism'],
+        'corporate_retreat' => ['Hotel, Boutique Resort & Airbnb', 'Hotel', 'Boutique Resort', 'Team Building & Bush Expeditions', 'Conference & MICE Tourism', 'Event Planning'],
+        'event_venue' => ['Hotel, Boutique Resort & Airbnb', 'Hotel', 'Boutique Resort', 'Event Planning, Tent/Sound & Decor', 'Event Planning', 'Conference & MICE Tourism'],
+        'building_materials' => ['Hardware, Timber & Building Materials', 'Building Materials', 'Hardware'],
+        'real_estate' => ['Property Sales, Letting & Management', 'Building & General Contractor'],
+        'interior_design' => ['Interior Design & Fit-Outs'],
+        'fit_out' => ['Interior Design & Fit-Outs'],
+        'car_hire' => ['Car Hire, Chauffeur & Executive Transfer'],
+        'car_wash' => ['Auto Garage, Body Shop & Car Wash'],
+        'auto_garage' => ['Auto Garage, Body Shop & Car Wash'],
+        'auto_spares' => ['Auto Spares, Tyres & Battery Centre'],
+        'data_analytics' => ['Data Analytics & AI Solutions'],
+        'web_design' => ['Web Design & E-Commerce'],
+        'software_dev' => ['Custom Software & Mobile Apps'],
+        'cloud_devops' => ['Cloud Infrastructure, DevOps & Cybersecurity'],
+        'legal_services' => ['Advocates & Law Firm'],
+        'tax_accounting' => ['Audit, Tax & Accounting Firm'],
+        'event_planning' => ['Event Planning, Tent/Sound & Decor'],
+        'retreat' => ['Hotel, Boutique Resort & Airbnb', 'Hotel', 'Boutique Resort', 'Team Building & Bush Expeditions', 'Conference & MICE Tourism', 'Event Planning'],
+        'retreats' => ['Hotel, Boutique Resort & Airbnb', 'Hotel', 'Boutique Resort', 'Team Building & Bush Expeditions', 'Conference & MICE Tourism', 'Event Planning'],
+        'offsite' => ['Hotel, Boutique Resort & Airbnb', 'Team Building & Bush Expeditions', 'Conference & MICE Tourism'],
+        'offsites' => ['Hotel, Boutique Resort & Airbnb', 'Team Building & Bush Expeditions', 'Conference & MICE Tourism'],
+        'venue' => ['Hotel, Boutique Resort & Airbnb', 'Hotel', 'Boutique Resort', 'Event Planning, Tent/Sound & Decor', 'Event Planning', 'Conference & MICE Tourism'],
+        'venues' => ['Hotel, Boutique Resort & Airbnb', 'Hotel', 'Boutique Resort', 'Event Planning, Tent/Sound & Decor', 'Event Planning', 'Conference & MICE Tourism'],
+        'lodge' => ['Hotel, Boutique Resort & Airbnb', 'Eco-Camp & Safari Lodge'],
+        'lodges' => ['Hotel, Boutique Resort & Airbnb', 'Eco-Camp & Safari Lodge'],
+        'resort' => ['Hotel, Boutique Resort & Airbnb'],
+        'resorts' => ['Hotel, Boutique Resort & Airbnb'],
+        'staycation' => ['Hotel, Boutique Resort & Airbnb'],
+        'getaway' => ['Hotel, Boutique Resort & Airbnb'],
+    ];
+
+    /**
+     * Common multi-word compound phrases and their normalized semantic entity tokens (#370).
+     * Prevents misleading token fragmentation (e.g. "team building" splitting into "building",
+     * which incorrectly matches construction/hardware).
+     *
+     * @var array<string, string>
+     */
+    public const COMPOUND_PHRASE_NORMALIZATIONS = [
+        '/\bteam[\s\-]+building\b/i' => 'teambuilding',
+        '/\bbody[\s\-]+building\b/i' => 'bodybuilding',
+        '/\bcorporate[\s\-]+retreats?\b/i' => 'corporate_retreat',
+        '/\bcompany[\s\-]+offsites?\b/i' => 'corporate_retreat',
+        '/\bexecutive[\s\-]+retreats?\b/i' => 'corporate_retreat',
+        '/\b(retreat|wedding|event|party|conference)[\s\-]+venues?\b/i' => 'event_venue',
+        '/\bbuilding[\s\-]+materials?\b/i' => 'building_materials',
+        '/\breal[\s\-]+estate\b/i' => 'real_estate',
+        '/\binterior[\s\-]+designs?\b/i' => 'interior_design',
+        '/\bfit[\s\-]+outs?\b/i' => 'fit_out',
+        '/\bcar[\s\-]+hire\b/i' => 'car_hire',
+        '/\bcar[\s\-]+rentals?\b/i' => 'car_hire',
+        '/\bcar[\s\-]+wash\b/i' => 'car_wash',
+        '/\bauto[\s\-]+garages?\b/i' => 'auto_garage',
+        '/\bspare[\s\-]+parts\b/i' => 'auto_spares',
+        '/\bcar[\s\-]+spares\b/i' => 'auto_spares',
+        '/\bdata[\s\-]+(science|analytics)\b/i' => 'data_analytics',
+        '/\bmachine[\s\-]+learning\b/i' => 'data_analytics',
+        '/\bartificial[\s\-]+intelligence\b/i' => 'data_analytics',
+        '/\bweb[\s\-]+(design|dev|development)\b/i' => 'web_design',
+        '/\bwebsite[\s\-]+(design|dev|development)\b/i' => 'web_design',
+        '/\b(mobile[\s\-]+apps?|app[\s\-]+development|software[\s\-]+development)\b/i' => 'software_dev',
+        '/\bcloud[\s\-]+(hosting|infrastructure|computing)\b/i' => 'cloud_devops',
+        '/\b(law[\s\-]+firm|legal[\s\-]+counsel|legal[\s\-]+services)\b/i' => 'legal_services',
+        '/\b(tax[\s\-]+audit|accounting[\s\-]+firm|book[\s\-]*keeping)\b/i' => 'tax_accounting',
+        '/\b(event[\s\-]+planning|wedding[\s\-]+planner|event[\s\-]+decor)\b/i' => 'event_planning',
     ];
 
 
@@ -336,6 +404,7 @@ final class CategoryMatcher
         'service', 'services', 'solution', 'solutions', 'product', 'products', 'client', 'clients',
         'based', 'located', 'around', 'across', 'within', 'near', 'nairobi', 'kenya', 'kenyan', 'east', 'africa',
         'looking', 'need', 'needs', 'want', 'wants', 'seeking', 'find', 'someone', 'people',
+        'like', 'likes', 'place', 'places', 'host', 'hosting',
         'mimi', 'sisi', 'ni', 'wa', 'ya', 'za', 'la', 'kwa', 'na', 'katika', 'hapa', 'wenye',
         'tunafanya', 'ninafanya', 'tunauza', 'ninauza', 'tunatoa', 'kampuni', 'huduma', 'biasharas',
     ];
@@ -464,7 +533,7 @@ final class CategoryMatcher
         'Restaurant, Nyama Choma & Bistro' => 'dining eatery cafe swahili dishes grill steakhouse lunch dinner takeaway nyama choma chakula',
         'Coffee Shop, Bakery & Pastry' => 'baker cakes wedding cake birthday cake sourdough bread croissants pastries espresso barista kahawa keki',
         'Event & Corporate Catering' => 'outside catering buffet corporate lunch wedding food private chef cocktailbites chafing dishes',
-        'Hotel, Boutique Resort & Airbnb' => 'accommodation guest house bed breakfast serviced apartment staycation conference rooms country lodge',
+        'Hotel, Boutique Resort & Airbnb' => 'accommodation guest house bed breakfast serviced apartment staycation conference rooms country lodge corporate retreat team building teambuilding offsite retreat venue country resort outdoor grounds getaway cottages workcation',
         'Specialty Coffee, Tea & Honey Brand' => 'coffee roaster loose leaf tea raw organic honey artisanal food brand gourmet',
         'Butchery & Fresh Farm Produce' => 'fresh meat beef goat chicken pork organic vegetables fruits groceries farm to table',
         'Bar, Lounge & Wines/Spirits' => 'wine shop liquor store craft beer cocktails lounge wines spirits distributor',
@@ -521,7 +590,7 @@ final class CategoryMatcher
         'Branding, Graphic Design & PR Agency' => 'logo design brand identity corporate communications public relations media buying creative agency',
         'Digital Marketing, SEO & Social Media' => 'social media manager google ads meta ads influencer marketing content creator email marketing',
         'Commercial Photography & Videography' => 'photographer videographer macro photography arthropod insect wildlife nature bird aerial drone portrait headshot product wedding event documentary studio camera lens picha',
-        'Event Planning, Tent/Sound & Decor' => 'event planner wedding planner mc dj pa sound stage lighting floral decor tents chairs harusi',
+        'Event Planning, Tent/Sound & Decor' => 'event planner wedding planner mc dj pa sound stage lighting floral decor tents chairs harusi event venue garden venue wedding venue outdoor grounds retreat grounds teambuilding team building',
         'Printing, Signage & Branded Merchandise' => 'commercial printer offset digital print fine art prints posters banners 3d signage mugs tshirts promotional merchandise',
         'Book, Academic & Digital Publishing' => 'book publisher publishing house textbooks children books ebooks audiobooks isbn distribution royalties mchapishaji uchapishaji vitabu',
         'Editorial, Ghostwriting & Author Services' => 'copyediting proofreading ghostwriter manuscript editing typesetting book cover layout indexing',
@@ -548,11 +617,11 @@ final class CategoryMatcher
         // 14. Travel, Tours & Safari
         'Safari Operator & Tour Packages' => 'maasai mara amboseli tsavo wildlife safari bush tour holiday packages travel agent',
         'Flight Ticketing & Visa Assistance' => 'air tickets flight booking schengen us visa application passport travel desk',
-        'Team Building & Bush Expeditions' => 'corporate retreat mount kenya kilimanjaro hiking camping overland adventure',
+        'Team Building & Bush Expeditions' => 'corporate retreat team building teambuilding facilitator obstacle course outdoor games hiking camping overland adventure retreat venue',
         'Eco-Camp & Safari Lodge' => 'tented camp bush lodge conservancy eco tourism wildlife photography camp',
         'Travel Insurance & Concierge' => 'vip travel concierge itinerary planning emergency medical evacuation travel cover',
         'Airport Transfers & VIP Meet-and-Greet' => 'jkia sgr transfer airport pickup fast track vip lounge chauffeur',
-        'Conference & MICE Tourism' => 'international conference delegate management exhibition organizer retreat venue sourcing',
+        'Conference & MICE Tourism' => 'international conference delegate management exhibition organizer retreat venue sourcing teambuilding team building corporate meetings seminar halls convention',
 
         // 15. Home, Security & Facility Services
         'CCTV, Electric Fencing & Guarding' => 'security guards alarm response access control biometrics razor wire cctv cameras psra',
@@ -631,7 +700,13 @@ final class CategoryMatcher
         if ($clean === '') {
             return [];
         }
-        $rawTokens = preg_split('/[^a-z0-9]+/i', $clean) ?: [];
+
+        // Normalize known multi-word compound phrases before tokenization (#370)
+        foreach (self::COMPOUND_PHRASE_NORMALIZATIONS as $pattern => $replacement) {
+            $clean = (string)preg_replace($pattern, ' ' . $replacement . ' ', $clean);
+        }
+
+        $rawTokens = preg_split('/[^a-z0-9_]+/i', $clean) ?: [];
         $stopMap = array_fill_keys(self::NL_STOPWORDS, true);
         $kept = [];
         foreach ($rawTokens as $tok) {
@@ -906,6 +981,14 @@ final class CategoryMatcher
             foreach ($sec['specialties'] as $sp) {
                 $specName = (string)$sp['name'];
                 $specLower = strtolower($specName);
+
+                // Disambiguation Guard (#370): If the query explicitly seeks team building or corporate retreats/offsites,
+                // suppress any construction, hardware, or building material specialties from matching on isolated "building"
+                $hasRetreatOrTeamIntent = in_array('teambuilding', $tokens, true) || in_array('corporate_retreat', $tokens, true);
+                if ($hasRetreatOrTeamIntent && in_array($secLower, ['real estate, construction & architecture', 'engineering & industrial services'], true)) {
+                    continue;
+                }
+
                 $specWords = array_values(array_filter(preg_split('/[^a-z0-9]+/i', $specLower) ?: []));
                 $specStems = array_values(array_filter(array_map([self::class, 'stemWord'], $specWords)));
 
@@ -930,17 +1013,27 @@ final class CategoryMatcher
                     $st = $tokenStems[$tok] ?? $tok;
                     $tokMatched = false;
 
+                    // 0. Collapsed compound word match (e.g. "teambuilding" in "Team Building & Bush Expeditions")
+                    $specCollapsed = preg_replace('/[^a-z0-9]+/i', '', $specLower);
+                    $tokCollapsed = preg_replace('/[^a-z0-9]+/i', '', $tok);
+                    if (strlen($tokCollapsed) >= 4 && str_contains($specCollapsed, $tokCollapsed)) {
+                        $score += 15.0;
+                        $tokMatched = true;
+                    }
+
                     // 1. Direct word / prefix match on specialty title
-                    if (in_array($tok, $specWords, true)) {
-                        $score += 14.0;
-                        $tokMatched = true;
-                    } elseif (strlen($tok) >= 3 && preg_match('/\b' . preg_quote($tok, '/') . '/i', $specName)) {
-                        $score += 11.0;
-                        $tokMatched = true;
-                    } elseif (strlen($st) >= 3 && in_array($st, $specStems, true)) {
-                        // Morphological / occupational root match ("photographer" -> "photograph" == "Photography")
-                        $score += 12.5;
-                        $tokMatched = true;
+                    if (!$tokMatched) {
+                        if (in_array($tok, $specWords, true)) {
+                            $score += 14.0;
+                            $tokMatched = true;
+                        } elseif (strlen($tok) >= 3 && preg_match('/\b' . preg_quote($tok, '/') . '/i', $specName)) {
+                            $score += 11.0;
+                            $tokMatched = true;
+                        } elseif (strlen($st) >= 3 && in_array($st, $specStems, true)) {
+                            // Morphological / occupational root match ("photographer" -> "photograph" == "Photography")
+                            $score += 12.5;
+                            $tokMatched = true;
+                        }
                     }
 
                     // 2. Concept & domain keyword match ("macro", "arthropod", "root canal", "mombasa", etc.)

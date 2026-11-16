@@ -520,6 +520,43 @@ final class NeedGraph
                 'rationale' => 'Connecting to the Maasai Mara, Samburu, or Diani via scheduled light aircraft charters.',
             ],
         ],
+        'Team Building & Bush Expeditions' => [
+            [
+                'target' => 'Hotel, Boutique Resort & Airbnb',
+                'type' => 'upstream',
+                'weight' => 0.95,
+                'need_label' => 'Retreat Lodge & Venue Grounds',
+                'rationale' => 'Team-building expeditions and corporate offsites require country lodge grounds, conference halls, and accommodation.',
+            ],
+            [
+                'target' => 'Event Planning, Tent/Sound & Decor',
+                'type' => 'companion',
+                'weight' => 0.85,
+                'need_label' => 'Outdoor Tents & PA Systems',
+                'rationale' => 'Outdoor corporate activities and briefings require sound production, gazebos, and event staging.',
+            ],
+            [
+                'target' => 'Car Hire, Chauffeur & Executive Transfer',
+                'type' => 'companion',
+                'weight' => 0.85,
+                'need_label' => 'Staff Shuttles & Safari Vans',
+                'rationale' => 'Transporting company staff and executives safely to the team building lodge or retreat grounds.',
+            ],
+            [
+                'target' => 'Event & Corporate Catering',
+                'type' => 'companion',
+                'weight' => 0.80,
+                'need_label' => 'Group Catering & Barbecue',
+                'rationale' => 'Energizing the team with catered buffet meals, fresh juices, and outdoor evening nyama choma.',
+            ],
+            [
+                'target' => 'Commercial Photography & Videography',
+                'type' => 'companion',
+                'weight' => 0.75,
+                'need_label' => 'Offsite Media & Drone Coverage',
+                'rationale' => 'Capturing high-energy team moments, leadership sessions, and company culture for internal and public comms.',
+            ],
+        ],
         'General Medical & Family Clinic' => [
             [
                 'target' => 'Pharmacy & Chemist',
@@ -813,8 +850,10 @@ final class NeedGraph
             $clusterSpecialties = array_map('strtolower', $cluster['specialties']);
             foreach ($specialties as $sp) {
                 $spLower = strtolower(trim($sp));
+                $spCollapsed = preg_replace('/[^a-z0-9]+/i', '', $spLower);
                 foreach ($clusterSpecialties as $cs) {
-                    if ($spLower === $cs || str_contains($spLower, $cs) || str_contains($cs, $spLower)) {
+                    $csCollapsed = preg_replace('/[^a-z0-9]+/i', '', $cs);
+                    if ($spLower === $cs || str_contains($spLower, $cs) || str_contains($cs, $spLower) || (strlen($spCollapsed) >= 4 && str_contains($csCollapsed, $spCollapsed))) {
                         $score += 2;
                     }
                 }
