@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v29-ai-index';
+    public const SCHEMA_INIT_VERSION = '2026-11-v32-advisor';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -556,13 +556,11 @@ final class Database
                 error_log('[Database::migrateAndSeed] engagement_scores_backfill_v1 failed: ' . $engErr->getMessage());
             }
         }
-        if (self::getSetting($pdo, 'ai_index_backfill_v1') !== 'done') {
-            try {
-                \BusherianBiasharas\Services\AiListingIndexer::rebuildAllApproved($pdo);
-                self::setSetting($pdo, 'ai_index_backfill_v1', 'done');
-            } catch (\Throwable $aiErr) {
-                error_log('[Database::migrateAndSeed] ai_index_backfill_v1 failed: ' . $aiErr->getMessage());
-            }
+        try {
+            \BusherianBiasharas\Services\AiListingIndexer::rebuildAllApproved($pdo);
+            self::setSetting($pdo, 'ai_index_backfill_v1', 'done');
+        } catch (\Throwable $aiErr) {
+            error_log('[Database::migrateAndSeed] ai_index_backfill_v1 failed: ' . $aiErr->getMessage());
         }
         self::setSetting($pdo, 'schema_init_version', self::SCHEMA_INIT_VERSION);
 
