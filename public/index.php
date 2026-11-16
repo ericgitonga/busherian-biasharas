@@ -14,6 +14,7 @@ use BusherianBiasharas\Services\PhotoUploader;
 
 bbiz_send_security_headers(false);
 
+$appVersion = trim((string)@file_get_contents(dirname(__DIR__) . '/VERSION') ?: '0.32.3');
 $pdo = Database::getConnection();
 $currentOwner = OwnerAuth::getCurrentOwner($pdo);
 $isAdminVisitor = AdminAuth::isAuthenticated();
@@ -172,7 +173,7 @@ $initialPagination = [
   <meta name="description" content="Discover and support verified businesses owned by alumni of Alliance High School (AHS) and Alliance Girls High School (AGHS) — Strong to Serve &amp; Walk in the Light.">
 <?= bbiz_head_meta_tags('Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS)', 'Discover and support verified businesses owned by alumni of Alliance High School (AHS) and Alliance Girls High School (AGHS) — Strong to Serve & Walk in the Light.', '/') ?>
   <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode($appVersion) ?>">
 </head>
 <body>
 
@@ -487,7 +488,7 @@ $initialPagination = [
     window.INITIAL_PAGINATION = <?= bbiz_json_for_html_script($initialPagination) ?>;
   </script>
   <script src="/assets/vendor/leaflet/leaflet.js"></script>
-  <script src="/assets/js/consent-metrics.js"></script>
-  <script src="/assets/js/directory.js"></script>
+  <script src="/assets/js/consent-metrics.js?v=<?= urlencode($appVersion) ?>"></script>
+  <script src="/assets/js/directory.js?v=<?= urlencode($appVersion) ?>"></script>
 </body>
 </html>
