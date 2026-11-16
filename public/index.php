@@ -14,12 +14,20 @@ use BusherianBiasharas\Services\PhotoUploader;
 
 bbiz_send_security_headers(false);
 
-$appVersion = trim((string)@file_get_contents(dirname(__DIR__) . '/VERSION') ?: '0.32.4');
+$appVersion = trim((string)@file_get_contents(dirname(__DIR__) . '/VERSION') ?: '0.32.5');
 $pdo = Database::getConnection();
 $currentOwner = OwnerAuth::getCurrentOwner($pdo);
 $isAdminVisitor = AdminAuth::isAuthenticated();
 $taxonomyTree = CategoryMatcher::getTaxonomyTree($pdo, false);
 $placeHierarchy = LocationEngine::getPlaceHierarchy();
+
+// Biashara Advisor visibility (#375, #376): active in Preprod sandbox (/admin/preprod), automated test suites, or via on-demand preview (?advisor=1)
+$isAdvisorEnabled = \BusherianBiasharas\Services\PreprodSandbox::isPreprod()
+    || strtolower((string)(getenv('APP_ENV') ?: ($_ENV['APP_ENV'] ?? 'development'))) === 'testing'
+    || (defined('BBIZ_ENABLE_ADVISOR') && BBIZ_ENABLE_ADVISOR === true)
+    || (getenv('BBIZ_ENABLE_ADVISOR') === 'true')
+    || (isset($_GET['advisor']) && $_GET['advisor'] === '1')
+    || (isset($_GET['preprod']) && $_GET['preprod'] === '1');
 
 // Load bounded initial page-1 approved businesses (#180: LIMIT 10 OFFSET 0, zero N+1, zero vetting columns)
 $initialPerPage = 10;
@@ -258,7 +266,9 @@ $initialPagination = [
 
       <div class="quick-pills" data-testid="quick-pills">
         <button type="button" class="pill active" data-quick-filter="all" data-testid="quick-filter-all">All Verified</button>
+        <?php if ($isAdvisorEnabled): ?>
         <button type="button" class="pill pill-concierge-toggle" id="btn-concierge-toggle" data-testid="concierge-toggle-pill" aria-pressed="false" title="Switch to natural-language AI advisor mode">★ Ask Biashara Advisor</button>
+        <?php endif; ?>
         <button type="button" class="pill" data-quick-filter="open_now" data-testid="quick-filter-open-now">🟢 Open Now (EAT)</button>
         <button type="button" class="pill" data-quick-filter="has_perk" data-testid="quick-filter-has-perk">🎁 Busherian Alumni Perks</button>
         <button type="button" class="pill" data-quick-filter="b2b_ready" data-testid="quick-filter-b2b">🏢 B2B &amp; LPO Ready</button>
@@ -269,6 +279,7 @@ $initialPagination = [
     </div>
   </section>
 
+  <?php if ($isAdvisorEnabled): ?>
   <!-- Biashara Advisor Panel (#344) -->
   <div id="concierge-panel" data-testid="concierge-panel" class="concierge-panel" hidden>
     <div class="concierge-panel-inner">
@@ -300,6 +311,7 @@ $initialPagination = [
       </div>
     </div>
   </div>
+  <?php endif; ?>
 
   <!-- Main Split-Screen Workspace -->
   <main class="directory-workspace">
@@ -423,6 +435,7 @@ $initialPagination = [
     </div>
   </div>
 
+  <?php if ($isAdvisorEnabled): ?>
   <!-- Biashara Advisor Kenya DPA Consent Modal (#344) -->
   <div id="concierge-consent-modal" data-testid="concierge-consent-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="concierge-consent-modal-title" hidden>
     <div class="modal-dialog" style="max-width:560px;">
@@ -458,6 +471,7 @@ $initialPagination = [
       </div>
     </div>
   </div>
+  <?php endif; ?>
 
   <!-- Footer -->
   <footer style="max-width:1440px;margin:2rem auto 0 auto;padding:1.5rem 1.25rem;border-top:1px solid #E5E7EB;font-size:0.82rem;color:#6B7280;">

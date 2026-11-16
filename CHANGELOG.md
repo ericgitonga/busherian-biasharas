@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.32.5] - 2026-11-16
+### Changed
+- **Biashara Advisor Isolation to Pre-Prod Sandbox (`#352`, Parent `#351`)**: Gated the Ask Biashara Advisor pill toggle, natural-language query panel, and consent modal in `public/index.php` behind `PreprodSandbox::isPreprod()`, automated test suites (`APP_ENV=testing`), explicit environment flags (`BBIZ_ENABLE_ADVISOR`), and on-demand query preview (`?advisor=1`). Restored standard clean directory navigation for public production visitors while retaining full conversational testing in preprod environments.
+- **Newsletter Alignment for Live Release (`#353`, Parent `#351`)**: Updated the `Habari za Biasharas` newsletter in `extras/projects/busherian-biasharas/habari-za-biasharas.md` to exclude the Advisor from live client-facing feature sections, positioning it under "Coming Next" as an upcoming preview, and recompiled `habari-za-biasharas.pdf`.
+- **Service Worker Cache Identifier (`#354`, Parent `#351`)**: Bumped client cache version to `bbiz-pwa-v0.32.5` in `public/sw.js` and refreshed asset versioning.
+
 ## [0.32.4] - 2026-11-16
 ### Fixed
 - **Compound Phrase Semantic Normalization & Token Isolation (`#371`, Parent `#370`)**: Introduced `COMPOUND_PHRASE_NORMALIZATIONS` in `CategoryMatcher` to normalize idiomatic compound phrases (`team building` -> `teambuilding`, `corporate retreat` -> `corporate_retreat`, `building materials` -> `building_materials`, `real estate` -> `real_estate`, `interior design` -> `interior_design`, etc.) prior to unigram token splitting. Prevents erroneous token fragmentation where multi-word concepts were split into ambiguous unigrams like "building", which previously caused queries for team building to match construction, hardware, and contractor categories.
