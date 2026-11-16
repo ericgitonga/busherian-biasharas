@@ -5657,14 +5657,16 @@ $indexSource = file_get_contents(dirname(__DIR__) . '/public/index.php');
 $dirJsSource = file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
 $appCssSource = file_get_contents(dirname(__DIR__) . '/public/assets/css/app.css');
 
-// 60a (#344): index.php contains concierge toggle, modal, panel and starter chips
+// 60a (#344, #360): index.php contains concierge toggle, modal, panel, query input & starter chips
 assertTrue(
     str_contains($indexSource, 'btn-concierge-toggle') &&
     str_contains($indexSource, 'concierge-toggle-pill') &&
     str_contains($indexSource, 'concierge-consent-modal') &&
     str_contains($indexSource, 'concierge-panel') &&
+    str_contains($indexSource, 'concierge-panel-input') &&
+    str_contains($indexSource, 'btn-concierge-panel-submit') &&
     str_contains($indexSource, 'starter-prompt-chip'),
-    '60a (#344): public/index.php contains Biashara Advisor toggle, modal, panel and starter prompt chips'
+    '60a (#344, #360): public/index.php contains Biashara Advisor toggle, modal, panel, dedicated input bar and starter prompt chips'
 );
 
 // 60b (#344): Modal contains DPA 2019 transparency notice without code tags
@@ -5675,15 +5677,16 @@ assertTrue(
     '60b (#344): public/index.php provides interactive DPA 2019 consent dialog with accept/cancel controls'
 );
 
-// 60c (#345): directory.js implements concierge execution, two-tier rendering & need badges
+// 60c (#345, #360): directory.js implements concierge execution, two-tier rendering & need badges
 assertTrue(
     str_contains($dirJsSource, 'runConciergeSearch') &&
     str_contains($dirJsSource, 'renderConciergeResults') &&
     str_contains($dirJsSource, 'renderSingleBusinessCard') &&
     str_contains($dirJsSource, 'concierge-tier-direct-header') &&
     str_contains($dirJsSource, 'concierge-tier-ecosystem-header') &&
-    str_contains($dirJsSource, 'badge-underlying-need'),
-    '60c (#345): public/assets/js/directory.js implements concierge query execution, two-tier card partitioning & need badges'
+    str_contains($dirJsSource, 'badge-underlying-need') &&
+    str_contains($dirJsSource, 'isValidLatLng'),
+    '60c (#345, #360): public/assets/js/directory.js implements concierge query execution, two-tier card partitioning, need badges and safe LatLng validation'
 );
 
 // 60d (#346): directory.js renders unmet ecosystem demand card with WhatsApp share link
