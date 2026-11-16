@@ -557,8 +557,9 @@ final class Mailer
     ): bool {
         $host = trim(Database::env('SMTP_HOST', ''));
         $port = (int)Database::env('SMTP_PORT', '465');
-        $user = trim(Database::env('SMTP_USER', ''));
-        $pass = Database::env('SMTP_PASS', '');
+        // Support both SMTP_USER and SMTP_USERNAME, plus SMTP_PASS and SMTP_PASSWORD aliases (M-06)
+        $user = trim(Database::env('SMTP_USER', Database::env('SMTP_USERNAME', '')));
+        $pass = (string)Database::env('SMTP_PASS', Database::env('SMTP_PASSWORD', ''));
         $rawSec = trim(Database::env('SMTP_ENCRYPTION', Database::env('SMTP_SECURE', $port === 465 ? 'ssl' : 'tls')));
         $sec = strtolower($rawSec);
         $appEnv = strtolower(trim(Database::env('APP_ENV', 'production')));
@@ -566,9 +567,15 @@ final class Mailer
             error_log('[Mailer::sendViaAuthenticatedSmtp] Refusing unencrypted or invalid SMTP transport configuration in ' . $appEnv);
             return false;
         }
+        if (($user !== '' && $pass === '') || ($user === '' && $pass !== '')) {
+            error_log('[Mailer::sendViaAuthenticatedSmtp] Refusing partially configured SMTP credentials; username and password must both be set.');
+            return false;
+        }
 
         $deadline = microtime(true) + (float)self::SMTP_TOTAL_DEADLINE_SECONDS;
-        $verifyPeer = strtolower(trim(Database::env('SMTP_VERIFY_TLS_PEER', 'yes'))) !== 'no';
+        // In production, TLS peer and hostname verification must never be disabled (M-07)
+        $isProd = ($appEnv === 'production');
+        $verifyPeer = $isProd ? true : (strtolower(trim(Database::env('SMTP_VERIFY_TLS_PEER', 'yes'))) !== 'no');
         $sslCtx = stream_context_create([
             'ssl' => [
                 'verify_peer' => $verifyPeer,

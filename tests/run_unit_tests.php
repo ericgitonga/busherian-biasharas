@@ -4,6 +4,7 @@ declare(strict_types=1);
 $initialDriver = strtolower((string)(getenv('DB_DRIVER') ?: 'sqlite'));
 $unitTempSqlite = sys_get_temp_dir() . '/bbiz_unit_' . getmypid() . '.sqlite';
 $unitTempUploadsRoot = sys_get_temp_dir() . '/bbiz_unit_uploads_' . getmypid();
+@unlink($unitTempSqlite);
 
 putenv('APP_ENV=testing');
 putenv('DB_DRIVER=' . $initialDriver);

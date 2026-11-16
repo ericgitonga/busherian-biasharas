@@ -568,6 +568,7 @@ final class VettingPurger
             );
             EngagementRanker::recomputeBusinessScore($pdo, $businessId);
             AiListingIndexer::indexBusiness($pdo, $businessId);
+            self::invalidateConciergeCache($pdo);
 
             if ($ownTx) {
                 $pdo->commit();
@@ -639,6 +640,7 @@ final class VettingPurger
                 $clientIp
             );
             AiListingIndexer::purgeBusiness($pdo, $businessId);
+            self::invalidateConciergeCache($pdo);
 
             if ($ownTx) {
                 $pdo->commit();
@@ -721,6 +723,7 @@ final class VettingPurger
                     $clientIp
                 );
                 AiListingIndexer::purgeBusiness($pdo, $businessId);
+                self::invalidateConciergeCache($pdo);
             }
             PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
             if ($ownTx) {
@@ -783,6 +786,7 @@ final class VettingPurger
         } else {
             AiListingIndexer::purgeBusiness($pdo, $businessId);
         }
+        self::invalidateConciergeCache($pdo);
 
         self::recordModerationAudit(
             $pdo,
@@ -1140,6 +1144,15 @@ final class VettingPurger
         $engDedupPurged = EngagementRanker::purgeExpiredDeduplicationHashes($pdo, $nowTs);
         $engRecomputed = EngagementRanker::recomputeAllApprovedScores($pdo, $nowTs);
 
+        // Purge expired concierge response caches older than 15 minutes (900s) (H-01)
+        $delCache = $pdo->prepare("
+            DELETE FROM app_settings
+            WHERE (setting_key LIKE 'concierge_cache_%' OR setting_key LIKE 'qcache_%')
+              AND updated_at < :cache_cutoff
+        ");
+        $delCache->execute([':cache_cutoff' => gmdate('Y-m-d H:i:s', $nowTs - 900)]);
+        $cachePurged = $delCache->rowCount();
+
         // 8. Pseudonymize personal actor emails & IP hashes in >365d moderation_audit_log (#214 M-06)
         $auditCutoff = gmdate('Y-m-d H:i:s', $nowTs - (365 * 86400));
         $pdo->prepare("
@@ -1166,6 +1179,7 @@ final class VettingPurger
             'click_events_purged' => $clicksPurged,
             'engagement_dedup_purged' => $engDedupPurged,
             'engagement_scores_recomputed' => $engRecomputed['updated_approved_count'],
+            'concierge_cache_purged' => $cachePurged,
             'orphaned_public_media_deleted' => $mediaSweep['orphaned_public_deleted'],
             'orphaned_quarantine_media_deleted' => $mediaSweep['orphaned_quarantine_deleted'],
             'cutoff_utc' => $cutoffDate,
@@ -1266,6 +1280,7 @@ final class VettingPurger
             $pdo->prepare("DELETE FROM usage_metrics WHERE business_id = :id")->execute([':id' => $businessId]);
             $pdo->prepare("DELETE FROM business_ai_index WHERE business_id = :id")->execute([':id' => $businessId]);
             AiListingIndexer::purgeBusiness($pdo, $businessId);
+            self::invalidateConciergeCache($pdo);
             $del = $pdo->prepare("DELETE FROM businesses WHERE id = :id");
             $del->execute([':id' => $businessId]);
             $deleted = $del->rowCount() > 0;
@@ -1480,9 +1495,18 @@ final class VettingPurger
             }
             throw $e;
         }
-        if (in_array($targetStatus, ['approved', 'pending'], true)) {
+        self::invalidateConciergeCache($pdo);
+
+        // Re-verify current live status before promoting/restoring media to prevent concurrent quarantine race (H-04)
+        $statusCheckStmt = $pdo->prepare("SELECT status FROM businesses WHERE id = ?");
+        $statusCheckStmt->execute([$businessId]);
+        $currentLiveStatus = (string)$statusCheckStmt->fetchColumn();
+
+        if (in_array($currentLiveStatus, ['approved', 'pending'], true)) {
             PhotoUploader::restoreQuarantinedBusinessPhotos($businessId, $photosJson);
-        } elseif ($targetStatus === 'rejected') {
+        } elseif ($currentLiveStatus === 'quarantined_dpa') {
+            PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+        } elseif ($currentLiveStatus === 'rejected') {
             PhotoUploader::deleteAllBusinessMedia($businessId, $photosJson);
         }
         if ($ownTx) {
@@ -1940,9 +1964,18 @@ final class VettingPurger
         }
 
         if ($ownTx) {
-            if (in_array($lockedOwnerStatus, ['approved', 'pending'], true)) {
+            self::invalidateConciergeCache($pdo);
+
+            // Re-verify current live status before promoting/restoring media to prevent concurrent quarantine race (H-04)
+            $statusCheckStmt = $pdo->prepare("SELECT status FROM businesses WHERE id = ?");
+            $statusCheckStmt->execute([$businessId]);
+            $currentLiveStatus = (string)$statusCheckStmt->fetchColumn();
+
+            if (in_array($currentLiveStatus, ['approved', 'pending'], true)) {
                 PhotoUploader::restoreQuarantinedBusinessPhotos($businessId, $photosJson);
-            } elseif ($lockedOwnerStatus === 'rejected') {
+            } elseif ($currentLiveStatus === 'quarantined_dpa') {
+                PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+            } elseif ($currentLiveStatus === 'rejected') {
                 self::drainDurableMediaDeletions($pdo, $businessId);
             }
             PhotoUploader::deleteRemovedBusinessPhotos($businessId, $previousPhotoUrls, $keptPhotoUrls);
@@ -2105,5 +2138,19 @@ final class VettingPurger
             'network_errors' => $networkErrors,
             'item_errors' => $itemErrors,
         ];
+    }
+
+    /**
+     * Invalidate all cached concierge intent responses whenever listings
+     * are approved, updated, quarantined, or deleted (H-01).
+     */
+    public static function invalidateConciergeCache(PDO $pdo): void
+    {
+        try {
+            $stmt = $pdo->prepare("DELETE FROM app_settings WHERE setting_key LIKE 'concierge_cache_%'");
+            $stmt->execute();
+        } catch (\Throwable $e) {
+            // Non-fatal if settings table is temporarily locked
+        }
     }
 }
