@@ -276,7 +276,10 @@ $initialPagination = [
           <span class="concierge-badge">★ Biashara Advisor</span>
           <span class="concierge-subtitle">Describe your complex business need or project in plain language</span>
         </div>
-        <button type="button" id="btn-concierge-exit" data-testid="btn-concierge-exit" class="btn-concierge-exit" title="Return to standard keyword search">✕ Exit Advisor Mode</button>
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+          <button type="button" id="btn-concierge-reset-consent" data-testid="btn-concierge-reset-consent" style="background:transparent;border:none;color:#6B7280;font-size:0.75rem;cursor:pointer;text-decoration:underline;" title="Withdraw AI consent and reset Advisor preferences">Withdraw AI Consent</button>
+          <button type="button" id="btn-concierge-exit" data-testid="btn-concierge-exit" class="btn-concierge-exit" title="Return to standard keyword search">✕ Exit Advisor Mode</button>
+        </div>
       </div>
       <div class="concierge-starter-prompts" data-testid="concierge-starter-prompts">
         <span class="concierge-starter-label">Try asking:</span>
@@ -432,6 +435,12 @@ $initialPagination = [
             <li>Zero personal profiles are retained or shared with external AI services.</li>
             <li>All recommended contacts are hydrated strictly from verified alumni directory records.</li>
           </ul>
+        </div>
+        <div class="concierge-adult-check" style="margin:0.85rem 0 1rem 0;padding:0.65rem 0.75rem;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;">
+          <label style="display:flex;align-items:flex-start;gap:0.5rem;cursor:pointer;font-size:0.82rem;color:#1E293B;">
+            <input type="checkbox" id="concierge-adult-attestation" data-testid="concierge-adult-attestation" style="margin-top:0.15rem;" checked>
+            <span><strong>Adult Attestation (Kenya DPA 2019 s. 33):</strong> I confirm that I am 18 years of age or older, and agree to the privacy terms and temporary query processing described above.</span>
+          </label>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:0.6rem;align-items:center;">
           <button type="button" id="btn-concierge-consent-cancel" data-testid="concierge-consent-cancel" class="btn btn-outline" style="font-size:0.85rem;">Cancel</button>

@@ -79,6 +79,14 @@ final class ConciergeRetriever
         // 1. Parse Query Intent
         $intent = self::parseQueryIntent($pdo, $rawQuery, $queryContext);
 
+        // Enforce natural-language operational intent (M-04)
+        if (!empty($intent['has_open_now_intent'])) {
+            $openNowOnly = true;
+        }
+        if (!empty($intent['has_b2b_intent'])) {
+            $b2bOnly = true;
+        }
+
         // 2. Identify Direct Specialties & Adjacent Companion Specialties
         $directSpecialties = $intent['matched_specialties'];
         $directSpecialtyIds = array_column($directSpecialties, 'id');
@@ -176,6 +184,8 @@ final class ConciergeRetriever
                 $adjacentMap
             );
 
+            $photos = PhotoUploader::decodePhotosJson(isset($biz['photos_json']) ? (string)$biz['photos_json'] : null);
+
             $bizPayload = [
                 'id' => $bizId,
                 'business_id' => $biz['business_id'] ?? (string)$bizId,
@@ -184,24 +194,49 @@ final class ConciergeRetriever
                 'slug' => (string)$biz['slug'],
                 'tagline' => (string)$biz['tagline'],
                 'description' => (string)$biz['description'],
+                'sector_name' => (string)($biz['sector_name'] ?? ''),
+                'specialty_name' => (string)($biz['category_name'] ?? ''),
                 'category_name' => (string)$biz['category_name'],
-                'secondary_category_name' => $biz['secondary_category_name'] ?? null,
+                'secondary_sector_name' => $biz['secondary_sector_name'] ?? null,
+                'secondary_specialty_name' => $biz['secondary_category_name'] ?? null,
                 'school_badge' => (string)$biz['school_badge'],
+                'phone_primary' => (string)$biz['phone_primary'],
+                'whatsapp_number' => $biz['whatsapp_number'] ?? null,
+                'email_public' => $biz['email_public'] ?? null,
+                'website_url' => $biz['website_url'] ?? null,
+                'city_county' => $biz['city_county'] ?? null,
+                'area_neighborhood' => $biz['area_neighborhood'] ?? null,
+                'country' => $biz['country'] ?? 'Kenya',
+                'latitude' => $biz['latitude'] !== null ? (float)$biz['latitude'] : null,
+                'longitude' => $biz['longitude'] !== null ? (float)$biz['longitude'] : null,
+                'hours_status' => [
+                    'state' => $hoursState,
+                    'badge_text' => $hoursEval['badge_text'] ?? ($hoursState === 'OPEN_NOW' ? 'Open Now' : 'Closed'),
+                ],
+                'is_bookable' => !empty($biz['booking_enabled']),
+                'booking_url' => $biz['booking_url'] ?? null,
+                'has_perk' => !empty($biz['alumni_perk']),
+                'perk_description' => $biz['alumni_perk'] ?? null,
+                'b2b_ready' => !empty($biz['b2b_ready']) || !empty($biz['accepts_lpo']),
+                'accepts_lpo' => !empty($biz['accepts_lpo']),
+                'logo_path' => $biz['logo_path'] ?? null,
+                'photos' => $photos,
+                'distance_km' => $scoreData['distance_km'],
+                'score_breakdown' => $scoreData['breakdown'],
+                'is_popular' => ((float)($biz['engagement_score'] ?? 0) >= 10.0),
+                'is_new' => EngagementRanker::isWithinNewWindow($biz['verified_at'] ?? null, $biz['created_at'] ?? null, $nowTs),
+                'momentum_badge' => EngagementRanker::isWithinNewWindow($biz['verified_at'] ?? null, $biz['created_at'] ?? null, $nowTs) ? 'new' : (((float)($biz['engagement_score'] ?? 0) >= 10.0) ? 'popular' : null),
+                'capability_digest' => $biz['capability_digest'] ?? null,
+                // Compatibility aliases
                 'phone' => (string)$biz['phone_primary'],
                 'whatsapp' => $biz['whatsapp_number'] ?? null,
-                'email_public' => $biz['email_public'] ?? null,
                 'website' => $biz['website_url'] ?? null,
                 'town' => $biz['city_county'] ?? null,
                 'estate' => $biz['area_neighborhood'] ?? null,
-                'country' => $biz['country'] ?? 'Kenya',
-                'accepts_lpo' => !empty($biz['accepts_lpo']),
                 'open_status' => $hoursState,
                 'open_status_label' => $hoursEval['badge_text'] ?? '',
-                'distance_km' => $scoreData['distance_km'],
-                'engagement_score' => (float)($biz['engagement_score'] ?? 0),
+                // Internal fields for ranking
                 'relevance_score' => $scoreData['total_score'],
-                'score_breakdown' => $scoreData['breakdown'],
-                'capability_digest' => $biz['capability_digest'] ?? null,
             ];
 
             if ($isDirectMatch) {
@@ -221,9 +256,15 @@ final class ConciergeRetriever
         $rankedDirect = self::applyPeerFairnessRotation($scoredDirect, $nowTs, $queryContext['user_seed'] ?? null);
         $rankedEcosystem = self::applyPeerFairnessRotation($scoredEcosystem, $nowTs, $queryContext['user_seed'] ?? null);
 
-        // Truncate to limits
-        $finalDirect = array_slice($rankedDirect, 0, $limitDirect);
-        $finalEcosystem = array_slice($rankedEcosystem, 0, $limitEcosystem);
+        // Truncate to limits and redact internal scores from public candidate payloads (M-12)
+        $stripScores = function (array $list): array {
+            return array_map(function ($item) {
+                unset($item['relevance_score'], $item['_tie_band'], $item['_tie_rank']);
+                return $item;
+            }, $list);
+        };
+        $finalDirect = $stripScores(array_slice($rankedDirect, 0, $limitDirect));
+        $finalEcosystem = $stripScores(array_slice($rankedEcosystem, 0, $limitEcosystem));
 
         // 6. Detect Unmet Demand in Ecosystem Specialties
         $unmetDemand = [];
@@ -393,14 +434,19 @@ final class ConciergeRetriever
                        b.school_badge, b.specialty_id, b.secondary_specialty_id, b.phone_primary, b.whatsapp_number,
                        b.email_public, b.website_url, b.operating_hours_json, b.latitude, b.longitude,
                        b.city_county, b.area_neighborhood, b.country, b.accepts_lpo, b.b2b_ready, b.engagement_score,
+                       b.booking_enabled, b.booking_url, b.alumni_perk, b.logo_path, b.photos_json, b.created_at,
+                       sec.name AS sector_name, sec2.name AS secondary_sector_name,
                        c1.name AS category_name, c2.name AS secondary_category_name,
                        ai.capability_digest, ai.keywords_norm
                 FROM businesses b
                 INNER JOIN business_ai_index ai ON b.id = ai.business_id
                 LEFT JOIN categories c1 ON b.specialty_id = c1.id
                 LEFT JOIN categories c2 ON b.secondary_specialty_id = c2.id
+                LEFT JOIN categories sec ON b.sector_id = sec.id
+                LEFT JOIN categories sec2 ON b.secondary_sector_id = sec2.id
                 WHERE {$whereSql}
-                LIMIT 100";
+                ORDER BY b.engagement_score DESC, b.id ASC
+                LIMIT 250";
 
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);

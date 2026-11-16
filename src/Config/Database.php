@@ -284,8 +284,12 @@ final class Database
         }
 
         if (strtolower(self::env('BBIZ_DISABLE_WEB_AUTO_MIGRATE', 'false')) === 'true' && PHP_SAPI !== 'cli') {
+            $deployKeyFile = dirname(__DIR__, 2) . '/.deploy_probe_key';
+            $expectedKey = is_file($deployKeyFile) ? trim((string)@file_get_contents($deployKeyFile)) : '';
+            $providedKey = (string)($_SERVER['HTTP_X_DEPLOY_TOKEN'] ?? $_GET['deploy_key'] ?? '');
+            $hasValidDeployProbe = $expectedKey !== '' && $providedKey !== '' && hash_equals($expectedKey, $providedKey);
             $allowDeployProbeMigrate = !empty($_GET['verify_schema'])
-                && is_file(dirname(__DIR__, 2) . '/.deploy_manifest.json');
+                && ($hasValidDeployProbe || is_file(dirname(__DIR__, 2) . '/.deploy_manifest.json'));
             if (!$allowDeployProbeMigrate) {
                 throw new DatabaseUnavailableException('Database schema migration is pending; run php bin/migrate-and-seed.php.');
             }
@@ -1017,11 +1021,27 @@ final class Database
 
     public static function setSetting(PDO $pdo, string $key, string $value): void
     {
-        $del = $pdo->prepare("DELETE FROM app_settings WHERE setting_key = :k");
-        $del->execute([':k' => $key]);
-        if (trim($value) !== '') {
-            $ins = $pdo->prepare("INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (:k, :v, CURRENT_TIMESTAMP)");
-            $ins->execute([':k' => $key, ':v' => trim($value)]);
+        $trimmedVal = trim($value);
+        if ($trimmedVal === '') {
+            $del = $pdo->prepare("DELETE FROM app_settings WHERE setting_key = :k");
+            $del->execute([':k' => $key]);
+            return;
+        }
+
+        $driver = strtolower((string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        if ($driver === 'mysql') {
+            $stmt = $pdo->prepare("
+                INSERT INTO app_settings (setting_key, setting_value, updated_at)
+                VALUES (:k, :v, CURRENT_TIMESTAMP)
+                ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = CURRENT_TIMESTAMP
+            ");
+            $stmt->execute([':k' => $key, ':v' => $trimmedVal]);
+        } else {
+            $stmt = $pdo->prepare("
+                INSERT OR REPLACE INTO app_settings (setting_key, setting_value, updated_at)
+                VALUES (:k, :v, CURRENT_TIMESTAMP)
+            ");
+            $stmt->execute([':k' => $key, ':v' => $trimmedVal]);
         }
     }
 

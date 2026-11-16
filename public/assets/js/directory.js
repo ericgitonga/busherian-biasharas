@@ -633,7 +633,7 @@
               ${needBadge}
               ${(biz.is_bookable || biz.booking_enabled || biz.booking_url) ? `<span class="badge-bookable" data-testid="biz-card-bookable-badge">📅 Book Appointment</span>` : ''}
               ${biz.momentum_badge === 'popular' ? `<span class="badge-momentum badge-popular" data-testid="biz-card-popular-badge" title="Frequently checked out by fellow Busherians recently">🔥 Popular with Busherians</span>` : ''}
-              ${biz.momentum_badge === 'new' ? `<span class="badge-momentum badge-new" data-testid="biz-card-new-badge" title="Joined the directory within the last two weeks">✨ New on Biasharas</span>` : ''}
+              ${biz.momentum_badge === 'new' ? `<span class="badge-momentum badge-new" data-testid="biz-card-new-badge" title="Joined the directory within the last week">✨ New on Biasharas</span>` : ''}
             </span>
             ${distBadge}
           </div>
@@ -939,9 +939,11 @@
     }
 
     try {
+      const consentPayload = getConciergeConsentPayload();
       const payload = {
         query: q,
-        consent: 1,
+        consent: consentPayload,
+        adult_attestation: true,
         b2b_only: state.b2bReady ? 1 : 0,
         open_now_only: state.openNow ? 1 : 0,
         latitude: state.userLat,
@@ -952,6 +954,7 @@
         headers: {
           'Content-Type': 'application/json',
           'X-BBIZ-Consent': '1',
+          'X-BBIZ-Adult': '1',
         },
         body: JSON.stringify(payload),
       });
@@ -2582,10 +2585,36 @@
     }
   }
 
+  function hasConciergeConsent() {
+    try {
+      const raw = localStorage.getItem('bbiz_concierge_consent');
+      if (!raw) return false;
+      if (raw === 'granted') return true;
+      const parsed = JSON.parse(raw);
+      return !!(parsed && parsed.granted);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function getConciergeConsentPayload() {
+    try {
+      const raw = localStorage.getItem('bbiz_concierge_consent');
+      if (!raw) return { granted: false };
+      if (raw === 'granted') {
+        return { granted: true, adult_attested: true, notice_version: '2026-11-v1' };
+      }
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch (e) {}
+    return { granted: true, adult_attested: true, notice_version: '2026-11-v1' };
+  }
+
   if (els.conciergeToggleBtn) {
     els.conciergeToggleBtn.addEventListener('click', () => {
-      const hasConsent = localStorage.getItem('bbiz_concierge_consent') === 'granted';
-      if (!hasConsent && !state.isConciergeMode) {
+      if (!hasConciergeConsent() && !state.isConciergeMode) {
         openConciergeConsentModal();
         return;
       }
@@ -2595,10 +2624,44 @@
 
   if (els.conciergeAcceptBtn) {
     els.conciergeAcceptBtn.addEventListener('click', () => {
-      localStorage.setItem('bbiz_concierge_consent', 'granted');
+      const adultCheck = document.getElementById('concierge-adult-attestation');
+      if (adultCheck && !adultCheck.checked) {
+        alert('Please confirm that you are 18 years of age or older to use Biashara Advisor.');
+        return;
+      }
+      const record = {
+        granted: true,
+        adult_attested: true,
+        notice_version: '2026-11-v1',
+        consented_at: new Date().toISOString()
+      };
+      localStorage.setItem('bbiz_concierge_consent', JSON.stringify(record));
       closeConciergeConsentModal();
       setConciergeMode(true);
-      if (els.searchInput) els.searchInput.focus();
+      if (state._pendingStarterPrompt) {
+        const p = state._pendingStarterPrompt;
+        delete state._pendingStarterPrompt;
+        if (els.searchInput) {
+          els.searchInput.value = p;
+          state.searchQuery = p;
+          if (els.searchClearBtn) els.searchClearBtn.style.display = 'inline-flex';
+        }
+        runConciergeSearch(p);
+      } else if (els.searchInput) {
+        els.searchInput.focus();
+      }
+    });
+  }
+
+  const resetConsentBtn = document.getElementById('btn-concierge-reset-consent');
+  if (resetConsentBtn) {
+    resetConsentBtn.addEventListener('click', () => {
+      localStorage.removeItem('bbiz_concierge_consent');
+      if (els.searchInput) els.searchInput.value = '';
+      state.searchQuery = '';
+      if (els.searchClearBtn) els.searchClearBtn.style.display = 'none';
+      setConciergeMode(false);
+      alert('Your AI Advisor consent and preferences have been reset.');
     });
   }
 
@@ -2640,8 +2703,12 @@
     if (starterChip) {
       const p = starterChip.getAttribute('data-prompt');
       if (p) {
+        if (!hasConciergeConsent()) {
+          state._pendingStarterPrompt = p;
+          openConciergeConsentModal();
+          return;
+        }
         if (!state.isConciergeMode) {
-          localStorage.setItem('bbiz_concierge_consent', 'granted');
           setConciergeMode(true);
         }
         if (els.searchInput) {
@@ -2742,9 +2809,12 @@
     const initMode = (initParams.get('mode') || '').trim().toLowerCase();
     const initAdvisor = initParams.get('advisor');
     if (initMode === 'concierge' || initAdvisor === '1') {
-      localStorage.setItem('bbiz_concierge_consent', 'granted');
-      setConciergeMode(true);
-      needsInitialFetch = false;
+      if (hasConciergeConsent()) {
+        setConciergeMode(true);
+        needsInitialFetch = false;
+      } else {
+        openConciergeConsentModal();
+      }
     } else if (needsInitialFetch) {
       fetchBusinesses();
     }

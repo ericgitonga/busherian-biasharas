@@ -30,11 +30,11 @@ final class EngagementRanker
 
     public const TIE_ROTATION_BUCKET_SECONDS = 7200;
 
-    // Chunk 12 (#315): Dignified momentum badges (boolean cue only, zero public counters)
+    // Dignified momentum badges (boolean cue only, zero public counters)
     public const POPULAR_TOP_FRACTION = 0.10;
     public const POPULAR_MIN_REFS_90D = 3;
-    public const NEW_BADGE_WINDOW_DAYS = 14;
-    public const NEW_BADGE_MAX_SHARE = 0.30;
+    public const NEW_BADGE_WINDOW_DAYS = 7; // Stays for 1 week (7 days) before expiring
+    public const NEW_BADGE_MAX_SHARE = 1.0;
 
     /**
      * Owner-facing labels for private engagement insights (#316).
@@ -756,8 +756,8 @@ final class EngagementRanker
 
         return [
             'popular_cutoff' => $cutoff > 0.0 ? $cutoff : null,
-            // A "New" cue only means something when newcomers are a distinctive minority (e.g. not at launch).
-            'new_badges_enabled' => ($newCount / $n) <= self::NEW_BADGE_MAX_SHARE,
+            // All new listings get the "New" badge for their first week
+            'new_badges_enabled' => true,
         ];
     }
 

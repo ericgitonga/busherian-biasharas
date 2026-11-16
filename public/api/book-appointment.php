@@ -197,8 +197,9 @@ try {
     }
 
     $mailQuota = AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, $recipientEmail, false);
+    $sent = false;
     if ($mailQuota['allowed']) {
-        Mailer::sendBookingInquiry($pdo, $biz, $recipientEmail, [
+        $sent = (bool)Mailer::sendBookingInquiry($pdo, $biz, $recipientEmail, [
             'requester_name' => $requesterName,
             'requester_email' => $requesterEmail,
             'requester_phone' => $requesterPhone,
@@ -222,11 +223,29 @@ try {
         $viewerCtx['is_admin']
     );
 
-    echo json_encode([
-        'status' => 'ok',
-        'message' => 'Your appointment request has been sent to ' . (string)$biz['name'] . '! They can reply directly to ' . $requesterEmail . '.',
-        'next_tokens' => AntiSpamGate::generateFormTokens(),
-    ]);
+    // Return accurate delivery state (M-13)
+    if ($sent) {
+        echo json_encode([
+            'status' => 'ok',
+            'delivery_state' => 'sent',
+            'message' => 'Your appointment request has been sent to ' . (string)$biz['name'] . '! They can reply directly to ' . $requesterEmail . '.',
+            'next_tokens' => AntiSpamGate::generateFormTokens(),
+        ]);
+    } elseif (!$mailQuota['allowed']) {
+        echo json_encode([
+            'status' => 'queued_or_delayed',
+            'delivery_state' => 'quota_delayed',
+            'message' => 'Your appointment request has been recorded for ' . (string)$biz['name'] . ', but direct email dispatch is temporarily delayed due to outbound quota limits. For urgent bookings, please reach out via WhatsApp or Call.',
+            'next_tokens' => AntiSpamGate::generateFormTokens(),
+        ]);
+    } else {
+        echo json_encode([
+            'status' => 'queued_or_delayed',
+            'delivery_state' => 'delivery_pending',
+            'message' => 'Your appointment request has been queued for ' . (string)$biz['name'] . ' and will be delivered shortly. You can also connect via WhatsApp or Call.',
+            'next_tokens' => AntiSpamGate::generateFormTokens(),
+        ]);
+    }
 } catch (\Throwable $e) {
     error_log('[api/book-appointment.php] Error: ' . $e->getMessage());
     http_response_code(500);
