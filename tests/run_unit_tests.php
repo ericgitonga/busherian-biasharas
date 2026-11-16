@@ -5707,6 +5707,86 @@ assertTrue(
     '60e (#343): public/assets/css/app.css defines styling for concierge toggle, typing indicator, ecosystem cards & WhatsApp invite'
 );
 
+// ==========================================
+// 61. Biashara Advisor Rate-Limit Mitigations & Adaptive Retry Flow (#364, #365, #366, #367, #368)
+// ==========================================
+// 61a (#367): AntiSpamGate calculates retry_after countdown when limits are reached
+$testIpMitigation = '198.51.100.99';
+$testIpHmac = AntiSpamGate::pseudonymizeIp($testIpMitigation);
+$pdo->prepare("DELETE FROM rate_limits WHERE ip_hmac = :ip")->execute([':ip' => $testIpHmac]);
+
+// First call: allowed with retry_after = 0
+$resRL1 = AntiSpamGate::checkAndRecordRateLimit($pdo, $testIpMitigation, 'concierge_test_mitigation', 2, 10, 50);
+assertTrue(
+    $resRL1['allowed'] === true && $resRL1['retry_after'] === 0,
+    '61a (#367): AntiSpamGate returns allowed=true and retry_after=0 when within rate limits'
+);
+
+// Second call: allowed
+$resRL2 = AntiSpamGate::checkAndRecordRateLimit($pdo, $testIpMitigation, 'concierge_test_mitigation', 2, 10, 50);
+assertTrue(
+    $resRL2['allowed'] === true,
+    '61a (#367): Second rate-limit check records successfully'
+);
+
+// Third call: blocked by 15m limit with calculated retry_after > 0
+$resRL3 = AntiSpamGate::checkAndRecordRateLimit($pdo, $testIpMitigation, 'concierge_test_mitigation', 2, 10, 50);
+assertTrue(
+    $resRL3['allowed'] === false &&
+    $resRL3['reason'] === 'layer5_ip_rate_limit_15m' &&
+    $resRL3['retry_after'] > 0 &&
+    $resRL3['retry_after'] <= 900,
+    '61a (#367): AntiSpamGate returns layer5_ip_rate_limit_15m with dynamic retry_after remaining seconds'
+);
+
+// 61b (#365): Intent Cache hit does NOT consume rate limit slots in /api/concierge.php
+// Clean up test records
+$pdo->prepare("DELETE FROM rate_limits WHERE ip_hmac = :ip")->execute([':ip' => $testIpHmac]);
+$cachedIp = '192.0.2.188';
+$cachedIpHmac = AntiSpamGate::pseudonymizeIp($cachedIp);
+$pdo->prepare("DELETE FROM rate_limits WHERE ip_hmac = :ip")->execute([':ip' => $cachedIpHmac]);
+
+// Prime the cache
+$resPrime = $runConciergeSubrequest([
+    'query' => 'Need an accountant for quarterly filing',
+    'consent' => 1,
+], ['REMOTE_ADDR' => $cachedIp]);
+assertTrue(($resPrime['status'] ?? '') === 'ok', '61b (#365): Initial query executed to prime cache');
+
+$rateCountAfterPrime = (int)$pdo->query("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = '{$cachedIpHmac}' AND action_type = 'concierge_query'")->fetchColumn();
+assertTrue($rateCountAfterPrime === 1, '61b (#365): Priming query consumes exactly 1 rate-limit record');
+
+// Subrequest with identical query should hit cache and NOT increment rate_limits
+$resCachedHit = $runConciergeSubrequest([
+    'query' => 'Need an accountant for quarterly filing',
+    'consent' => 1,
+], ['REMOTE_ADDR' => $cachedIp]);
+assertTrue(
+    ($resCachedHit['status'] ?? '') === 'ok' && ($resCachedHit['cached'] ?? false) === true,
+    '61b (#365): Repeated query hits intent cache'
+);
+
+$rateCountAfterCacheHit = (int)$pdo->query("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = '{$cachedIpHmac}' AND action_type = 'concierge_query'")->fetchColumn();
+assertTrue(
+    $rateCountAfterCacheHit === 1,
+    '61b (#365): Cached query hit bypasses rate limiter and does NOT increment rate limit count'
+);
+
+// 61c (#368): directory.js does not auto-fire concierge search on typing debounce and implements adaptive retry countdown
+$freshDirJs = file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+assertTrue(
+    !str_contains($freshDirJs, 'runConciergeSearch(state.searchQuery);') || !str_contains($freshDirJs, 'setTimeout(() => {\n          if (state.searchQuery.length >= 3) {\n            runConciergeSearch'),
+    '61c (#368): directory.js eliminates keystroke debounce auto-firing in concierge mode'
+);
+assertTrue(
+    str_contains($freshDirJs, 'retryAfterSec') &&
+    str_contains($freshDirJs, 'Wait ${remaining}s…') &&
+    str_contains($freshDirJs, 'retryBtn.disabled = false'),
+    '61c (#368): directory.js renders dynamic countdown and auto-enables retry button'
+);
+
+$pdo->prepare("DELETE FROM rate_limits WHERE ip_hmac IN (:ip1, :ip2)")->execute([':ip1' => $testIpHmac, ':ip2' => $cachedIpHmac]);
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');

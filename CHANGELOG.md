@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.32.3] - 2026-11-16
+### Fixed
+- **Advisor Keystroke Auto-Firing Elimination (`#365`, Parent `#364`)**: Removed the 400ms debounce auto-search trigger on keystrokes in `public/assets/js/directory.js` while in Biashara Advisor mode. Queries are now submitted exclusively when the visitor presses Enter, clicks "★ Ask Advisor", or selects a preset starter chip, preventing rapid multi-request bursts while typing.
+- **Cache-First Rate Limit Bypassing (`#365`, Parent `#364`)**: Reordered request processing in `public/api/concierge.php` so the 15-minute Intent Cache check executes *prior* to recording rate-limit consumption. Identical questions and repeated clicks on preset starter prompt chips are served directly from the decoupled cache without deducting from visitor rate-limit quotas.
+- **Right-Sized Tiered Rate Limits (`#366`, Parent `#364`)**: Elevated the standard anonymous visitor rate limit from 10 to 30 queries per 15 minutes, from 50 to 150 queries per 24 hours, and global hourly circuit breakers from 100 to 300 queries. Introduced privileged rate limits for authenticated listing owners (60/15m, 300/24h, 500/1h) and system administrators (120/15m, 600/24h, 1000/1h).
+- **Dynamic Cooldown & Retry-After Header Emission (`#367`, Parent `#364`)**: Enhanced `AntiSpamGate::checkAndRecordRateLimit()` to dynamically calculate the exact remaining seconds until the oldest query in the active rate-limit window rolls off. Emitted standard HTTP `Retry-After: <seconds>` headers and JSON `retry_after: <seconds>` on all 429 Too Many Requests responses.
+- **Adaptive Client-Side Cooldown Countdown (`#368`, Parent `#364`)**: Enhanced `#btn-retry-concierge` in `public/assets/js/directory.js` to parse `Retry-After` headers and JSON payloads, dynamically disabling the retry button and displaying a live countdown (`Wait Xs…`). Automatically re-enables the button with `🔄 Try Again` as soon as the cooldown window expires.
+- **Service Worker Cache Identifier (`#364`)**: Bumped client cache version to `bbiz-pwa-v0.32.3` in `public/sw.js`.
+
 ## [0.32.2] - 2026-11-16
 ### Fixed
 - **Leaflet Invalid LatLng Exception Defense (`#361`, Parent `#359`)**: Introduced `isValidLatLng()` in `public/assets/js/directory.js` ensuring coordinates passed to Leaflet (`L.marker`, `L.circle`, `L.circleMarker`, `L.latLngBounds`, and `map.setView`) are validated finite numbers between [-90, 90] and [-180, 180]. Fixed a bug where businesses without physical coordinates triggered `Error: Invalid LatLng object: (undefined, undefined)` when attempting to render markers in `renderInteractiveMap()`. Wrapped map updates in `renderConciergeResults()` in a resilient error boundary so map pin glitches never abort card rendering.

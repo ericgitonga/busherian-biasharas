@@ -4,9 +4,11 @@ declare(strict_types=1);
 require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
+use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\ConciergeRetriever;
 use BusherianBiasharas\Services\ConciergeService;
+use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\QueryScrubber;
 
 // Anonymous JSON endpoint: zero Set-Cookie headers, zero visitor tracking profiles (Kenya DPA 2019)
@@ -104,28 +106,8 @@ $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
 try {
     $pdo = Database::getConnection();
 
-    // 3. Abuse & Cost Circuit-Breaker Rate Limiting (AntiSpamGate)
-    // Limits: <= 10 / 15m per IP, <= 50 / 24h per IP, <= 100 / 1h globally
-    $rateLimit = AntiSpamGate::checkAndRecordRateLimit(
-        $pdo,
-        $clientIp,
-        'concierge_query',
-        10,
-        50,
-        100
-    );
-
-    if (!$rateLimit['allowed']) {
-        http_response_code(429);
-        echo json_encode([
-            'status' => 'rate_limited',
-            'code' => 'too_many_requests',
-            'message' => 'Concierge query limit reached. Please wait a few moments before submitting another question.',
-        ], JSON_UNESCAPED_SLASHES);
-        exit;
-    }
-
-    // 4. Intent Cache Check (15-Minute Cache with Decoupled Hydration, H-01, M-01)
+    // 3. Intent Cache Check (15-Minute Cache with Decoupled Hydration, H-01, M-01)
+    // Run cache check BEFORE rate limiter so repeated queries and preset starter chips do not consume quota (#365)
     $b2bOnly = !empty($payload['b2b_only']);
     $openNowOnly = !empty($payload['open_now_only']);
     $userLat = isset($payload['latitude']) ? (float)$payload['latitude'] : null;
@@ -162,6 +144,54 @@ try {
                 exit;
             }
         }
+    }
+
+    // 4. Role-Tiered Abuse & Cost Circuit-Breaker Rate Limiting (AntiSpamGate, #366)
+    // Tiered Quotas:
+    // - Authenticated Admin: 120 / 15m, 600 / 24h, 1000 / 1h globally
+    // - Authenticated Owner: 60 / 15m, 300 / 24h, 500 / 1h globally
+    // - Anonymous Visitor: 30 / 15m, 150 / 24h, 300 / 1h globally
+    $isAdmin = AdminAuth::isAuthenticated($pdo);
+    $isOwner = false;
+    if (!$isAdmin) {
+        $owner = OwnerAuth::getCurrentOwner($pdo);
+        $isOwner = ($owner !== null && !empty($owner['id']));
+    }
+
+    if ($isAdmin) {
+        $limit15m = 120;
+        $limit24h = 600;
+        $limitGlobal1h = 1000;
+    } elseif ($isOwner) {
+        $limit15m = 60;
+        $limit24h = 300;
+        $limitGlobal1h = 500;
+    } else {
+        $limit15m = 30;
+        $limit24h = 150;
+        $limitGlobal1h = 300;
+    }
+
+    $rateLimit = AntiSpamGate::checkAndRecordRateLimit(
+        $pdo,
+        $clientIp,
+        'concierge_query',
+        $limit15m,
+        $limit24h,
+        $limitGlobal1h
+    );
+
+    if (!$rateLimit['allowed']) {
+        $retryAfter = (int)($rateLimit['retry_after'] ?? 30);
+        http_response_code(429);
+        header('Retry-After: ' . $retryAfter);
+        echo json_encode([
+            'status' => 'rate_limited',
+            'code' => 'too_many_requests',
+            'message' => 'Concierge query limit reached. Please wait a few moments before submitting another question.',
+            'retry_after' => $retryAfter,
+        ], JSON_UNESCAPED_SLASHES);
+        exit;
     }
 
     // 5. Candidate Retrieval (Layer 2)

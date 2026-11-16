@@ -1004,15 +1004,38 @@
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         const errMsg = errData.message || 'Unable to retrieve Biashara Advisor recommendations at this moment.';
+        const retryAfterHeader = parseInt(res.headers.get('Retry-After') || '', 10);
+        const retryAfterBody = parseInt(errData.retry_after || '', 10);
+        const retryAfterSec = (!isNaN(retryAfterHeader) && retryAfterHeader > 0)
+          ? retryAfterHeader
+          : ((!isNaN(retryAfterBody) && retryAfterBody > 0) ? retryAfterBody : 0);
+
         els.cardsGrid.innerHTML = `
           <div data-testid="concierge-error" role="alert" style="grid-column:1/-1;background:#FEF2F2;padding:1.5rem;border-radius:12px;text-align:center;border:2px solid #DC2626;">
             <h3 style="margin:0 0 0.45rem 0;color:#991B1B;">Biashara Advisor Notice</h3>
             <p style="margin:0 0 0.9rem 0;color:#7F1D1D;font-size:0.88rem;">${escapeHtml(errMsg)}</p>
-            <button type="button" id="btn-retry-concierge" data-testid="concierge-retry" class="btn btn-crimson">🔄 Try Again</button>
+            <button type="button" id="btn-retry-concierge" data-testid="concierge-retry" class="btn btn-crimson" ${retryAfterSec > 0 ? 'disabled' : ''}>${retryAfterSec > 0 ? `Wait ${retryAfterSec}s…` : '🔄 Try Again'}</button>
           </div>
         `;
         const retryBtn = document.getElementById('btn-retry-concierge');
         if (retryBtn) {
+          if (retryAfterSec > 0) {
+            let remaining = retryAfterSec;
+            const cdTimer = setInterval(() => {
+              remaining--;
+              if (remaining <= 0) {
+                clearInterval(cdTimer);
+                if (retryBtn && retryBtn.isConnected) {
+                  retryBtn.disabled = false;
+                  retryBtn.textContent = '🔄 Try Again';
+                }
+              } else {
+                if (retryBtn && retryBtn.isConnected) {
+                  retryBtn.textContent = `Wait ${remaining}s…`;
+                }
+              }
+            }, 1000);
+          }
           retryBtn.addEventListener('click', () => runConciergeSearch(q));
         }
         renderPaginationControls(0, 1, 1, 0, 0);
@@ -1963,13 +1986,9 @@
       if (welcomeInput) welcomeInput.value = e.target.value;
       clearTimeout(timer);
       if (state.isConciergeMode) {
-        timer = setTimeout(() => {
-          if (state.searchQuery.length >= 3) {
-            runConciergeSearch(state.searchQuery);
-          } else if (state.searchQuery.length === 0) {
-            renderConciergeWelcome();
-          }
-        }, 400);
+        if (state.searchQuery.length === 0) {
+          renderConciergeWelcome();
+        }
       } else {
         timer = setTimeout(() => {
           if (state.searchQuery.length >= 2 && window.BBizMetrics) {
@@ -1984,7 +2003,14 @@
         e.preventDefault();
         clearTimeout(timer);
         if (state.isConciergeMode) {
-          runConciergeSearch(state.searchQuery);
+          if (state.searchQuery.length >= 2) {
+            if (!hasConciergeConsent()) {
+              state._pendingStarterPrompt = state.searchQuery;
+              openConciergeConsentModal();
+              return;
+            }
+            runConciergeSearch(state.searchQuery);
+          }
         } else {
           fetchBusinesses();
         }
@@ -2636,7 +2662,12 @@
         setTimeout(() => els.conciergePanelInput.focus(), 60);
       }
       if (state.searchQuery && state.searchQuery.length >= 2) {
-        runConciergeSearch(state.searchQuery);
+        if (!hasConciergeConsent()) {
+          state._pendingStarterPrompt = state.searchQuery;
+          openConciergeConsentModal();
+        } else {
+          runConciergeSearch(state.searchQuery);
+        }
       } else {
         renderConciergeWelcome();
       }
