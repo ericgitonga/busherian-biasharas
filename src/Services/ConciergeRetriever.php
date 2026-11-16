@@ -409,13 +409,15 @@ final class ConciergeRetriever
             }
         }
 
-        // Keyword matches in AI keywords_norm or capability_digest
+        // Keyword matches in AI keywords_norm, capability_digest, or listing description
         if (!empty($tokens)) {
             $kwClauses = [];
             foreach (array_slice($tokens, 0, 4) as $tok) {
                 if (strlen($tok) >= 3) {
-                    $kwClauses[] = "(ai.keywords_norm LIKE ? OR ai.capability_digest LIKE ? OR b.name LIKE ?)";
+                    $kwClauses[] = "(ai.keywords_norm LIKE ? OR ai.capability_digest LIKE ? OR b.name LIKE ? OR b.description LIKE ? OR b.tagline LIKE ?)";
                     $likeTok = '%' . $tok . '%';
+                    $params[] = $likeTok;
+                    $params[] = $likeTok;
                     $params[] = $likeTok;
                     $params[] = $likeTok;
                     $params[] = $likeTok;
@@ -441,7 +443,7 @@ final class ConciergeRetriever
                        c1.name AS category_name, c2.name AS secondary_category_name,
                        ai.capability_digest, ai.keywords_norm
                 FROM businesses b
-                INNER JOIN business_ai_index ai ON b.id = ai.business_id
+                LEFT JOIN business_ai_index ai ON b.id = ai.business_id
                 LEFT JOIN categories c1 ON b.specialty_id = c1.id
                 LEFT JOIN categories c2 ON b.secondary_specialty_id = c2.id
                 LEFT JOIN categories sec ON b.sector_id = sec.id
@@ -576,6 +578,9 @@ final class ConciergeRetriever
         // Keyword Overlap (#370: support compound entity phrases and collapsed stems)
         $keywords = strtolower((string)($biz['keywords_norm'] ?? ''));
         $digest = strtolower((string)($biz['capability_digest'] ?? ''));
+        if ($keywords === '') {
+            $keywords = strtolower(($biz['name'] ?? '') . ' ' . ($biz['tagline'] ?? '') . ' ' . ($biz['description'] ?? ''));
+        }
         $keywordsCollapsed = preg_replace('/[^a-z0-9]+/i', '', $keywords);
         $digestCollapsed = preg_replace('/[^a-z0-9]+/i', '', $digest);
         $tokenHits = 0;
