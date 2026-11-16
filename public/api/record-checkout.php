@@ -56,6 +56,9 @@ try {
         'deduplicated' => !empty($result['deduplicated']),
         'signal_group' => $result['signal_group'] ?? null,
     ];
+    if (isset($result['reason'])) {
+        $publicResult['reason'] = $result['reason'];
+    }
 
     echo json_encode($publicResult, JSON_UNESCAPED_SLASHES);
 } catch (\Throwable $e) {

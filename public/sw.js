@@ -121,9 +121,6 @@ self.addEventListener('activate', (event) => {
         .filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE_VERSION)
         .map((k) => caches.delete(k))
     );
-    if (self.clients && self.clients.claim) {
-      await self.clients.claim();
-    }
   })());
 });
 
