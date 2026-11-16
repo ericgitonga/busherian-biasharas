@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.32.2] - 2026-11-16
+### Fixed
+- **Leaflet Invalid LatLng Exception Defense (`#361`, Parent `#359`)**: Introduced `isValidLatLng()` in `public/assets/js/directory.js` ensuring coordinates passed to Leaflet (`L.marker`, `L.circle`, `L.circleMarker`, `L.latLngBounds`, and `map.setView`) are validated finite numbers between [-90, 90] and [-180, 180]. Fixed a bug where businesses without physical coordinates triggered `Error: Invalid LatLng object: (undefined, undefined)` when attempting to render markers in `renderInteractiveMap()`. Wrapped map updates in `renderConciergeResults()` in a resilient error boundary so map pin glitches never abort card rendering.
+- **Global Business Journey Terminology & Parochial Copy Cleanup (`#362`, Parent `#359`)**: Replaced internal design strings referencing "Kenyan need graph" across `public/assets/js/directory.js` with global business ecosystem phrasing (*"The Advisor maps verified alumni practitioners and companion partners across complete business lifecycles"* and *"Complementary partners across your business journey"*). Updated the Advisor typing indicator to *"Consulting verified alumni network & business journey graph…"*.
+
+### Added
+- **Dedicated Biashara Advisor Query Input Bar (`#360`, Parent `#359`)**: Added a dedicated, prominent text input bar (`#concierge-panel-input`) and submit button (`#btn-concierge-panel-submit`) inside `#concierge-panel` in `public/index.php`, as well as inside the welcome card (`#concierge-welcome-input`). Kept all three search inputs (`#search-q`, `#concierge-panel-input`, `#concierge-welcome-input`) in two-way synchronization, allowing visitors to type their business challenges directly without searching for an input field.
+- **Globally Diverse Starter Prompt Chips (`#362`, Parent `#359`)**: Replaced location-restricted prompt chips with globally relevant business journey chips covering enterprise launches, commercial architecture, corporate retreats, agricultural export logistics, and book publishing across both `public/index.php` and `public/assets/js/directory.js`.
+- **Service Worker Cache Identifier (`#359`)**: Bumped client cache version to `bbiz-pwa-v0.32.2` in `public/sw.js`.
+
 ## [0.32.1] - 2026-11-16
 ### Fixed
 - **Decoupled Concierge Cache & Cache Poisoning Defense (`#349`, Parent `#348`)**: Refactored `ConciergeService` and `public/api/concierge.php` to decouple response caching from entity presentation. The 15-minute response cache now stores lightweight business IDs and contextual match metadata rather than full entity cards, dynamically re-hydrating listings strictly from live approved database records via `hydrateApprovedBusinesses()`. Quarantined or deleted businesses are evicted immediately from cached responses without waiting for TTL expiry (remediates Pass-5 Adversarial HIGH-01).
