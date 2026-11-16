@@ -5787,6 +5787,38 @@ assertTrue(
 
 $pdo->prepare("DELETE FROM rate_limits WHERE ip_hmac IN (:ip1, :ip2)")->execute([':ip1' => $testIpHmac, ':ip2' => $cachedIpHmac]);
 
+// 62a (#370): Compound Phrase Entity Normalization & Disambiguation
+$tbTokens = \BusherianBiasharas\Services\CategoryMatcher::extractMeaningfulTokens('I would like a team building venue near Nairobi');
+assertTrue(
+    in_array('teambuilding', $tbTokens, true) &&
+    !in_array('building', $tbTokens, true) &&
+    !in_array('team', $tbTokens, true),
+    '62a (#370): CategoryMatcher normalizes "team building" to atomic "teambuilding" token without unigram fragmentation'
+);
+
+// 62b (#370): Search Specialties Team Building vs Construction Isolation
+$tbSpecs = \BusherianBiasharas\Services\CategoryMatcher::searchSpecialties($pdo, 'I would like a team building venue near Nairobi', 6);
+$tbSpecNames = array_column($tbSpecs, 'specialty_name');
+assertTrue(
+    in_array('Team Building & Bush Expeditions', $tbSpecNames, true) &&
+    in_array('Hotel, Boutique Resort & Airbnb', $tbSpecNames, true) &&
+    !in_array('Hardware, Timber & Building Materials', $tbSpecNames, true) &&
+    !in_array('Building & General Contractor', $tbSpecNames, true),
+    '62b (#370): searchSpecialties maps team building queries to hospitality/retreats and suppresses construction categories'
+);
+
+// 62c (#370): Concierge Candidate Retrieval returns The Last Village Lodge for team building query
+$tbCandidates = \BusherianBiasharas\Services\ConciergeRetriever::retrieveCandidates($pdo, [
+    'query' => 'I would like a team building venue near Nairobi'
+]);
+$directNames = array_column($tbCandidates['direct_matches'], 'name');
+assertTrue(
+    in_array('The Last Village Lodge', $directNames, true) &&
+    !in_array('Prescott Engineering Solutions', $directNames, true) &&
+    ($tbCandidates['query_intent']['detected_cluster']['cluster_key'] ?? '') === 'events_retreats',
+    '62c (#370): ConciergeRetriever matches The Last Village Lodge as Direct Match for team building venue and excludes construction'
+);
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');

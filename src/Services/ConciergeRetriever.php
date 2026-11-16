@@ -27,8 +27,8 @@ final class ConciergeRetriever
      * B2B & Corporate intent indicator keywords.
      */
     private const B2B_CUE_WORDS = [
-        'lpo', 'corporate', 'tender', 'b2b', 'procurement', 'invoice', 'bulk',
-        'enterprise', 'company', 'institution', 'contractor', 'vendor', 'supplier',
+        'lpo', 'lpos', 'corporate', 'corporate_retreat', 'corporate_offsite', 'tender', 'tenders', 'b2b', 'procurement', 'invoice', 'invoices', 'bulk',
+        'enterprise', 'company', 'companies', 'institution', 'contractor', 'vendor', 'vendors', 'supplier', 'suppliers',
     ];
 
     /**
@@ -169,8 +169,9 @@ final class ConciergeRetriever
             $isDirectMatch = in_array($catId, $directSpecialtyIds, true)
                 || ($secCatId !== null && in_array($secCatId, $directSpecialtyIds, true));
 
-            if (!$isDirectMatch && empty($directSpecialtyIds)) {
-                $isDirectMatch = self::matchesDirectKeywordThreshold($biz, $intent['tokens']);
+            // Also check high-confidence direct capability matching (#370)
+            if (!$isDirectMatch) {
+                $isDirectMatch = self::matchesDirectCapability($biz, $intent);
             }
 
             // Calculate Base Scores
@@ -360,10 +361,11 @@ final class ConciergeRetriever
         $hasOpenNow = !empty($extraContext['open_now_only']);
 
         foreach ($tokens as $token) {
-            if (in_array($token, self::B2B_CUE_WORDS, true)) {
+            $tokClean = strtolower(trim($token));
+            if (in_array($tokClean, self::B2B_CUE_WORDS, true) || str_starts_with($tokClean, 'lpo') || str_contains($tokClean, 'corporate')) {
                 $hasB2b = true;
             }
-            if (in_array($token, self::TEMPORAL_CUE_WORDS, true)) {
+            if (in_array($tokClean, self::TEMPORAL_CUE_WORDS, true)) {
                 $hasOpenNow = true;
             }
         }
@@ -454,6 +456,36 @@ final class ConciergeRetriever
     }
 
     /**
+     * Check if a listing has verified direct capability matching the query intent (#370).
+     * Guards against false-positive cross-cluster pollution (e.g. construction appearing in retreat queries).
+     */
+    private static function matchesDirectCapability(array $biz, array $intent): bool
+    {
+        $tokens = $intent['tokens'] ?? [];
+        if (empty($tokens)) {
+            return false;
+        }
+
+        // If an ecosystem cluster was strongly identified (e.g. events_retreats),
+        // ensure candidate belongs to the cluster or its adjacent companion sectors
+        $detectedCluster = $intent['detected_cluster']['cluster_key'] ?? null;
+        if ($detectedCluster !== null) {
+            $clusterSpecs = NeedGraph::ECOSYSTEM_CLUSTERS[$detectedCluster]['specialties'] ?? [];
+            if (!empty($clusterSpecs)) {
+                $bizCat = (string)($biz['category_name'] ?? '');
+                $bizSecCat = (string)($biz['secondary_category_name'] ?? '');
+                $inCluster = in_array($bizCat, $clusterSpecs, true)
+                    || ($bizSecCat !== '' && in_array($bizSecCat, $clusterSpecs, true));
+                if (!$inCluster) {
+                    return false;
+                }
+            }
+        }
+
+        return self::matchesDirectKeywordThreshold($biz, $tokens);
+    }
+
+    /**
      * Check if a listing has sufficient direct keyword matches to be evaluated as direct.
      */
     private static function matchesDirectKeywordThreshold(array $biz, array $tokens): bool
@@ -462,15 +494,22 @@ final class ConciergeRetriever
             return false;
         }
 
-        $haystack = strtolower(($biz['name'] ?? '') . ' ' . ($biz['tagline'] ?? '') . ' ' . ($biz['keywords_norm'] ?? ''));
+        $haystack = strtolower(($biz['name'] ?? '') . ' ' . ($biz['tagline'] ?? '') . ' ' . ($biz['description'] ?? '') . ' ' . ($biz['keywords_norm'] ?? ''));
+        $haystackCollapsed = preg_replace('/[^a-z0-9]+/i', '', $haystack);
+
         $matched = 0;
         foreach ($tokens as $token) {
-            if (strlen($token) >= 3 && str_contains($haystack, $token)) {
+            $tokClean = strtolower(trim($token));
+            if (strlen($tokClean) < 3) {
+                continue;
+            }
+            $tokCollapsed = preg_replace('/[^a-z0-9]+/i', '', $tokClean);
+            if (str_contains($haystack, $tokClean) || str_contains($haystack, str_replace('_', ' ', $tokClean)) || (strlen($tokCollapsed) >= 4 && str_contains($haystackCollapsed, $tokCollapsed))) {
                 $matched++;
             }
         }
 
-        return $matched >= 2;
+        return $matched >= 1 && (count($tokens) === 1 || $matched >= 2);
     }
 
     /**
@@ -534,15 +573,20 @@ final class ConciergeRetriever
             }
         }
 
-        // Keyword Overlap
+        // Keyword Overlap (#370: support compound entity phrases and collapsed stems)
         $keywords = strtolower((string)($biz['keywords_norm'] ?? ''));
         $digest = strtolower((string)($biz['capability_digest'] ?? ''));
+        $keywordsCollapsed = preg_replace('/[^a-z0-9]+/i', '', $keywords);
+        $digestCollapsed = preg_replace('/[^a-z0-9]+/i', '', $digest);
         $tokenHits = 0;
         foreach ($intent['tokens'] as $tok) {
-            if (strlen($tok) >= 3) {
-                if (str_contains($keywords, $tok)) {
+            $tokClean = strtolower(trim($tok));
+            if (strlen($tokClean) >= 3) {
+                $tokSpaced = str_replace(['_', 'teambuilding', 'bodybuilding'], [' ', 'team building', 'body building'], $tokClean);
+                $tokCollapsed = preg_replace('/[^a-z0-9]+/i', '', $tokClean);
+                if (str_contains($keywords, $tokClean) || str_contains($keywords, $tokSpaced) || (strlen($tokCollapsed) >= 4 && str_contains($keywordsCollapsed, $tokCollapsed))) {
                     $tokenHits++;
-                } elseif (str_contains($digest, $tok)) {
+                } elseif (str_contains($digest, $tokClean) || str_contains($digest, $tokSpaced) || (strlen($tokCollapsed) >= 4 && str_contains($digestCollapsed, $tokCollapsed))) {
                     $tokenHits += 0.5;
                 }
             }
