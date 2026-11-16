@@ -14,6 +14,7 @@ use BusherianBiasharas\Services\PhotoUploader;
 
 bbiz_send_security_headers(false);
 
+$appVersion = trim((string)@file_get_contents(dirname(__DIR__) . '/VERSION') ?: '0.32.3');
 $pdo = Database::getConnection();
 $currentOwner = OwnerAuth::getCurrentOwner($pdo);
 $isAdminVisitor = AdminAuth::isAuthenticated();
@@ -172,7 +173,7 @@ $initialPagination = [
   <meta name="description" content="Discover and support verified businesses owned by alumni of Alliance High School (AHS) and Alliance Girls High School (AGHS) — Strong to Serve &amp; Walk in the Light.">
 <?= bbiz_head_meta_tags('Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS)', 'Discover and support verified businesses owned by alumni of Alliance High School (AHS) and Alliance Girls High School (AGHS) — Strong to Serve & Walk in the Light.', '/') ?>
   <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode($appVersion) ?>">
 </head>
 <body>
 
@@ -274,17 +275,28 @@ $initialPagination = [
       <div class="concierge-panel-header">
         <div class="concierge-panel-title">
           <span class="concierge-badge">★ Biashara Advisor</span>
-          <span class="concierge-subtitle">Describe your complex business need or project in plain language</span>
+          <span class="concierge-subtitle">Describe your business challenge, project, or journey in plain language</span>
         </div>
-        <button type="button" id="btn-concierge-exit" data-testid="btn-concierge-exit" class="btn-concierge-exit" title="Return to standard keyword search">✕ Exit Advisor Mode</button>
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+          <button type="button" id="btn-concierge-reset-consent" data-testid="btn-concierge-reset-consent" style="background:transparent;border:none;color:#6B7280;font-size:0.75rem;cursor:pointer;text-decoration:underline;" title="Withdraw AI consent and reset Advisor preferences">Withdraw AI Consent</button>
+          <button type="button" id="btn-concierge-exit" data-testid="btn-concierge-exit" class="btn-concierge-exit" title="Return to standard keyword search">✕ Exit Advisor Mode</button>
+        </div>
+      </div>
+      <div class="concierge-query-bar" data-testid="concierge-query-bar">
+        <div class="concierge-query-input-wrap">
+          <label for="concierge-panel-input" style="display:none;">Describe your business need or project</label>
+          <input type="text" id="concierge-panel-input" data-testid="concierge-panel-input" class="input-control concierge-panel-input"
+            placeholder="Type your project or business challenge (e.g. Planning a company launch, commercial build, corporate retreat)..." />
+        </div>
+        <button type="button" id="btn-concierge-panel-submit" data-testid="btn-concierge-panel-submit" class="btn btn-gold btn-concierge-submit">★ Ask Advisor</button>
       </div>
       <div class="concierge-starter-prompts" data-testid="concierge-starter-prompts">
         <span class="concierge-starter-label">Try asking:</span>
-        <button type="button" class="starter-prompt-chip" data-prompt="Launching a new company in Nairobi">🚀 Launching a new company in Nairobi</button>
+        <button type="button" class="starter-prompt-chip" data-prompt="Launching a new enterprise or company">🚀 Launching a new company</button>
         <button type="button" class="starter-prompt-chip" data-prompt="Looking for an architect & contractor for a commercial build">🏗️ Commercial architecture &amp; build</button>
-        <button type="button" class="starter-prompt-chip" data-prompt="Planning a corporate leadership offsite in Naivasha">🏕️ Corporate offsite in Naivasha</button>
-        <button type="button" class="starter-prompt-chip" data-prompt="Exporting avocados & organic produce to Europe">🥑 Exporting avocados &amp; organic produce</button>
-        <button type="button" class="starter-prompt-chip" data-prompt="Publishing an industry whitepaper & book launch">📚 Book publishing &amp; whitepaper launch</button>
+        <button type="button" class="starter-prompt-chip" data-prompt="Planning a corporate leadership offsite or retreat">🏕️ Corporate retreat or offsite</button>
+        <button type="button" class="starter-prompt-chip" data-prompt="Exporting avocados & organic produce to Europe">🥑 Agricultural export &amp; logistics</button>
+        <button type="button" class="starter-prompt-chip" data-prompt="Publishing an industry whitepaper & book launch">📚 Book publishing &amp; communications</button>
       </div>
     </div>
   </div>
@@ -433,6 +445,12 @@ $initialPagination = [
             <li>All recommended contacts are hydrated strictly from verified alumni directory records.</li>
           </ul>
         </div>
+        <div class="concierge-adult-check" style="margin:0.85rem 0 1rem 0;padding:0.65rem 0.75rem;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;">
+          <label style="display:flex;align-items:flex-start;gap:0.5rem;cursor:pointer;font-size:0.82rem;color:#1E293B;">
+            <input type="checkbox" id="concierge-adult-attestation" data-testid="concierge-adult-attestation" style="margin-top:0.15rem;" checked>
+            <span><strong>Adult Attestation (Kenya DPA 2019 s. 33):</strong> I confirm that I am 18 years of age or older, and agree to the privacy terms and temporary query processing described above.</span>
+          </label>
+        </div>
         <div style="display:flex;justify-content:flex-end;gap:0.6rem;align-items:center;">
           <button type="button" id="btn-concierge-consent-cancel" data-testid="concierge-consent-cancel" class="btn btn-outline" style="font-size:0.85rem;">Cancel</button>
           <button type="button" id="btn-concierge-consent-accept" data-testid="concierge-consent-accept" class="btn btn-green" style="font-size:0.85rem;">Agree &amp; Open Advisor</button>
@@ -470,7 +488,7 @@ $initialPagination = [
     window.INITIAL_PAGINATION = <?= bbiz_json_for_html_script($initialPagination) ?>;
   </script>
   <script src="/assets/vendor/leaflet/leaflet.js"></script>
-  <script src="/assets/js/consent-metrics.js"></script>
-  <script src="/assets/js/directory.js"></script>
+  <script src="/assets/js/consent-metrics.js?v=<?= urlencode($appVersion) ?>"></script>
+  <script src="/assets/js/directory.js?v=<?= urlencode($appVersion) ?>"></script>
 </body>
 </html>

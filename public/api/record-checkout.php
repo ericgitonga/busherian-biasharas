@@ -49,7 +49,18 @@ try {
         $viewer['is_admin']
     );
 
-    echo json_encode($result, JSON_UNESCAPED_SLASHES);
+    // Public anonymized response (M-12): redact internal floating-point engagement scores and counts
+    $publicResult = [
+        'status' => $result['status'] ?? 'ok',
+        'recorded' => !empty($result['recorded']),
+        'deduplicated' => !empty($result['deduplicated']),
+        'signal_group' => $result['signal_group'] ?? null,
+    ];
+    if (isset($result['reason'])) {
+        $publicResult['reason'] = $result['reason'];
+    }
+
+    echo json_encode($publicResult, JSON_UNESCAPED_SLASHES);
 } catch (\Throwable $e) {
     error_log('[api/record-checkout.php] Error: ' . $e->getMessage());
     http_response_code(500);

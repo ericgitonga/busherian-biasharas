@@ -69,6 +69,8 @@
     shortlistExportBtn: document.getElementById('btn-export-shortlist'),
     conciergeToggleBtn: document.getElementById('btn-concierge-toggle'),
     conciergePanel: document.getElementById('concierge-panel'),
+    conciergePanelInput: document.getElementById('concierge-panel-input'),
+    conciergePanelSubmit: document.getElementById('btn-concierge-panel-submit'),
     conciergeExitBtn: document.getElementById('btn-concierge-exit'),
     conciergeModal: document.getElementById('concierge-consent-modal'),
     conciergeAcceptBtn: document.getElementById('btn-concierge-consent-accept'),
@@ -108,6 +110,15 @@
     } catch (_) {
       return '';
     }
+  }
+
+  function isValidLatLng(lat, lng) {
+    if (lat === null || lat === '' || typeof lat === 'undefined') return false;
+    if (lng === null || lng === '' || typeof lng === 'undefined') return false;
+    const nLat = Number(lat);
+    const nLng = Number(lng);
+    return !isNaN(nLat) && !isNaN(nLng) && isFinite(nLat) && isFinite(nLng) &&
+           nLat >= -90 && nLat <= 90 && nLng >= -180 && nLng <= 180;
   }
 
   function withBookingAttribution(rawUrl) {
@@ -232,7 +243,7 @@
   }
 
   function getFocusedBusiness() {
-    const pinned = state.businesses.filter(b => b.latitude !== null && b.longitude !== null);
+    const pinned = state.businesses.filter(b => b && isValidLatLng(b.latitude, b.longitude));
     if (pinned.length === 1) {
       return pinned[0];
     }
@@ -633,7 +644,7 @@
               ${needBadge}
               ${(biz.is_bookable || biz.booking_enabled || biz.booking_url) ? `<span class="badge-bookable" data-testid="biz-card-bookable-badge">📅 Book Appointment</span>` : ''}
               ${biz.momentum_badge === 'popular' ? `<span class="badge-momentum badge-popular" data-testid="biz-card-popular-badge" title="Frequently checked out by fellow Busherians recently">🔥 Popular with Busherians</span>` : ''}
-              ${biz.momentum_badge === 'new' ? `<span class="badge-momentum badge-new" data-testid="biz-card-new-badge" title="Joined the directory within the last two weeks">✨ New on Biasharas</span>` : ''}
+              ${biz.momentum_badge === 'new' ? `<span class="badge-momentum badge-new" data-testid="biz-card-new-badge" title="Joined the directory within the last week">✨ New on Biasharas</span>` : ''}
             </span>
             ${distBadge}
           </div>
@@ -727,22 +738,49 @@
     if (els.resultsCount) {
       els.resultsCount.textContent = 'Biashara Advisor is ready';
     }
+    const currentQ = escapeHtml(state.searchQuery || (els.searchInput ? els.searchInput.value : '') || '');
     els.cardsGrid.innerHTML = `
-      <div data-testid="concierge-welcome" style="grid-column:1/-1;background:linear-gradient(180deg, #FFFDF8 0%, #FFFFFF 100%);padding:2rem;border-radius:12px;text-align:center;border:1.5px dashed #FCD34D;">
+      <div data-testid="concierge-welcome" style="grid-column:1/-1;background:linear-gradient(180deg, #FFFDF8 0%, #FFFFFF 100%);padding:2rem 1.5rem;border-radius:12px;text-align:center;border:1.5px dashed #FCD34D;">
         <span style="font-size:2rem;display:block;margin-bottom:0.5rem;" aria-hidden="true">🤖</span>
         <h3 style="margin:0 0 0.5rem 0;color:#78350F;font-size:1.15rem;">Ask Biashara Advisor</h3>
         <p style="margin:0 0 1.25rem 0;color:#6B7280;font-size:0.9rem;max-width:540px;margin-left:auto;margin-right:auto;line-height:1.5;">
-          Describe your complex project, journey, or business challenge. The Advisor uses our Kenyan need graph to recommend verified alumni practitioners and companion partners.
+          Describe your project, journey, or business challenge anywhere in the world. The Advisor maps verified alumni practitioners and companion partners across complete business lifecycles.
         </p>
+        <div style="max-width:540px;margin:0 auto 1.25rem auto;display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <input type="text" id="concierge-welcome-input" data-testid="concierge-welcome-input" class="input-control" style="flex:1;min-width:240px;padding:0.65rem 0.95rem;border:1.5px solid #FCD34D;border-radius:8px;font-size:0.92rem;background:#FFFFFF;" placeholder="Type your project or business challenge here..." value="${currentQ}" />
+          <button type="button" id="btn-concierge-welcome-submit" data-testid="btn-concierge-welcome-submit" class="btn btn-gold btn-concierge-submit" style="white-space:nowrap;padding:0.65rem 1.15rem;font-weight:700;">★ Ask Advisor</button>
+        </div>
         <div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;">
-          <button type="button" class="starter-prompt-chip" data-prompt="Launching a new company in Nairobi">🚀 Launching a new company in Nairobi</button>
+          <button type="button" class="starter-prompt-chip" data-prompt="Launching a new enterprise or company">🚀 Launching a new company</button>
           <button type="button" class="starter-prompt-chip" data-prompt="Looking for an architect & contractor for a commercial build">🏗️ Commercial architecture &amp; build</button>
-          <button type="button" class="starter-prompt-chip" data-prompt="Planning a corporate leadership offsite in Naivasha">🏕️ Corporate offsite in Naivasha</button>
-          <button type="button" class="starter-prompt-chip" data-prompt="Exporting avocados & organic produce to Europe">🥑 Exporting avocados &amp; organic produce</button>
+          <button type="button" class="starter-prompt-chip" data-prompt="Planning a corporate leadership offsite or retreat">🏕️ Corporate retreat or offsite</button>
+          <button type="button" class="starter-prompt-chip" data-prompt="Exporting avocados & organic produce to Europe">🥑 Agricultural export &amp; logistics</button>
+          <button type="button" class="starter-prompt-chip" data-prompt="Publishing an industry whitepaper & book launch">📚 Book publishing &amp; communications</button>
         </div>
       </div>
     `;
     renderPaginationControls(0, 1, 1, 0, 0);
+
+    const welcomeInput = document.getElementById('concierge-welcome-input');
+    const welcomeSubmit = document.getElementById('btn-concierge-welcome-submit');
+    if (welcomeInput && welcomeSubmit) {
+      welcomeSubmit.addEventListener('click', () => {
+        const val = (welcomeInput.value || '').trim();
+        if (val) {
+          if (els.searchInput) els.searchInput.value = val;
+          const panelInput = document.getElementById('concierge-panel-input');
+          if (panelInput) panelInput.value = val;
+          state.searchQuery = val;
+          runConciergeSearch(val);
+        }
+      });
+      welcomeInput.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          welcomeSubmit.click();
+        }
+      });
+    }
   }
 
   function getFollowUpPrompts(intent) {
@@ -805,7 +843,11 @@
       extraLoadedBusinesses.set(Number(b.id), b);
     });
     state.businesses = allMatches;
-    renderInteractiveMap();
+    try {
+      renderInteractiveMap();
+    } catch (mapErr) {
+      console.warn('Map rendering in concierge failed safely:', mapErr);
+    }
 
     let html = '';
 
@@ -855,7 +897,7 @@
           <h3 style="margin:0.8rem 0 0.35rem 0;font-size:1.05rem;color:#7B1113;display:flex;align-items:center;gap:0.4rem;">
             🌐 Smart Ecosystem Suggestions <span class="concierge-tier-count">(${ecosystemMatches.length})</span>
           </h3>
-          <p style="margin:0 0 0.6rem 0;font-size:0.8rem;color:#6B7280;">Adjacent partners (upstream prerequisites, downstream execution, companion services) from the Kenyan need graph.</p>
+          <p style="margin:0 0 0.6rem 0;font-size:0.8rem;color:#6B7280;">Complementary partners (upstream prerequisites, downstream execution, companion services) across your business journey.</p>
         </div>
       `;
       html += ecosystemMatches.map(b => renderSingleBusinessCard(b, { isConcierge: true, isEcosystem: true })).join('');
@@ -933,15 +975,17 @@
           <div class="concierge-typing-dots">
             <span></span><span></span><span></span>
           </div>
-          <p>Consulting Kenyan biashara network &amp; need graph…</p>
+          <p>Consulting verified alumni network &amp; business journey graph…</p>
         </div>
       `;
     }
 
     try {
+      const consentPayload = getConciergeConsentPayload();
       const payload = {
         query: q,
-        consent: 1,
+        consent: consentPayload,
+        adult_attestation: true,
         b2b_only: state.b2bReady ? 1 : 0,
         open_now_only: state.openNow ? 1 : 0,
         latitude: state.userLat,
@@ -952,6 +996,7 @@
         headers: {
           'Content-Type': 'application/json',
           'X-BBIZ-Consent': '1',
+          'X-BBIZ-Adult': '1',
         },
         body: JSON.stringify(payload),
       });
@@ -959,15 +1004,38 @@
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         const errMsg = errData.message || 'Unable to retrieve Biashara Advisor recommendations at this moment.';
+        const retryAfterHeader = parseInt(res.headers.get('Retry-After') || '', 10);
+        const retryAfterBody = parseInt(errData.retry_after || '', 10);
+        const retryAfterSec = (!isNaN(retryAfterHeader) && retryAfterHeader > 0)
+          ? retryAfterHeader
+          : ((!isNaN(retryAfterBody) && retryAfterBody > 0) ? retryAfterBody : 0);
+
         els.cardsGrid.innerHTML = `
           <div data-testid="concierge-error" role="alert" style="grid-column:1/-1;background:#FEF2F2;padding:1.5rem;border-radius:12px;text-align:center;border:2px solid #DC2626;">
             <h3 style="margin:0 0 0.45rem 0;color:#991B1B;">Biashara Advisor Notice</h3>
             <p style="margin:0 0 0.9rem 0;color:#7F1D1D;font-size:0.88rem;">${escapeHtml(errMsg)}</p>
-            <button type="button" id="btn-retry-concierge" data-testid="concierge-retry" class="btn btn-crimson">🔄 Try Again</button>
+            <button type="button" id="btn-retry-concierge" data-testid="concierge-retry" class="btn btn-crimson" ${retryAfterSec > 0 ? 'disabled' : ''}>${retryAfterSec > 0 ? `Wait ${retryAfterSec}s…` : '🔄 Try Again'}</button>
           </div>
         `;
         const retryBtn = document.getElementById('btn-retry-concierge');
         if (retryBtn) {
+          if (retryAfterSec > 0) {
+            let remaining = retryAfterSec;
+            const cdTimer = setInterval(() => {
+              remaining--;
+              if (remaining <= 0) {
+                clearInterval(cdTimer);
+                if (retryBtn && retryBtn.isConnected) {
+                  retryBtn.disabled = false;
+                  retryBtn.textContent = '🔄 Try Again';
+                }
+              } else {
+                if (retryBtn && retryBtn.isConnected) {
+                  retryBtn.textContent = `Wait ${remaining}s…`;
+                }
+              }
+            }, 1000);
+          }
           retryBtn.addEventListener('click', () => runConciergeSearch(q));
         }
         renderPaginationControls(0, 1, 1, 0, 0);
@@ -1365,7 +1433,7 @@
   function renderInteractiveMap() {
     renderMapFocusBar();
     if (!els.mapCanvas) return;
-    const allPinned = state.businesses.filter(b => b.latitude !== null && b.longitude !== null);
+    const allPinned = state.businesses.filter(b => b && isValidLatLng(b.latitude, b.longitude));
 
     // Isolate the single selected business on the map whenever a specific business is selected or routed
     const isolatedBizId = state.activeRoute
@@ -1441,9 +1509,11 @@
     const boundsPoints = [];
     const focused = getFocusedBusiness();
 
-    if (state.userLat !== null && state.userLng !== null && !state.activeRoute) {
+    if (isValidLatLng(state.userLat, state.userLng) && !state.activeRoute) {
+      const uLat = Number(state.userLat);
+      const uLng = Number(state.userLng);
       const radiusMeters = (Number(state.radiusKm) || 2) * 1000;
-      window.L.circle([state.userLat, state.userLng], {
+      window.L.circle([uLat, uLng], {
         radius: radiusMeters,
         color: '#114B3E',
         weight: 2,
@@ -1452,7 +1522,7 @@
         fillOpacity: 0.08,
       }).addTo(markersLayer);
 
-      const userDot = window.L.circleMarker([state.userLat, state.userLng], {
+      const userDot = window.L.circleMarker([uLat, uLng], {
         radius: 8,
         color: '#ffffff',
         weight: 3,
@@ -1460,10 +1530,13 @@
         fillOpacity: 1,
       }).addTo(markersLayer);
       userDot.bindTooltip('Your Current Location', { direction: 'top', offset: [0, -8] });
-      boundsPoints.push([state.userLat, state.userLng]);
+      boundsPoints.push([uLat, uLng]);
     }
 
     visiblePinned.forEach((b) => {
+      if (!isValidLatLng(b.latitude, b.longitude)) return;
+      const bLat = Number(b.latitude);
+      const bLng = Number(b.longitude);
       const isAghs = b.school_badge === 'AGHS' || b.school_badge === 'BOTH';
       const bg = isAghs
         ? 'linear-gradient(135deg, #114B3E 0%, #1F513F 32%, #582428 68%, #7B1113 100%)'
@@ -1480,14 +1553,14 @@
         iconAnchor: [0, 0],
       });
 
-      const marker = window.L.marker([b.latitude, b.longitude], { icon }).addTo(markersLayer);
+      const marker = window.L.marker([bLat, bLng], { icon }).addTo(markersLayer);
       marker.on('click', () => {
         state.focusedBusinessId = b.id;
         renderInteractiveMap();
         openBusinessModal(b.id);
       });
       if (!state.activeRoute) {
-        boundsPoints.push([b.latitude, b.longitude]);
+        boundsPoints.push([bLat, bLng]);
       }
     });
 
@@ -1503,34 +1576,37 @@
         iconSize: [20, 20],
         iconAnchor: [10, 10],
       });
-      const startMarker = window.L.marker([state.activeRoute.fromLat, state.activeRoute.fromLng], {
-        icon: startIcon,
-        draggable: true,
-      }).addTo(routeLayer);
-      startMarker.bindTooltip(`Start: ${state.activeRoute.originLabel} (Drag blue dot to adjust)`, { permanent: false, direction: 'top' });
-      startMarker.on('dragend', async (ev) => {
-        const pos = ev.target.getLatLng();
-        if (pos && state.activeRoute && state.activeRoute.biz) {
-          const customLbl = `Pinned on Map (${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)})`;
-          saveCustomOriginToSession(pos.lat, pos.lng, customLbl);
-          await calculateRouteFromOrigin(state.activeRoute.biz, {
-            lat: pos.lat,
-            lng: pos.lng,
-            accuracy: 10,
-            isCustomOrigin: true,
-            label: customLbl,
-          });
-        }
-      });
+      if (isValidLatLng(state.activeRoute.fromLat, state.activeRoute.fromLng)) {
+        const startMarker = window.L.marker([Number(state.activeRoute.fromLat), Number(state.activeRoute.fromLng)], {
+          icon: startIcon,
+          draggable: true,
+        }).addTo(routeLayer);
+        startMarker.bindTooltip(`Start: ${state.activeRoute.originLabel} (Drag blue dot to adjust)`, { permanent: false, direction: 'top' });
+        startMarker.on('dragend', async (ev) => {
+          const pos = ev.target.getLatLng();
+          if (pos && state.activeRoute && state.activeRoute.biz) {
+            const customLbl = `Pinned on Map (${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)})`;
+            saveCustomOriginToSession(pos.lat, pos.lng, customLbl);
+            await calculateRouteFromOrigin(state.activeRoute.biz, {
+              lat: pos.lat,
+              lng: pos.lng,
+              accuracy: 10,
+              isCustomOrigin: true,
+              label: customLbl,
+            });
+          }
+        });
+      }
 
       leafletMap.fitBounds(mainLine.getBounds(), { padding: [50, 50], maxZoom: 16, animate: true });
       return;
     }
 
-    if (boundsPoints.length === 1) {
-      leafletMap.setView(boundsPoints[0], 15, { animate: true });
-    } else if (boundsPoints.length > 1) {
-      const bounds = window.L.latLngBounds(boundsPoints);
+    const validBoundsPoints = boundsPoints.filter(pt => Array.isArray(pt) && pt.length >= 2 && isValidLatLng(pt[0], pt[1]));
+    if (validBoundsPoints.length === 1) {
+      leafletMap.setView(validBoundsPoints[0], 15, { animate: true });
+    } else if (validBoundsPoints.length > 1) {
+      const bounds = window.L.latLngBounds(validBoundsPoints);
       leafletMap.fitBounds(bounds, { padding: [45, 45], maxZoom: 15, animate: true });
     }
   }
@@ -1905,15 +1981,14 @@
     els.searchInput.addEventListener('input', (e) => {
       syncClearBtn();
       state.searchQuery = e.target.value.trim();
+      if (els.conciergePanelInput) els.conciergePanelInput.value = e.target.value;
+      const welcomeInput = document.getElementById('concierge-welcome-input');
+      if (welcomeInput) welcomeInput.value = e.target.value;
       clearTimeout(timer);
       if (state.isConciergeMode) {
-        timer = setTimeout(() => {
-          if (state.searchQuery.length >= 3) {
-            runConciergeSearch(state.searchQuery);
-          } else if (state.searchQuery.length === 0) {
-            renderConciergeWelcome();
-          }
-        }, 400);
+        if (state.searchQuery.length === 0) {
+          renderConciergeWelcome();
+        }
       } else {
         timer = setTimeout(() => {
           if (state.searchQuery.length >= 2 && window.BBizMetrics) {
@@ -1928,7 +2003,14 @@
         e.preventDefault();
         clearTimeout(timer);
         if (state.isConciergeMode) {
-          runConciergeSearch(state.searchQuery);
+          if (state.searchQuery.length >= 2) {
+            if (!hasConciergeConsent()) {
+              state._pendingStarterPrompt = state.searchQuery;
+              openConciergeConsentModal();
+              return;
+            }
+            runConciergeSearch(state.searchQuery);
+          }
         } else {
           fetchBusinesses();
         }
@@ -1937,6 +2019,9 @@
     if (els.searchClearBtn) {
       els.searchClearBtn.addEventListener('click', () => {
         els.searchInput.value = '';
+        if (els.conciergePanelInput) els.conciergePanelInput.value = '';
+        const welcomeInput = document.getElementById('concierge-welcome-input');
+        if (welcomeInput) welcomeInput.value = '';
         syncClearBtn();
         state.searchQuery = '';
         clearTimeout(timer);
@@ -2567,25 +2652,63 @@
     }
     if (els.searchInput) {
       els.searchInput.placeholder = active
-        ? "Describe your business need (e.g. Launching a company in Nairobi, building a commercial warehouse, planning an offsite)..."
+        ? "Describe your business challenge or project (e.g. Planning a company launch, commercial build, corporate retreat)..."
         : "Search businesses, services, or Swahili terms (e.g., wakili, daktari, solar, coffee, Westlands)...";
     }
 
     if (active) {
+      if (els.conciergePanelInput && els.searchInput) {
+        els.conciergePanelInput.value = els.searchInput.value;
+        setTimeout(() => els.conciergePanelInput.focus(), 60);
+      }
       if (state.searchQuery && state.searchQuery.length >= 2) {
-        runConciergeSearch(state.searchQuery);
+        if (!hasConciergeConsent()) {
+          state._pendingStarterPrompt = state.searchQuery;
+          openConciergeConsentModal();
+        } else {
+          runConciergeSearch(state.searchQuery);
+        }
       } else {
         renderConciergeWelcome();
       }
     } else {
+      if (els.conciergePanelInput) {
+        els.conciergePanelInput.value = '';
+      }
       fetchBusinesses();
     }
   }
 
+  function hasConciergeConsent() {
+    try {
+      const raw = localStorage.getItem('bbiz_concierge_consent');
+      if (!raw) return false;
+      if (raw === 'granted') return true;
+      const parsed = JSON.parse(raw);
+      return !!(parsed && parsed.granted);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function getConciergeConsentPayload() {
+    try {
+      const raw = localStorage.getItem('bbiz_concierge_consent');
+      if (!raw) return { granted: false };
+      if (raw === 'granted') {
+        return { granted: true, adult_attested: true, notice_version: '2026-11-v1' };
+      }
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch (e) {}
+    return { granted: true, adult_attested: true, notice_version: '2026-11-v1' };
+  }
+
   if (els.conciergeToggleBtn) {
     els.conciergeToggleBtn.addEventListener('click', () => {
-      const hasConsent = localStorage.getItem('bbiz_concierge_consent') === 'granted';
-      if (!hasConsent && !state.isConciergeMode) {
+      if (!hasConciergeConsent() && !state.isConciergeMode) {
         openConciergeConsentModal();
         return;
       }
@@ -2595,10 +2718,44 @@
 
   if (els.conciergeAcceptBtn) {
     els.conciergeAcceptBtn.addEventListener('click', () => {
-      localStorage.setItem('bbiz_concierge_consent', 'granted');
+      const adultCheck = document.getElementById('concierge-adult-attestation');
+      if (adultCheck && !adultCheck.checked) {
+        alert('Please confirm that you are 18 years of age or older to use Biashara Advisor.');
+        return;
+      }
+      const record = {
+        granted: true,
+        adult_attested: true,
+        notice_version: '2026-11-v1',
+        consented_at: new Date().toISOString()
+      };
+      localStorage.setItem('bbiz_concierge_consent', JSON.stringify(record));
       closeConciergeConsentModal();
       setConciergeMode(true);
-      if (els.searchInput) els.searchInput.focus();
+      if (state._pendingStarterPrompt) {
+        const p = state._pendingStarterPrompt;
+        delete state._pendingStarterPrompt;
+        if (els.searchInput) {
+          els.searchInput.value = p;
+          state.searchQuery = p;
+          if (els.searchClearBtn) els.searchClearBtn.style.display = 'inline-flex';
+        }
+        runConciergeSearch(p);
+      } else if (els.searchInput) {
+        els.searchInput.focus();
+      }
+    });
+  }
+
+  const resetConsentBtn = document.getElementById('btn-concierge-reset-consent');
+  if (resetConsentBtn) {
+    resetConsentBtn.addEventListener('click', () => {
+      localStorage.removeItem('bbiz_concierge_consent');
+      if (els.searchInput) els.searchInput.value = '';
+      state.searchQuery = '';
+      if (els.searchClearBtn) els.searchClearBtn.style.display = 'none';
+      setConciergeMode(false);
+      alert('Your AI Advisor consent and preferences have been reset.');
     });
   }
 
@@ -2621,11 +2778,54 @@
       if (els.searchInput) {
         els.searchInput.value = '';
       }
+      if (els.conciergePanelInput) {
+        els.conciergePanelInput.value = '';
+      }
+      const welcomeInput = document.getElementById('concierge-welcome-input');
+      if (welcomeInput) {
+        welcomeInput.value = '';
+      }
       state.searchQuery = '';
       if (els.searchClearBtn) {
         els.searchClearBtn.style.display = 'none';
       }
       setConciergeMode(false);
+    });
+  }
+
+  if (els.conciergePanelSubmit && els.conciergePanelInput) {
+    const handlePanelSubmit = () => {
+      const q = (els.conciergePanelInput.value || '').trim();
+      if (!q) return;
+      if (!hasConciergeConsent()) {
+        state._pendingStarterPrompt = q;
+        openConciergeConsentModal();
+        return;
+      }
+      if (els.searchInput) {
+        els.searchInput.value = q;
+        if (els.searchClearBtn) els.searchClearBtn.style.display = 'inline-flex';
+      }
+      state.searchQuery = q;
+      runConciergeSearch(q);
+    };
+
+    els.conciergePanelSubmit.addEventListener('click', handlePanelSubmit);
+    els.conciergePanelInput.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        handlePanelSubmit();
+      }
+    });
+    els.conciergePanelInput.addEventListener('input', (ev) => {
+      const v = ev.target.value;
+      if (els.searchInput) {
+        els.searchInput.value = v;
+        if (els.searchClearBtn) els.searchClearBtn.style.display = v.length > 0 ? 'inline-flex' : 'none';
+      }
+      const welcomeInput = document.getElementById('concierge-welcome-input');
+      if (welcomeInput) welcomeInput.value = v;
+      state.searchQuery = v.trim();
     });
   }
 
@@ -2640,8 +2840,12 @@
     if (starterChip) {
       const p = starterChip.getAttribute('data-prompt');
       if (p) {
+        if (!hasConciergeConsent()) {
+          state._pendingStarterPrompt = p;
+          openConciergeConsentModal();
+          return;
+        }
         if (!state.isConciergeMode) {
-          localStorage.setItem('bbiz_concierge_consent', 'granted');
           setConciergeMode(true);
         }
         if (els.searchInput) {
@@ -2742,9 +2946,12 @@
     const initMode = (initParams.get('mode') || '').trim().toLowerCase();
     const initAdvisor = initParams.get('advisor');
     if (initMode === 'concierge' || initAdvisor === '1') {
-      localStorage.setItem('bbiz_concierge_consent', 'granted');
-      setConciergeMode(true);
-      needsInitialFetch = false;
+      if (hasConciergeConsent()) {
+        setConciergeMode(true);
+        needsInitialFetch = false;
+      } else {
+        openConciergeConsentModal();
+      }
     } else if (needsInitialFetch) {
       fetchBusinesses();
     }

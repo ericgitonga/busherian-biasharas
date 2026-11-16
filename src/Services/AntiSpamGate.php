@@ -383,28 +383,40 @@ final class AntiSpamGate
             $stmt15m = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ip AND action_type = :act AND created_at >= :since");
             $stmt15m->execute([':ip' => $ipHmac, ':act' => $actionType, ':since' => $now - 900]);
             if ((int)$stmt15m->fetchColumn() >= $limit15m) {
+                $oldestStmt = $pdo->prepare("SELECT MIN(created_at) FROM rate_limits WHERE ip_hmac = :ip AND action_type = :act AND created_at >= :since");
+                $oldestStmt->execute([':ip' => $ipHmac, ':act' => $actionType, ':since' => $now - 900]);
+                $oldestTs = (int)$oldestStmt->fetchColumn();
+                $retryAfter = max(1, ($oldestTs + 900) - $now);
                 if ($ownTx) {
                     $pdo->commit();
                 }
-                return ['allowed' => false, 'reason' => 'layer5_ip_rate_limit_15m'];
+                return ['allowed' => false, 'reason' => 'layer5_ip_rate_limit_15m', 'retry_after' => $retryAfter];
             }
 
             $stmt24h = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ip AND action_type = :act AND created_at >= :since");
             $stmt24h->execute([':ip' => $ipHmac, ':act' => $actionType, ':since' => $now - 86400]);
             if ((int)$stmt24h->fetchColumn() >= $limit24h) {
+                $oldestStmt = $pdo->prepare("SELECT MIN(created_at) FROM rate_limits WHERE ip_hmac = :ip AND action_type = :act AND created_at >= :since");
+                $oldestStmt->execute([':ip' => $ipHmac, ':act' => $actionType, ':since' => $now - 86400]);
+                $oldestTs = (int)$oldestStmt->fetchColumn();
+                $retryAfter = max(1, ($oldestTs + 86400) - $now);
                 if ($ownTx) {
                     $pdo->commit();
                 }
-                return ['allowed' => false, 'reason' => 'layer5_ip_rate_limit_24h'];
+                return ['allowed' => false, 'reason' => 'layer5_ip_rate_limit_24h', 'retry_after' => $retryAfter];
             }
 
             $stmtGlobal = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE action_type = :act AND created_at >= :since");
             $stmtGlobal->execute([':act' => $actionType, ':since' => $now - 3600]);
             if ((int)$stmtGlobal->fetchColumn() >= $limitGlobal1h) {
+                $oldestStmt = $pdo->prepare("SELECT MIN(created_at) FROM rate_limits WHERE action_type = :act AND created_at >= :since");
+                $oldestStmt->execute([':act' => $actionType, ':since' => $now - 3600]);
+                $oldestTs = (int)$oldestStmt->fetchColumn();
+                $retryAfter = max(1, ($oldestTs + 3600) - $now);
                 if ($ownTx) {
                     $pdo->commit();
                 }
-                return ['allowed' => false, 'reason' => 'layer5_global_circuit_breaker_1h'];
+                return ['allowed' => false, 'reason' => 'layer5_global_circuit_breaker_1h', 'retry_after' => $retryAfter];
             }
 
             $pdo->prepare("INSERT INTO rate_limits (ip_hmac, action_type, created_at) VALUES (:ip, :act, :now)")
@@ -413,7 +425,7 @@ final class AntiSpamGate
             if ($ownTx) {
                 $pdo->commit();
             }
-            return ['allowed' => true, 'reason' => 'ok'];
+            return ['allowed' => true, 'reason' => 'ok', 'retry_after' => 0];
         } catch (\Throwable $e) {
             if ($ownTx && $pdo->inTransaction()) {
                 $pdo->rollBack();
