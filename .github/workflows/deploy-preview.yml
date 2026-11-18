@@ -78,29 +78,27 @@ jobs:
           user = os.environ["FTP_USERNAME"]
           password = os.environ["FTP_PASSWORD"]
           server_dir = os.environ.get("FTP_SERVER_DIR", "")
-          with open("/tmp/ftps_report.txt", "w") as out:
-              out.write(f"FTP_SERVER_DIR secret is: {server_dir}\n")
+          lines = [f"SERVER_DIR={server_dir}"]
+          try:
               ftp = connect_verified_ftps(host, user, password, cafile=".github/scripts/letsencrypt_geny_intermediates.pem")
-              out.write(f"=== CWD: {ftp.pwd()} ===\n")
-              out.write("=== LIST / ===\n")
-              ftp.retrlines("LIST /", lambda line: out.write(f"{line}\n"))
-              out.write("=== LIST /busherianbiasharas.com ===\n")
-              try:
-                  ftp.retrlines("LIST /busherianbiasharas.com", lambda line: out.write(f"{line}\n"))
-              except Exception as e:
-                  out.write(f"ERR: {e}\n")
+              lines.append(f"CWD={ftp.pwd()}")
+              root_items = []
+              ftp.retrlines("LIST /", root_items.append)
+              lines.append("ROOT=" + " | ".join(root_items))
+              b_items = []
+              ftp.retrlines("LIST /busherianbiasharas.com", b_items.append)
+              lines.append("BB=" + " | ".join(b_items))
               ftp.quit()
-          with open("/tmp/ftps_report.txt") as f:
-              print(f.read())
+          except Exception as e:
+              lines.append(f"ERR={e}")
+          out_str = " --- ".join(lines)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as gh_out:
+              gh_out.write(f"report={out_str}\n")
+          print(f"::notice title=FTPS Structure::{out_str}")
           PYEOF
           python3 .github/scripts/ftps_deploy.py --mode preview --app-root /preview.busherianbiasharas.com/www --files-list /tmp/changed_files.txt --deleted-files-list /tmp/deleted_files.txt --release-sha "${GITHUB_SHA}" "${TLS_ARG[@]}"
 
-      - name: Upload FTPS Structure Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ftps-structure-report
-          path: /tmp/ftps_report.txt
+
 
       - name: Verify preview HTTP & schema readiness (#251, #362)
         run: |
