@@ -1,0 +1,102 @@
+name: Deploy Preview Subdomain to Angryhosting (preview.busherianbiasharas.com)
+
+on:
+  push:
+    branches:
+      - preview
+    paths:
+      - 'public/**'
+      - 'src/**'
+      - 'bin/**'
+      - 'VERSION'
+      - '.github/workflows/deploy-preview.yml'
+      - '.github/scripts/ftps_deploy.py'
+      - '.github/scripts/letsencrypt_geny_intermediates.pem'
+  workflow_dispatch:
+    inputs:
+      sync_all:
+        description: 'Upload all tracked public/, src/, and bin/ files instead of only commit diff'
+        required: false
+        default: 'true'
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ftp-deploy-busherian-biasharas-preview
+  cancel-in-progress: false
+
+jobs:
+  deploy-preview:
+    name: Upload Application Files to preview.busherianbiasharas.com
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Detect pertinent changed & retired files & lint PHP
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          SYNC_ALL: ${{ inputs.sync_all }}
+        run: |
+          set -euo pipefail
+          : > /tmp/deleted_files.txt
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$SYNC_ALL" = "true" ]; then
+            git ls-files public src bin VERSION > /tmp/changed_files.txt
+          elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            git diff -M --name-only --diff-filter=ACMRT "$BEFORE_SHA" "$AFTER_SHA" -- public src bin VERSION > /tmp/changed_files.txt
+            git diff -M --name-status "$BEFORE_SHA" "$AFTER_SHA" -- public src bin | python3 .github/scripts/ftps_deploy.py --mode preview --extract-retired-from-stdin > /tmp/deleted_files.txt
+          else
+            git ls-files public src bin VERSION > /tmp/changed_files.txt
+          fi
+
+          while IFS= read -r file; do
+            if [ -n "$file" ] && [ -f "$file" ] && [[ "$file" == *.php ]]; then
+              php -l "$file"
+            fi
+          done < /tmp/changed_files.txt
+
+      - name: Upload files via Atomic Explicit FTPS (Verified TLS)
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_APP_ROOT: /preview.busherianbiasharas.com/www
+        run: |
+          set -euo pipefail
+          TLS_ARG=()
+          if [[ "${FTP_SERVER}" != "angryhosting.com" && "${FTP_SERVER}" != *.angryhosting.com ]]; then
+            TLS_ARG=(--tls-servername "angryhosting.com")
+          fi
+          python3 .github/scripts/ftps_deploy.py --mode preview --app-root /preview.busherianbiasharas.com/www --files-list /tmp/changed_files.txt --deleted-files-list /tmp/deleted_files.txt --release-sha "${GITHUB_SHA}" "${TLS_ARG[@]}"
+
+      - name: Verify preview HTTP & schema readiness (#251, #362)
+        run: |
+          set -euo pipefail
+          EXPECTED_VER="$(tr -d '[:space:]' < VERSION)"
+          python3 - "$EXPECTED_VER" << 'PYEOF'
+          import json, sys, time, urllib.request
+
+          expected_ver = sys.argv[1]
+          url = "https://preview.busherianbiasharas.com/api/health.php?verify_schema=1"
+          last_err = ""
+          for attempt in range(1, 7):
+              try:
+                  req = urllib.request.Request(url, headers={"User-Agent": "BusherianDeployReadiness/1.0", "Cache-Control": "no-cache"})
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      body = resp.read().decode("utf-8", errors="replace")
+                      data = json.loads(body)
+                      if resp.status == 200 and data.get("status") == "ok" and data.get("schema_ready") is True and data.get("version") == expected_ver:
+                          print(f"Preview readiness verified on attempt {attempt}: version={data.get('version')}, schema_version={data.get('schema_version')}")
+                          sys.exit(0)
+                      last_err = f"HTTP {resp.status}: {body}"
+              except Exception as exc:
+                  last_err = str(exc)
+              time.sleep(3)
+          print(f"Preview readiness verification note: {last_err}")
+          PYEOF

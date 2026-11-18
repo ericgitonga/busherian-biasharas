@@ -123,13 +123,20 @@ def validate_deletable_deploy_path(rel_path: str) -> str:
 
 def map_remote_path(rel_path: str, app_root: str, mode: str) -> str:
     norm = validate_relative_deploy_path(rel_path)
-    clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
     if mode == "prod":
+        clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
+        if norm.startswith("public/"):
+            sub = norm[len("public/"):]
+            return f"{clean_root}/html/{sub}"
+        return f"{clean_root}/{norm}"
+    if mode == "preview":
+        clean_root = (app_root or "/preview.busherianbiasharas.com/www").rstrip("/")
         if norm.startswith("public/"):
             sub = norm[len("public/"):]
             return f"{clean_root}/html/{sub}"
         return f"{clean_root}/{norm}"
     if mode == "preprod":
+        clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
         if norm.startswith("public/"):
             sub = norm[len("public/"):]
             return f"{clean_root}/html/admin/preprod/{sub}"
@@ -143,19 +150,27 @@ def map_remote_delete_path(rel_path: str, app_root: str, mode: str) -> str:
 
 
 def manifest_remote_path(app_root: str, mode: str) -> str:
-    clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
     if mode == "prod":
+        clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
+        return f"{clean_root}/.deploy_manifest.json"
+    if mode == "preview":
+        clean_root = (app_root or "/preview.busherianbiasharas.com/www").rstrip("/")
         return f"{clean_root}/.deploy_manifest.json"
     if mode == "preprod":
+        clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
         return f"{clean_root}/preprod_app/.deploy_manifest.json"
     raise ValueError(f"Unsupported deploy mode: {mode!r}")
 
 
 def maintenance_gate_remote_path(app_root: str, mode: str) -> str:
-    clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
     if mode == "prod":
+        clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
+        return f"{clean_root}/.maintenance_deploy.json"
+    if mode == "preview":
+        clean_root = (app_root or "/preview.busherianbiasharas.com/www").rstrip("/")
         return f"{clean_root}/.maintenance_deploy.json"
     if mode == "preprod":
+        clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
         return f"{clean_root}/preprod_app/.maintenance_deploy.json"
     raise ValueError(f"Unsupported deploy mode: {mode!r}")
 
@@ -582,7 +597,7 @@ def collect_deleted_from_args(args: argparse.Namespace) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Deploy files over certificate-verified Explicit FTPS.")
-    parser.add_argument("--mode", choices=("prod", "preprod"), required=True)
+    parser.add_argument("--mode", choices=("prod", "preview", "preprod"), required=True)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--files-list", help="Newline-delimited file of repo-relative paths to upload")
     group.add_argument("--stage-dir", help="Directory containing staged files to upload")

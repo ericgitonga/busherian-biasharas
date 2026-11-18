@@ -44,11 +44,6 @@ if ($rawPageInput !== '') {
     if ($parsedPath !== '/' && str_ends_with($parsedPath, '/')) {
         $parsedPath = rtrim($parsedPath, '/');
     }
-    if (str_starts_with($parsedPath, '/admin/preprod/')) {
-        $parsedPath = substr($parsedPath, strlen('/admin/preprod')) ?: '/';
-    } elseif ($parsedPath === '/admin/preprod') {
-        $parsedPath = '/';
-    }
     $allowedRoutes = [
         '/',
         '/index.php',

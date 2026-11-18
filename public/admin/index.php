@@ -213,6 +213,11 @@ try {
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body>
+<?php if (\BusherianBiasharas\Services\PreprodSandbox::isPreprod()): ?>
+  <div style="background:#FEF3C7;border-bottom:1px solid #F59E0B;color:#92400E;text-align:center;padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;">
+    🧪 PREVIEW ENVIRONMENT (preview.busherianbiasharas.com) &bull; Isolated SQLite &bull; Outbound Emails Simulated &bull; <a href="https://www.busherianbiasharas.com/admin/" style="color:#92400E;text-decoration:underline;">Switch to Live Production &rarr;</a>
+  </div>
+<?php endif; ?>
   <header class="site-header">
     <div class="header-inner">
       <a href="/" class="brand-group">
@@ -227,7 +232,7 @@ try {
         <?php if (\BusherianBiasharas\Services\PreprodSandbox::isPreprod()): ?>
           <a href="/admin/sandbox.php" class="btn btn-outline-light">🛠️ Sandbox &amp; Outbox</a>
         <?php else: ?>
-          <a href="<?= htmlspecialchars(\BusherianBiasharas\Services\PreprodSandbox::generateProdToPreprodHandoffUrl('/'), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline-light">🧪 Pre-Prod Preview</a>
+          <a href="<?= htmlspecialchars(\BusherianBiasharas\Services\PreprodSandbox::generateProdToPreprodHandoffUrl('/admin/'), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline-light" target="_blank" rel="noopener">🧪 Preview Environment</a>
         <?php endif; ?>
         <a href="/admin/metrics.php" class="btn btn-outline-light">📊 Usage Metrics</a>
         <form method="POST" action="/admin/index.php" style="margin:0;display:inline;">
