@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.32.8] - 2026-11-18
+### Fixed
+- **Authentication OTP Mail Transport Fallback & Diagnostics (`#365`)**: 
+  - Updated `Mailer::dispatchOutboxRow` to automatically fall back to PHP's local `mail()` transport for critical owner authentication verification codes (`Verification Code` / `6-Digit`) whenever remote authenticated SMTP connection or TLS handshake encounters shared-hosting socket latency or hostname mismatch errors.
+  - Added explicit socket error code and string logging (`$errno`, `$errstr`) to `Mailer::sendViaAuthenticatedSmtp` when `stream_socket_client` fails to connect.
+
 ## [0.32.7] - 2026-11-18
 ### Fixed
 - **Anti-Spam OTP Silent-Drop Elimination & Differentiated Rate Limits (`#363`)**: 

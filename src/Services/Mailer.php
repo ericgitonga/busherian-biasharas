@@ -426,7 +426,7 @@ final class Mailer
         if ($smtpHost !== '') {
             $ok = self::sendViaAuthenticatedSmtp($recipient, $cleanSubject, $bodyHtml, $fromEmail, $fromName, $cleanReply);
         }
-        if (!$ok && self::isPhpMailFallbackEnabled() && function_exists('mail')) {
+        if (!$ok && (self::isPhpMailFallbackEnabled() || str_contains($rawSubject, 'Verification Code') || str_contains($rawSubject, '6-Digit')) && function_exists('mail')) {
             $msgId = '<' . bin2hex(random_bytes(12)) . '@busherianbiasharas.com>';
             $headers = [
                 'MIME-Version: 1.0',
@@ -587,6 +587,7 @@ final class Mailer
         $remote = ($sec === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port;
         $fp = @stream_socket_client($remote, $errno, $errstr, 8.0, STREAM_CLIENT_CONNECT, $sslCtx);
         if (!is_resource($fp)) {
+            error_log("[Mailer::sendViaAuthenticatedSmtp] Failed connecting to {$remote} ({$errno}): {$errstr}");
             return false;
         }
 
