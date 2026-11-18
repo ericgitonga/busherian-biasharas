@@ -209,6 +209,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $emailPublic  = strtolower(trim((string)($_POST['email_public'] ?? '')));
             $websiteUrl   = trim((string)($_POST['website_url'] ?? ''));
 
+            $founderRole = in_array($_POST['founder_role'] ?? '', ['founder', 'co_founder'], true) ? $_POST['founder_role'] : 'none';
+            $founderName = $founderRole !== 'none' ? trim((string)($_POST['founder_name'] ?? '')) : null;
+            $founderSchool = $founderRole !== 'none' ? (in_array($_POST['founder_school'] ?? '', ['AHS', 'AGHS'], true) ? $_POST['founder_school'] : null) : null;
+            $founderYear = $founderRole !== 'none' ? trim((string)($_POST['founder_year'] ?? '')) : null;
+
             if ($phonePrimary === '') {
                 $errors[] = 'Please enter a primary business phone number.';
             }
@@ -303,6 +308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $insBiz = $pdo->prepare("
                         INSERT INTO businesses (
                             business_id, business_number, name, slug, tagline, description, school_badge,
+                            founder_role, founder_name, founder_school, founder_year,
                             sector_id, specialty_id, secondary_sector_id, secondary_specialty_id, service_mode, alumni_perk,
                             b2b_ready, accepts_lpo, regulator_name, regulator_license,
                             branch_name, building_name, floor_suite, street_road,
@@ -315,6 +321,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             status, consent_recorded_at, privacy_notice_version, age_attested_at, listing_provenance
                         ) VALUES (
                             :business_id, :business_number, :name, :slug, :tagline, :description, :school_badge,
+                            :founder_role, :founder_name, :founder_school, :founder_year,
                             :sector_id, :specialty_id, :secondary_sector_id, :secondary_specialty_id, :service_mode, :alumni_perk,
                             :b2b_ready, :accepts_lpo, :regulator_name, :regulator_license,
                             :branch_name, :building_name, :floor_suite, :street_road,
@@ -336,6 +343,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':tagline' => $tagline,
                         ':description' => $description,
                         ':school_badge' => $schoolCode,
+                        ':founder_role' => $founderRole,
+                        ':founder_name' => $founderName,
+                        ':founder_school' => $founderSchool,
+                        ':founder_year' => $founderYear,
                         ':sector_id' => $sectorId,
                         ':specialty_id' => $finalSpecialtyId,
                         ':secondary_sector_id' => $secondaryPair['secondary_sector_id'],
@@ -618,6 +629,24 @@ $aghsHouses = Houses::AGHS_HOUSES;
         <input type="text" id="field_website_ref" name="website" value="" tabindex="-1" autocomplete="nope">
       </div>
 
+      <!-- WebsiteEnricher: Smart Pre-Fill from Website (#387) -->
+      <div class="enrich-box" style="background:#E8F2EE;border:1.5px dashed #114B3E;border-radius:12px;padding:16px 18px;margin-bottom:1.5rem;display:flex;flex-direction:column;gap:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+          <span style="font-size:13.5px;font-weight:800;color:#114B3E;display:flex;align-items:center;gap:6px;">
+            ✨ Have a website or social page? Pre-fill details automatically
+          </span>
+          <span style="font-size:11px;color:#114B3E;font-weight:700;">Fast 2-Minute Setup</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="url" id="enrich-url-input" class="input-control" placeholder="https://yourbusiness.co.ke" style="flex:1;min-width:240px;background:#fff;">
+          <button type="button" id="btn-enrich-website" class="btn btn-green" style="white-space:nowrap;padding:0.45rem 1rem;" onclick="enrichFromWebsite()">Extract Details</button>
+        </div>
+        <p style="font-size:11.5px;color:#57645C;margin:0;">
+          Our smart enricher extracts business name, tagline, description, sector, and contact phone instantly from your website.
+        </p>
+        <div id="enrich-status" style="font-size:12px;font-weight:600;display:none;"></div>
+      </div>
+
       <!-- STEP 1: ONE-TIME ALUMNI VETTING (STRICT PRIVACY & IMMEDIATE DISPOSAL) -->
       <fieldset style="border:none;padding:0;margin:0 0 1.75rem 0;">
         <legend style="font-size:1.15rem;font-weight:800;color:#7B1113;margin-bottom:0.65rem;">
@@ -721,6 +750,48 @@ $aghsHouses = Houses::AGHS_HOUSES;
           <label for="biz_description" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Full Business Description (Shown in Detail Modal) *</label>
           <textarea id="biz_description" name="description" rows="3" class="input-control"
             placeholder="Describe your products, services, target clients, and key strengths..." required></textarea>
+        </div>
+
+        <!-- Founder / Co-Founder Attribution (#383, #384) -->
+        <div style="margin-top:1.25rem;padding:1rem;background:#FBF8F3;border:1px solid #E5DEC9;border-radius:10px;">
+          <label style="font-size:0.88rem;font-weight:800;color:#114B3E;display:block;margin-bottom:0.4rem;">
+            Founder / Co-Founder Attribution (Optional Public Display)
+          </label>
+          <p style="font-size:0.78rem;color:#6B7280;margin:0 0 0.75rem 0;">
+            Highlight your leadership role and alumni heritage on your business card and profile page.
+          </p>
+          <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;cursor:pointer;">
+              <input type="radio" name="founder_role" value="none" <?= (empty($_POST['founder_role']) || $_POST['founder_role'] === 'none') ? 'checked' : '' ?> onchange="toggleFounderFields(this.value)">
+              <span>None / Anonymous</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;cursor:pointer;">
+              <input type="radio" name="founder_role" value="founder" <?= ($_POST['founder_role'] ?? '') === 'founder' ? 'checked' : '' ?> onchange="toggleFounderFields(this.value)">
+              <span>Founder</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;cursor:pointer;">
+              <input type="radio" name="founder_role" value="co_founder" <?= ($_POST['founder_role'] ?? '') === 'co_founder' ? 'checked' : '' ?> onchange="toggleFounderFields(this.value)">
+              <span>Co-Founder</span>
+            </label>
+          </div>
+          <div id="founder-fields-wrap" style="<?= in_array($_POST['founder_role'] ?? '', ['founder', 'co_founder'], true) ? '' : 'display:none;' ?>display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:0.75rem;">
+            <div>
+              <label for="founder_name" style="font-size:0.78rem;font-weight:700;color:#374151;display:block;margin-bottom:0.25rem;">Full Name</label>
+              <input type="text" name="founder_name" id="founder_name" class="input-control" value="<?= htmlspecialchars((string)($_POST['founder_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. Stephen Kanyi Gitonga">
+            </div>
+            <div>
+              <label for="founder_school" style="font-size:0.78rem;font-weight:700;color:#374151;display:block;margin-bottom:0.25rem;">School</label>
+              <select name="founder_school" id="founder_school" class="select-control">
+                <option value="">Select school</option>
+                <option value="AHS" <?= ($_POST['founder_school'] ?? '') === 'AHS' ? 'selected' : '' ?>>Alliance High School (AHS)</option>
+                <option value="AGHS" <?= ($_POST['founder_school'] ?? '') === 'AGHS' ? 'selected' : '' ?>>Alliance Girls High School (AGHS)</option>
+              </select>
+            </div>
+            <div>
+              <label for="founder_year" style="font-size:0.78rem;font-weight:700;color:#374151;display:block;margin-bottom:0.25rem;">Completion Year</label>
+              <input type="text" name="founder_year" id="founder_year" class="input-control" value="<?= htmlspecialchars((string)($_POST['founder_year'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. '98 or 1998">
+            </div>
+          </div>
         </div>
 
         <?= bbiz_render_specialty_finder($taxonomyTree) ?>
@@ -1188,6 +1259,11 @@ $aghsHouses = Houses::AGHS_HOUSES;
           }
         });
       }
+
+      window.toggleFounderFields = function(val) {
+        const wrap = document.getElementById('founder-fields-wrap');
+        if (wrap) wrap.style.display = (val === 'founder' || val === 'co_founder') ? 'grid' : 'none';
+      };
     })();
   </script>
   <script>

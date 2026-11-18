@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.34.0] - 2026-11-18
+### Added
+- **Streamlined Directory Layout & Left Filter Panel (`#370`, `#371`, `#372`, `#373`, `#374`, Parent `#370`)**:
+  - Implemented responsive left sidebar filter panel (`#filters-sidebar`) with collapsible toggle, real-time sector category vertical list with business counts, location dropdown with "Near me" GPS filter, signature school text buttons (without logos), and "Show Only" checkboxes (`Open now` and `Offers an alumni perk`).
+  - Added top view switcher toolbar (`.view-switcher-bar`) with Grid View (`#btn-view-grid`), List View (`#btn-view-list`), and By Sector (`#btn-view-sector`) modes, active count indicator, and directory sorting select.
+  - Refined directory cards to strictly display the 12 requested items: Company name, What they do, Location, Brief tagline, Founded by/Co-Founded by attribution, Alumni perks, direct 1-tap WhatsApp and Call action buttons, Details link, Route directions, School badge, Share button, and live Open/Closed status button.
+  - Aligned page canvas theme colors: main body canvas in crisp White (`#FFFFFF`), with Site Header and Directory Footer in Heritage Ivory (`#FBF8F3`).
+- **Canonical Business Profile Page (`#375`, `#376`, `#377`, `#378`, Parent `#375`)**:
+  - Implemented clean `/biz/{slug}` URL routing in `public/.htaccess` with server-side OpenGraph and Twitter/WhatsApp rich social preview metadata emitted in `public/index.php`.
+  - Built dedicated canonical profile view (`#view-biz-detail`) matching Kanyi's mockup: hero banner with cover/monogram initials, 3fr/2fr 2-column layout (Services & Capabilities tag list, Photos & Premises showcase, Recommended by Busherians, Contact & Landmark info, full weekly opening hours table with today highlighted, WhatsApp share, and "More in Sector" mini-cards).
+  - Added browser history management (`history.pushState`) for seamless back-and-forth navigation between directory listings and canonical business profiles.
+- **4-Column Heritage Directory Footer (`#379`, `#380`, `#381`, Parent `#379`)**:
+  - Structured footer into 4 clean navigation columns: THE DIRECTORY, FOR BUSINESS OWNERS, HELP AND TRUST, and COMMUNITY.
+  - Added direct official school links for Alliance High School (`https://www.alliancehighschool.ac.ke/`) and Alliance Girls High School (`https://aghs.sc.ke/`).
+  - Added footer base strip with school motto *"Strong to Serve. Walk in the Light."*, directory relationship disclaimer, and zero-logo text badges in signature AHS Navy (`#2E3192`) and AGHS Green (`#1E5E2A`).
+- **Founder & Co-Founder Voluntary Attribution (`#382`, `#383`, `#384`, Parent `#382`)**:
+  - Added `founder_role`, `founder_name`, `founder_school`, and `founder_year` columns to `businesses` schema and SQLite/MySQL database migrations (`Database::ensureFounderAttributionColumns`).
+  - Added optional Founder vs. Co-Founder attribution radio toggle to registration form (`public/submit.php`), capturing role, founder full name, school, and completion year.
+  - Displayed verified attribution badge on directory cards and profile hero (`"👤 Founded by [Name] (AHS '98)"` / `"👤 Co-Founded by [Name] (AGHS '12)"`).
+- **Progressive Onboarding & WebsiteEnricher Integration (`#385`, `#386`, `#387`, `#388`, Parent `#385`)**:
+  - Streamlined public registration in `public/submit.php` to a fast 2-minute workflow focusing on minimal upfront essential details.
+  - Integrated smart website pre-fill bar (`#enrich-box` and `/api/enrich-website.php`) with SSRF-guarded metadata extraction for business name, tagline, description, contacts, and suggested category.
+  - Preserved multi-photo upload capability supporting up to 5 photos with preview slots.
+
 ## [0.33.0] - 2026-11-18
 ### Added
 - **Standalone Preview Subdomain Environment (`#359`, `#361`, Parent `#359`)**:

@@ -1,3 +1,11 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # Canonical Business Profile routing: /biz/{slug} -> /index.php?biz=$1
+    RewriteRule ^biz/([a-zA-Z0-9_-]+)/?$ index.php?biz=$1 [QSA,L]
+</IfModule>
+
 # Busherian Biasharas — Public Web Root Security Headers & Routing
 Options -Indexes
 

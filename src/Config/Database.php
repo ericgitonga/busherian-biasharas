@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v32-advisor';
+    public const SCHEMA_INIT_VERSION = '2026-11-v33-founder-layout';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -396,6 +396,10 @@ final class Database
                     tagline TEXT NOT NULL,
                     description TEXT NOT NULL,
                     school_badge TEXT NOT NULL DEFAULT 'AHS',
+                    founder_role TEXT NOT NULL DEFAULT 'none',
+                    founder_name TEXT NULL,
+                    founder_school TEXT NULL,
+                    founder_year TEXT NULL,
                     sector_id INTEGER NOT NULL REFERENCES categories(id),
                     specialty_id INTEGER NOT NULL REFERENCES categories(id),
                     secondary_sector_id INTEGER NULL REFERENCES categories(id) ON DELETE SET NULL,
@@ -499,6 +503,7 @@ final class Database
 
         // Ensure business_id and business_number columns exist on pre-existing databases
         self::ensureBusinessIdentityAndNumberColumns($pdo, $driver);
+        self::ensureFounderAttributionColumns($pdo, $driver);
         self::ensureUsageMetricsTable($pdo, $driver);
         self::ensureOwnerTables($pdo, $driver);
         self::ensureOutboxAndTakedownTables($pdo, $driver);
@@ -914,6 +919,46 @@ final class Database
                     CONSTRAINT fk_ai_index_business FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
+        }
+    }
+
+    private static function ensureFounderAttributionColumns(PDO $pdo, string $driver): void
+    {
+        $cols = [];
+        if ($driver === 'sqlite') {
+            $stmt = $pdo->query("PRAGMA table_info(businesses)");
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $cols[strtolower($row['name'])] = true;
+            }
+            if (!isset($cols['founder_role'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN founder_role TEXT NOT NULL DEFAULT 'none'");
+            }
+            if (!isset($cols['founder_name'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN founder_name TEXT NULL");
+            }
+            if (!isset($cols['founder_school'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN founder_school TEXT NULL");
+            }
+            if (!isset($cols['founder_year'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN founder_year TEXT NULL");
+            }
+        } elseif ($driver === 'mysql') {
+            $stmt = $pdo->query("SHOW COLUMNS FROM businesses");
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $cols[strtolower($row['Field'])] = true;
+            }
+            if (!isset($cols['founder_role'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN founder_role ENUM('none', 'founder', 'co_founder') NOT NULL DEFAULT 'none' AFTER description");
+            }
+            if (!isset($cols['founder_name'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN founder_name VARCHAR(120) NULL AFTER founder_role");
+            }
+            if (!isset($cols['founder_school'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN founder_school VARCHAR(10) NULL AFTER founder_name");
+            }
+            if (!isset($cols['founder_year'])) {
+                $pdo->exec("ALTER TABLE businesses ADD COLUMN founder_year VARCHAR(10) NULL AFTER founder_school");
+            }
         }
     }
 

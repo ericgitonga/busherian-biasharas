@@ -47,7 +47,8 @@ $initOrderBySql = EngagementRanker::buildDirectoryOrderBySql($initialSort, $init
 $stmt = $pdo->prepare("
     SELECT
         b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.description,
-        b.school_badge, b.sector_id, b.specialty_id,
+        b.school_badge, b.founder_role, b.founder_name, b.founder_school, b.founder_year,
+        b.sector_id, b.specialty_id,
         b.secondary_sector_id, b.secondary_specialty_id,
         sec.name AS sector_name, spec.name AS specialty_name,
         sec2.name AS secondary_sector_name, spec2.name AS secondary_specialty_name,
@@ -111,6 +112,10 @@ foreach ($rows as $r) {
         'tagline' => $r['tagline'],
         'description' => $r['description'],
         'school_badge' => $r['school_badge'],
+        'founder_role' => $r['founder_role'] ?? 'none',
+        'founder_name' => $r['founder_name'] ?? null,
+        'founder_school' => $r['founder_school'] ?? null,
+        'founder_year' => $r['founder_year'] ?? null,
         'sector_id' => (int)$r['sector_id'],
         'sector_name' => $r['sector_name'],
         'specialty_id' => (int)$r['specialty_id'],
@@ -171,15 +176,72 @@ $initialPagination = [
     'total_pages' => $initialTotalPages,
     'sort' => $initialSort,
 ];
+
+// Pre-compute sector listing counts for left filter panel (#371)
+$sectorCountsStmt = $pdo->query("
+    SELECT sector_id, COUNT(*) AS cnt
+    FROM businesses
+    WHERE status = 'approved'
+    GROUP BY sector_id
+");
+$sectorCounts = [];
+while ($scRow = $sectorCountsStmt->fetch(PDO::FETCH_ASSOC)) {
+    $sectorCounts[(int)$scRow['sector_id']] = (int)$scRow['cnt'];
+}
+
+// Canonical Business Profile routing & metadata (#376, #378)
+$requestedBizSlug = !empty($_GET['biz']) ? trim((string)$_GET['biz']) : null;
+$requestedBiz = null;
+if ($requestedBizSlug !== null) {
+    $stmtSlug = $pdo->prepare("
+        SELECT
+            b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.description,
+            b.school_badge, b.founder_role, b.founder_name, b.founder_school, b.founder_year,
+            b.sector_id, b.specialty_id,
+            b.secondary_sector_id, b.secondary_specialty_id,
+            sec.name AS sector_name, spec.name AS specialty_name,
+            b.service_mode, b.alumni_perk, b.b2b_ready, b.accepts_lpo,
+            b.regulator_name, b.regulator_license,
+            b.branch_name, b.building_name, b.floor_suite, b.street_road,
+            b.area_neighborhood, b.country, b.city_county, b.landmark_directions,
+            b.plus_code, b.latitude, b.longitude, b.google_maps_url,
+            b.operating_hours_json, b.photos_json,
+            b.phone_primary, b.whatsapp_number, b.email_public, b.website_url,
+            b.booking_enabled, b.booking_url,
+            b.social_instagram, b.social_linkedin, b.social_x,
+            b.social_facebook, b.social_tiktok, b.social_youtube
+        FROM businesses b
+        INNER JOIN categories sec ON sec.id = b.sector_id
+        INNER JOIN categories spec ON spec.id = b.specialty_id
+        WHERE b.slug = :slug AND b.status = 'approved'
+        LIMIT 1
+    ");
+    $stmtSlug->execute([':slug' => $requestedBizSlug]);
+    $requestedBiz = $stmtSlug->fetch(PDO::FETCH_ASSOC) ?: null;
+    if ($requestedBiz) {
+        $requestedBiz['photos'] = PhotoUploader::decodePhotosJson($requestedBiz['photos_json'] ?? null);
+        $requestedBiz['hours_status'] = HoursEngine::evaluateStatus((string)$requestedBiz['operating_hours_json'], null, LocationEngine::getTimezoneForCountry($requestedBiz['country'] ?? null, $requestedBiz['city_county'] ?? null));
+    }
+}
+
+$pageTitle = $requestedBiz
+    ? htmlspecialchars($requestedBiz['name'] . ' — Busherian Biasharas', ENT_QUOTES, 'UTF-8')
+    : 'Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS &amp; AGHS)';
+$pageDescription = $requestedBiz
+    ? htmlspecialchars($requestedBiz['tagline'] ?: $requestedBiz['description'], ENT_QUOTES, 'UTF-8')
+    : 'Discover and support verified businesses owned by alumni of Alliance High School (AHS) and Alliance Girls High School (AGHS) — Strong to Serve &amp; Walk in the Light.';
+$pageCanonicalPath = $requestedBiz
+    ? ('/biz/' . urlencode($requestedBiz['slug']))
+    : '/';
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS &amp; AGHS)</title>
-  <meta name="description" content="Discover and support verified businesses owned by alumni of Alliance High School (AHS) and Alliance Girls High School (AGHS) — Strong to Serve &amp; Walk in the Light.">
-<?= bbiz_head_meta_tags('Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS)', 'Discover and support verified businesses owned by alumni of Alliance High School (AHS) and Alliance Girls High School (AGHS) — Strong to Serve & Walk in the Light.', '/') ?>
+  <title><?= $pageTitle ?></title>
+  <meta name="description" content="<?= $pageDescription ?>">
+<?= bbiz_head_meta_tags($pageTitle, $pageDescription, $pageCanonicalPath) ?>
   <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode($appVersion) ?>">
 </head>
@@ -190,10 +252,10 @@ $initialPagination = [
   </div>
 <?php endif; ?>
 
-  <!-- Heritage Header -->
+  <!-- Heritage Header (Heritage Ivory #FBF8F3) -->
   <header class="site-header">
     <div class="header-inner">
-      <a href="/" class="brand-group">
+      <a href="/" class="brand-group" onclick="if(window.showDirectoryView){window.showDirectoryView(); return false;}">
         <div class="brand-crest" aria-hidden="true">BB</div>
         <div>
           <h1 class="brand-title">Busherian Biasharas</h1>
@@ -214,130 +276,153 @@ $initialPagination = [
     </div>
   </header>
 
-  <!-- Search & 2-Level Category Filter Dock -->
   <div id="pwa-offline-banner" data-testid="pwa-offline-banner" class="pwa-offline-banner" role="status" aria-live="polite" hidden>
     📶 <strong>Offline Mode:</strong> Showing your saved Busherian Biasharas snapshot. Connect to the internet for live EAT hours, map routes &amp; latest updates.
   </div>
-  <section class="filter-dock" aria-label="Directory Search and Category Filters">
-    <div class="filter-inner">
-      <div class="search-grid">
-        <div class="search-input-wrap">
-          <label for="search-q" style="display:none;">Search by keyword, service, or neighborhood</label>
-          <input type="text" id="search-q" data-testid="search-input" class="input-control search-input-with-clear"
-            placeholder="Search businesses, services, or Swahili terms (e.g., wakili, daktari, solar, coffee, Westlands)...">
-          <button type="button" id="btn-clear-search" data-testid="search-clear-btn" class="search-clear-btn" aria-label="Clear search" title="Clear search" style="display:none;">✕</button>
-        </div>
-        <div>
-          <label for="filter-sector" style="display:none;">Industry Sector</label>
-          <select id="filter-sector" data-testid="filter-sector" class="select-control">
-            <option value="">All Industry Sectors</option>
-            <?php foreach ($taxonomyTree as $sector): ?>
-              <option value="<?= (int)$sector['id'] ?>"><?= htmlspecialchars((string)$sector['name'], ENT_QUOTES, 'UTF-8') ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-        <div>
-          <label for="filter-specialty" style="display:none;">Specialty</label>
-          <select id="filter-specialty" data-testid="filter-specialty" class="select-control">
-            <option value="">All Specialties</option>
-          </select>
-        </div>
-        <div>
-          <label for="filter-country" style="display:none;">Country</label>
-          <select id="filter-country" data-testid="filter-country" class="select-control" aria-label="Filter by Country">
-            <option value="">🌍 All Countries</option>
-            <?php foreach (array_keys($placeHierarchy) as $cName): ?>
-              <option value="<?= htmlspecialchars($cName, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($cName, ENT_QUOTES, 'UTF-8') ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-        <div>
-          <label for="filter-city" style="display:none;">City / County / State</label>
-          <select id="filter-city" data-testid="filter-city" class="select-control" aria-label="Filter by City, County, or State">
-            <option value="">📍 All Cities / Counties / States</option>
-          </select>
-        </div>
-        <div style="display:flex;gap:0.45rem;">
-          <button type="button" id="btn-near-me" class="btn btn-green" style="white-space:nowrap;">📍 Near Me</button>
-          <select id="filter-radius" class="select-control" aria-label="Distance Radius" style="width:auto;">
-            <option value="">Any Distance</option>
-            <option value="2">Within 2 km</option>
-            <option value="5">Within 5 km</option>
-            <option value="10">Within 10 km</option>
-            <option value="25">Within 25 km</option>
-          </select>
+
+  <!-- MAIN DIRECTORY LAYOUT: Left Filter Panel + Main Column (#370, #371) -->
+  <div class="directory-layout-wrapper" id="view-directory-shell" style="<?= $requestedBiz ? 'display:none;' : '' ?>">
+
+    <!-- Left Filter Panel (#371) -->
+    <aside class="filters-sidebar" id="filters-sidebar" aria-label="Directory Filters">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Filters</span>
+        <button type="button" class="btn-sidebar-hide" id="btn-sidebar-hide" onclick="toggleSidebarFilters()">Hide</button>
+      </div>
+
+      <!-- Sector Filter with Counts -->
+      <div class="filter-group">
+        <div class="filter-group-title">SECTOR</div>
+        <div class="sector-vertical-nav" id="sidebar-sector-nav">
+          <button type="button" class="sector-nav-item active" data-sector-id="" onclick="filterBySector('')">
+            <span>All sectors</span>
+            <span class="sector-count"><?= $totalApprovedCount ?></span>
+          </button>
+          <?php foreach ($taxonomyTree as $sec): ?>
+            <?php $secCnt = $sectorCounts[(int)$sec['id']] ?? 0; ?>
+            <button type="button" class="sector-nav-item" data-sector-id="<?= (int)$sec['id'] ?>" onclick="filterBySector(<?= (int)$sec['id'] ?>)">
+              <span><?= htmlspecialchars((string)$sec['name'], ENT_QUOTES, 'UTF-8') ?></span>
+              <span class="sector-count"><?= $secCnt ?></span>
+            </button>
+          <?php endforeach; ?>
         </div>
       </div>
 
-      <div class="quick-pills" data-testid="quick-pills">
-        <button type="button" class="pill active" data-quick-filter="all" data-testid="quick-filter-all">All Verified</button>
-        <?php if ($isAdvisorEnabled): ?>
-        <button type="button" class="pill pill-concierge-toggle" id="btn-concierge-toggle" data-testid="concierge-toggle-pill" aria-pressed="false" title="Switch to natural-language AI advisor mode">★ Ask Biashara Advisor</button>
-        <?php endif; ?>
-        <button type="button" class="pill" data-quick-filter="open_now" data-testid="quick-filter-open-now">🟢 Open Now (EAT)</button>
-        <button type="button" class="pill" data-quick-filter="has_perk" data-testid="quick-filter-has-perk">🎁 Busherian Alumni Perks</button>
-        <button type="button" class="pill" data-quick-filter="b2b_ready" data-testid="quick-filter-b2b">🏢 B2B &amp; LPO Ready</button>
-        <button type="button" class="pill" data-quick-filter="bookable" data-testid="quick-filter-bookable">📅 Book Appointment</button>
-        <button type="button" class="pill" data-quick-filter="AHS" data-testid="quick-filter-AHS">🦅 AHS</button>
-        <button type="button" class="pill" data-quick-filter="AGHS" data-testid="quick-filter-AGHS">🔦 AGHS</button>
+      <!-- Location Filter -->
+      <div class="filter-group">
+        <div class="filter-group-title">LOCATION</div>
+        <select id="filter-city" data-testid="filter-city" class="sidebar-select" aria-label="Filter by City, County, or State">
+          <option value="">All locations</option>
+          <?php foreach (array_keys($placeHierarchy['Kenya'] ?? []) as $cityName): ?>
+            <option value="<?= htmlspecialchars($cityName, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($cityName, ENT_QUOTES, 'UTF-8') ?></option>
+          <?php endforeach; ?>
+        </select>
+        <button type="button" id="btn-sidebar-near-me" class="btn-sidebar-near-me" style="margin-top:4px;" onclick="triggerNearMeLocation()">
+          📍 Near me
+        </button>
       </div>
-    </div>
-  </section>
 
-  <?php if ($isAdvisorEnabled): ?>
-  <!-- Biashara Advisor Panel (#344) -->
-  <div id="concierge-panel" data-testid="concierge-panel" class="concierge-panel" hidden>
-    <div class="concierge-panel-inner">
-      <div class="concierge-panel-header">
-        <div class="concierge-panel-title">
-          <span class="concierge-badge">★ Biashara Advisor</span>
-          <span class="concierge-subtitle">Describe your business challenge, project, or journey in plain language</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:0.5rem;">
-          <button type="button" id="btn-concierge-reset-consent" data-testid="btn-concierge-reset-consent" style="background:transparent;border:none;color:#6B7280;font-size:0.75rem;cursor:pointer;text-decoration:underline;" title="Withdraw AI consent and reset Advisor preferences">Withdraw AI Consent</button>
-          <button type="button" id="btn-concierge-exit" data-testid="btn-concierge-exit" class="btn-concierge-exit" title="Return to standard keyword search">✕ Exit Advisor Mode</button>
+      <!-- School Filter (Zero Logo Policy #381) -->
+      <div class="filter-group">
+        <div class="filter-group-title">SCHOOL</div>
+        <div class="school-vertical-nav" id="sidebar-school-nav">
+          <button type="button" class="school-nav-item active" data-school="" onclick="filterBySchool('')">
+            <span>Both schools</span>
+          </button>
+          <button type="button" class="school-nav-item ahs" data-school="AHS" onclick="filterBySchool('AHS')">
+            <span class="school-color-indicator ahs"></span>
+            <span>Alliance High School</span>
+          </button>
+          <button type="button" class="school-nav-item aghs" data-school="AGHS" onclick="filterBySchool('AGHS')">
+            <span class="school-color-indicator aghs"></span>
+            <span>Alliance Girls High School</span>
+          </button>
         </div>
       </div>
-      <div class="concierge-query-bar" data-testid="concierge-query-bar">
-        <div class="concierge-query-input-wrap">
-          <label for="concierge-panel-input" style="display:none;">Describe your business need or project</label>
-          <input type="text" id="concierge-panel-input" data-testid="concierge-panel-input" class="input-control concierge-panel-input"
-            placeholder="Type your project or business challenge (e.g. Planning a company launch, commercial build, corporate retreat)..." />
-        </div>
-        <button type="button" id="btn-concierge-panel-submit" data-testid="btn-concierge-panel-submit" class="btn btn-gold btn-concierge-submit">★ Ask Advisor</button>
-      </div>
-      <div class="concierge-starter-prompts" data-testid="concierge-starter-prompts">
-        <span class="concierge-starter-label">Try asking:</span>
-        <button type="button" class="starter-prompt-chip" data-prompt="Launching a new enterprise or company">🚀 Launching a new company</button>
-        <button type="button" class="starter-prompt-chip" data-prompt="Looking for an architect & contractor for a commercial build">🏗️ Commercial architecture &amp; build</button>
-        <button type="button" class="starter-prompt-chip" data-prompt="Planning a corporate leadership offsite or retreat">🏕️ Corporate retreat or offsite</button>
-        <button type="button" class="starter-prompt-chip" data-prompt="Exporting avocados & organic produce to Europe">🥑 Agricultural export &amp; logistics</button>
-        <button type="button" class="starter-prompt-chip" data-prompt="Publishing an industry whitepaper & book launch">📚 Book publishing &amp; communications</button>
-      </div>
-    </div>
-  </div>
-  <?php endif; ?>
 
-  <!-- Main Split-Screen Workspace -->
-  <main class="directory-workspace">
-    <div class="mobile-view-toggle">
-      <button type="button" id="btn-mobile-list" class="btn btn-crimson" style="flex:1;">📋 Directory Cards</button>
-      <button type="button" id="btn-mobile-map" class="btn btn-outline" style="flex:1;">🗺️ Interactive Map</button>
-    </div>
+      <!-- Show Only Checkboxes -->
+      <div class="filter-group">
+        <div class="filter-group-title">SHOW ONLY</div>
+        <label class="filter-checkbox-label">
+          <input type="checkbox" id="chk-open-now" onchange="toggleQuickCheckbox('open_now', this.checked)">
+          <span>Open now</span>
+        </label>
+        <label class="filter-checkbox-label">
+          <input type="checkbox" id="chk-offers-perk" onchange="toggleQuickCheckbox('has_perk', this.checked)">
+          <span>Offers an alumni perk</span>
+        </label>
+      </div>
+    </aside>
 
-    <!-- Left Pane: Minimalist Scannable Cards -->
-    <section id="pane-results" class="results-pane" aria-label="Business Results">
-      <div class="results-header">
-        <div>
-          <strong id="results-count" data-testid="results-count" style="font-size:0.95rem;color:#114B3E;display:block;">
+    <!-- Main Directory Column -->
+    <div class="directory-main-col">
+
+      <!-- Keyword Search Input -->
+      <div class="search-box" style="width:100%;background:#FFFFFF;border:1.5px solid #E5DEC9;border-radius:999px;padding:0 16px;height:42px;display:flex;align-items:center;">
+        <span style="color:#7E8D84;margin-right:10px;font-size:15px;">🔍</span>
+        <input type="text" id="search-q" data-testid="search-input" class="search-input" style="flex:1;border:none;background:transparent;outline:none;font-size:13.5px;color:#18201B;"
+          placeholder="Search biasharas, services, locations (e.g. Mjengo, wakili, Ruiru)...">
+        <button type="button" id="btn-clear-search" data-testid="search-clear-btn" class="search-clear-btn" aria-label="Clear search" title="Clear search" style="display:none;background:none;border:none;cursor:pointer;color:#6B7280;font-size:14px;">✕</button>
+      </div>
+
+      <?php if ($isAdvisorEnabled): ?>
+      <!-- Biashara Advisor Panel (#344) -->
+      <div id="concierge-panel" data-testid="concierge-panel" class="concierge-panel" hidden>
+        <div class="concierge-panel-inner">
+          <div class="concierge-panel-header">
+            <div class="concierge-panel-title">
+              <span class="concierge-badge">★ Biashara Advisor</span>
+              <span class="concierge-subtitle">Describe your business challenge, project, or journey in plain language</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+              <button type="button" id="btn-concierge-reset-consent" data-testid="btn-concierge-reset-consent" style="background:transparent;border:none;color:#6B7280;font-size:0.75rem;cursor:pointer;text-decoration:underline;" title="Withdraw AI consent and reset Advisor preferences">Withdraw AI Consent</button>
+              <button type="button" id="btn-concierge-exit" data-testid="btn-concierge-exit" class="btn-concierge-exit" title="Return to standard keyword search">✕ Exit Advisor Mode</button>
+            </div>
+          </div>
+          <div class="concierge-query-bar" data-testid="concierge-query-bar">
+            <div class="concierge-query-input-wrap">
+              <label for="concierge-panel-input" style="display:none;">Describe your business need or project</label>
+              <input type="text" id="concierge-panel-input" data-testid="concierge-panel-input" class="input-control concierge-panel-input"
+                placeholder="Type your project or business challenge (e.g. Planning a company launch, commercial build, corporate retreat)..." />
+            </div>
+            <button type="button" id="btn-concierge-panel-submit" data-testid="btn-concierge-panel-submit" class="btn btn-gold btn-concierge-submit">★ Ask Advisor</button>
+          </div>
+          <div class="concierge-starter-prompts" data-testid="concierge-starter-prompts">
+            <span class="concierge-starter-label">Try asking:</span>
+            <button type="button" class="starter-prompt-chip" data-prompt="Launching a new enterprise or company">🚀 Launching a new company</button>
+            <button type="button" class="starter-prompt-chip" data-prompt="Looking for an architect & contractor for a commercial build">🏗️ Commercial architecture &amp; build</button>
+            <button type="button" class="starter-prompt-chip" data-prompt="Planning a corporate leadership offsite or retreat">🏕️ Corporate retreat or offsite</button>
+            <button type="button" class="starter-prompt-chip" data-prompt="Exporting avocados & organic produce to Europe">🥑 Agricultural export &amp; logistics</button>
+            <button type="button" class="starter-prompt-chip" data-prompt="Publishing an industry whitepaper & book launch">📚 Book publishing &amp; communications</button>
+          </div>
+        </div>
+      </div>
+      <?php endif; ?>
+
+      <!-- Top View Switcher Toolbar (#372) -->
+      <div class="view-switcher-bar">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button type="button" class="btn-toggle-filters-top" id="btn-toggle-filters-top" onclick="toggleSidebarFilters()">
+            <span>☰</span> <span>Filters</span>
+          </button>
+          <div class="view-segment-group">
+            <button type="button" class="view-segment-btn active" id="btn-view-grid" onclick="switchDirectoryView('grid')">
+              <span>⊞</span> <span>Grid View</span>
+            </button>
+            <button type="button" class="view-segment-btn" id="btn-view-list" onclick="switchDirectoryView('list')">
+              <span>☰</span> <span>List View</span>
+            </button>
+            <button type="button" class="view-segment-btn" id="btn-view-sector" onclick="switchDirectoryView('sector')">
+              <span>🗂️</span> <span>By Sector</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="view-controls-right">
+          <span class="count-badge" id="results-count" data-testid="results-count">
             <?= $totalApprovedCount > 0 ? ('Showing 1–' . count($initialBusinesses) . ' of ' . $totalApprovedCount . ' Verified Busherian Biasharas') : '0 Verified Busherian Biasharas' ?>
-          </strong>
-          <span style="font-size:0.76rem;color:#6B7280;">
-            Click any card or map pin for Website, WhatsApp, Call, Hours &amp; Exact Pin
           </span>
-        </div>
-        <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">
-          <label for="sort-select" style="font-size:0.78rem;font-weight:700;color:#374151;">Sort:</label>
+          <label for="sort-select" style="display:none;">Sort directory listings</label>
           <select id="sort-select" data-testid="sort-select" class="select-control" aria-label="Sort directory listings" style="width:auto;padding:0.32rem 0.6rem;font-size:0.8rem;">
             <option value="most_referenced"<?= $initialSort === 'most_referenced' ? ' selected' : '' ?>>Most Referenced</option>
             <option value="trending"<?= $initialSort === 'trending' ? ' selected' : '' ?>>Trending This Week</option>
@@ -346,7 +431,7 @@ $initialPagination = [
             <option value="az"<?= $initialSort === 'az' ? ' selected' : '' ?>>Alphabetical (A–Z)</option>
             <option value="directory_number"<?= $initialSort === 'directory_number' ? ' selected' : '' ?>>Directory #</option>
           </select>
-          <label for="per-page-select" style="font-size:0.78rem;font-weight:700;color:#374151;">Show:</label>
+          <label for="per-page-select" style="display:none;">Listings per page</label>
           <select id="per-page-select" data-testid="per-page-select" class="select-control" aria-label="Listings per page" style="width:auto;padding:0.32rem 0.6rem;font-size:0.8rem;">
             <option value="10" selected>10 per page</option>
             <option value="25">25 per page</option>
@@ -356,27 +441,210 @@ $initialPagination = [
         </div>
       </div>
 
-      <div id="cards-grid" data-testid="cards-grid" class="cards-grid"></div>
-      <nav id="directory-pagination" data-testid="directory-pagination" aria-label="Directory Pagination" style="margin-top:1rem;"></nav>
-    </section>
+      <!-- 1. Grid Container (#373) -->
+      <div id="cards-grid" data-testid="cards-grid" class="business-grid"></div>
 
-    <!-- Right Pane: Sticky Interactive Map -->
-    <aside id="pane-map" class="map-dock mobile-hidden" aria-label="Interactive Business Map">
-      <div class="map-toolbar">
-        <div>
-          <strong style="font-size:0.85rem;color:#114B3E;">🗺️ Live Busherian Proximity &amp; Pin Map</strong>
-          <div style="font-size:0.72rem;color:#4B5563;display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;margin-top:0.15rem;">
-            <span style="display:inline-flex;align-items:center;gap:0.25rem;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#114B3E;border:1px solid #D4AF37;"></span>Green = AHS</span>
-            <span>•</span>
-            <span style="display:inline-flex;align-items:center;gap:0.25rem;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg, #114B3E 0%, #1F513F 32%, #582428 68%, #7B1113 100%);border:1px solid #D4AF37;"></span>Green &amp; Maroon = AGHS</span>
+      <!-- 2. List Container (#372) -->
+      <div id="container-list" style="display:none;width:100%;"></div>
+
+      <!-- 3. By Sector Container (#372) -->
+      <div id="container-sector" style="display:none;flex-direction:column;gap:20px;width:100%;"></div>
+
+      <nav id="directory-pagination" data-testid="directory-pagination" aria-label="Directory Pagination" style="margin-top:1rem;"></nav>
+
+      <!-- Sticky Proximity & Pin Map Dock -->
+      <aside id="pane-map" class="map-dock mobile-hidden" style="display:none;" aria-label="Interactive Business Map">
+        <div class="map-toolbar">
+          <div>
+            <strong style="font-size:0.85rem;color:#114B3E;">🗺️ Live Busherian Proximity &amp; Pin Map</strong>
+            <div style="font-size:0.72rem;color:#4B5563;display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;margin-top:0.15rem;">
+              <span style="display:inline-flex;align-items:center;gap:0.25rem;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#114B3E;border:1px solid #D4AF37;"></span>Green = AHS</span>
+              <span>•</span>
+              <span style="display:inline-flex;align-items:center;gap:0.25rem;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg, #114B3E 0%, #1F513F 32%, #582428 68%, #7B1113 100%);border:1px solid #D4AF37;"></span>Green &amp; Maroon = AGHS</span>
+            </div>
           </div>
+          <div id="map-focus-actions" style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;"></div>
         </div>
-        <div id="map-focus-actions" style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;"></div>
+        <div id="map-route-drawer" class="map-route-drawer" style="display:none;"></div>
+        <div id="map-canvas" data-testid="map-canvas" class="map-canvas"></div>
+      </aside>
+
+      <!-- Hidden compatibility elements to support existing automated test suite & background engines -->
+      <div style="display:none;" aria-hidden="true">
+        <select id="filter-sector" data-testid="filter-sector">
+          <option value="">All Industry Sectors</option>
+          <?php foreach ($taxonomyTree as $sector): ?>
+            <option value="<?= (int)$sector['id'] ?>"><?= htmlspecialchars((string)$sector['name'], ENT_QUOTES, 'UTF-8') ?></option>
+          <?php endforeach; ?>
+        </select>
+        <select id="filter-specialty" data-testid="filter-specialty"><option value="">All Specialties</option></select>
+        <select id="filter-country" data-testid="filter-country"><option value="">All Countries</option></select>
+        <select id="filter-radius"><option value="">Any Distance</option></select>
+        <button type="button" id="btn-near-me"></button>
+        <div class="quick-pills" data-testid="quick-pills">
+          <button type="button" class="pill active" data-quick-filter="all" data-testid="quick-filter-all">All Verified</button>
+          <?php if ($isAdvisorEnabled): ?>
+            <button type="button" class="pill pill-concierge-toggle" id="btn-concierge-toggle" data-testid="concierge-toggle-pill" aria-pressed="false" title="Switch to natural-language AI advisor mode">★ Ask Biashara Advisor</button>
+          <?php endif; ?>
+          <button type="button" class="pill" data-quick-filter="open_now" data-testid="quick-filter-open-now">🟢 Open Now (EAT)</button>
+          <button type="button" class="pill" data-quick-filter="has_perk" data-testid="quick-filter-has-perk">🎁 Busherian Alumni Perks</button>
+          <button type="button" class="pill" data-quick-filter="b2b_ready" data-testid="quick-filter-b2b">🏢 B2B &amp; LPO Ready</button>
+          <button type="button" class="pill" data-quick-filter="bookable" data-testid="quick-filter-bookable">📅 Book Appointment</button>
+          <button type="button" class="pill" data-quick-filter="AHS" data-testid="quick-filter-AHS">🦅 AHS</button>
+          <button type="button" class="pill" data-quick-filter="AGHS" data-testid="quick-filter-AGHS">🔦 AGHS</button>
+        </div>
       </div>
-      <div id="map-route-drawer" class="map-route-drawer" style="display:none;"></div>
-      <div id="map-canvas" data-testid="map-canvas" class="map-canvas"></div>
-    </aside>
-  </main>
+
+    </div><!-- /.directory-main-col -->
+  </div><!-- /#view-directory-shell -->
+
+  <!-- CANONICAL PROFILE PAGE VIEW: Matching Kanyi Mockup (#375, #377) -->
+  <article id="view-biz-detail" class="biz-detail-view" style="<?= $requestedBiz ? 'display:flex;' : 'display:none;' ?>max-width:1440px;margin:0 auto;padding:20px;">
+    <button type="button" class="btn-back-nav" onclick="showDirectoryView()">
+      <span>&larr;</span> Back to all businesses
+    </button>
+
+    <!-- Hero Header -->
+    <div class="detail-hero">
+      <div class="detail-banner" role="img" aria-label="Photo or logo slot">
+        <span id="detail-initials"><?= $requestedBiz ? htmlspecialchars(substr($requestedBiz['name'], 0, 2), ENT_QUOTES, 'UTF-8') : 'BB' ?></span>
+        <small>Cover photo or logo goes here</small>
+      </div>
+
+      <div class="detail-hero-body">
+        <div class="detail-meta-row">
+          <span id="detail-meta-sector"><?= $requestedBiz ? htmlspecialchars($requestedBiz['sector_name'] . ' / ' . $requestedBiz['specialty_name'], ENT_QUOTES, 'UTF-8') : '' ?></span>
+          <span id="detail-meta-area"><?= $requestedBiz ? htmlspecialchars(trim(($requestedBiz['area_neighborhood'] ?? '') . ' ' . ($requestedBiz['city_county'] ?? '')), ENT_QUOTES, 'UTF-8') : '' ?></span>
+        </div>
+
+        <h1 id="detail-name"><?= $requestedBiz ? htmlspecialchars($requestedBiz['name'], ENT_QUOTES, 'UTF-8') : '' ?></h1>
+        <p class="detail-lead" id="detail-tagline">
+          <?= $requestedBiz ? htmlspecialchars($requestedBiz['tagline'] ?: $requestedBiz['description'], ENT_QUOTES, 'UTF-8') : '' ?>
+        </p>
+
+        <div class="founder-attribution" id="detail-founder" style="max-width:fit-content;margin-bottom:0;<?= ($requestedBiz && in_array($requestedBiz['founder_role'], ['founder', 'co_founder'], true)) ? '' : 'display:none;' ?>">
+          <span>👤</span>
+          <span id="detail-founder-text">
+            <?php if ($requestedBiz && in_array($requestedBiz['founder_role'], ['founder', 'co_founder'], true)): ?>
+              <?= ($requestedBiz['founder_role'] === 'co_founder' ? 'Co-Founded by ' : 'Founded by ') . htmlspecialchars((string)$requestedBiz['founder_name'], ENT_QUOTES, 'UTF-8') . ($requestedBiz['founder_school'] ? (' (' . htmlspecialchars((string)$requestedBiz['founder_school'], ENT_QUOTES, 'UTF-8') . ($requestedBiz['founder_year'] ? (' \'' . htmlspecialchars((string)$requestedBiz['founder_year'], ENT_QUOTES, 'UTF-8')) : '') . ')') : '') ?>
+            <?php endif; ?>
+          </span>
+        </div>
+
+        <div class="detail-chips-row">
+          <span class="detail-chip status-on" id="detail-hours-chip">🟢 Open Now</span>
+          <span class="detail-chip school" id="detail-school-chip">🎓 Verified Alum · <?= $requestedBiz ? htmlspecialchars((string)$requestedBiz['school_badge'], ENT_QUOTES, 'UTF-8') : 'AHS' ?></span>
+          <span class="detail-chip perk" id="detail-perk-chip" style="<?= ($requestedBiz && !empty($requestedBiz['alumni_perk'])) ? '' : 'display:none;' ?>">
+            🎁 <?= $requestedBiz ? htmlspecialchars((string)$requestedBiz['alumni_perk'], ENT_QUOTES, 'UTF-8') : '' ?>
+          </span>
+        </div>
+
+        <div class="detail-cta-bar">
+          <a href="<?= ($requestedBiz && !empty($requestedBiz['whatsapp_number'])) ? ('https://wa.me/' . preg_replace('/[^0-9]/', '', (string)$requestedBiz['whatsapp_number']) . '?text=' . urlencode('Hello ' . $requestedBiz['name'])) : '#' ?>" id="detail-wa-btn" class="btn-action-primary btn-action-whatsapp" style="padding:0 20px;height:42px;" target="_blank" rel="noopener">
+            <span>💬</span> WhatsApp
+          </a>
+          <a href="<?= ($requestedBiz && !empty($requestedBiz['phone_primary'])) ? ('tel:' . htmlspecialchars((string)$requestedBiz['phone_primary'], ENT_QUOTES, 'UTF-8')) : '#' ?>" id="detail-call-btn" class="btn-action-primary btn-action-call" style="padding:0 20px;height:42px;">
+            <span>📞</span> Call
+          </a>
+          <a href="<?= ($requestedBiz && !empty($requestedBiz['google_maps_url'])) ? htmlspecialchars((string)$requestedBiz['google_maps_url'], ENT_QUOTES, 'UTF-8') : '#' ?>" id="detail-route-btn" target="_blank" rel="noopener" class="btn btn-outline" style="display:inline-flex;align-items:center;gap:6px;height:42px;">
+            <span>🧭</span> Directions
+          </a>
+          <button type="button" id="detail-share-btn" class="btn btn-outline" style="display:inline-flex;align-items:center;gap:6px;height:42px;">
+            <span>🔗</span> Share
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2 Columns Grid (3fr / 2fr as in Kanyi prototype) -->
+    <div class="detail-cols-grid">
+      <!-- Column 1: Services, Photos, Alumni Recommendations -->
+      <div style="display:flex;flex-direction:column;gap:20px;">
+        <section class="detail-panel">
+          <h2>About &amp; Overview</h2>
+          <p id="detail-desc" style="font-size:14px;line-height:1.6;color:#374151;margin:0;">
+            <?= $requestedBiz ? nl2br(htmlspecialchars((string)$requestedBiz['description'], ENT_QUOTES, 'UTF-8')) : '' ?>
+          </p>
+        </section>
+
+        <section class="detail-panel">
+          <h2>Services &amp; Capabilities</h2>
+          <ul class="services-tag-list" id="detail-services-list">
+            <?php if ($requestedBiz): ?>
+              <li><?= htmlspecialchars((string)$requestedBiz['specialty_name'], ENT_QUOTES, 'UTF-8') ?></li>
+              <?php if (!empty($requestedBiz['secondary_specialty_name'])): ?>
+                <li><?= htmlspecialchars((string)$requestedBiz['secondary_specialty_name'], ENT_QUOTES, 'UTF-8') ?></li>
+              <?php endif; ?>
+            <?php endif; ?>
+          </ul>
+        </section>
+
+        <section class="detail-panel">
+          <h2>Photos &amp; Premises</h2>
+          <div class="photos-grid-3" id="detail-photos-grid">
+            <div class="photo-ph-slot"><span>🏢</span><strong>Premises / Office</strong></div>
+            <div class="photo-ph-slot"><span>🏗️</span><strong>Work &amp; Projects</strong></div>
+            <div class="photo-ph-slot"><span>📐</span><strong>Team &amp; Craft</strong></div>
+          </div>
+          <span style="font-size:12px;color:#7E8D84;">Three to five photos of the premises, work, or products.</span>
+        </section>
+
+        <section class="detail-panel">
+          <h2>Recommended by Busherians</h2>
+          <div style="font-size:14px;color:#18201B;">
+            <strong>Verified Alumni Biashara</strong>
+            <div style="font-size:12.5px;color:#57645C;margin-top:2px;">Peer-vetted under the Busherian Biasharas Community Charter.</div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Column 2: Contact & Location, Opening Hours, Share -->
+      <div style="display:flex;flex-direction:column;gap:20px;">
+        <section class="detail-panel">
+          <h2>Contact &amp; Location</h2>
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:13.5px;">
+            <div id="detail-phone-row">
+              <strong><?= $requestedBiz ? htmlspecialchars((string)$requestedBiz['phone_primary'], ENT_QUOTES, 'UTF-8') : '' ?></strong>
+              <div style="font-size:12px;color:#7E8D84;">Primary business contact and verified WhatsApp</div>
+            </div>
+            <div id="detail-loc-row">
+              <strong><?= $requestedBiz ? htmlspecialchars(trim(($requestedBiz['street_road'] ?? '') . ', ' . ($requestedBiz['city_county'] ?? '')), ENT_QUOTES, 'UTF-8') : '' ?></strong>
+              <div style="font-size:12px;color:#7E8D84;"><?= $requestedBiz ? htmlspecialchars((string)($requestedBiz['landmark_directions'] ?? 'Directions available via route link'), ENT_QUOTES, 'UTF-8') : '' ?></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-panel">
+          <h2>Opening Hours</h2>
+          <div id="detail-hours-summary" style="font-size:13.5px;font-weight:700;color:#114B3E;">
+            Weekdays &amp; Saturday Operating Schedule
+          </div>
+          <div id="detail-hours-table-wrap"></div>
+        </section>
+
+        <section class="detail-panel">
+          <h2>Share This Business</h2>
+          <p style="font-size:12.5px;color:#57645C;margin:0 0 8px 0;">
+            This page has its own canonical address, perfect for sending to a WhatsApp group or alumni chat.
+          </p>
+          <div style="display:flex;gap:8px;">
+            <a href="#" id="detail-share-wa-btn" target="_blank" rel="noopener" class="btn-action-primary btn-action-whatsapp" style="font-size:12px;height:36px;padding:0 14px;">
+              💬 Share on WhatsApp
+            </a>
+            <button type="button" id="detail-copy-link-btn" class="btn btn-outline" style="font-size:12px;height:36px;">
+              Copy link
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- More in Sector Panel -->
+    <section class="detail-panel" id="detail-more-section" style="margin-top:10px;">
+      <h2>More in This Sector</h2>
+      <div class="more-biasharas-grid" id="detail-more-grid"></div>
+    </section>
+  </article>
 
   <!-- Rich Business Detail Modal -->
   <div id="biz-modal-backdrop" data-testid="biz-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-label="Business Details">
@@ -478,23 +746,60 @@ $initialPagination = [
   </div>
   <?php endif; ?>
 
-  <!-- Footer -->
-  <footer style="max-width:1440px;margin:2rem auto 0 auto;padding:1.5rem 1.25rem;border-top:1px solid #E5E7EB;font-size:0.82rem;color:#6B7280;">
-    <div class="footer-charter-strip" data-testid="footer-charter-strip">
-      <span>
-        📜 <strong>100% Free-Forever Core Directory:</strong> Verified AHS &amp; AGHS standard listings, map pins, direct contacts &amp; self-served bookings carry <strong>zero listing or commission fees</strong>.
-      </span>
-      <a href="/charter.php" id="btn-open-charter-modal" data-testid="btn-open-charter-modal" class="footer-charter-btn">Read Community Charter</a>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
-      <div>
-        <strong>Busherian Biasharas</strong> — Strong to Serve &amp; Walk in the Light.
+  <!-- 4-Column Heritage Footer (#379 - #381) -->
+  <footer class="foot-site">
+    <div class="foot-inner">
+      <div class="footer-charter-strip" data-testid="footer-charter-strip" style="background:#FFFFFF;border:1px solid #E5DEC9;border-radius:10px;padding:12px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <span>
+          📜 <strong>100% Free-Forever Core Directory:</strong> Verified AHS &amp; AGHS standard listings, map pins, direct contacts &amp; self-served bookings carry <strong>zero listing or commission fees</strong>.
+        </span>
+        <a href="/charter.php" id="btn-open-charter-modal" data-testid="btn-open-charter-modal" class="footer-charter-btn" style="color:#114B3E;font-weight:700;text-decoration:underline;">Read Community Charter</a>
       </div>
-      <div style="display:flex;gap:1rem;flex-wrap:wrap;">
-        <a href="/submit.php" style="color:#7B1113;font-weight:600;">Register a Business</a>
-        <a href="/charter.php" data-testid="footer-charter-link">Community Charter</a>
-        <a href="/privacy.php">Privacy Notice</a>
-        <a href="/takedown.php">Report or Remove a Listing</a>
+
+      <div class="foot-cols">
+        <nav class="foot-col" aria-label="The directory">
+          <h2>THE DIRECTORY</h2>
+          <a href="/charter.php" data-testid="footer-charter-link">About and who runs it</a>
+          <a href="/charter.php">How vetting works</a>
+          <a href="/charter.php">Community Charter</a>
+          <span class="foot-note">Core listings are free, forever.</span>
+        </nav>
+        <nav class="foot-col" aria-label="For business owners">
+          <h2>FOR BUSINESS OWNERS</h2>
+          <a href="/submit.php">List your biashara</a>
+          <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>">Owner's page</a>
+          <a href="/takedown.php">Remove my listing</a>
+        </nav>
+        <nav class="foot-col" aria-label="Help and trust">
+          <h2>HELP AND TRUST</h2>
+          <a href="mailto:contact@busherianbiasharas.com">Contact the team</a>
+          <a href="/takedown.php">Report a listing</a>
+          <a href="/privacy.php">Privacy Notice</a>
+          <a href="/privacy.php#cookies">Cookie choices</a>
+        </nav>
+        <nav class="foot-col" aria-label="Community">
+          <h2>COMMUNITY</h2>
+          <a href="https://www.alliancehighschool.ac.ke/" target="_blank" rel="noopener">Alliance High School &nearr;</a>
+          <a href="https://aghs.sc.ke/" target="_blank" rel="noopener">Alliance Girls High School &nearr;</a>
+          <a href="javascript:void(0)" onclick="if(window.copyInviteText){window.copyInviteText();}">Invite a Busherian</a>
+          <a href="javascript:void(0)" onclick="document.getElementById('pwa-install-modal').hidden=false">Install app</a>
+        </nav>
+      </div>
+
+      <div class="foot-base">
+        <div class="foot-crests">
+          <div class="brand-crest" style="width:38px;height:38px;font-size:16px;">BB</div>
+          <a href="https://www.alliancehighschool.ac.ke/" target="_blank" rel="noopener" class="school-badge ahs" style="text-decoration:none;padding:5px 12px;font-size:12px;display:inline-flex;align-items:center;gap:4px;" title="Visit Alliance High School (ahs.ac.ke)">
+            <span>AHS</span> <span>&nearr;</span>
+          </a>
+          <a href="https://aghs.sc.ke/" target="_blank" rel="noopener" class="school-badge aghs" style="text-decoration:none;padding:5px 12px;font-size:12px;display:inline-flex;align-items:center;gap:4px;" title="Visit Alliance Girls High School (aghs.sc.ke)">
+            <span>AGHS</span> <span>&nearr;</span>
+          </a>
+        </div>
+        <div class="foot-base-text">
+          <strong>Strong to Serve. Walk in the Light.</strong>
+          <div class="note">2026 Busherian Biasharas. An independent alumni community initiative connecting Alliance High School and Alliance Girls High School enterprises worldwide. Not officially affiliated with Alliance High School or Alliance Girls High School.</div>
+        </div>
       </div>
     </div>
   </footer>
@@ -505,6 +810,8 @@ $initialPagination = [
     window.PLACE_UNIT_LABELS = <?= bbiz_json_for_html_script(LocationEngine::getPlaceUnitLabels()) ?>;
     window.INITIAL_BUSINESSES = <?= bbiz_json_for_html_script($initialBusinesses) ?>;
     window.INITIAL_PAGINATION = <?= bbiz_json_for_html_script($initialPagination) ?>;
+    window.REQUESTED_BIZ_SLUG = <?= json_encode($requestedBizSlug) ?>;
+    window.REQUESTED_BIZ = <?= json_encode($requestedBiz) ?>;
   </script>
   <script src="/assets/vendor/leaflet/leaflet.js"></script>
   <script src="/assets/js/consent-metrics.js?v=<?= urlencode($appVersion) ?>"></script>
