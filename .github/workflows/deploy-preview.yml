@@ -73,8 +73,8 @@ jobs:
           if [[ "${FTP_SERVER}" != "angryhosting.com" && "${FTP_SERVER}" != *.angryhosting.com ]]; then
             TLS_ARG=(--tls-servername "angryhosting.com")
           fi
-          # Dynamically mirror production's exact FTP server directory layout
-          PREVIEW_APP_ROOT="${FTP_SERVER_DIR/busherianbiasharas.com/preview.busherianbiasharas.com}"
+          # Angryhosting sets subdomain document root to busherianbiasharas.com/preview/html
+          PREVIEW_APP_ROOT="${FTP_SERVER_DIR%/www}/preview"
           python3 .github/scripts/ftps_deploy.py --mode preview --app-root "${PREVIEW_APP_ROOT}" --files-list /tmp/changed_files.txt --deleted-files-list /tmp/deleted_files.txt --release-sha "${GITHUB_SHA}" "${TLS_ARG[@]}"
 
       - name: Verify preview HTTP & schema readiness (#251, #362)
