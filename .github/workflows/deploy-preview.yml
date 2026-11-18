@@ -88,6 +88,12 @@ jobs:
               b_items = []
               ftp.retrlines("LIST /busherianbiasharas.com", b_items.append)
               lines.append("BB=" + " | ".join(b_items))
+              prev_items = []
+              try:
+                  ftp.retrlines("LIST /busherianbiasharas.com/preview", prev_items.append)
+                  lines.append("PREV=" + " | ".join(prev_items))
+              except Exception as e:
+                  lines.append(f"PREV_ERR={e}")
               ftp.quit()
           except Exception as e:
               lines.append(f"ERR={e}")
@@ -96,7 +102,7 @@ jobs:
               gh_out.write(f"report={out_str}\n")
           print(f"::notice title=FTPS Structure::{out_str}")
           PYEOF
-          python3 .github/scripts/ftps_deploy.py --mode preview --app-root /preview.busherianbiasharas.com/www --files-list /tmp/changed_files.txt --deleted-files-list /tmp/deleted_files.txt --release-sha "${GITHUB_SHA}" "${TLS_ARG[@]}"
+          python3 .github/scripts/ftps_deploy.py --mode preview --app-root /busherianbiasharas.com/preview --files-list /tmp/changed_files.txt --deleted-files-list /tmp/deleted_files.txt --release-sha "${GITHUB_SHA}" "${TLS_ARG[@]}"
 
 
 
