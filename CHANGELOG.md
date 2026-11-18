@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.32.6] - 2026-11-18
+### Fixed
+- **Admin Category Left-Join & Unmapped Category Visibility (`#356`)**: Updated `public/admin/index.php` to query sectors and specialties via `LEFT JOIN` instead of `INNER JOIN` across both pending vetting queue and existing business management lists. Added `unmapped_category` status filter option, top-bar diagnostic banner with direct filter link, and highlighted `⚠️ Unmapped Category` warning badge for listings with missing or orphaned taxonomy references.
+- **Production Mail Transport Incident Documentation (`#357`)**: Documented the unconfigured production SMTP transport incident preventing transactional OTP verification email dispatch on `/owner/claim.php`, mitigation via production `.env` `SMTP_HOST` configuration on Angryhosting, and planned post-verification automated health & pre-flight transport failsafes.
+
 ## [0.32.5] - 2026-11-16
 ### Changed
 - **Biashara Advisor Isolation to Pre-Prod Sandbox (`#352`, Parent `#351`)**: Gated the Ask Biashara Advisor pill toggle, natural-language query panel, and consent modal in `public/index.php` behind `PreprodSandbox::isPreprod()`, automated test suites (`APP_ENV=testing`), explicit environment flags (`BBIZ_ENABLE_ADVISOR`), and on-demand query preview (`?advisor=1`). Restored standard clean directory navigation for public production visitors while retaining full conversational testing in preprod environments.

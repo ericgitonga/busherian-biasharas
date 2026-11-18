@@ -130,8 +130,8 @@ $pendingStmt = $pdo->query("
         v.school_code, v.house_name, v.year_left, v.school_number,
         v.submitter_name, v.submitter_email, v.submitter_phone, v.created_at AS submitted_at
     FROM businesses b
-    INNER JOIN categories sec ON sec.id = b.sector_id
-    INNER JOIN categories spec ON spec.id = b.specialty_id
+    LEFT JOIN categories sec ON sec.id = b.sector_id
+    LEFT JOIN categories spec ON spec.id = b.specialty_id
     LEFT JOIN business_vetting_queue v ON v.business_id = b.id
     WHERE b.status = 'pending'
     ORDER BY b.id DESC
@@ -148,8 +148,8 @@ $allSql = "
         b.city_county, b.area_neighborhood, b.phone_primary, b.whatsapp_number, b.email_public, b.owner_email, b.website_url,
         sec.name AS sector_name, spec.name AS specialty_name, b.updated_at
     FROM businesses b
-    INNER JOIN categories sec ON sec.id = b.sector_id
-    INNER JOIN categories spec ON spec.id = b.specialty_id
+    LEFT JOIN categories sec ON sec.id = b.sector_id
+    LEFT JOIN categories spec ON spec.id = b.specialty_id
     WHERE 1=1
 ";
 $allParams = [];
@@ -162,7 +162,9 @@ if ($searchQ !== '') {
     $allParams[':q4'] = $qVal;
     $allParams[':q5'] = $qVal;
 }
-if ($statusFilter !== '' && in_array($statusFilter, ['approved', 'pending', 'quarantined_dpa', 'rejected'], true)) {
+if ($statusFilter === 'unmapped_category') {
+    $allSql .= " AND (sec.id IS NULL OR spec.id IS NULL)";
+} elseif ($statusFilter !== '' && in_array($statusFilter, ['approved', 'pending', 'quarantined_dpa', 'rejected'], true)) {
     $allSql .= " AND b.status = :st";
     $allParams[':st'] = $statusFilter;
 }
@@ -179,6 +181,13 @@ $leakedVettingCount = (int)$pdo->query("
 ")->fetchColumn();
 
 $approvedCount = (int)$pdo->query("SELECT COUNT(*) FROM businesses WHERE status = 'approved'")->fetchColumn();
+$unmappedCategoryCount = (int)$pdo->query("
+    SELECT COUNT(*)
+    FROM businesses b
+    LEFT JOIN categories sec ON sec.id = b.sector_id
+    LEFT JOIN categories spec ON spec.id = b.specialty_id
+    WHERE b.status = 'approved' AND (sec.id IS NULL OR spec.id IS NULL)
+")->fetchColumn();
 $cronHealth = VettingPurger::getRetentionCronHealth($pdo, 36);
 $retryableOutboxCount = (int)$pdo->query("
     SELECT COUNT(*)
@@ -261,6 +270,9 @@ try {
         <?php else: ?>
           <strong style="color:#92400E;">⚠️ Scheduled DPA Retention Cron Stale (&gt; <?= (int)$cronHealth['stale_after_hours'] ?>h):</strong>
           <span style="color:#78350F;">Last heartbeat: <code><?= htmlspecialchars((string)($cronHealth['last_run_utc'] ?? 'unknown'), ENT_QUOTES, 'UTF-8') ?> UTC</code>. Verify <code>php bin/purge-dpa-retention.php</code> in cPanel Cron Jobs.</span>
+        <?php endif; ?>
+        <?php if ($unmappedCategoryCount > 0): ?>
+          &nbsp;•&nbsp;<a href="/admin/index.php?status=unmapped_category#manage-businesses" style="color:#B45309;text-decoration:none;"><strong style="color:#B45309;">⚠️ <?= $unmappedCategoryCount ?> approved business(es) have unmapped categories (hidden from directory)</strong></a>
         <?php endif; ?>
         <?php if ($retryableOutboxCount > 0): ?>
           &nbsp;•&nbsp;<strong style="color:#991B1B;"><?= $retryableOutboxCount ?> queued/failed email(s) awaiting retry</strong> (<code>php bin/process-email-outbox.php</code>)
@@ -422,8 +434,12 @@ try {
                 <div>
                   <h3 style="margin:0 0 0.25rem 0;"><?= htmlspecialchars((string)$row['name'], ENT_QUOTES, 'UTF-8') ?></h3>
                   <div style="font-size:0.84rem;color:#7B1113;font-weight:700;">
-                    <?= htmlspecialchars((string)$row['sector_name'], ENT_QUOTES, 'UTF-8') ?> &rarr;
-                    <?= htmlspecialchars((string)$row['specialty_name'], ENT_QUOTES, 'UTF-8') ?>
+                    <?php if (!empty($row['sector_name']) && !empty($row['specialty_name'])): ?>
+                      <?= htmlspecialchars((string)$row['sector_name'], ENT_QUOTES, 'UTF-8') ?> &rarr;
+                      <?= htmlspecialchars((string)$row['specialty_name'], ENT_QUOTES, 'UTF-8') ?>
+                    <?php else: ?>
+                      <span style="color:#DC2626;background:#FEF2F2;border:1px solid #FECACA;border-radius:4px;padding:0.1rem 0.35rem;font-size:0.76rem;">⚠️ Unmapped Category</span>
+                    <?php endif; ?>
                   </div>
                   <p style="margin:0.4rem 0;font-size:0.88rem;color:#4B5563;"><?= htmlspecialchars((string)$row['tagline'], ENT_QUOTES, 'UTF-8') ?></p>
                 </div>
@@ -538,6 +554,9 @@ try {
           <select name="status" class="select-control" style="width:auto;">
             <option value="">All Statuses</option>
             <option value="approved" <?= $statusFilter === 'approved' ? 'selected' : '' ?>>Approved (Live)</option>
+            <?php if ($unmappedCategoryCount > 0): ?>
+              <option value="unmapped_category" <?= $statusFilter === 'unmapped_category' ? 'selected' : '' ?> style="color:#DC2626;font-weight:700;">⚠️ Unmapped Category (<?= $unmappedCategoryCount ?>)</option>
+            <?php endif; ?>
             <option value="quarantined_dpa" <?= $statusFilter === 'quarantined_dpa' ? 'selected' : '' ?>>Unpublished / Quarantined</option>
             <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Pending</option>
             <option value="rejected" <?= $statusFilter === 'rejected' ? 'selected' : '' ?>>Rejected</option>
@@ -604,8 +623,15 @@ try {
                   </div>
                 </td>
                 <td style="padding:0.75rem 1rem;">
-                  <div style="font-weight:600;color:#114B3E;"><?= htmlspecialchars((string)$b['sector_name'], ENT_QUOTES, 'UTF-8') ?></div>
-                  <div style="font-size:0.78rem;color:#6B7280;"><?= htmlspecialchars((string)$b['specialty_name'], ENT_QUOTES, 'UTF-8') ?></div>
+                  <?php if (!empty($b['sector_name']) && !empty($b['specialty_name'])): ?>
+                    <div style="font-weight:600;color:#114B3E;"><?= htmlspecialchars((string)$b['sector_name'], ENT_QUOTES, 'UTF-8') ?></div>
+                    <div style="font-size:0.78rem;color:#6B7280;"><?= htmlspecialchars((string)$b['specialty_name'], ENT_QUOTES, 'UTF-8') ?></div>
+                  <?php else: ?>
+                    <div style="font-weight:700;color:#DC2626;font-size:0.78rem;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:0.2rem 0.45rem;display:inline-block;">
+                      ⚠️ Unmapped Category
+                    </div>
+                    <div style="font-size:0.72rem;color:#991B1B;margin-top:0.2rem;">Hidden from directory until assigned</div>
+                  <?php endif; ?>
                 </td>
                 <td style="padding:0.75rem 1rem;">
                   <?= htmlspecialchars(trim($b['area_neighborhood'] . ', ' . $b['city_county'], ', '), ENT_QUOTES, 'UTF-8') ?>
