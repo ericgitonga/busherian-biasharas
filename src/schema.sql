@@ -30,6 +30,12 @@ CREATE TABLE IF NOT EXISTS businesses (
     -- School Affiliation Badge ONLY (No House, No Year Left, No School Number EVER stored here)
     school_badge ENUM('AHS', 'AGHS', 'BOTH') NOT NULL DEFAULT 'AHS',
 
+    -- Founder / Co-Founder Attribution (Opt-in display #383, #384)
+    founder_role ENUM('none', 'founder', 'co_founder') NOT NULL DEFAULT 'none',
+    founder_name VARCHAR(120) NULL,
+    founder_school VARCHAR(10) NULL,
+    founder_year VARCHAR(10) NULL,
+
     -- 2-Level Category Assignment (+ Optional Secondary Sector & Specialty for Cross-Sector Founders #279)
     sector_id INT UNSIGNED NOT NULL,
     specialty_id INT UNSIGNED NOT NULL,

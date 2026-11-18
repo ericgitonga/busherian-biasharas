@@ -145,7 +145,8 @@ try {
     $selectCols = "
         SELECT
             b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.description,
-            b.school_badge, b.sector_id, b.specialty_id,
+            b.school_badge, b.founder_role, b.founder_name, b.founder_school, b.founder_year,
+            b.sector_id, b.specialty_id,
             b.secondary_sector_id, b.secondary_specialty_id,
             sec.name AS sector_name, sec.slug AS sector_slug,
             spec.name AS specialty_name, spec.slug AS specialty_slug,
@@ -341,6 +342,10 @@ try {
             'tagline' => $row['tagline'],
             'description' => $row['description'],
             'school_badge' => $row['school_badge'],
+            'founder_role' => $row['founder_role'] ?? 'none',
+            'founder_name' => $row['founder_name'] ?? null,
+            'founder_school' => $row['founder_school'] ?? null,
+            'founder_year' => $row['founder_year'] ?? null,
             'sector_id' => (int)$row['sector_id'],
             'sector_name' => $row['sector_name'],
             'specialty_id' => (int)$row['specialty_id'],
