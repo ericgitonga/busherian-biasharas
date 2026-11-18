@@ -944,6 +944,27 @@ if ($initialDriver === 'sqlite') {
 Database::resetConnection();
 $pdo = Database::getConnection();
 
+// 34b. Standalone Preview Subdomain & Environment Detection (#359, #360, #361, #362)
+putenv('APP_ENV=preview');
+$_ENV['APP_ENV'] = 'preview';
+assertTrue(
+    Database::isPreview() === true &&
+    Database::isProduction() === false &&
+    PreprodSandbox::isPreprod() === true,
+    'Database::isPreview() and PreprodSandbox::isPreprod() detect preview mode cleanly and Database::isProduction() returns false (#360, #361)'
+);
+
+$standaloneHandoff = PreprodSandbox::generateProdToPreprodHandoffUrl('/admin/');
+parse_str((string)parse_url($standaloneHandoff, PHP_URL_QUERY), $standaloneQp);
+assertTrue(
+    str_starts_with($standaloneHandoff, 'https://preview.busherianbiasharas.com/admin/?preprod_handoff=') &&
+    PreprodSandbox::verifyProdHandoffToken((string)($standaloneQp['preprod_handoff'] ?? '')) === true,
+    'PreprodSandbox generates clean signed handoff URL targeting preview.busherianbiasharas.com without subpath prefix (#360, #361)'
+);
+
+putenv('APP_ENV=testing');
+$_ENV['APP_ENV'] = 'testing';
+
 // 35. Verify Tickets #151, #152, #153, #154, #155: Password-First Owner Sign-In, 6-Digit OTP Setup/Reset, Masked Email Hints & WhatsApp Access Link
 assertTrue(
     OwnerAuth::maskEmailAddress('justinake@yahoo.com') === 'j•••••••e@yahoo.com' &&
@@ -3215,14 +3236,16 @@ $jsonSkip235 = json_decode($outSkip235, true) ?: [];
 @unlink($cliLockDb235 . '-shm');
 @rmdir($cliLockDir235);
 
-$preprodWf235 = (string)file_get_contents(dirname(__DIR__) . '/.github/workflows/deploy-preprod.yml');
+$previewWf235 = is_file(dirname(__DIR__) . '/.github/workflows/deploy-preview.yml')
+    ? (string)file_get_contents(dirname(__DIR__) . '/.github/workflows/deploy-preview.yml')
+    : (string)file_get_contents(dirname(__DIR__) . '/.github/workflows/deploy-preprod.yml');
 assertTrue(
     $rcHold235 === 0 &&
     $rcSkip235 === 0 &&
     ($jsonHold235['status'] ?? '') === 'ok' &&
     ($jsonSkip235['status'] ?? '') === 'skipped_locked' &&
-    str_contains($preprodWf235, 'cancel-in-progress: false'),
-    'CLI workers enforce non-blocking OS flock() overlap guard across concurrent OS processes and deploy-preprod.yml prevents mid-promotion cancellation (#235)'
+    str_contains($previewWf235, 'cancel-in-progress: false'),
+    'CLI workers enforce non-blocking OS flock() overlap guard across concurrent OS processes and deploy-preview.yml prevents mid-promotion cancellation (#235, #362)'
 );
 
 

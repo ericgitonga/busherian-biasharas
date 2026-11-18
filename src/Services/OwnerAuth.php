@@ -10,17 +10,15 @@ final class OwnerAuth
 {
     public const MAX_OTP_FAILED_ATTEMPTS = 5;
     private const COOKIE_NAME = 'bbiz_owner_session';
-    private const PREPROD_COOKIE_NAME = 'bbiz_preprod_owner_session';
 
     private static function cookieName(): string
     {
-        return PreprodSandbox::isPreprod() ? self::PREPROD_COOKIE_NAME : self::COOKIE_NAME;
+        return self::COOKIE_NAME;
     }
 
     private static function cookiePath(): string
     {
-        $bp = PreprodSandbox::basePath();
-        return $bp !== '' ? $bp : '/';
+        return '/';
     }
 
     private static function isHttpsRequest(): bool
@@ -32,7 +30,7 @@ final class OwnerAuth
     /**
      * Centralized secure PHP session bootstrap (#165):
      * Enforces session.use_strict_mode=1, session.use_only_cookies=1, HttpOnly, SameSite=Lax,
-     * Secure flag under HTTPS/reverse-proxy TLS, and isolated preprod session cookie name/path.
+     * and Secure flag under HTTPS/reverse-proxy TLS.
      */
     public static function startSecureSession(): void
     {
@@ -43,13 +41,9 @@ final class OwnerAuth
             }
             @ini_set('session.use_strict_mode', '1');
             @ini_set('session.use_only_cookies', '1');
-            $basePath = PreprodSandbox::basePath();
-            if ($basePath !== '') {
-                session_name('BBIZ_PREPROD_SESS');
-            }
             session_set_cookie_params([
                 'lifetime' => 0,
-                'path' => $basePath !== '' ? $basePath : '/',
+                'path' => '/',
                 'secure' => self::isHttpsRequest(),
                 'httponly' => true,
                 'samesite' => 'Lax',

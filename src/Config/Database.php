@@ -55,6 +55,24 @@ final class Database
         return $_ENV[$key] ?? $default;
     }
 
+    public static function isProduction(): bool
+    {
+        if (self::isPreview()) {
+            return false;
+        }
+        return strtolower(self::env('APP_ENV', 'production')) === 'production';
+    }
+
+    public static function isPreview(): bool
+    {
+        $env = strtolower(self::env('APP_ENV', ''));
+        if (in_array($env, ['preview', 'preprod', 'staging'], true)) {
+            return true;
+        }
+        $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+        return str_starts_with($host, 'preview.');
+    }
+
     /**
      * L1 Security Gate: Fail closed in production if cryptographic secrets are missing or left at placeholder defaults.
      */
@@ -74,7 +92,7 @@ final class Database
             'default',
         ];
 
-        if ($appEnv === 'production') {
+        if ($appEnv === 'production' && !self::isPreview()) {
             if (in_array($hmac, $placeholders, true) || strlen($hmac) < 32 ||
                 in_array($ipSalt, $placeholders, true) || strlen($ipSalt) < 32 ||
                 in_array($csrf, $placeholders, true) || strlen($csrf) < 32) {
@@ -98,7 +116,8 @@ final class Database
         self::loadEnv();
         self::validateProductionSecrets();
 
-        $driver = strtolower(self::env('DB_DRIVER', 'mysql'));
+        $defaultDriver = self::isPreview() ? 'sqlite' : 'mysql';
+        $driver = strtolower(self::env('DB_DRIVER', $defaultDriver));
         $fallback = strtolower(self::env('DB_DRIVER_FALLBACK', 'none'));
         $appEnv = strtolower(self::env('APP_ENV', 'development'));
 

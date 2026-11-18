@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.33.0] - 2026-11-18
+### Added
+- **Standalone Preview Subdomain Environment (`#359`, `#361`, Parent `#359`)**:
+  - Configured first-class standalone preview environment on `preview.busherianbiasharas.com` backed by isolated SQLite database storage (`storage/busherian_biasharas.sqlite`), ensuring zero mutation risk to production MySQL (`egimba_bbiz`).
+  - Added `Database::isPreview()` and `Database::isProduction()` helpers in `src/Config/Database.php` to automatically detect the preview subdomain and default driver to SQLite without manual configuration.
+  - Implemented 1-click signed administrator handoff (`PreprodSandbox::generateProdToPreprodHandoffUrl('/admin/')`) linking production admin console directly to `https://preview.busherianbiasharas.com/admin/` with automatic session establishment.
+  - Added persistent visual environment indicator banners in both public directory (`public/index.php`) and admin console (`public/admin/index.php`) notifying visitors of the simulated SQLite preview environment with a direct link back to live production.
+  - Enforced staging SMTP isolation (`SIMULATE_EMAILS=yes`) and local sandbox test data reset/seeding in `public/admin/sandbox.php` on preview while guarding live production against accidental test resets.
+- **Dedicated FTPS Deployment Pipeline for Preview (`#362`, Parent `#359`)**:
+  - Added `.github/workflows/deploy-preview.yml` deploying directly to `/preview.busherianbiasharas.com/www` upon push to `preview` branch (or via workflow dispatch).
+  - Updated `.github/scripts/ftps_deploy.py` with explicit `--mode preview` mapping (`clean_root = (app_root or "/preview.busherianbiasharas.com/www")`, mapping `public/*` to `{clean_root}/html/*` and application files to `{clean_root}/*`).
+  - Added preview HTTP & schema readiness verification probe targeting `https://preview.busherianbiasharas.com/api/health.php?verify_schema=1`.
+
+### Removed
+- **Legacy `/admin/preprod` Subpath Architecture (`#360`, Parent `#359`)**:
+  - Removed all legacy `/admin/preprod` subpath calculations, base path rewrites, output buffer manipulations, and custom cookie prefix hacks (`BBIZ_PREPROD_SESS`, `bbiz_preprod_owner_session`) from `src/Services/AdminAuth.php`, `src/Services/OwnerAuth.php`, `src/Services/EngagementRanker.php`, and `src/Services/PreprodSandbox.php`.
+  - Removed legacy `/admin/preprod/` path stripping in `public/api/track-metric.php`.
+  - Retired `.github/workflows/deploy-preprod.yml` and obsolete code-injection staging routines.
+
 ## [0.32.8] - 2026-11-18
 ### Fixed
 - **Authentication OTP Mail Transport Fallback & Diagnostics (`#365`)**: 

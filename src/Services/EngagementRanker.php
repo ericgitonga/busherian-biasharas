@@ -233,10 +233,8 @@ final class EngagementRanker
     public static function resolveViewerWithoutStartingAnonymousSession(PDO $pdo): array
     {
         $hasPhpSessionCookie = !empty($_COOKIE['PHPSESSID'])
-            || !empty($_COOKIE['BBIZ_PREPROD_SESS'])
             || (session_status() === PHP_SESSION_ACTIVE);
-        $hasOwnerCookie = !empty($_COOKIE['bbiz_owner_session'])
-            || !empty($_COOKIE['bbiz_preprod_owner_session']);
+        $hasOwnerCookie = !empty($_COOKIE['bbiz_owner_session']);
         $hasAdminHeader = trim((string)($_SERVER['HTTP_X_ADMIN_TOKEN'] ?? '')) !== '';
 
         $ownerId = null;

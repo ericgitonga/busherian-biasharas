@@ -11,12 +11,32 @@ use BusherianBiasharas\Services\PreprodSandbox;
 bbiz_send_security_headers(false);
 AdminAuth::requireAdmin();
 
-// If visited on Live Prod, never expose DB reset/dummy-seeding on production — hand off cleanly to /admin/preprod!
+// If visited on Live Prod, never expose DB reset/dummy-seeding on production — direct to standalone preview!
 if (!PreprodSandbox::isPreprod()) {
-    $handoffUrl = PreprodSandbox::generateProdToPreprodHandoffUrl('/admin/sandbox.php');
-    if (!headers_sent()) {
-        header('Location: ' . $handoffUrl);
-    }
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sandbox Controls Restricted — Busherian Biasharas</title>
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body style="background:#F9FAFB;padding:2rem;font-family:system-ui,-apple-system,sans-serif;">
+  <div style="max-width:600px;margin:3rem auto;background:#fff;border:1px solid #D1D5DB;border-radius:12px;padding:2rem;box-shadow:0 4px 12px rgba(0,0,0,0.06);">
+    <span style="display:inline-block;background:#FEF3C7;color:#92400E;border:1px solid #F59E0B;border-radius:999px;padding:0.25rem 0.75rem;font-size:0.78rem;font-weight:800;margin-bottom:0.75rem;">🛡️ PRODUCTION PROTECTED</span>
+    <h1 style="margin:0 0 0.5rem 0;color:#114B3E;font-size:1.35rem;">Sandbox Controls Restricted to Preview</h1>
+    <p style="color:#4B5563;font-size:0.92rem;line-height:1.5;margin-bottom:1.5rem;">
+      Database resetting, mock listing seeding, and email outbox clearing are strictly disabled on the Live Production MySQL database to protect real business records.
+    </p>
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+      <a href="https://preview.busherianbiasharas.com/admin/sandbox.php" class="btn btn-green" style="font-weight:700;padding:0.65rem 1.25rem;border-radius:8px;text-decoration:none;color:#fff;background:#114B3E;">Open Preview Sandbox &rarr;</a>
+      <a href="/admin/index.php" class="btn btn-outline" style="font-weight:700;padding:0.65rem 1.25rem;border-radius:8px;text-decoration:none;color:#374151;border:1px solid #D1D5DB;">&larr; Back to Admin Console</a>
+    </div>
+  </div>
+</body>
+</html>
+<?php
     exit;
 }
 

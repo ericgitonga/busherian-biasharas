@@ -33,10 +33,18 @@ final class PreprodSandbox
 
     public static function isPreprod(): bool
     {
+        if (defined('BBIZ_PREVIEW_MODE') && BBIZ_PREVIEW_MODE === true) {
+            return true;
+        }
         if (defined('BBIZ_PREPROD_MODE') && BBIZ_PREPROD_MODE === true) {
             return true;
         }
-        if (strtolower((string)(getenv('APP_ENV') ?: ($_ENV['APP_ENV'] ?? ''))) === 'preprod') {
+        $env = strtolower((string)(getenv('APP_ENV') ?: ($_ENV['APP_ENV'] ?? '')));
+        if (in_array($env, ['preview', 'preprod', 'staging'], true)) {
+            return true;
+        }
+        $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+        if (str_starts_with($host, 'preview.')) {
             return true;
         }
         return self::basePath() !== '';
@@ -134,7 +142,7 @@ final class PreprodSandbox
         }
 
         $basePath = self::basePath();
-        if ($basePath === '') {
+        if ($basePath === '' && defined('BBIZ_PREPROD_MODE') && BBIZ_PREPROD_MODE === true) {
             $basePath = '/admin/preprod';
             self::setEnvVar('BBIZ_BASE_PATH', $basePath);
         }
@@ -161,7 +169,8 @@ final class PreprodSandbox
         }
 
         // Strictly force isolated SQLite DB & simulated outbound emails (Rule #7)
-        self::setEnvVar('APP_ENV', 'preprod');
+        $targetEnv = ($basePath === '' ? 'preview' : 'preprod');
+        self::setEnvVar('APP_ENV', $targetEnv);
         self::setEnvVar('DB_DRIVER', 'sqlite');
         self::setEnvVar('DB_DRIVER_FALLBACK', 'sqlite');
         self::setEnvVar('SIMULATE_EMAILS', 'yes');
@@ -180,8 +189,12 @@ final class PreprodSandbox
         }
 
         if (getenv('APP_URL') === false || defined('BBIZ_PREPROD_MODE')) {
-            $prodOrigin = rtrim((string)(self::$prodEnv['APP_URL'] ?? 'https://www.busherianbiasharas.com'), '/');
-            self::setEnvVar('APP_URL', $prodOrigin . $basePath);
+            if ($basePath === '') {
+                self::setEnvVar('APP_URL', 'https://preview.busherianbiasharas.com');
+            } else {
+                $prodOrigin = rtrim((string)(self::$prodEnv['APP_URL'] ?? 'https://www.busherianbiasharas.com'), '/');
+                self::setEnvVar('APP_URL', $prodOrigin . $basePath);
+            }
         }
 
         Database::resetConnection();
@@ -189,16 +202,35 @@ final class PreprodSandbox
         if (PHP_SAPI !== 'cli') {
             if (!headers_sent()) {
                 header('X-Robots-Tag: noindex, nofollow, noarchive');
-                header('X-BBiz-Environment: preprod');
+                header('X-BBiz-Environment: ' . $targetEnv);
             }
 
-            if (function_exists('header_register_callback')) {
-                header_register_callback([self::class, 'rewriteLocationHeaders']);
+            // 1-click signed handoff from Live Prod Admin
+            if (!empty($_GET['preprod_handoff']) && self::verifyProdHandoffToken((string)$_GET['preprod_handoff'])) {
+                self::issueGateCookie();
+                AdminAuth::establishAdminSession();
+
+                $reqUri = (string)($_SERVER['REQUEST_URI'] ?? '/admin/');
+                $cleanUri = preg_replace('/([?&])preprod_handoff=[^&]*(&|$)/', '$1', $reqUri) ?? $reqUri;
+                $cleanUri = rtrim($cleanUri, '?&');
+                if ($cleanUri === '') {
+                    $cleanUri = '/admin/';
+                }
+                if (!headers_sent()) {
+                    header('Location: ' . $cleanUri);
+                }
+                exit;
             }
 
-            self::enforceAccessGate();
+            if ($basePath !== '') {
+                if (function_exists('header_register_callback')) {
+                    header_register_callback([self::class, 'rewriteLocationHeaders']);
+                }
 
-            ob_start([self::class, 'rewriteHtmlOutput']);
+                self::enforceAccessGate();
+
+                ob_start([self::class, 'rewriteHtmlOutput']);
+            }
         }
     }
 
@@ -224,7 +256,11 @@ final class PreprodSandbox
             $cleanSub = '/';
         }
         $sep = str_contains($cleanSub, '?') ? '&' : '?';
-        return '/admin/preprod' . $cleanSub . $sep . 'preprod_handoff=' . urlencode("{$exp}.{$sig}");
+        $base = self::basePath();
+        if ($base !== '') {
+            return $base . $cleanSub . $sep . 'preprod_handoff=' . urlencode("{$exp}.{$sig}");
+        }
+        return 'https://preview.busherianbiasharas.com' . $cleanSub . $sep . 'preprod_handoff=' . urlencode("{$exp}.{$sig}");
     }
 
     public static function verifyProdHandoffToken(string $rawToken): bool

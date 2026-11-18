@@ -184,6 +184,11 @@ $initialPagination = [
   <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode($appVersion) ?>">
 </head>
 <body>
+<?php if (\BusherianBiasharas\Services\PreprodSandbox::isPreprod()): ?>
+  <div style="background:#FEF3C7;border-bottom:1px solid #F59E0B;color:#92400E;text-align:center;padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;">
+    🧪 PREVIEW ENVIRONMENT (preview.busherianbiasharas.com) &bull; Isolated SQLite &bull; Outbound Emails Simulated &bull; <a href="https://www.busherianbiasharas.com/" style="color:#92400E;text-decoration:underline;">Switch to Live Production &rarr;</a>
+  </div>
+<?php endif; ?>
 
   <!-- Heritage Header -->
   <header class="site-header">
