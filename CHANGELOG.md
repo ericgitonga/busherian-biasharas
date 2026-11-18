@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.32.7] - 2026-11-18
+### Fixed
+- **Anti-Spam OTP Silent-Drop Elimination & Differentiated Rate Limits (`#363`)**: 
+  - Adjusted `AntiSpamGate::verifySubmission` to distinguish single-field OTP actions (`owner_otp_send`, `claim_otp_send`, `submit_owner_otp`) from full business submissions, reducing the time-trap from 4 seconds to 1 second so legitimate users requesting or resending a code are not falsely flagged as bots.
+  - Raised connection rate limits for OTP actions to 6 attempts per 15 minutes and 20 per 24 hours (up from 2 per 15m), and eliminated deceptive `silent_drop=true` masking on rate-limit violations so owners receive transparent, actionable feedback instead of faux success banners with suppressed delivery.
+  - Added explicit user-facing error mappings in `public/owner/login.php` and `public/owner/claim.php` for `layer5_ip_rate_limit_15m`, `layer5_ip_rate_limit_24h`, and `layer5_global_rate_limit_1h`.
+- **PHP Mail Fallback Override Resilience (`#363`)**: Updated `Mailer::isPhpMailFallbackEnabled()` so `ALLOW_PHP_MAIL_FALLBACK=yes` functions as an authoritative fallback override when remote SMTP transport connectivity times out on shared hosting.
+
 ## [0.32.6] - 2026-11-18
 ### Fixed
 - **Admin Category Left-Join & Unmapped Category Visibility (`#356`)**: Updated `public/admin/index.php` to query sectors and specialties via `LEFT JOIN` instead of `INNER JOIN` across both pending vetting queue and existing business management lists. Added `unmapped_category` status filter option, top-bar diagnostic banner with direct filter link, and highlighted `⚠️ Unmapped Category` warning badge for listings with missing or orphaned taxonomy references.

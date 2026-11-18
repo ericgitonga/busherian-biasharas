@@ -251,11 +251,11 @@ final class Mailer
      */
     public static function isPhpMailFallbackEnabled(): bool
     {
-        $disableFallback = strtolower(trim(Database::env('SMTP_DISABLE_MAIL_FALLBACK', 'yes')));
         $allowLegacy = strtolower(trim(Database::env('ALLOW_PHP_MAIL_FALLBACK', 'no')));
-        if ($allowLegacy === 'yes' && $disableFallback === 'no') {
+        if (in_array($allowLegacy, ['yes', 'true', '1'], true)) {
             return true;
         }
+        $disableFallback = strtolower(trim(Database::env('SMTP_DISABLE_MAIL_FALLBACK', 'yes')));
         return $disableFallback === 'no' && strtolower(trim(Database::env('APP_ENV', 'production'))) !== 'production';
     }
 
