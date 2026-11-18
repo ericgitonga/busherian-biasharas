@@ -46,13 +46,10 @@ jobs:
         run: |
           set -euo pipefail
           : > /tmp/deleted_files.txt
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$SYNC_ALL" = "true" ]; then
-            git ls-files public src bin VERSION > /tmp/changed_files.txt
-          elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
-            git diff -M --name-only --diff-filter=ACMRT "$BEFORE_SHA" "$AFTER_SHA" -- public src bin VERSION > /tmp/changed_files.txt
-            git diff -M --name-status "$BEFORE_SHA" "$AFTER_SHA" -- public src bin | python3 .github/scripts/ftps_deploy.py --mode preview --extract-retired-from-stdin > /tmp/deleted_files.txt
-          else
-            git ls-files public src bin VERSION > /tmp/changed_files.txt
+          # Always sync all tracked public, src, bin, and VERSION files on preview to prevent diff desynchronization
+          git ls-files public src bin VERSION > /tmp/changed_files.txt
+          if [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            git diff -M --name-status "$BEFORE_SHA" "$AFTER_SHA" -- public src bin | python3 .github/scripts/ftps_deploy.py --mode preview --extract-retired-from-stdin > /tmp/deleted_files.txt || true
           fi
 
           while IFS= read -r file; do
