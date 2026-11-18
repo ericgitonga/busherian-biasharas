@@ -415,7 +415,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         $existingTargetOwner = OwnerAuth::findOwnerByEmail($pdo, $submitterEmail);
                         if ($existingTargetOwner === null && !OwnerAuth::isRecognizedOwnerEmail($pdo, $submitterEmail)) {
-                            $otpRate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'submit_owner_otp', 2, 5, 15);
+                            $otpRate = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'submit_owner_otp', 6, 20, 50);
                             if ($otpRate['allowed']) {
                                 $otpQuota = AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, $submitterEmail, true);
                                 if ($otpQuota['allowed']) {

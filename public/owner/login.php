@@ -161,6 +161,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'layer2_invalid_signature' => 'Security verification signature could not be confirmed. Please reload the page and try again.',
                     'layer2_form_expired' => 'This verification form expired (older than 2 hours). Please reload and try again.',
                     'layer2_nonce_replayed' => 'This verification form was already submitted. Enter your 6-digit code or reload for a fresh form.',
+                    'layer5_ip_rate_limit_15m' => 'Too many verification attempts from this connection. Please wait a few minutes before requesting another code.',
+                    'layer5_ip_rate_limit_24h' => 'Daily verification attempt limit reached for this connection. Please try again tomorrow.',
+                    'layer5_global_rate_limit_1h' => 'Verification dispatch is temporarily busy. Please wait a few minutes and try again.',
                 ];
                 $flashError = $reasonMap[$spamCheck['reason']] ?? 'Verification request blocked by security check. Please reload and try again.';
             }

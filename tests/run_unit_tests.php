@@ -5819,6 +5819,58 @@ assertTrue(
     '62c (#370): ConciergeRetriever matches The Last Village Lodge as Direct Match for team building venue and excludes construction'
 );
 
+// 63 (#363): AntiSpamGate owner_otp_send allows resends (up to 5 in 15m), 1s min fill, non-silent drop on rate limit
+$otpTestIp = '198.51.100.99';
+$pdo->prepare("DELETE FROM rate_limits WHERE action_type = 'owner_otp_send' AND ip_hmac = :ip")
+    ->execute([':ip' => AntiSpamGate::pseudonymizeIp($otpTestIp)]);
+
+$otpTokens = AntiSpamGate::generateFormTokens(time() - 2);
+$otpPayload = [
+    'website' => '',
+    'form_ts' => $otpTokens['form_ts'],
+    'form_nonce' => $otpTokens['form_nonce'],
+    'form_sig' => $otpTokens['form_sig'],
+    'js_interaction_token' => 'human_verified_' . time(),
+    'name' => 'Owner OTP Verification',
+    'submitter_name' => 'Valid Owner',
+    'tagline' => 'Owner Code Request',
+    'description' => 'Clean OTP description',
+];
+
+$v1 = AntiSpamGate::verifySubmission($pdo, $otpPayload, $otpTestIp, 'owner_otp_send');
+assertTrue(
+    $v1['passed'] === true && $v1['silent_drop'] === false,
+    '63a (#363): AntiSpamGate accepts owner_otp_send with 2s fill time and passes cleanly'
+);
+
+// Verify that OTP action rate limit allows up to 6 requests before tripping
+for ($ri = 2; $ri <= 6; $ri++) {
+    $tokI = AntiSpamGate::generateFormTokens(time() - 2);
+    $payI = array_merge($otpPayload, [
+        'form_ts' => $tokI['form_ts'],
+        'form_nonce' => $tokI['form_nonce'],
+        'form_sig' => $tokI['form_sig'],
+    ]);
+    AntiSpamGate::verifySubmission($pdo, $payI, $otpTestIp, 'owner_otp_send');
+}
+
+$tok7 = AntiSpamGate::generateFormTokens(time() - 2);
+$pay7 = array_merge($otpPayload, [
+    'form_ts' => $tok7['form_ts'],
+    'form_nonce' => $tok7['form_nonce'],
+    'form_sig' => $tok7['form_sig'],
+]);
+$v7 = AntiSpamGate::verifySubmission($pdo, $pay7, $otpTestIp, 'owner_otp_send');
+assertTrue(
+    $v7['passed'] === false &&
+    $v7['silent_drop'] === false &&
+    $v7['reason'] === 'layer5_ip_rate_limit_15m',
+    '63b (#363): 7th attempt trips 15m rate limit with transparent silent_drop=false for user feedback'
+);
+
+$pdo->prepare("DELETE FROM rate_limits WHERE action_type = 'owner_otp_send' AND ip_hmac = :ip")
+    ->execute([':ip' => AntiSpamGate::pseudonymizeIp($otpTestIp)]);
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');

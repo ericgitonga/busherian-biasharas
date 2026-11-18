@@ -128,7 +128,9 @@ final class AntiSpamGate
         }
 
         $elapsed = time() - $ts;
-        if ($elapsed < self::MIN_FILL_SECONDS) {
+        $isOtpAction = in_array($actionType, ['owner_otp_send', 'claim_otp_send', 'owner_claim_otp', 'submit_owner_otp'], true);
+        $minFill = $isOtpAction ? 1 : self::MIN_FILL_SECONDS;
+        if ($elapsed < $minFill) {
             return ['passed' => false, 'silent_drop' => true, 'reason' => 'layer2_submitted_too_fast'];
         }
         if ($elapsed > self::MAX_FORM_AGE_SECONDS) {
@@ -193,9 +195,11 @@ final class AntiSpamGate
             }
         }
 
-        $rateCheck = self::checkAndRecordRateLimit($pdo, $clientIp, $actionType);
+        $limit15m = $isOtpAction ? 6 : 2;
+        $limit24h = $isOtpAction ? 20 : 5;
+        $rateCheck = self::checkAndRecordRateLimit($pdo, $clientIp, $actionType, $limit15m, $limit24h);
         if (!$rateCheck['allowed']) {
-            return ['passed' => false, 'silent_drop' => true, 'reason' => $rateCheck['reason']];
+            return ['passed' => false, 'silent_drop' => !$isOtpAction, 'reason' => $rateCheck['reason']];
         }
 
         return ['passed' => true, 'silent_drop' => false, 'reason' => 'ok'];
