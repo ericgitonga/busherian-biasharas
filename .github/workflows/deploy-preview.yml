@@ -66,16 +66,14 @@ jobs:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }}
+          FTP_APP_ROOT: /preview.busherianbiasharas.com/www
         run: |
           set -euo pipefail
           TLS_ARG=()
           if [[ "${FTP_SERVER}" != "angryhosting.com" && "${FTP_SERVER}" != *.angryhosting.com ]]; then
             TLS_ARG=(--tls-servername "angryhosting.com")
           fi
-          # Angryhosting sets subdomain document root to busherianbiasharas.com/preview/html
-          PREVIEW_APP_ROOT="${FTP_SERVER_DIR%/www}/preview"
-          python3 .github/scripts/ftps_deploy.py --mode preview --app-root "${PREVIEW_APP_ROOT}" --files-list /tmp/changed_files.txt --deleted-files-list /tmp/deleted_files.txt --release-sha "${GITHUB_SHA}" "${TLS_ARG[@]}"
+          python3 .github/scripts/ftps_deploy.py --mode preview --app-root /preview.busherianbiasharas.com/www --files-list /tmp/changed_files.txt --deleted-files-list /tmp/deleted_files.txt --release-sha "${GITHUB_SHA}" "${TLS_ARG[@]}"
 
       - name: Verify preview HTTP & schema readiness (#251, #362)
         run: |

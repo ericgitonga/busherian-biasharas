@@ -130,7 +130,7 @@ def map_remote_path(rel_path: str, app_root: str, mode: str) -> str:
             return f"{clean_root}/html/{sub}"
         return f"{clean_root}/{norm}"
     if mode == "preview":
-        clean_root = (app_root or "/busherianbiasharas.com/preview").rstrip("/")
+        clean_root = (app_root or "/preview.busherianbiasharas.com/www").rstrip("/")
         if norm.startswith("public/"):
             sub = norm[len("public/"):]
             return f"{clean_root}/html/{sub}"
@@ -154,7 +154,7 @@ def manifest_remote_path(app_root: str, mode: str) -> str:
         clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
         return f"{clean_root}/.deploy_manifest.json"
     if mode == "preview":
-        clean_root = (app_root or "/busherianbiasharas.com/preview").rstrip("/")
+        clean_root = (app_root or "/preview.busherianbiasharas.com/www").rstrip("/")
         return f"{clean_root}/.deploy_manifest.json"
     if mode == "preprod":
         clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
@@ -167,7 +167,7 @@ def maintenance_gate_remote_path(app_root: str, mode: str) -> str:
         clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
         return f"{clean_root}/.maintenance_deploy.json"
     if mode == "preview":
-        clean_root = (app_root or "/busherianbiasharas.com/preview").rstrip("/")
+        clean_root = (app_root or "/preview.busherianbiasharas.com/www").rstrip("/")
         return f"{clean_root}/.maintenance_deploy.json"
     if mode == "preprod":
         clean_root = (app_root or "/busherianbiasharas.com/www").rstrip("/")
@@ -647,7 +647,7 @@ def main(argv: list[str] | None = None) -> int:
     host = os.environ["FTP_SERVER"]
     user = os.environ["FTP_USERNAME"]
     password = os.environ["FTP_PASSWORD"]
-    default_root = "/busherianbiasharas.com/preview" if args.mode == "preview" else "/busherianbiasharas.com/www"
+    default_root = "/preview.busherianbiasharas.com/www" if args.mode == "preview" else "/busherianbiasharas.com/www"
     app_root = (args.app_root or os.environ.get("FTP_APP_ROOT") or default_root).rstrip("/")
 
     try:
