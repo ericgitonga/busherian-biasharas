@@ -598,6 +598,11 @@ def collect_deleted_from_args(args: argparse.Namespace) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Deploy files over certificate-verified Explicit FTPS.")
     parser.add_argument("--mode", choices=("prod", "preview", "preprod"), required=True)
+    parser.add_argument(
+        "--app-root",
+        default=os.environ.get("FTP_APP_ROOT", ""),
+        help="Remote application root directory on FTP server",
+    )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--files-list", help="Newline-delimited file of repo-relative paths to upload")
     group.add_argument("--stage-dir", help="Directory containing staged files to upload")
@@ -642,7 +647,8 @@ def main(argv: list[str] | None = None) -> int:
     host = os.environ["FTP_SERVER"]
     user = os.environ["FTP_USERNAME"]
     password = os.environ["FTP_PASSWORD"]
-    app_root = (os.environ.get("FTP_APP_ROOT") or "/busherianbiasharas.com/www").rstrip("/")
+    default_root = "/preview.busherianbiasharas.com/www" if args.mode == "preview" else "/busherianbiasharas.com/www"
+    app_root = (args.app_root or os.environ.get("FTP_APP_ROOT") or default_root).rstrip("/")
 
     try:
         deploy_items(
