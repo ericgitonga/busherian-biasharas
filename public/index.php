@@ -29,8 +29,11 @@ $isAdvisorEnabled = \BusherianBiasharas\Services\PreprodSandbox::isPreprod()
     || (isset($_GET['advisor']) && $_GET['advisor'] === '1')
     || (isset($_GET['preprod']) && $_GET['preprod'] === '1');
 
-// Load bounded initial page-1 approved businesses (#180: LIMIT 10 OFFSET 0, zero N+1, zero vetting columns)
-$initialPerPage = 10;
+// Load bounded initial page-1 approved businesses (#180, #389: LIMIT 25 OFFSET 0, zero N+1, zero vetting columns)
+$allowedPageSizes = [25, 50, 100];
+$initialPerPage = isset($_GET['per_page']) && in_array((int)$_GET['per_page'], $allowedPageSizes, true)
+    ? (int)$_GET['per_page']
+    : 25;
 $totalApprovedCount = (int)$pdo->query("
     SELECT COUNT(*)
     FROM businesses b
@@ -71,7 +74,7 @@ $stmt = $pdo->prepare("
     LEFT JOIN categories spec2 ON spec2.id = b.secondary_specialty_id AND spec2.status = 'approved'
     WHERE b.status = 'approved'
     ORDER BY {$initOrderBySql}
-    LIMIT 10 OFFSET 0
+    LIMIT {$initialPerPage} OFFSET 0
 ");
 $stmt->execute($initSortParams);
 $rows = $stmt->fetchAll();
@@ -433,10 +436,9 @@ $pageCanonicalPath = $requestedBiz
           </select>
           <label for="per-page-select" style="display:none;">Listings per page</label>
           <select id="per-page-select" data-testid="per-page-select" class="select-control" aria-label="Listings per page" style="width:auto;padding:0.32rem 0.6rem;font-size:0.8rem;">
-            <option value="10" selected>10 per page</option>
-            <option value="25">25 per page</option>
-            <option value="50">50 per page</option>
-            <option value="100">100 per page</option>
+            <option value="25"<?= $initialPerPage === 25 ? ' selected' : '' ?>>25 per page</option>
+            <option value="50"<?= $initialPerPage === 50 ? ' selected' : '' ?>>50 per page</option>
+            <option value="100"<?= $initialPerPage === 100 ? ' selected' : '' ?>>100 per page</option>
           </select>
         </div>
       </div>

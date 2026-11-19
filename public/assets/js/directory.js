@@ -7,9 +7,9 @@
     ? window.INITIAL_PAGINATION
     : {
         page: 1,
-        per_page: 10,
+        per_page: 25,
         total: initialBusinesses.length,
-        total_pages: Math.max(1, Math.ceil(initialBusinesses.length / 10)),
+        total_pages: Math.max(1, Math.ceil(initialBusinesses.length / 25)),
       };
 
   const state = {
@@ -255,9 +255,9 @@
     return null;
   }
 
-  const ALLOWED_PAGE_SIZES = [10, 25, 50, 100];
+  const ALLOWED_PAGE_SIZES = [25, 50, 100];
   state.currentPage = Number(state.pagination.page) || 1;
-  state.perPage = ALLOWED_PAGE_SIZES.includes(Number(state.pagination.per_page)) ? Number(state.pagination.per_page) : 10;
+  state.perPage = ALLOWED_PAGE_SIZES.includes(Number(state.pagination.per_page)) ? Number(state.pagination.per_page) : 25;
 
   let activeFetchController = null;
   let latestRequestSeq = 0;
@@ -515,9 +515,12 @@
 
   const perPageSelectEl = document.getElementById('per-page-select');
   if (perPageSelectEl) {
+    if (ALLOWED_PAGE_SIZES.includes(state.perPage)) {
+      perPageSelectEl.value = String(state.perPage);
+    }
     perPageSelectEl.addEventListener('change', (e) => {
       const nextSize = Number(e.target.value);
-      state.perPage = ALLOWED_PAGE_SIZES.includes(nextSize) ? nextSize : 10;
+      state.perPage = ALLOWED_PAGE_SIZES.includes(nextSize) ? nextSize : 25;
       state.currentPage = 1;
       fetchBusinesses({ resetPage: true });
     });
@@ -730,7 +733,7 @@
       return;
     }
 
-    const perPage = ALLOWED_PAGE_SIZES.includes(Number(state.perPage)) ? Number(state.perPage) : 10;
+    const perPage = ALLOWED_PAGE_SIZES.includes(Number(state.perPage)) ? Number(state.perPage) : 25;
     const pag = state.pagination || {};
     const pagedBusinesses = Array.isArray(state.businesses) ? state.businesses : [];
     const totalItems = typeof pag.total === 'number' ? pag.total : pagedBusinesses.length;
