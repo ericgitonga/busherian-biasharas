@@ -11,18 +11,7 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 - **Strict TypeError in Sidebar Location Filter (#371)**: Fixed fatal PHP 8 TypeError where `array_keys()` on sequential county array passed integer index into `htmlspecialchars()`, halting page output inside `<select id="filter-city">` and preventing the directory cards grid, scripts, and footer from rendering.
 
 ### Added
-- **Founder (Solo) vs. Co-Founder (Joint with Others) Role Selection (#386)**:
-    - Added interactive founding role radio selector (`simple_founder_role`: `founder` vs `co_founder`) on `/submit.php` when founder attribution is checked.
-    - Clarified that non-alumni co-founders or partners do not need to be listed &mdash; only the submitting alumnus is credited until fellow alumni co-founders sign up to claim and link themselves to the business.
-  - **Retired Obsolete "Same as Direct Phone above" Checkboxes (#386)**:
-    - Removed redundant `same_as_direct_phone_whatsapp` and `same_as_direct_phone_primary` checkboxes from `/submit.php`, streamlining the form so WhatsApp is entered directly under business details and primary phone defaults cleanly without obsolete cross-field sync checkboxes.
-  - **Streamlined 8-Field Business Registration & Collapsible Advanced Questions (`#386`, `#390`, Parent `#386`)**:
-  - Restructured `public/submit.php` to present an ultra-simple 8-field registration form matching Kanyi's mockup: Business name, What you do in one line, Sector, Area or town, WhatsApp number, Your name, School (AHS/AGHS), Year left, optional School number, and one-tap founder attribution and listing completion checkboxes.
-  - Retained the single URL link window (`WebsiteEnricher` / `autofill-box`) at the top of the form for 1-click automatic extraction of business details from websites.
-  - Collapsed all comprehensive secondary questions (House, Level 2 Specialty & regulator, full description, service mode, address/pin/hours, perks, B2B checkboxes, direct phone, public email, website, booking, socials, photos) under a `Show Advanced / Additional Details` (`#toggle-advanced-details`) checkbox, allowing immediate submission without forcing users through advanced configurations.
-  - Updated terms and privacy notices across `public/submit.php`, `public/privacy.php`, and `src/bootstrap.php` to explicitly state that the directory retains and publicly displays the alum's Name and Year of Departure to show the world if they choose founder attribution, while School Number is strictly deleted immediately upon review as it is not pertinent beyond initial vetting.
-  - Added backend fallback normalizations in `public/submit.php` and `src/Services/VettingPurger.php` so submissions with collapsed advanced fields gracefully assign default specialty, house (`'Unspecified'`), area, and phones.
-- **Streamlined Directory Layout & Left Filter Panel (`#370`, `#371`, `#372`, `#373`, `#374`, Parent `#370`)**:
+- **Streamlined Directory Layout & Left Filter Panel (`#370`, `#371`, `#372`, `#373`, `#374`, `#389`, Parent `#370`)**:
   - Implemented responsive left sidebar filter panel (`#filters-sidebar`) with collapsible toggle, real-time sector category vertical list with business counts, location dropdown with "Near me" GPS filter, signature school text buttons (without logos), and "Show Only" checkboxes (`Open now` and `Offers an alumni perk`).
   - Added top view switcher toolbar (`.view-switcher-bar`) with Grid View (`#btn-view-grid`), List View (`#btn-view-list`), and By Sector (`#btn-view-sector`) modes, active count indicator, and directory sorting select.
   - Refined directory cards to strictly display the 12 requested items: Company name, What they do, Location, Brief tagline, Founded by/Co-Founded by attribution, Alumni perks, direct 1-tap WhatsApp and Call action buttons, Details link, Route directions, School badge, Share button, and live Open/Closed status button.
@@ -36,14 +25,18 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
   - Structured footer into 4 clean navigation columns: THE DIRECTORY, FOR BUSINESS OWNERS, HELP AND TRUST, and COMMUNITY.
   - Added direct official school links for Alliance High School (`https://www.alliancehighschool.ac.ke/`) and Alliance Girls High School (`https://aghs.sc.ke/`).
   - Added footer base strip with school motto *"Strong to Serve. Walk in the Light."*, directory relationship disclaimer, and zero-logo text badges in signature AHS Navy (`#2E3192`) and AGHS Green (`#1E5E2A`).
-- **Founder & Co-Founder Voluntary Attribution (`#382`, `#383`, `#384`, Parent `#382`)**:
+- **Founder & Co-Founder Voluntary Attribution (`#382`, `#383`, `#384`, `#392`, Parent `#382`)**:
   - Added `founder_role`, `founder_name`, `founder_school`, and `founder_year` columns to `businesses` schema and SQLite/MySQL database migrations (`Database::ensureFounderAttributionColumns`).
   - Added optional Founder vs. Co-Founder attribution radio toggle to registration form (`public/submit.php`), capturing role, founder full name, school, and completion year.
+  - Added Founder (Solo) vs. Co-Founder (Joint with others) choice on the simplified form (`#392`), clarifying that non-alumni co-founders or partners do not need to be listed &mdash; only the submitting alumnus is credited until fellow alumni co-founders sign up to claim and link themselves to the business.
   - Displayed verified attribution badge on directory cards and profile hero (`"👤 Founded by [Name] (AHS '98)"` / `"👤 Co-Founded by [Name] (AGHS '12)"`).
-- **Progressive Onboarding & WebsiteEnricher Integration (`#385`, `#386`, `#387`, `#388`, Parent `#385`)**:
-  - Streamlined public registration in `public/submit.php` to a fast 2-minute workflow focusing on minimal upfront essential details.
-  - Integrated smart website pre-fill bar (`#enrich-box` and `/api/enrich-website.php`) with SSRF-guarded metadata extraction for business name, tagline, description, contacts, and suggested category.
-  - Preserved multi-photo upload capability supporting up to 5 photos with preview slots.
+- **Progressive Onboarding & Registration Form Redesign (`#385`, `#386`, `#387`, `#388`, `#390`, `#391`, `#393`, Parent `#385`)**:
+  - Restructured `public/submit.php` into an ultra-simple 8-field registration form matching Kanyi's mockup (`#386`): Business name, What you do in one line, Sector, Area or town, WhatsApp number, Your name, School (AHS/AGHS), Year left, optional School number, and one-tap founder attribution and listing completion checkboxes.
+  - Retained the single URL link window (`WebsiteEnricher` / `autofill-box`, `#387`) at the top of the form for 1-click automatic extraction of business details from websites with SSRF protection.
+  - Collapsed all comprehensive secondary questions (House, Level 2 Specialty & regulator, full description, service mode, address/pin/hours, perks, B2B checkboxes, direct phone, public email, website, booking, socials, photos) under a `Show Advanced / Additional Details` (`#toggle-advanced-details`, `#390`) checkbox.
+  - Updated terms and privacy notices across `public/submit.php`, `public/privacy.php`, and `src/bootstrap.php` (`#391`) to explicitly state that the directory retains and publicly displays the alum's Name and Year of Departure to show the world if they choose founder attribution, while School Number is strictly deleted immediately upon review as it is not pertinent beyond initial vetting.
+  - Retired obsolete "Same as Direct Phone above" checkboxes (`#393`) from `public/submit.php`, streamlining the form so WhatsApp is entered directly under business details and primary phone defaults cleanly.
+  - Added backend fallback normalizations in `public/submit.php` and `src/Services/VettingPurger.php` so submissions with collapsed advanced fields gracefully assign default specialty, house (`'Unspecified'`), area, and phones.
 
 ## [0.33.0] - 2026-11-18
 ### Added
