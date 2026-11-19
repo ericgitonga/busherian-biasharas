@@ -551,7 +551,7 @@ $pageCanonicalPath = $requestedBiz
           <a href="<?= ($requestedBiz && !empty($requestedBiz['phone_primary'])) ? ('tel:' . htmlspecialchars((string)$requestedBiz['phone_primary'], ENT_QUOTES, 'UTF-8')) : '#' ?>" id="detail-call-btn" class="btn-action-primary btn-action-call" style="padding:0 20px;height:42px;">
             <span>📞</span> Call
           </a>
-          <a href="<?= ($requestedBiz && !empty($requestedBiz['google_maps_url'])) ? htmlspecialchars((string)$requestedBiz['google_maps_url'], ENT_QUOTES, 'UTF-8') : '#' ?>" id="detail-route-btn" target="_blank" rel="noopener" class="btn btn-outline" style="display:inline-flex;align-items:center;gap:6px;height:42px;">
+          <a href="<?= ($requestedBiz && !empty($requestedBiz['google_maps_url']) && preg_match('#^https?://#i', (string)$requestedBiz['google_maps_url'])) ? htmlspecialchars((string)$requestedBiz['google_maps_url'], ENT_QUOTES, 'UTF-8') : '#' ?>" id="detail-route-btn" target="_blank" rel="noopener" class="btn btn-outline" style="display:inline-flex;align-items:center;gap:6px;height:42px;">
             <span>🧭</span> Directions
           </a>
           <button type="button" id="detail-share-btn" class="btn btn-outline" style="display:inline-flex;align-items:center;gap:6px;height:42px;">

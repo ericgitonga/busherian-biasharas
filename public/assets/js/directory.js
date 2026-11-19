@@ -616,7 +616,8 @@
     const waNumber = (biz.whatsapp_number || biz.phone_primary || '').replace(/[^0-9]/g, '');
     const waUrl = waNumber ? `https://wa.me/${waNumber}?text=Hello%20${encodeURIComponent(biz.name)}` : '#';
     const callUrl = biz.phone_primary ? `tel:${biz.phone_primary}` : '#';
-    const routeUrl = biz.google_maps_url || (hasCoords ? `https://www.google.com/maps/search/?api=1&query=${biz.latitude},${biz.longitude}` : `https://maps.google.com/?q=${encodeURIComponent([biz.name, biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(' '))}`);
+    const safeCardGmaps = sanitizeHttpUrl(biz.google_maps_url);
+    const routeUrl = safeCardGmaps || (hasCoords ? `https://www.google.com/maps/search/?api=1&query=${biz.latitude},${biz.longitude}` : `https://maps.google.com/?q=${encodeURIComponent([biz.name, biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(' '))}`);
 
     const schoolBadgeText = biz.school_badge === 'BOTH' ? 'AHS & AGHS' : (biz.school_badge || 'AHS');
     const schoolCls = (biz.school_badge || 'AHS').toLowerCase();
@@ -675,6 +676,9 @@
 
         <!-- 2. What they do / Specialty -->
         <div class="what-they-do">${escapeHtml(biz.specialty_name || biz.sector_name || '')}</div>
+        ${biz.secondary_sector_name && biz.secondary_specialty_name
+          ? `<div class="card-taxonomy-secondary" data-testid="biz-card-secondary-taxonomy">+ Also: ${escapeHtml(biz.secondary_sector_name)} &rarr; ${escapeHtml(biz.secondary_specialty_name)}</div>`
+          : ''}
 
         <!-- 3. Location -->
         <div class="company-location">
@@ -1793,7 +1797,8 @@
 
     const routeBtn = document.getElementById('detail-route-btn');
     if (routeBtn) {
-      routeBtn.href = biz.google_maps_url || `https://maps.google.com/?q=${encodeURIComponent([biz.name, biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(' '))}`;
+      const safeDetailGmaps = sanitizeHttpUrl(biz.google_maps_url);
+      routeBtn.href = safeDetailGmaps || `https://maps.google.com/?q=${encodeURIComponent([biz.name, biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(' '))}`;
     }
 
     const shareBtn = document.getElementById('detail-share-btn');

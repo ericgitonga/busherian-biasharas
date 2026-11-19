@@ -8,6 +8,7 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
 ## [0.34.0] - 2026-11-18
 ### Fixed
+- **Directory Card Secondary Taxonomy & Route URL Scheme Sanitization (#186, #278, #394)**: Restored secondary field badge (`.card-taxonomy-secondary`) on directory cards, sanitized Google Maps route links in cards and canonical profile headers via `sanitizeHttpUrl` to prevent unsafe scheme injection, and aligned adversarial E2E suite for regulated business owner verification.
 - **Strict TypeError in Sidebar Location Filter (#371)**: Fixed fatal PHP 8 TypeError where `array_keys()` on sequential county array passed integer index into `htmlspecialchars()`, halting page output inside `<select id="filter-city">` and preventing the directory cards grid, scripts, and footer from rendering.
 
 ### Added

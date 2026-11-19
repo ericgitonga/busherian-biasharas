@@ -679,12 +679,12 @@ def test_adversarial_crit_01_and_crit_02_regressions():
     assert st_al == 302
     _, adm_eb_html, _, _ = _http_raw(f"/admin/edit-business.php?id={victim_biz_id}", cookie_jar=adm_jar)
     adm_eb_csrf = _extract_hidden(adm_eb_html, "csrf_token")
-    st_aeb, _, _, _ = _http_raw(
+    st_aeb, adm_eb_resp_html, _, _ = _http_raw(
         f"/admin/edit-business.php?id={victim_biz_id}",
         method="POST",
         form={
             "csrf_token": adm_eb_csrf,
-            "post_action": "save",
+            "post_action": "update",
             "name": victim_biz["name"],
             "school_badge": victim_biz.get("school_badge") or "AHS",
             "status": "approved",
@@ -693,6 +693,7 @@ def test_adversarial_crit_01_and_crit_02_regressions():
             "description": victim_biz.get("description") or "Verified Alumni Business description.",
             "sector_id": str(victim_biz["sector_id"]),
             "specialty_id": str(victim_biz["specialty_id"]),
+            "regulator_name": victim_biz.get("regulator_name") or "PPB (Pharmacy and Poisons Board)",
             "country": victim_biz.get("country") or "Kenya",
             "city_county": victim_biz.get("city_county") or "Nairobi",
             "phone_primary": victim_biz.get("phone_primary") or "+254700000001",
@@ -701,7 +702,9 @@ def test_adversarial_crit_01_and_crit_02_regressions():
         },
         cookie_jar=adm_jar,
     )
-    assert st_aeb == 200
+    assert st_aeb == 200, f"Expected 200 from admin edit, got {st_aeb}"
+    assert "Professional Regulator is required" not in adm_eb_resp_html, f"Admin edit regulator validation failed: {adm_eb_resp_html[:500]}"
+    assert "Could not update" not in adm_eb_resp_html, f"Admin edit update failed: {adm_eb_resp_html[:500]}"
 
     # Wait briefly or use a distinct X-Forwarded-For? Wait: /owner/login.php uses REMOTE_ADDR (127.0.0.1), which allows 2 owner_otp_send per 15m!
     # Above used 1st slot (rejected before mail send, after AntiSpamGate), and below uses 2nd slot -> within 2/15m!
@@ -738,7 +741,9 @@ def test_adversarial_crit_01_and_crit_02_regressions():
     )
     assert st_otp == 200
     otp_match = re.search(r"Preview Verification Code:.*?<strong[^>]*>(\d{6})</strong>", otp_html, re.S)
-    assert otp_match, f"Expected simulated 6-digit OTP preview in testing mode, got HTML snippet: {otp_html[:500]}"
+    err_match = re.search(r'data-testid="owner-login-error"[^>]*>.*?⚠️\s*([^<]+)', otp_html, re.S)
+    err_txt = err_match.group(1).strip() if err_match else "unknown"
+    assert otp_match, f"Expected simulated 6-digit OTP preview in testing mode. Error: {err_txt}. HTML snippet: {otp_html[:600]}"
     otp_code = otp_match.group(1)
     csrf_v2 = _extract_hidden(otp_html, "csrf_token")
 
