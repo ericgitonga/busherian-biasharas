@@ -4956,7 +4956,7 @@ $remTestBiz = $pdo->prepare("
     ) VALUES (
         'rem-phone-test-1', 998877, 'Phone Remediation Test', 'phone-rem-test', 'Testing remediation', 'Desc', 'AHS',
         'founder', 'Rem Tester', 'AHS', 2012,
-        1, 1, 'physical_location',
+        1, 1, 'physical',
         'Kenya', 'Nairobi', '[]',
         '+746588589', '+721261661', 'approved'
     )
