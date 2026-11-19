@@ -996,7 +996,7 @@ def test_playwright_high_01_02_05_browser_security_regressions():
         em_pub = (b.get("email_public") or "").strip().lower()
         if w and em_pub and int(b["id"]) != int(all_biz[0]["id"]):
             host = (urllib.parse.urlparse(w).hostname or "").lower().removeprefix("www.")
-            if host and "." in host and host not in ("gmail.com", "yahoo.com", "instagram.com", "facebook.com"):
+            if host and "." in host and host not in ("gmail.com", "yahoo.com", "instagram.com", "facebook.com") and em_pub.endswith("@" + host):
                 corp_biz = b
                 corp_domain = host
                 break
@@ -1503,7 +1503,7 @@ def test_playwright_r2_medium_regressions():
             em_pub = (b.get("email_public") or "").strip().lower()
             if w and em_pub and int(b["id"]) != int(all_biz_before[0]["id"]):
                 host = (urllib.parse.urlparse(w).hostname or "").lower().removeprefix("www.")
-                if host and "." in host and host not in ("gmail.com", "yahoo.com", "instagram.com", "facebook.com"):
+                if host and "." in host and host not in ("gmail.com", "yahoo.com", "instagram.com", "facebook.com") and em_pub.endswith("@" + host):
                     corp_biz = b
                     break
         assert corp_biz is not None
