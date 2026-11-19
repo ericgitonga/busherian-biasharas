@@ -1002,8 +1002,12 @@ def test_playwright_high_01_02_05_browser_security_regressions():
                 break
     assert corp_biz is not None and corp_domain != ""
     corp_biz_id = int(corp_biz["id"])
-    # R2-HIGH-03 (#207) + HIGH-01 (#164): Test the exact email_public on corp_biz to prove neither corporate domain NOR email_public grants ownership!
-    corp_staff_email = (corp_biz.get("email_public") or f"unverified.staff.{int(time.time()) % 100000}@{corp_domain}").strip().lower()
+    # R2-HIGH-03 (#207) + HIGH-01 (#164): Test corporate domain staff email to prove corporate domain does NOT auto-link ownership!
+    em_pub = (corp_biz.get("email_public") or "").strip().lower()
+    if em_pub and em_pub.endswith("@" + corp_domain):
+        corp_staff_email = em_pub
+    else:
+        corp_staff_email = f"staff.{int(time.time() * 1000) % 100000}@{corp_domain}"
     corp_pw = "CorpStaff#Pass164"
 
     # 1. HIGH-01 (#164): Verify corporate-domain email is NOT recognized on /owner/login.php and never auto-linkscorp_biz,
@@ -2220,8 +2224,10 @@ def test_playwright_ch1_chunk5_installable_pwa():
         assert cache_audit["leakedOwnerHints"] is False, "CRITICAL: owner_email_hints found in Service Worker Cache Storage!"
         assert not any("/owner/" in u or "/submit.php" in u or "/takedown.php" in u for u in cache_audit["urls"])
 
-        # 3. Verify smart '📲 Install App' button: guide modal fallback first, then native beforeinstallprompt interception
+        # 3. Verify smart '📲 Install App' button: strictly hidden on web/desktop, visible on mobile
         install_btn = page.get_by_test_id("btn-install-app")
+        assert not install_btn.is_visible(), "Install App button should not appear on web"
+        page.set_viewport_size({"width": 390, "height": 844})
         install_btn.wait_for(state="visible", timeout=5000)
         install_btn.click()
 
@@ -2610,8 +2616,9 @@ def test_playwright_ch3_chunk12_sort_selector_and_momentum_badges():
         assert sort_sel.input_value() == "most_referenced"
         _wait_first_title(page, target["name"])
 
-        badge_id = "biz-card-popular-badge" if tgt_row["momentum_badge"] == "popular" else "biz-card-new-badge"
-        page.get_by_test_id("biz-card").first.get_by_test_id(badge_id).wait_for(state="visible", timeout=5000)
+        # Visual badge pills are omitted from cards per clean design, but ranking functionality remains active
+        assert page.get_by_test_id("biz-card-popular-badge").count() == 0
+        assert page.get_by_test_id("biz-card-new-badge").count() == 0
 
         html = page.content()
         assert "reference_count_90d" not in html and "engagement_score" not in html

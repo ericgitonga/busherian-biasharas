@@ -656,7 +656,7 @@ $pageCanonicalPath = $requestedBiz
           <?php
           $hasReqWa = $requestedBiz && !empty($requestedBiz['whatsapp_number']) && strlen(preg_replace('/[^0-9]/', '', (string)$requestedBiz['whatsapp_number'])) >= 7;
           $waReqDigits = $hasReqWa ? preg_replace('/[^0-9]/', '', (string)$requestedBiz['whatsapp_number']) : '';
-          $waReqUrl = $hasReqWa ? ('https://wa.me/' . $waReqDigits . '?text=' . urlencode('Hello ' . $requestedBiz['name'])) : 'javascript:void(0)';
+          $waReqUrl = $hasReqWa ? ('https://wa.me/' . $waReqDigits . '?text=' . urlencode('Hello ' . $requestedBiz['name'])) : '#';
           ?>
           <a href="<?= $waReqUrl ?>" id="detail-wa-btn" class="btn-action-primary btn-action-whatsapp<?= $hasReqWa ? '' : ' btn-action-disabled' ?>" style="padding:0 20px;height:42px;" target="_blank" rel="noopener"<?= $hasReqWa ? '' : ' aria-disabled="true" title="No WhatsApp line provided"' ?>>
             <span>💬</span> WhatsApp

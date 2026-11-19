@@ -615,7 +615,7 @@
 
     const hasWa = Boolean(biz.whatsapp_number && String(biz.whatsapp_number).trim() && String(biz.whatsapp_number).replace(/[^0-9]/g, '').length >= 7);
     const waNumber = hasWa ? String(biz.whatsapp_number).replace(/[^0-9]/g, '') : '';
-    const waUrl = hasWa ? `https://wa.me/${waNumber}?text=Hello%20${encodeURIComponent(biz.name)}` : 'javascript:void(0)';
+    const waUrl = hasWa ? `https://wa.me/${waNumber}?text=Hello%20${encodeURIComponent(biz.name)}` : '#';
     const callUrl = biz.phone_primary ? `tel:${biz.phone_primary}` : '#';
     const safeCardGmaps = sanitizeHttpUrl(biz.google_maps_url);
     const routeUrl = safeCardGmaps || (hasCoords ? `https://www.google.com/maps/search/?api=1&query=${biz.latitude},${biz.longitude}` : `https://maps.google.com/?q=${encodeURIComponent([biz.name, biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(' '))}`);
@@ -1800,10 +1800,11 @@
         waBtn.removeAttribute('aria-disabled');
         waBtn.title = 'Chat on WhatsApp';
       } else {
-        waBtn.href = 'javascript:void(0)';
+        waBtn.href = '#';
         waBtn.classList.add('btn-action-disabled');
         waBtn.setAttribute('aria-disabled', 'true');
         waBtn.title = 'No WhatsApp line provided';
+        waBtn.onclick = (e) => e.preventDefault();
       }
     }
 
