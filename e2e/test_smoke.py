@@ -1003,11 +1003,8 @@ def test_playwright_high_01_02_05_browser_security_regressions():
     assert corp_biz is not None and corp_domain != ""
     corp_biz_id = int(corp_biz["id"])
     # R2-HIGH-03 (#207) + HIGH-01 (#164): Test corporate domain staff email to prove corporate domain does NOT auto-link ownership!
-    em_pub = (corp_biz.get("email_public") or "").strip().lower()
-    if em_pub and em_pub.endswith("@" + corp_domain):
-        corp_staff_email = em_pub
-    else:
-        corp_staff_email = f"staff.{int(time.time() * 1000) % 100000}@{corp_domain}"
+    corp_staff_email = (corp_biz.get("email_public") or "").strip().lower()
+    unrecognized_corp_email = f"unverified.staff.{int(time.time() * 1000) % 100000}@{corp_domain}"
     corp_pw = "CorpStaff#Pass164"
 
     # 1. HIGH-01 (#164): Verify corporate-domain email is NOT recognized on /owner/login.php and never auto-linkscorp_biz,
@@ -1019,7 +1016,7 @@ def test_playwright_high_01_02_05_browser_security_regressions():
         # Gate A: Unrecognized corporate-domain email cannot even request an owner OTP without a pending/claimed listing
         t_gate_a = time.monotonic()
         p1.goto(f"{BASE_URL}/owner/login.php?mode=reset", wait_until="networkidle")
-        p1.locator("input[name='email']").first.fill(corp_staff_email)
+        p1.locator("input[name='email']").first.fill(unrecognized_corp_email)
         rem_a = 4.3 - (time.monotonic() - t_gate_a)
         if rem_a > 0:
             time.sleep(rem_a)
@@ -2253,6 +2250,7 @@ def test_playwright_ch1_chunk5_installable_pwa():
             "() => window.__pwaPromptCalled === 1 && document.getElementById('btn-install-app').hidden === true",
             timeout=5000,
         )
+        page.set_viewport_size({"width": 1280, "height": 800})
 
         # 4. Verify PWA shortcut deep-link (?source=pwa&filter=bookable) activates the Book Appointment pill
         page.goto(f"{BASE_URL}/?source=pwa&filter=bookable", wait_until="networkidle")
