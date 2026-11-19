@@ -52,6 +52,7 @@ testAssert(str_contains($indexSrc, 'id="btn-mobile-menu"') && str_contains($inde
 testAssert(str_contains($indexSrc, 'header-desktop-action') && str_contains($indexSrc, 'header-mobile-only'), 'index.php segregates desktop and mobile header actions (#398)');
 testAssert(str_contains($indexSrc, 'id="drawer-search-q"') && str_contains($indexSrc, 'mobile-drawer-only'), 'index.php houses search and actions inside drawer for mobile (#398)');
 testAssert(str_contains($indexSrc, 'id="btn-toggle-sector-collapse"') && str_contains($indexSrc, 'id="sector-collapse-arrow"'), 'index.php contains collapsible Sector toggle button and arrow (#400)');
+testAssert(str_contains($indexSrc, 'id="filter-country"') && str_contains($indexSrc, 'id="filter-city"'), 'index.php contains cascading country and city/subdivisions filter selectors (#401)');
 
 // 4. Check CSS styling in public/assets/css/app.css (#374)
 $cssSrc = (string)file_get_contents(dirname(__DIR__) . '/public/assets/css/app.css');
@@ -66,6 +67,7 @@ testAssert(str_contains($cssSrc, '.biz-detail-view'), 'app.css contains .biz-det
 testAssert(str_contains($cssSrc, '.filters-sidebar.drawer-open') && str_contains($cssSrc, '.drawer-backdrop'), 'app.css defines slide-over mobile drawer styles (#398)');
 testAssert(str_contains($cssSrc, '.biz-list-group') && str_contains($cssSrc, '.biz-list-item'), 'app.css contains responsive zero-scroll .biz-list-group and .biz-list-item (#399)');
 testAssert(str_contains($cssSrc, '.filter-collapse-btn') && str_contains($cssSrc, '.collapse-arrow'), 'app.css styles collapsible filter toggle and chevron (#400)');
+testAssert(str_contains($cssSrc, '.sidebar-select.active-filter'), 'app.css defines active-filter style for sidebar selectors (#401)');
 
 // 5. Check directory.js for 12-item card rendering & view switcher (#372, #373, #384)
 $jsSrc = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
@@ -80,6 +82,7 @@ testAssert(str_contains($jsSrc, 'btn-action-whatsapp') && str_contains($jsSrc, '
 testAssert(str_contains($jsSrc, 'toggleMapVisibility'), 'directory.js defines toggleMapVisibility (#397)');
 testAssert(str_contains($jsSrc, 'toggleMobileDrawer'), 'directory.js defines toggleMobileDrawer (#398)');
 testAssert(str_contains($jsSrc, 'toggleSectorCollapse'), 'directory.js defines toggleSectorCollapse (#400)');
+testAssert(str_contains($jsSrc, 'populateCitiesDropdown(state.selectedCountry)'), 'directory.js dynamically cascades subdivisions on country change (#401)');
 
 // 6. Check submit.php for smart website prefill & founder role radio buttons (#383, #386, #387)
 $submitSrc = (string)file_get_contents(dirname(__DIR__) . '/public/submit.php');

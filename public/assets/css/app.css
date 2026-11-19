@@ -1779,6 +1779,13 @@ a {
   background: #FFFFFF;
 }
 
+.sidebar-select.active-filter {
+  border-color: #114B3E;
+  background: #E8F5E9;
+  color: #114B3E;
+  font-weight: 700;
+}
+
 .btn-sidebar-near-me {
   width: 100%;
   background: #FBF8F3;

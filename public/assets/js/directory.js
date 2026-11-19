@@ -2640,6 +2640,10 @@
     els.countrySelect.addEventListener('change', (e) => {
       state.selectedCountry = e.target.value;
       state.selectedCity = '';
+      els.countrySelect.classList.toggle('active-filter', Boolean(state.selectedCountry));
+      if (els.citySelect) {
+        els.citySelect.classList.remove('active-filter');
+      }
       populateCitiesDropdown(state.selectedCountry);
       fetchBusinesses();
     });
@@ -2648,6 +2652,7 @@
   if (els.citySelect) {
     els.citySelect.addEventListener('change', (e) => {
       state.selectedCity = e.target.value;
+      els.citySelect.classList.toggle('active-filter', Boolean(state.selectedCity));
       fetchBusinesses();
     });
   }
@@ -2685,10 +2690,14 @@
         state.selectedSchool = '';
         state.selectedCountry = '';
         state.selectedCity = '';
-        if (els.countrySelect) els.countrySelect.value = '';
+        if (els.countrySelect) {
+          els.countrySelect.value = '';
+          els.countrySelect.classList.remove('active-filter');
+        }
         if (els.citySelect) {
           populateCitiesDropdown('');
           els.citySelect.value = '';
+          els.citySelect.classList.remove('active-filter');
         }
         document.querySelectorAll('[data-quick-filter]').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('[data-quick-filter="all"]').forEach(b => b.classList.add('active'));
@@ -3570,6 +3579,26 @@
       if (initSort !== (initialPagination && initialPagination.sort)) {
         needsInitialFetch = true;
       }
+    }
+
+    const initCountry = (initParams.get('country') || '').trim();
+    const initCity = (initParams.get('city_county') || initParams.get('city') || '').trim();
+    if (initCountry && els.countrySelect) {
+      state.selectedCountry = initCountry;
+      els.countrySelect.value = initCountry;
+      els.countrySelect.classList.add('active-filter');
+      populateCitiesDropdown(initCountry);
+      if (initCity && els.citySelect) {
+        state.selectedCity = initCity;
+        els.citySelect.value = initCity;
+        els.citySelect.classList.add('active-filter');
+      }
+      needsInitialFetch = true;
+    } else if (initCity && els.citySelect) {
+      state.selectedCity = initCity;
+      els.citySelect.value = initCity;
+      els.citySelect.classList.add('active-filter');
+      needsInitialFetch = true;
     }
 
     if (initParams.get('map') === '1' || initParams.get('show_map') === '1') {

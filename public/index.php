@@ -367,15 +367,26 @@ $pageCanonicalPath = $requestedBiz
       <!-- Location Filter -->
       <div class="filter-group">
         <div class="filter-group-title">LOCATION</div>
-        <select id="filter-city" data-testid="filter-city" class="sidebar-select" aria-label="Filter by City, County, or State">
-          <option value="">All locations</option>
-          <?php foreach (($placeHierarchy['Kenya'] ?? []) as $cityName): ?>
-            <option value="<?= htmlspecialchars((string)$cityName, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string)$cityName, ENT_QUOTES, 'UTF-8') ?></option>
-          <?php endforeach; ?>
-        </select>
-        <button type="button" id="btn-sidebar-near-me" class="btn-sidebar-near-me" style="margin-top:4px;" onclick="triggerNearMeLocation()">
-          📍 Near me
-        </button>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <select id="filter-country" data-testid="filter-country" class="sidebar-select" aria-label="Filter by Country">
+            <option value="">🌍 All countries</option>
+            <option value="Kenya">Kenya</option>
+            <option disabled>──────────</option>
+            <?php foreach (array_keys($placeHierarchy) as $cName): ?>
+              <?php if ($cName === 'Kenya') continue; ?>
+              <option value="<?= htmlspecialchars((string)$cName, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string)$cName, ENT_QUOTES, 'UTF-8') ?></option>
+            <?php endforeach; ?>
+          </select>
+          <select id="filter-city" data-testid="filter-city" class="sidebar-select" aria-label="Filter by County, State, Province, or District">
+            <option value="">All locations</option>
+            <?php foreach (($placeHierarchy['Kenya'] ?? []) as $cityName): ?>
+              <option value="<?= htmlspecialchars((string)$cityName, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string)$cityName, ENT_QUOTES, 'UTF-8') ?></option>
+            <?php endforeach; ?>
+          </select>
+          <button type="button" id="btn-sidebar-near-me" class="btn-sidebar-near-me" onclick="triggerNearMeLocation()">
+            📍 Near me
+          </button>
+        </div>
       </div>
 
       <!-- School Filter (Zero Logo Policy #381) -->
@@ -593,7 +604,6 @@ $pageCanonicalPath = $requestedBiz
           <?php endforeach; ?>
         </select>
         <select id="filter-specialty" data-testid="filter-specialty"><option value="">All Specialties</option></select>
-        <select id="filter-country" data-testid="filter-country"><option value="">All Countries</option></select>
         <select id="filter-radius"><option value="">Any Distance</option></select>
         <button type="button" id="btn-near-me"></button>
       </div>
