@@ -193,7 +193,7 @@ while ($scRow = $sectorCountsStmt->fetch(PDO::FETCH_ASSOC)) {
 }
 
 // Canonical Business Profile routing & metadata (#376, #378)
-$requestedBizSlug = !empty($_GET['biz']) ? trim((string)$_GET['biz']) : null;
+$requestedBizSlug = (!empty($_GET['biz']) && !ctype_digit((string)$_GET['biz'])) ? trim((string)$_GET['biz']) : null;
 $requestedBiz = null;
 if ($requestedBizSlug !== null) {
     $stmtSlug = $pdo->prepare("
@@ -373,6 +373,16 @@ $pageCanonicalPath = $requestedBiz
         <?php endif; ?>
       </div>
 
+      <div class="quick-pills" data-testid="quick-pills" style="margin-top:0.75rem;display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
+        <button type="button" class="pill active" data-quick-filter="all" data-testid="quick-filter-all">All Verified</button>
+        <button type="button" class="pill" data-quick-filter="open_now" data-testid="quick-filter-open-now">🟢 Open Now (EAT)</button>
+        <button type="button" class="pill" data-quick-filter="has_perk" data-testid="quick-filter-has-perk">🎁 Busherian Alumni Perks</button>
+        <button type="button" class="pill" data-quick-filter="b2b_ready" data-testid="quick-filter-b2b">🏢 B2B &amp; LPO Ready</button>
+        <button type="button" class="pill" data-quick-filter="bookable" data-testid="quick-filter-bookable">📅 Book Appointment</button>
+        <button type="button" class="pill" data-quick-filter="AHS" data-testid="quick-filter-AHS">🦅 AHS</button>
+        <button type="button" class="pill" data-quick-filter="AGHS" data-testid="quick-filter-AGHS">🔦 AGHS</button>
+      </div>
+
       <?php if ($isAdvisorEnabled): ?>
       <!-- Biashara Advisor Panel (#344) -->
       <div id="concierge-panel" data-testid="concierge-panel" class="concierge-panel" hidden>
@@ -488,15 +498,6 @@ $pageCanonicalPath = $requestedBiz
         <select id="filter-country" data-testid="filter-country"><option value="">All Countries</option></select>
         <select id="filter-radius"><option value="">Any Distance</option></select>
         <button type="button" id="btn-near-me"></button>
-        <div class="quick-pills" data-testid="quick-pills">
-          <button type="button" class="pill active" data-quick-filter="all" data-testid="quick-filter-all">All Verified</button>
-          <button type="button" class="pill" data-quick-filter="open_now" data-testid="quick-filter-open-now">🟢 Open Now (EAT)</button>
-          <button type="button" class="pill" data-quick-filter="has_perk" data-testid="quick-filter-has-perk">🎁 Busherian Alumni Perks</button>
-          <button type="button" class="pill" data-quick-filter="b2b_ready" data-testid="quick-filter-b2b">🏢 B2B &amp; LPO Ready</button>
-          <button type="button" class="pill" data-quick-filter="bookable" data-testid="quick-filter-bookable">📅 Book Appointment</button>
-          <button type="button" class="pill" data-quick-filter="AHS" data-testid="quick-filter-AHS">🦅 AHS</button>
-          <button type="button" class="pill" data-quick-filter="AGHS" data-testid="quick-filter-AGHS">🔦 AGHS</button>
-        </div>
       </div>
 
     </div><!-- /.directory-main-col -->
@@ -785,8 +786,8 @@ $pageCanonicalPath = $requestedBiz
           <h2>COMMUNITY</h2>
           <a href="https://www.alliancehighschool.ac.ke/" target="_blank" rel="noopener">Alliance High School &nearr;</a>
           <a href="https://aghs.sc.ke/" target="_blank" rel="noopener">Alliance Girls High School &nearr;</a>
-          <a href="javascript:void(0)" onclick="if(window.copyInviteText){window.copyInviteText();}">Invite a Busherian</a>
-          <a href="javascript:void(0)" onclick="document.getElementById('pwa-install-modal').hidden=false">Install app</a>
+          <a href="#invite" onclick="event.preventDefault(); if(window.copyInviteText){window.copyInviteText();}">Invite a Busherian</a>
+          <a href="#install" onclick="event.preventDefault(); const m = document.getElementById('pwa-install-modal'); if (m) m.hidden=false;">Install app</a>
         </nav>
       </div>
 

@@ -922,8 +922,6 @@ $aghsHouses = Houses::AGHS_HOUSES;
           </div>
         </div>
 
-        <?= bbiz_render_specialty_finder($taxonomyTree) ?>
-
         <!-- Primary & secondary industry sectors and statutory regulators are configured in Section 1 above -->
 
         <div style="margin-top:0.9rem;margin-bottom:1rem;">

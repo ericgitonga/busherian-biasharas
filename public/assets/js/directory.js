@@ -671,7 +671,7 @@
         </div>
 
         <!-- 1. Company Name -->
-        <h2 class="company-name" data-testid="biz-card-title" onclick="openBizDetail('${escapeHtml(biz.slug)}')">${escapeHtml(biz.name)}</h2>
+        <h2 class="company-name" data-testid="biz-card-title" onclick="openBusinessModal(${biz.id})">${escapeHtml(biz.name)}</h2>
 
         <!-- 2. What they do / Specialty -->
         <div class="what-they-do">${escapeHtml(biz.specialty_name || biz.sector_name || '')}</div>
@@ -2810,13 +2810,8 @@
       if (e.target.closest('a') || e.target.closest('button')) {
         return;
       }
-      const slug = cardOrPin.getAttribute('data-biz-slug');
       const id = Number(cardOrPin.getAttribute('data-biz-id'));
-      if (slug) {
-        openBizDetail(slug);
-      } else {
-        openBizDetail(id);
-      }
+      openBusinessModal(id);
       return;
     }
 

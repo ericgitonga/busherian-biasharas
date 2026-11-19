@@ -1440,6 +1440,8 @@ def test_playwright_r2_medium_regressions():
             "try { localStorage.setItem('bbiz_submit_draft_v1', JSON.stringify({house_name:'Livingstone', school_number:'OLD-99'})); } catch (_) {}"
         )
         pd.goto(f"{BASE_URL}/submit.php", wait_until="networkidle")
+        if pd.locator("#toggle-advanced-details").is_visible():
+            pd.locator("#toggle-advanced-details").check()
         pd.locator("#school_code").select_option("AHS")
         pd.locator("#house_name").select_option("Livingstone")
         pd.locator("#year_left").fill("2011")
