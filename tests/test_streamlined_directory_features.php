@@ -211,4 +211,16 @@ $delRec->execute([':bid' => $testBizId, ':tok' => $tok]);
 $recCount0 = (int)$pdo->query("SELECT COUNT(*) FROM business_recommendations WHERE business_id = {$testBizId}")->fetchColumn();
 testAssert($recCount0 === 0, 'Recommendation successfully taken back (retracted) on second click');
 
+// 12. Check Photo Carousel & Airbnb-Style Lightbox (#403)
+testAssert(!str_contains($indexSrc, 'Three to five photos of the premises, work, or products.'), 'index.php has removed the subtext "Three to five photos"');
+testAssert(str_contains($indexSrc, 'id="detail-photos-nav"'), 'index.php has #detail-photos-nav scroll navigation buttons');
+testAssert(str_contains($indexSrc, 'id="btn-photos-scroll-left"'), 'index.php has #btn-photos-scroll-left');
+testAssert(str_contains($indexSrc, 'id="btn-photos-scroll-right"'), 'index.php has #btn-photos-scroll-right');
+testAssert(str_contains($indexSrc, 'id="bb-photo-lightbox"'), 'index.php contains #bb-photo-lightbox modal');
+testAssert(str_contains($cssSrc, '.photo-lightbox'), 'app.css defines .photo-lightbox');
+testAssert(str_contains($cssSrc, '.photos-carousel-track'), 'app.css defines .photos-carousel-track');
+testAssert(str_contains($jsSrc, 'openPhotoLightbox'), 'directory.js defines openPhotoLightbox');
+testAssert(str_contains($jsSrc, 'closePhotoLightbox'), 'directory.js defines closePhotoLightbox');
+testAssert(str_contains($jsSrc, 'updatePhotoNavButtons'), 'directory.js defines updatePhotoNavButtons');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

@@ -697,14 +697,37 @@ $pageCanonicalPath = $requestedBiz
           </ul>
         </section>
 
-        <section class="detail-panel">
-          <h2>Photos &amp; Premises</h2>
-          <div class="photos-grid-3" id="detail-photos-grid">
-            <div class="photo-ph-slot"><span>🏢</span><strong>Premises / Office</strong></div>
-            <div class="photo-ph-slot"><span>🏗️</span><strong>Work &amp; Projects</strong></div>
-            <div class="photo-ph-slot"><span>📐</span><strong>Team &amp; Craft</strong></div>
+        <section class="detail-panel photos-panel">
+          <div class="photos-panel-header">
+            <h2>Photos &amp; Premises</h2>
+            <?php
+            $hasMultiplePhotos = $requestedBiz && !empty($requestedBiz['photos']) && count($requestedBiz['photos']) > 3;
+            ?>
+            <div class="photos-nav-controls" id="detail-photos-nav" style="<?= $hasMultiplePhotos ? 'display:flex;' : 'display:none;' ?>">
+              <button type="button" class="btn-gallery-nav btn-gallery-prev" id="btn-photos-scroll-left" aria-label="Scroll photos left" title="Scroll left">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+              <button type="button" class="btn-gallery-nav btn-gallery-next" id="btn-photos-scroll-right" aria-label="Scroll photos right" title="Scroll right">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+            </div>
           </div>
-          <span style="font-size:12px;color:#7E8D84;">Three to five photos of the premises, work, or products.</span>
+          <div class="photos-carousel-track" id="detail-photos-grid" tabindex="0" role="region" aria-label="Photos carousel">
+            <?php if ($requestedBiz && !empty($requestedBiz['photos'])): ?>
+              <?php foreach ($requestedBiz['photos'] as $idx => $photoUrl): ?>
+                <div class="photo-slot" data-photo-index="<?= (int)$idx ?>" role="button" tabindex="0" aria-label="Enlarge photo <?= (int)($idx + 1) ?> of <?= count($requestedBiz['photos']) ?>">
+                  <img src="<?= htmlspecialchars((string)$photoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars((string)$requestedBiz['name'], ENT_QUOTES, 'UTF-8') ?> photo <?= (int)($idx + 1) ?>" loading="lazy">
+                  <div class="photo-expand-badge" aria-hidden="true" title="Click to enlarge">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                  </div>
+                </div>
+              <?php endforeach; ?>
+            <?php else: ?>
+              <div class="photo-ph-slot"><span>🏢</span><strong>Premises / Office</strong></div>
+              <div class="photo-ph-slot"><span>🏗️</span><strong>Work &amp; Projects</strong></div>
+              <div class="photo-ph-slot"><span>📐</span><strong>Team &amp; Craft</strong></div>
+            <?php endif; ?>
+          </div>
         </section>
 
         <section class="recs-card" id="detail-recs-panel">
@@ -811,6 +834,39 @@ $pageCanonicalPath = $requestedBiz
           Vouch &amp; Recommend &rarr;
         </button>
       </form>
+    </div>
+  </div>
+
+  <!-- Airbnb-Style Photo Lightbox Modal (#403) -->
+  <div id="bb-photo-lightbox" class="photo-lightbox" role="dialog" aria-modal="true" aria-label="Photo Gallery" hidden>
+    <div class="photo-lightbox-backdrop" id="lightbox-backdrop"></div>
+    <div class="photo-lightbox-container">
+      <div class="photo-lightbox-header">
+        <div class="photo-lightbox-counter" id="lightbox-counter">1 / 1</div>
+        <div class="photo-lightbox-title" id="lightbox-title">Photo Gallery</div>
+        <button type="button" class="photo-lightbox-close" id="btn-close-lightbox" aria-label="Close photo viewer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          <span>Close</span>
+        </button>
+      </div>
+
+      <div class="photo-lightbox-viewport" id="lightbox-viewport">
+        <button type="button" class="photo-lightbox-nav photo-lightbox-prev" id="btn-lightbox-prev" aria-label="Previous photograph" title="Previous photo (Left arrow)">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+
+        <div class="photo-lightbox-stage" id="lightbox-stage">
+          <img id="lightbox-img" src="" alt="Enlarged photograph" class="photo-lightbox-image">
+        </div>
+
+        <button type="button" class="photo-lightbox-nav photo-lightbox-next" id="btn-lightbox-next" aria-label="Next photograph" title="Next photo (Right arrow)">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+      </div>
+
+      <div class="photo-lightbox-footer">
+        <div class="photo-lightbox-thumbs" id="lightbox-thumbs"></div>
+      </div>
     </div>
   </div>
 

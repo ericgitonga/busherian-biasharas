@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.36.0] - 2026-11-20
+### Added
+- **Sideways Photo Gallery Carousel & Navigation Arrows (#403)**: Replaced rigid 3-column photo grid with a smooth horizontal carousel track (`.photos-carousel-track`) equipped with left and right navigation buttons (`#btn-photos-scroll-left` and `#btn-photos-scroll-right`). Automatically displays all uploaded photos (supporting 4+ photos without truncation), features touch/swipe scrolling with CSS snap alignments, and dynamically hides/fades navigation arrows when photos fit the viewport or reach scroll boundaries.
+- **Airbnb-Style Full-Screen Photo Lightbox (#403)**: Clicking any photo thumbnail in the gallery opens an elegant, high-resolution dark-mode lightbox modal (`#bb-photo-lightbox`) mirroring Airbnb's experience. Includes a prominent photo counter (`1 / 4`), listing title, floating previous/next navigation chevrons, interactive bottom thumbnail strip with active border highlighting, touch swipe navigation (left/right to switch, down to close), and full keyboard accessibility (`Escape` to close, `ArrowLeft` / `ArrowRight` to step).
+
+### Removed
+- **Uncluttered Photos Header**: Removed the redundant subtext *"Three to five photos of the premises, work, or products."* from the Photos & Premises panel on the business profile page, leaving a clean, distraction-free visual gallery.
+
 ## [0.35.0] - 2026-11-20
 ### Added
 - **Verified Alumni Recommendations & Take-Back Toggle (#Mockup)**: Added "Recommended by Busherians" panel on canonical business profiles matching Kanyi's prototype, backed by a persistent `business_recommendations` table and `/api/recommend.php`. Alumni can endorse businesses they have used in one tap with automatic alumni credential capture (Name, School, Departure Year), and can tap the button again at any time to take back / retract their recommendation with real-time count updates and engagement score recomputation.
