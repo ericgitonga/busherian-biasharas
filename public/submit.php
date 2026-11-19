@@ -144,6 +144,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($sectorId <= 0) {
                 $errors[] = 'Please select an Industry Sector.';
             }
+            if (empty($_POST['toggle_secondary_sector']) && empty($_POST['secondary_sector_id'])) {
+                $rawSecSectorId = '';
+                $rawSecSpecId = '';
+            }
             $secondaryPair = ['secondary_sector_id' => null, 'secondary_specialty_id' => null];
             try {
                 $secondaryPair = VettingPurger::normalizeSecondaryCategoryPair(
@@ -682,6 +686,17 @@ $aghsHouses = Houses::AGHS_HOUSES;
             </div>
           </div>
 
+          <!-- Optional Secondary Industry Sector & Specialty Toggle (#395) -->
+          <div style="margin-top:-0.2rem;margin-bottom:0.2rem;">
+            <label style="display:inline-flex;align-items:center;gap:0.45rem;cursor:pointer;font-size:0.83rem;color:#374151;">
+              <input type="checkbox" id="toggle-secondary-sector" name="toggle_secondary_sector" value="1" <?= (!empty($_POST['toggle_secondary_sector']) || !empty($_POST['secondary_sector_id'])) ? 'checked' : '' ?> style="width:16px;height:16px;accent-color:#114B3E;">
+              <span>Operates in an additional industry / sector (spans two fields)</span>
+            </label>
+            <div id="secondary-sector-container" style="<?= (!empty($_POST['toggle_secondary_sector']) || !empty($_POST['secondary_sector_id'])) ? '' : 'display:none;' ?>margin-top:0.75rem;">
+              <?= bbiz_render_secondary_specialty_fields($taxonomyTree, isset($_POST['secondary_sector_id']) ? (int)$_POST['secondary_sector_id'] : null, isset($_POST['secondary_specialty_id']) ? (int)$_POST['secondary_specialty_id'] : null, (string)($_POST['regulator_name'] ?? '')) ?>
+            </div>
+          </div>
+
           <div>
             <label for="whatsapp_number" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">WhatsApp number *</label>
             <input type="tel" id="whatsapp_number" name="whatsapp_number" class="input-control" placeholder="+254 7XX XXX XXX" required autocomplete="tel">
@@ -884,7 +899,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
             placeholder="Specify statutory regulator..." style="margin-top:0.45rem;display:none;" disabled>
         </div>
 
-        <?= bbiz_render_secondary_specialty_fields($taxonomyTree, isset($_POST['secondary_sector_id']) ? (int)$_POST['secondary_sector_id'] : null, isset($_POST['secondary_specialty_id']) ? (int)$_POST['secondary_specialty_id'] : null, (string)($_POST['regulator_name'] ?? '')) ?>
+        <!-- Regulated specialty & secondary industry are configured above -->
 
         <div style="margin-top:0.9rem;margin-bottom:1rem;">
           <label for="alumni_perk" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Busherian Alumni Perk / Discount (Optional)</label>
@@ -1304,6 +1319,41 @@ $aghsHouses = Houses::AGHS_HOUSES;
       if (toggleAdv && advContainer) {
         toggleAdv.addEventListener('change', () => {
           advContainer.style.display = toggleAdv.checked ? 'block' : 'none';
+        });
+      }
+
+      // Secondary Industry Sector accordion toggle (#395)
+      const toggleSecSector = document.getElementById('toggle-secondary-sector');
+      const secSectorContainer = document.getElementById('secondary-sector-container');
+      const secSectorSelect = document.getElementById('secondary_sector_id');
+      const secSpecSelect = document.getElementById('secondary_specialty_id');
+      const secFinderInp = document.getElementById('secondary-specialty-quick-finder');
+      const secClearBtn = document.getElementById('btn-clear-secondary-specialty');
+
+      if (toggleSecSector && secSectorContainer) {
+        toggleSecSector.addEventListener('change', () => {
+          const isShown = toggleSecSector.checked;
+          secSectorContainer.style.display = isShown ? 'block' : 'none';
+          if (!isShown) {
+            if (secSectorSelect) {
+              secSectorSelect.value = '';
+              secSectorSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            if (secSpecSelect) {
+              secSpecSelect.value = '';
+              secSpecSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            if (secFinderInp) {
+              secFinderInp.value = '';
+            }
+          }
+        });
+      }
+
+      if (secClearBtn && toggleSecSector) {
+        secClearBtn.addEventListener('click', () => {
+          toggleSecSector.checked = false;
+          toggleSecSector.dispatchEvent(new Event('change', { bubbles: true }));
         });
       }
 

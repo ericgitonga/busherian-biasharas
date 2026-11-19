@@ -558,13 +558,15 @@ assertTrue(
     'Swahili term "sanaa" expands to Visual Arts and Performing Arts (#113)'
 );
 
-// 23. Verify Simplified Form Redesign (#386): "Same as Direct Phone above" is retired in favor of direct WhatsApp number
+// 23. Verify Simplified Form Redesign (#386, #395): "Same as Direct Phone above" is retired & Secondary Sector toggle is provided
 $feJs = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/form-enhancements.js');
 assertTrue(
     !str_contains($submitHtml, 'id="same_as_direct_phone_primary"') &&
     !str_contains($submitHtml, 'id="same_as_direct_phone_whatsapp"') &&
-    str_contains($submitHtml, 'id="whatsapp_number"'),
-    'submit.php retired obsolete Same as Direct Phone checkboxes in favor of simplified direct WhatsApp number (#386)'
+    str_contains($submitHtml, 'id="whatsapp_number"') &&
+    str_contains($submitHtml, 'id="toggle-secondary-sector"') &&
+    str_contains($submitHtml, 'id="secondary-sector-container"'),
+    'submit.php retired obsolete Same as Direct Phone checkboxes and provides toggle-secondary-sector checkbox (#386, #395)'
 );
 
 // 24. Verify Ticket #116: All 197 world countries included in LocationEngine::getPlaceHierarchy
