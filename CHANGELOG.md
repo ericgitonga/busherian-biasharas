@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.37.0] - 2026-11-20
+### Fixed
+- **Intelligent Kenya Phone Number Normalization (#404)**: Upgraded `PhoneNormalizer::normalize` to automatically recognize and properly format all common local Kenyan phone input patterns for Kenyan listings:
+  - Automatically transforms 10-digit national numbers (`07xxxxxxxx` and `01xxxxxxxx`) into canonical E.164 `+2547xxxxxxxx` / `+2541xxxxxxxx`.
+  - Automatically resolves 9-digit numbers missing national/international prefixes (`7xxxxxxxx` and `1xxxxxxxx`) into `+2547xxxxxxxx` / `+2541xxxxxxxx`.
+  - Detects and resolves missing country-code accidents where users prefixed their 9-digit local number with `+` (e.g. `+746588589` or `+110123456`), preventing mistaken international collision with Russia/Kazakhstan (+7) or North America (+1) and properly normalizing to `+254746588589` / `+254110123456`.
+  - Corrects transposition typos for Kenya's country code (`+245...` -> `+254...`, e.g. `+245722366164` -> `+254722366164`).
+  - Strips accidental trunk zero after country code (`+2540...` or `+254 (0) 7...` -> `+2547...`).
+  - Preserves legitimate explicit foreign international numbers (e.g. `+44...`, `+1...`, `+41...`) entered for diaspora or international listings without modification.
+- **Client-Side Phone Sanitization & Formatting (#404)**: Added `formatKenyaPhone()` in `directory.js` ensuring that directory cards, list view rows, sector view items, booking modals, and the canonical business detail header always display clean `+254...` numbers and build working `tel:` and `https://wa.me/254...` links even if legacy data or cached responses are served.
+- **Database Self-Healing Phone Remediation Migration (#404)**: Added `PhoneNormalizer::remediateStoredPhoneNumbers($pdo)` wired into `Database::migrateAndSeed()` (schema version `2026-11-v35-kenya-phone-normalization`), automatically updating legacy stored rows across `businesses`, `business_vetting_queue`, and `business_owners` on production deployment.
+
 ## [0.36.0] - 2026-11-20
 ### Added
 - **Sideways Photo Gallery Carousel & Navigation Arrows (#403)**: Replaced rigid 3-column photo grid with a smooth horizontal carousel track (`.photos-carousel-track`) equipped with left and right navigation buttons (`#btn-photos-scroll-left` and `#btn-photos-scroll-right`). Automatically displays all uploaded photos (supporting 4+ photos without truncation), features touch/swipe scrolling with CSS snap alignments, and dynamically hides/fades navigation arrows when photos fit the viewport or reach scroll boundaries.
