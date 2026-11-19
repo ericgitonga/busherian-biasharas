@@ -313,8 +313,8 @@ $pageCanonicalPath = $requestedBiz
         <div class="filter-group-title">LOCATION</div>
         <select id="filter-city" data-testid="filter-city" class="sidebar-select" aria-label="Filter by City, County, or State">
           <option value="">All locations</option>
-          <?php foreach (array_keys($placeHierarchy['Kenya'] ?? []) as $cityName): ?>
-            <option value="<?= htmlspecialchars($cityName, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($cityName, ENT_QUOTES, 'UTF-8') ?></option>
+          <?php foreach (($placeHierarchy['Kenya'] ?? []) as $cityName): ?>
+            <option value="<?= htmlspecialchars((string)$cityName, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string)$cityName, ENT_QUOTES, 'UTF-8') ?></option>
           <?php endforeach; ?>
         </select>
         <button type="button" id="btn-sidebar-near-me" class="btn-sidebar-near-me" style="margin-top:4px;" onclick="triggerNearMeLocation()">

@@ -80,4 +80,14 @@ testAssert(str_contains($enrichPhp, 'WebsiteEnricher::fetchAndExtract'), 'enrich
 $enricherSrc = (string)file_get_contents(dirname(__DIR__) . '/src/Services/WebsiteEnricher.php');
 testAssert(str_contains($enricherSrc, 'validateSafeUrlAndResolveIp'), 'WebsiteEnricher implements validateSafeUrlAndResolveIp SSRF guard');
 
+// 8. Check that public/index.php renders fully without fatal type errors (#371)
+ob_start();
+$_SERVER['REQUEST_METHOD'] = 'GET';
+$_SERVER['REQUEST_URI'] = '/';
+require dirname(__DIR__) . '/public/index.php';
+$renderedIndexHtml = (string)ob_get_clean();
+testAssert(str_contains($renderedIndexHtml, 'id="cards-grid"'), 'index.php renders id="cards-grid"');
+testAssert(str_contains($renderedIndexHtml, '</html>'), 'index.php renders complete HTML document with closing </html>');
+testAssert(str_contains($renderedIndexHtml, 'All locations'), 'index.php renders location dropdown options');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

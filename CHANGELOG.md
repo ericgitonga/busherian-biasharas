@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new featu
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
 ## [0.34.0] - 2026-11-18
+### Fixed
+- **Strict TypeError in Sidebar Location Filter (#371)**: Fixed fatal PHP 8 TypeError where `array_keys()` on sequential county array passed integer index into `htmlspecialchars()`, halting page output inside `<select id="filter-city">` and preventing the directory cards grid, scripts, and footer from rendering.
+
 ### Added
 - **Streamlined Directory Layout & Left Filter Panel (`#370`, `#371`, `#372`, `#373`, `#374`, Parent `#370`)**:
   - Implemented responsive left sidebar filter panel (`#filters-sidebar`) with collapsible toggle, real-time sector category vertical list with business counts, location dropdown with "Near me" GPS filter, signature school text buttons (without logos), and "Show Only" checkboxes (`Open now` and `Offers an alumni perk`).
