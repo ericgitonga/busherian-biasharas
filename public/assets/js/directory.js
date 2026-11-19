@@ -7,9 +7,9 @@
     ? window.INITIAL_PAGINATION
     : {
         page: 1,
-        per_page: 10,
+        per_page: 25,
         total: initialBusinesses.length,
-        total_pages: Math.max(1, Math.ceil(initialBusinesses.length / 10)),
+        total_pages: Math.max(1, Math.ceil(initialBusinesses.length / 25)),
       };
 
   const state = {
@@ -46,6 +46,7 @@
     isConciergeMode: false,
     conciergeLoading: false,
     conciergeData: null,
+    currentViewMode: 'grid',
   };
 
   const els = {
@@ -254,9 +255,9 @@
     return null;
   }
 
-  const ALLOWED_PAGE_SIZES = [10, 25, 50, 100];
+  const ALLOWED_PAGE_SIZES = [25, 50, 100];
   state.currentPage = Number(state.pagination.page) || 1;
-  state.perPage = ALLOWED_PAGE_SIZES.includes(Number(state.pagination.per_page)) ? Number(state.pagination.per_page) : 10;
+  state.perPage = ALLOWED_PAGE_SIZES.includes(Number(state.pagination.per_page)) ? Number(state.pagination.per_page) : 25;
 
   let activeFetchController = null;
   let latestRequestSeq = 0;
@@ -514,9 +515,12 @@
 
   const perPageSelectEl = document.getElementById('per-page-select');
   if (perPageSelectEl) {
+    if (ALLOWED_PAGE_SIZES.includes(state.perPage)) {
+      perPageSelectEl.value = String(state.perPage);
+    }
     perPageSelectEl.addEventListener('change', (e) => {
       const nextSize = Number(e.target.value);
-      state.perPage = ALLOWED_PAGE_SIZES.includes(nextSize) ? nextSize : 10;
+      state.perPage = ALLOWED_PAGE_SIZES.includes(nextSize) ? nextSize : 25;
       state.currentPage = 1;
       fetchBusinesses({ resetPage: true });
     });
@@ -603,77 +607,112 @@
   function renderSingleBusinessCard(biz, opts = {}) {
     const isEcosystem = opts.isEcosystem || biz.match_tier === 'ecosystem';
     const isConcierge = opts.isConcierge || !!opts.isEcosystem || biz.match_tier === 'direct';
-    const distBadge = (biz.distance_km !== null && biz.distance_km !== undefined)
-      ? `<span class="badge-distance">📍 ${Number(biz.distance_km).toFixed(1)} km away</span>`
-      : `<span style="font-size:0.75rem;color:#6B7280;">📍 ${escapeHtml(biz.area_neighborhood || biz.city_county || '')}</span>`;
     const hours = biz.hours_status || { state: 'CLOSED', badge_text: 'Closed' };
-    const perkHtml = biz.alumni_perk
-      ? `<div class="card-Perk">🎁 <strong>Busherian Perk:</strong> ${escapeHtml(biz.alumni_perk)}</div>`
-      : '';
     const inShortlist = state.shortlistIds.has(biz.id);
     const hasCoords = biz.latitude !== null && biz.longitude !== null;
-    const photos = Array.isArray(biz.photos) ? biz.photos : [];
-    const cardPhotosHtml = photos.length > 0 ? `
-      <div class="card-photo-strip">
-        ${photos.slice(0, 4).map((url, idx) => `<img src="${escapeHtml(url)}" alt="${escapeHtml(biz.name)} photo ${idx + 1}" loading="lazy">`).join('')}
-        ${photos.length > 4 ? `<span class="card-photo-more">+${photos.length - 4}</span>` : ''}
-      </div>
-    ` : '';
+    const cardClasses = isEcosystem ? 'biz-card biz-card-ecosystem' : 'biz-card';
+    const openSource = isConcierge ? 'concierge' : 'directory';
 
+    const waNumber = (biz.whatsapp_number || biz.phone_primary || '').replace(/[^0-9]/g, '');
+    const waUrl = waNumber ? `https://wa.me/${waNumber}?text=Hello%20${encodeURIComponent(biz.name)}` : '#';
+    const callUrl = biz.phone_primary ? `tel:${biz.phone_primary}` : '#';
+    const safeCardGmaps = sanitizeHttpUrl(biz.google_maps_url);
+    const routeUrl = safeCardGmaps || (hasCoords ? `https://www.google.com/maps/search/?api=1&query=${biz.latitude},${biz.longitude}` : `https://maps.google.com/?q=${encodeURIComponent([biz.name, biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(' '))}`);
+
+    const schoolBadgeText = biz.school_badge === 'BOTH' ? 'AHS & AGHS' : (biz.school_badge || 'AHS');
+    const schoolCls = (biz.school_badge || 'AHS').toLowerCase();
+
+    // 5. Founded by / Co-Founded by (#383, #384)
+    let founderHtml = '';
+    if (biz.founder_role && (biz.founder_role === 'founder' || biz.founder_role === 'co_founder') && biz.founder_name) {
+      const rolePrefix = biz.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ';
+      const schoolPart = biz.founder_school ? ` (${escapeHtml(biz.founder_school)}${biz.founder_year ? ` '${escapeHtml(biz.founder_year)}` : ''})` : '';
+      founderHtml = `
+        <div class="founder-attribution" data-testid="founder-attribution">
+          <span>👤</span>
+          <span>${escapeHtml(rolePrefix)}${escapeHtml(biz.founder_name)}${schoolPart}</span>
+        </div>
+      `;
+    }
+
+    // 6. Perks
+    const perkHtml = biz.alumni_perk
+      ? `<div class="company-perks" data-testid="company-perks">🎁 <strong>Perk:</strong> ${escapeHtml(biz.alumni_perk)}</div>`
+      : '';
+
+    // Concierge badges / reasons if present
     const needBadge = isEcosystem
       ? `<span class="badge-underlying-need" data-testid="badge-underlying-need">★ Underlying Need: ${escapeHtml(biz.underlying_need_label || opts.underlyingNeedLabel || 'Ecosystem Partner')}</span>`
       : '';
-
     const reasonHtml = isEcosystem && (biz.tailored_reason || opts.tailoredReason)
       ? `<div class="card-adjacency-reason" data-testid="card-adjacency-reason">💡 <strong>Why this biashara:</strong> ${escapeHtml(biz.tailored_reason || opts.tailoredReason)}</div>`
       : (!isEcosystem && isConcierge && (biz.tailored_reason || opts.tailoredReason)
         ? `<div class="card-adjacency-reason" data-testid="card-adjacency-reason" style="background:#F0FDF4;border-left-color:#059669;color:#065F46;">🎯 <strong>Match Context:</strong> ${escapeHtml(biz.tailored_reason || opts.tailoredReason)}</div>`
         : '');
 
-    const cardClasses = isEcosystem ? 'biz-card biz-card-ecosystem' : 'biz-card';
-    const openSource = isConcierge ? 'concierge' : 'directory';
-
-    // STRICT PRIVACY GUARANTEE: Zero House, Year Left, or School Number ever rendered
     return `
-      <article class="${cardClasses}" data-testid="biz-card" data-biz-id="${biz.id}" data-open-biz-source="${openSource}">
-        <div>
-          ${cardPhotosHtml}
-          <div class="card-top-badges" style="justify-content:space-between;">
-            <span style="display:inline-flex;gap:0.35rem;align-items:center;flex-wrap:wrap;">
-              ${biz.can_edit ? `<span style="background:#ECFDF5;color:#065F46;border:1px solid #059669;border-radius:999px;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:800;">✓ Your Linked Business</span>` : ''}
-              ${needBadge}
-              ${(biz.is_bookable || biz.booking_enabled || biz.booking_url) ? `<span class="badge-bookable" data-testid="biz-card-bookable-badge">📅 Book Appointment</span>` : ''}
-              ${biz.momentum_badge === 'popular' ? `<span class="badge-momentum badge-popular" data-testid="biz-card-popular-badge" title="Frequently checked out by fellow Busherians recently">🔥 Popular with Busherians</span>` : ''}
-              ${biz.momentum_badge === 'new' ? `<span class="badge-momentum badge-new" data-testid="biz-card-new-badge" title="Joined the directory within the last week">✨ New on Biasharas</span>` : ''}
-            </span>
-            ${distBadge}
-          </div>
-          <h3 class="card-title" data-testid="biz-card-title">${escapeHtml(biz.name)}</h3>
-          <div class="card-taxonomy">${escapeHtml(biz.sector_name || '')} &rarr; ${escapeHtml(biz.specialty_name || '')}</div>
-          ${biz.secondary_sector_name && biz.secondary_specialty_name
-            ? `<div class="card-taxonomy card-taxonomy-secondary" data-testid="biz-card-secondary-taxonomy">+ Also: ${escapeHtml(biz.secondary_sector_name)} &rarr; ${escapeHtml(biz.secondary_specialty_name)}</div>`
-            : ''}
-          <p class="card-tagline">${escapeHtml(biz.tagline || '')}</p>
-          ${perkHtml}
-          ${reasonHtml}
-        </div>
-        <div class="card-footer">
-          <span class="status-dot status-${escapeHtml(hours.state)}">● ${escapeHtml(hours.badge_text)}</span>
-          <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
-            ${hasCoords ? `
-              <button type="button" data-route-biz-id="${biz.id}" title="Get distance and directions to ${escapeHtml(biz.name)}" style="background:#FFFBEB;color:#78350F;border:1px solid #D4AF37;border-radius:6px;padding:0.25rem 0.55rem;font-size:0.74rem;font-weight:700;cursor:pointer;">
-                🧭 Directions
-              </button>
-            ` : ''}
-            ${biz.can_edit && biz.edit_url ? `
-              <a href="${escapeHtml(biz.edit_url)}" data-edit-biz-link="1" title="Edit ${escapeHtml(biz.name)}" style="background:#114B3E;color:#fff;text-decoration:none;border-radius:6px;padding:0.25rem 0.6rem;font-size:0.74rem;font-weight:700;display:inline-flex;align-items:center;gap:0.25rem;">
-                ✏️ Edit My Business
-              </a>
-            ` : ''}
-            <button type="button" class="btn-shortlist-toggle" data-shortlist-id="${biz.id}" title="Add to B2B Procurement Shortlist" style="background:${inShortlist ? '#114B3E' : '#F3F4F6'};color:${inShortlist ? '#fff' : '#374151'};border:none;border-radius:6px;padding:0.25rem 0.55rem;font-size:0.74rem;font-weight:600;cursor:pointer;">
-              ${inShortlist ? '✓ Shortlisted' : '+ B2B Shortlist'}
+      <article class="${cardClasses}" data-testid="biz-card" data-biz-id="${biz.id}" data-biz-slug="${escapeHtml(biz.slug)}" data-open-biz-source="${openSource}">
+        <!-- Top Header Bar: 10. School badge, 12. Open/Closed status, 11. Share button -->
+        <div class="card-header-bar">
+          <div class="header-badges">
+            <span class="school-badge ${schoolCls}">${escapeHtml(schoolBadgeText)}</span>
+            <button type="button" class="open-status-btn ${hours.state === 'OPEN_NOW' ? 'open' : 'closed'}">
+              <span>${hours.state === 'OPEN_NOW' ? '🟢' : '🔴'}</span>
+              <span>${escapeHtml(hours.badge_text)}</span>
             </button>
-            <span style="font-weight:700;color:#7B1113;">Details &rarr;</span>
+            ${needBadge}
+            ${(biz.is_bookable || biz.booking_enabled || biz.booking_url) ? `<span class="badge-bookable" data-testid="biz-card-bookable-badge">📅 Book Appointment</span>` : ''}
+            ${biz.momentum_badge === 'popular' ? `<span class="badge-momentum badge-popular" data-testid="biz-card-popular-badge">🔥 Popular</span>` : ''}
+            ${biz.momentum_badge === 'new' ? `<span class="badge-momentum badge-new" data-testid="biz-card-new-badge">✨ New</span>` : ''}
+          </div>
+          <button type="button" class="btn-share" onclick="event.stopPropagation(); shareBiz('${escapeHtml(biz.slug)}', '${escapeHtml(biz.name)}')">
+            <span>🔗</span>
+            <span>Share</span>
+          </button>
+        </div>
+
+        <!-- 1. Company Name -->
+        <h2 class="company-name" data-testid="biz-card-title" onclick="openBusinessModal(${biz.id})">${escapeHtml(biz.name)}</h2>
+
+        <!-- 2. What they do / Specialty -->
+        <div class="what-they-do">${escapeHtml(biz.specialty_name || biz.sector_name || '')}</div>
+        ${biz.secondary_sector_name && biz.secondary_specialty_name
+          ? `<div class="card-taxonomy-secondary" data-testid="biz-card-secondary-taxonomy">+ Also: ${escapeHtml(biz.secondary_sector_name)} &rarr; ${escapeHtml(biz.secondary_specialty_name)}</div>`
+          : ''}
+
+        <!-- 3. Location -->
+        <div class="company-location">
+          <span>📍 ${escapeHtml([biz.area_neighborhood, biz.city_county].filter(Boolean).join(', ') || 'Kenya')}</span>
+          ${(biz.distance_km !== null && biz.distance_km !== undefined) ? `<span class="badge-distance" style="margin-left:auto;">(${Number(biz.distance_km).toFixed(1)} km)</span>` : ''}
+        </div>
+
+        <!-- 4. Brief tag line -->
+        <p class="company-tagline">${escapeHtml(biz.tagline || biz.description || '')}</p>
+
+        <!-- 5. Founded by / Co-Founded by -->
+        ${founderHtml}
+
+        <!-- 6. Perks -->
+        ${perkHtml}
+
+        ${reasonHtml}
+
+        <!-- 7. Action buttons (WhatsApp / Call) & 8. Details & 9. Route -->
+        <div class="card-action-buttons">
+          <a href="${escapeHtml(waUrl)}" class="btn-action-primary btn-action-whatsapp" target="_blank" rel="noopener" onclick="event.stopPropagation();">
+            <span>💬</span>
+            <span>WhatsApp</span>
+          </a>
+          <a href="${escapeHtml(callUrl)}" class="btn-action-primary btn-action-call" onclick="event.stopPropagation();">
+            <span>📞</span>
+            <span>Call</span>
+          </a>
+          <div class="card-secondary-row">
+            <a href="/biz/${escapeHtml(biz.slug)}" onclick="event.preventDefault(); openBizDetail('${escapeHtml(biz.slug)}')" class="link-secondary">Details &rarr;</a>
+            <a href="${escapeHtml(routeUrl)}" target="_blank" rel="noopener" data-route-biz-id="${biz.id}" class="link-secondary" onclick="event.stopPropagation();">🧭 Route</a>
+            <button type="button" class="btn-shortlist-toggle" data-shortlist-id="${biz.id}" title="Add to B2B Procurement Shortlist" style="background:${inShortlist ? '#114B3E' : '#F3F4F6'};color:${inShortlist ? '#fff' : '#374151'};border:none;border-radius:6px;padding:0.25rem 0.55rem;font-size:0.74rem;font-weight:600;cursor:pointer;margin-left:auto;" onclick="event.stopPropagation();">
+              ${inShortlist ? '✓ Shortlisted' : '+ Shortlist'}
+            </button>
           </div>
         </div>
       </article>
@@ -698,7 +737,7 @@
       return;
     }
 
-    const perPage = ALLOWED_PAGE_SIZES.includes(Number(state.perPage)) ? Number(state.perPage) : 10;
+    const perPage = ALLOWED_PAGE_SIZES.includes(Number(state.perPage)) ? Number(state.perPage) : 25;
     const pag = state.pagination || {};
     const pagedBusinesses = Array.isArray(state.businesses) ? state.businesses : [];
     const totalItems = typeof pag.total === 'number' ? pag.total : pagedBusinesses.length;
@@ -1378,9 +1417,9 @@
     const biz = state.businesses.find(b => Number(b.id) === Number(bizId));
     if (!biz || biz.latitude === null || biz.longitude === null) return;
 
-    // Isolate this specific business on the map immediately
+    // Isolate this specific business on the map immediately and reveal map dock
     state.focusedBusinessId = biz.id;
-    renderInteractiveMap();
+    toggleMapVisibility(true, { scrollIntoView: true });
 
     const loadingHtml = `<div style="font-weight:700;color:#114B3E;">📍 Getting your location &amp; calculating route to ${escapeHtml(biz.name)}...</div>`;
     if (els.mapRouteDrawer) {
@@ -1651,6 +1690,507 @@
   }
 
   const extraLoadedBusinesses = new Map();
+
+  function openBizDetail(slugOrId) {
+    let biz = null;
+    if (typeof slugOrId === 'number' || /^\d+$/.test(String(slugOrId))) {
+      biz = state.businesses.find(b => Number(b.id) === Number(slugOrId)) || extraLoadedBusinesses.get(Number(slugOrId));
+    } else {
+      biz = state.businesses.find(b => b.slug === String(slugOrId));
+    }
+    if (!biz && window.REQUESTED_BIZ && (window.REQUESTED_BIZ.slug === slugOrId || Number(window.REQUESTED_BIZ.id) === Number(slugOrId))) {
+      biz = window.REQUESTED_BIZ;
+    }
+    if (!biz) {
+      const qParam = /^\d+$/.test(String(slugOrId)) ? ('id=' + encodeURIComponent(String(slugOrId))) : ('slug=' + encodeURIComponent(String(slugOrId)));
+      fetch('/api/businesses.php?' + qParam)
+        .then(res => res.json())
+        .then(data => {
+          if (data && Array.isArray(data.businesses) && data.businesses.length > 0) {
+            extraLoadedBusinesses.set(Number(data.businesses[0].id), data.businesses[0]);
+            populateBizDetail(data.businesses[0]);
+          }
+        })
+        .catch(() => {});
+      return;
+    }
+    populateBizDetail(biz);
+  }
+
+  function populateBizDetail(biz) {
+    if (!biz) return;
+    state.activeBusiness = biz;
+    state.focusedBusinessId = biz.id;
+    recordCheckout(biz.id, 'profile_checkout');
+
+    if (window.history && window.history.pushState) {
+      window.history.pushState({ slug: biz.slug }, biz.name + ' — Busherian Biasharas', '/biz/' + encodeURIComponent(biz.slug));
+    }
+    document.title = biz.name + ' — Busherian Biasharas';
+
+    const detailShell = document.getElementById('view-directory-shell');
+    const detailView = document.getElementById('view-biz-detail');
+    if (detailShell) detailShell.style.display = 'none';
+    if (detailView) {
+      detailView.style.display = 'flex';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    const initialsEl = document.getElementById('detail-initials');
+    if (initialsEl) initialsEl.textContent = (biz.name || 'BB').slice(0, 2).toUpperCase();
+
+    const nameEl = document.getElementById('detail-name');
+    if (nameEl) nameEl.textContent = biz.name || '';
+
+    const metaSectorEl = document.getElementById('detail-meta-sector');
+    if (metaSectorEl) metaSectorEl.textContent = `${biz.sector_name || ''} / ${biz.specialty_name || ''}`;
+
+    const metaAreaEl = document.getElementById('detail-meta-area');
+    if (metaAreaEl) metaAreaEl.textContent = [biz.area_neighborhood, biz.city_county].filter(Boolean).join(', ');
+
+    const taglineEl = document.getElementById('detail-tagline');
+    if (taglineEl) taglineEl.textContent = biz.tagline || biz.description || '';
+
+    const descEl = document.getElementById('detail-desc');
+    if (descEl) descEl.textContent = biz.description || biz.tagline || '';
+
+    const founderBox = document.getElementById('detail-founder');
+    const founderText = document.getElementById('detail-founder-text');
+    if (founderBox && founderText) {
+      if (biz.founder_role && (biz.founder_role === 'founder' || biz.founder_role === 'co_founder') && biz.founder_name) {
+        const prefix = biz.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ';
+        const schoolPart = biz.founder_school ? ` (${biz.founder_school}${biz.founder_year ? ` '${biz.founder_year}` : ''})` : '';
+        founderText.textContent = `${prefix}${biz.founder_name}${schoolPart}`;
+        founderBox.style.display = 'flex';
+      } else {
+        founderBox.style.display = 'none';
+      }
+    }
+
+    const hours = biz.hours_status || { state: 'CLOSED', badge_text: 'Closed' };
+    const hoursChip = document.getElementById('detail-hours-chip');
+    if (hoursChip) hoursChip.textContent = `🟢 ${hours.badge_text}`;
+
+    const schoolChip = document.getElementById('detail-school-chip');
+    if (schoolChip) schoolChip.textContent = `🎓 Verified Alum · ${biz.school_badge || 'AHS'}`;
+
+    const perkChip = document.getElementById('detail-perk-chip');
+    if (perkChip) {
+      if (biz.alumni_perk) {
+        perkChip.textContent = `🎁 Perk: ${biz.alumni_perk}`;
+        perkChip.style.display = 'inline-flex';
+      } else {
+        perkChip.style.display = 'none';
+      }
+    }
+
+    const waClean = (biz.whatsapp_number || biz.phone_primary || '').replace(/[^0-9]/g, '');
+    const waBtn = document.getElementById('detail-wa-btn');
+    if (waBtn) {
+      waBtn.href = waClean ? `https://wa.me/${waClean}?text=Hello%20${encodeURIComponent(biz.name)}` : '#';
+    }
+
+    const callBtn = document.getElementById('detail-call-btn');
+    if (callBtn) {
+      callBtn.href = biz.phone_primary ? `tel:${biz.phone_primary}` : '#';
+    }
+
+    const routeBtn = document.getElementById('detail-route-btn');
+    if (routeBtn) {
+      const safeDetailGmaps = sanitizeHttpUrl(biz.google_maps_url);
+      routeBtn.href = safeDetailGmaps || `https://maps.google.com/?q=${encodeURIComponent([biz.name, biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(' '))}`;
+    }
+
+    const shareBtn = document.getElementById('detail-share-btn');
+    if (shareBtn) {
+      shareBtn.onclick = () => shareBiz(biz.slug, biz.name);
+    }
+
+    const shareWaBtn = document.getElementById('detail-share-wa-btn');
+    if (shareWaBtn) {
+      const canonUrl = window.location.origin + '/biz/' + encodeURIComponent(biz.slug);
+      shareWaBtn.href = `https://wa.me/?text=${encodeURIComponent(`Check out ${biz.name} on Busherian Biasharas: ${canonUrl}`)}`;
+    }
+
+    const copyLinkBtn = document.getElementById('detail-copy-link-btn');
+    if (copyLinkBtn) {
+      copyLinkBtn.onclick = () => {
+        const canonUrl = window.location.origin + '/biz/' + encodeURIComponent(biz.slug);
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(canonUrl).then(() => {
+            showToast('✓ Link copied to clipboard!');
+          }).catch(() => {
+            showToast('Link: ' + canonUrl);
+          });
+        }
+      };
+    }
+
+    const servicesList = document.getElementById('detail-services-list');
+    if (servicesList) {
+      const items = [biz.specialty_name, biz.secondary_specialty_name].filter(Boolean);
+      servicesList.innerHTML = items.map(s => `<li>${escapeHtml(s)}</li>`).join('');
+    }
+
+    const photosGrid = document.getElementById('detail-photos-grid');
+    if (photosGrid) {
+      const photos = Array.isArray(biz.photos) ? biz.photos : [];
+      if (photos.length > 0) {
+        photosGrid.innerHTML = photos.slice(0, 3).map((url, i) => `
+          <div class="photo-ph-slot" style="padding:0;overflow:hidden;">
+            <img src="${escapeHtml(url)}" alt="${escapeHtml(biz.name)} photo ${i+1}" style="width:100%;height:100%;object-fit:cover;">
+          </div>
+        `).join('');
+      } else {
+        photosGrid.innerHTML = `
+          <div class="photo-ph-slot"><span>🏢</span><strong>Premises / Office</strong></div>
+          <div class="photo-ph-slot"><span>🏗️</span><strong>Work &amp; Projects</strong></div>
+          <div class="photo-ph-slot"><span>📐</span><strong>Team &amp; Craft</strong></div>
+        `;
+      }
+    }
+
+    const phoneRow = document.getElementById('detail-phone-row');
+    if (phoneRow) {
+      phoneRow.innerHTML = `<strong>${escapeHtml(biz.phone_primary || 'Contact via WhatsApp')}</strong><div style="font-size:12px;color:#7E8D84;">Primary business phone and verified WhatsApp</div>`;
+    }
+    const locRow = document.getElementById('detail-loc-row');
+    if (locRow) {
+      locRow.innerHTML = `<strong>${escapeHtml([biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(', '))}</strong><div style="font-size:12px;color:#7E8D84;">${escapeHtml(biz.landmark_directions || 'Directions available via route link')}</div>`;
+    }
+
+    const moreSection = document.getElementById('detail-more-section');
+    const moreGrid = document.getElementById('detail-more-grid');
+    if (moreSection && moreGrid) {
+      const sameSector = state.businesses.filter(b => b.id !== biz.id && b.sector_id === biz.sector_id).slice(0, 4);
+      if (sameSector.length > 0) {
+        moreGrid.innerHTML = sameSector.map(b => `
+          <a class="mini-biz-card" href="/biz/${escapeHtml(b.slug)}" onclick="event.preventDefault(); openBizDetail('${escapeHtml(b.slug)}')">
+            <strong style="color:#114B3E;">${escapeHtml(b.name)}</strong>
+            <span style="font-size:12px;color:#7B1113;">${escapeHtml(b.specialty_name || '')}</span>
+            <span style="font-size:11.5px;color:#7E8D84;">${escapeHtml(b.city_county || '')}</span>
+          </a>
+        `).join('');
+        moreSection.style.display = 'block';
+      } else {
+        moreSection.style.display = 'none';
+      }
+    }
+  }
+
+  function showDirectoryView() {
+    const detailShell = document.getElementById('view-directory-shell');
+    const detailView = document.getElementById('view-biz-detail');
+    if (detailView) detailView.style.display = 'none';
+    if (detailShell) detailShell.style.display = 'flex';
+    document.title = 'Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS)';
+    if (window.history && window.history.pushState) {
+      window.history.pushState({}, document.title, '/');
+    }
+  }
+
+  function switchDirectoryView(viewMode) {
+    state.currentViewMode = viewMode;
+    const btnGrid = document.getElementById('btn-view-grid');
+    const btnList = document.getElementById('btn-view-list');
+    const btnSector = document.getElementById('btn-view-sector');
+    const containerGrid = document.getElementById('cards-grid');
+    const containerList = document.getElementById('container-list');
+    const containerSector = document.getElementById('container-sector');
+
+    if (btnGrid) btnGrid.classList.toggle('active', viewMode === 'grid');
+    if (btnList) btnList.classList.toggle('active', viewMode === 'list');
+    if (btnSector) btnSector.classList.toggle('active', viewMode === 'sector');
+
+    if (viewMode === 'grid') {
+      if (containerGrid) containerGrid.style.display = 'grid';
+      if (containerList) containerList.style.display = 'none';
+      if (containerSector) containerSector.style.display = 'none';
+    } else if (viewMode === 'list') {
+      if (containerGrid) containerGrid.style.display = 'none';
+      if (containerList) {
+        containerList.style.display = 'block';
+        renderListView();
+      }
+      if (containerSector) containerSector.style.display = 'none';
+    } else if (viewMode === 'sector') {
+      if (containerGrid) containerGrid.style.display = 'none';
+      if (containerList) containerList.style.display = 'none';
+      if (containerSector) {
+        containerSector.style.display = 'flex';
+        renderSectorView();
+      }
+    }
+  }
+
+  function renderListView() {
+    const containerList = document.getElementById('container-list');
+    if (!containerList) return;
+    const items = state.businesses || [];
+    if (items.length === 0) {
+      containerList.innerHTML = `
+        <div style="background:#FFFFFF;border:1px dashed #D1D5DB;border-radius:12px;padding:2rem;text-align:center;">
+          <h3 style="margin:0 0 0.5rem 0;color:#7B1113;">No matching biasharas found</h3>
+          <p style="margin:0;color:#6B7280;font-size:0.9rem;">Try clearing your search or selecting another sector or location.</p>
+        </div>
+      `;
+      return;
+    }
+
+    containerList.innerHTML = `
+      <div class="biz-list-group" data-testid="biz-list-group">
+        ${items.map(b => {
+          const waClean = (b.whatsapp_number || b.phone_primary || '').replace(/[^0-9]/g, '');
+          const schoolBadge = b.school_badge === 'BOTH' ? 'AHS & AGHS' : (b.school_badge || 'AHS');
+          const schoolCls = (b.school_badge || 'ahs').toLowerCase();
+          const locText = [b.area_neighborhood, b.city_county].filter(Boolean).join(', ');
+
+          const hours = b.hours_status || { state: 'CLOSED', badge_text: 'Closed' };
+          const isOpen = hours.state === 'OPEN_NOW' || hours.state === 'CLOSING_SOON';
+          const statusBadgeHtml = isOpen
+            ? `<span class="badge-status open" style="font-size:11px;padding:2px 8px;border-radius:999px;background:#ECFDF5;color:#065F46;border:1px solid #34D399;font-weight:700;">🟢 Open</span>`
+            : `<span class="badge-status closed" style="font-size:11px;padding:2px 8px;border-radius:999px;background:#F3F4F6;color:#6B7280;border:1px solid #D1D5DB;font-weight:600;">Closed</span>`;
+
+          let founderHtml = '';
+          if (b.founder_role && (b.founder_role === 'founder' || b.founder_role === 'co_founder') && b.founder_name) {
+            const rolePrefix = b.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ';
+            const schoolPart = b.founder_school ? ` (${escapeHtml(b.founder_school)}${b.founder_year ? ` '${escapeHtml(b.founder_year)}` : ''})` : '';
+            founderHtml = `
+              <div class="biz-list-founder">
+                <span>👤</span>
+                <span>${escapeHtml(rolePrefix)}${escapeHtml(b.founder_name)}${schoolPart}</span>
+              </div>
+            `;
+          }
+
+          const perkHtml = b.alumni_perk
+            ? `<div class="biz-list-perk">🎁 <strong>Perk:</strong> ${escapeHtml(b.alumni_perk)}</div>`
+            : '';
+
+          return `
+            <article class="biz-list-item" data-biz-id="${b.id}" data-testid="biz-list-item">
+              <div class="biz-list-item-inner">
+                <div class="biz-list-main-info">
+                  <div class="biz-list-title-row">
+                    <a href="/biz/${escapeHtml(b.slug)}" class="biz-list-title" onclick="event.preventDefault(); openBizDetail('${escapeHtml(b.slug)}')">
+                      ${escapeHtml(b.name)}
+                    </a>
+                    <div class="biz-list-badges">
+                      <span class="school-badge ${schoolCls}">${escapeHtml(schoolBadge)}</span>
+                      ${statusBadgeHtml}
+                    </div>
+                  </div>
+
+                  <div class="biz-list-meta-row">
+                    <span class="biz-list-specialty">${escapeHtml(b.specialty_name || b.sector_name || '')}</span>
+                    ${locText ? `<span class="biz-list-meta-dot">•</span><span class="biz-list-location">📍 ${escapeHtml(locText)}</span>` : ''}
+                  </div>
+
+                  ${founderHtml}
+                  ${perkHtml}
+                </div>
+
+                <div class="biz-list-actions">
+                  ${waClean ? `
+                    <a href="https://wa.me/${waClean}?text=Hello%20${encodeURIComponent(b.name)}" target="_blank" rel="noopener" class="btn-list-action btn-list-wa" title="Chat on WhatsApp" onclick="event.stopPropagation()">
+                      <span>💬</span> <span>WhatsApp</span>
+                    </a>
+                  ` : ''}
+                  ${b.phone_primary ? `
+                    <a href="tel:${escapeHtml(b.phone_primary)}" class="btn-list-action btn-list-call" title="Call directly" onclick="event.stopPropagation()">
+                      <span>📞</span> <span>Call</span>
+                    </a>
+                  ` : ''}
+                  <a href="/biz/${escapeHtml(b.slug)}" class="btn-list-action btn-list-details" onclick="event.preventDefault(); openBizDetail('${escapeHtml(b.slug)}');">
+                    <span>Details</span> <span>&rarr;</span>
+                  </a>
+                </div>
+              </div>
+            </article>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function renderSectorView() {
+    const containerSector = document.getElementById('container-sector');
+    if (!containerSector) return;
+    const items = state.businesses || [];
+    if (items.length === 0) {
+      containerSector.innerHTML = '<p style="padding:20px;text-align:center;color:#6B7280;">No biasharas found.</p>';
+      return;
+    }
+    const bySector = {};
+    items.forEach(b => {
+      const sName = b.sector_name || 'General Biasharas';
+      if (!bySector[sName]) bySector[sName] = [];
+      bySector[sName].push(b);
+    });
+
+    containerSector.innerHTML = Object.entries(bySector).map(([secName, bizList]) => `
+      <section style="background:#FFFFFF;border:1px solid #E5DEC9;border-radius:14px;padding:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;border-bottom:1.5px solid #EFE9DC;padding-bottom:8px;">
+          <h3 style="font-size:16px;font-weight:800;color:#114B3E;margin:0;">📁 ${escapeHtml(secName)}</h3>
+          <span style="font-size:12px;font-weight:700;background:#E8F2EE;color:#114B3E;padding:3px 10px;border-radius:999px;">${bizList.length} ${bizList.length === 1 ? 'Biashara' : 'Biasharas'}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));gap:16px;">
+          ${bizList.map(b => {
+            const waClean = (b.whatsapp_number || b.phone_primary || '').replace(/[^0-9]/g, '');
+            return `
+              <div style="border:1px solid #E5DEC9;border-radius:10px;padding:16px;background:#FBF8F3;">
+                <div style="font-weight:800;font-size:16px;color:#114B3E;cursor:pointer;" onclick="openBizDetail('${escapeHtml(b.slug)}')">${escapeHtml(b.name)}</div>
+                <div style="font-size:12.5px;color:#7B1113;font-weight:700;margin-top:2px;">${escapeHtml(b.specialty_name || '')} · ${escapeHtml(b.city_county || '')}</div>
+                ${b.founder_role && b.founder_role !== 'none' && b.founder_name ? `<div style="font-size:12px;color:#57645C;margin:4px 0;">👤 ${escapeHtml(b.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ')}${escapeHtml(b.founder_name)}</div>` : ''}
+                <div style="display:flex;gap:6px;margin-top:12px;align-items:center;">
+                  ${waClean ? `<a href="https://wa.me/${waClean}" target="_blank" rel="noopener" class="btn-action-primary btn-action-whatsapp" style="font-size:12px;height:32px;padding:0 12px;">💬 WhatsApp</a>` : ''}
+                  ${b.phone_primary ? `<a href="tel:${escapeHtml(b.phone_primary)}" class="btn-action-primary btn-action-call" style="font-size:12px;height:32px;padding:0 12px;">📞 Call</a>` : ''}
+                  <a href="/biz/${escapeHtml(b.slug)}" onclick="event.preventDefault(); openBizDetail('${escapeHtml(b.slug)}')" class="link-secondary" style="margin-left:auto;font-size:12px;">Details &rarr;</a>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </section>
+    `).join('');
+  }
+
+  function toggleSidebarFilters() {
+    const sidebar = document.getElementById('filters-sidebar');
+    const hideBtn = document.getElementById('btn-sidebar-hide');
+    if (!sidebar) return;
+    const isCollapsed = sidebar.classList.toggle('collapsed');
+    if (hideBtn) hideBtn.textContent = isCollapsed ? 'Show' : 'Hide';
+  }
+
+  function toggleSectorCollapse(forceOpen) {
+    const nav = document.getElementById('sidebar-sector-nav');
+    const btn = document.getElementById('btn-toggle-sector-collapse');
+    if (!nav || !btn) return;
+    const isCurrentlyCollapsed = nav.classList.contains('collapsed');
+    const willOpen = typeof forceOpen === 'boolean' ? forceOpen : isCurrentlyCollapsed;
+    nav.classList.toggle('collapsed', !willOpen);
+    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  }
+
+  function updateSectorHeaderHint() {
+    const hintEl = document.getElementById('sector-selected-hint');
+    if (!hintEl) return;
+    if (!state.selectedSectorId) {
+      hintEl.style.display = 'none';
+      hintEl.textContent = '';
+    } else {
+      const activeBtn = document.querySelector(`#sidebar-sector-nav .sector-nav-item[data-sector-id="${state.selectedSectorId}"]`);
+      const name = activeBtn ? (activeBtn.querySelector('span:first-child')?.textContent || '').trim() : '';
+      if (name && name !== 'All sectors') {
+        hintEl.textContent = name.length > 18 ? (name.slice(0, 16) + '…') : name;
+        hintEl.style.display = 'inline-block';
+      } else {
+        hintEl.style.display = 'none';
+        hintEl.textContent = '';
+      }
+    }
+  }
+
+  function toggleMobileDrawer(open) {
+    const sidebar = document.getElementById('filters-sidebar');
+    const backdrop = document.getElementById('drawer-backdrop');
+    if (!sidebar) return;
+    const willOpen = (typeof open === 'boolean') ? open : !sidebar.classList.contains('drawer-open');
+    sidebar.classList.toggle('drawer-open', willOpen);
+    if (backdrop) {
+      backdrop.classList.toggle('active', willOpen);
+    }
+    document.body.style.overflow = willOpen ? 'hidden' : '';
+  }
+
+  function filterBySector(sectorId) {
+    state.selectedSectorId = sectorId ? String(sectorId) : '';
+    if (els.sectorSelect) els.sectorSelect.value = state.selectedSectorId;
+    const navItems = document.querySelectorAll('#sidebar-sector-nav .sector-nav-item');
+    navItems.forEach(btn => {
+      const sid = btn.getAttribute('data-sector-id') || '';
+      btn.classList.toggle('active', sid === state.selectedSectorId);
+    });
+    updateSectorHeaderHint();
+    fetchBusinesses();
+  }
+
+  function filterBySchool(schoolCode) {
+    state.selectedSchool = schoolCode || '';
+    const schoolItems = document.querySelectorAll('#sidebar-school-nav .school-nav-item');
+    schoolItems.forEach(btn => {
+      const code = btn.getAttribute('data-school') || '';
+      btn.classList.toggle('active', code === state.selectedSchool);
+    });
+    fetchBusinesses();
+  }
+
+  function toggleQuickCheckbox(filterKey, isChecked) {
+    if (filterKey === 'open_now') state.openNow = Boolean(isChecked);
+    if (filterKey === 'has_perk') state.hasPerk = Boolean(isChecked);
+    fetchBusinesses();
+  }
+
+  function triggerNearMeLocation() {
+    if (els.nearMeBtn) {
+      els.nearMeBtn.click();
+    }
+  }
+
+  function shareBiz(slug, name) {
+    const url = window.location.origin + '/biz/' + encodeURIComponent(slug);
+    if (navigator.share) {
+      navigator.share({
+        title: name + ' — Busherian Biasharas',
+        text: `Check out ${name} on Busherian Biasharas:`,
+        url: url
+      }).catch(() => {});
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(() => {
+        showToast('✓ Link copied: ' + url);
+      }).catch(() => {
+        prompt('Copy business link:', url);
+      });
+    } else {
+      prompt('Copy business link:', url);
+    }
+  }
+
+  function showToast(msg) {
+    let toast = document.getElementById('toast-msg');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'toast-msg';
+      toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#0B332A;color:#FFFFFF;padding:10px 22px;border-radius:999px;font-size:13px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,0.2);z-index:2000;';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.display = 'block';
+    setTimeout(() => { toast.style.display = 'none'; }, 3000);
+  }
+
+  window.openBizDetail = openBizDetail;
+  window.showDirectoryView = showDirectoryView;
+  window.switchDirectoryView = switchDirectoryView;
+  window.toggleSidebarFilters = toggleSidebarFilters;
+  window.toggleMobileDrawer = toggleMobileDrawer;
+  window.toggleSectorCollapse = toggleSectorCollapse;
+  window.filterBySector = filterBySector;
+  window.filterBySchool = filterBySchool;
+  window.toggleQuickCheckbox = toggleQuickCheckbox;
+  window.triggerNearMeLocation = triggerNearMeLocation;
+  window.shareBiz = shareBiz;
+  window.showToast = showToast;
+
+  window.addEventListener('popstate', (e) => {
+    if (window.location.pathname.startsWith('/biz/')) {
+      const slug = window.location.pathname.replace('/biz/', '').replace(/\/$/, '');
+      if (slug) openBizDetail(slug);
+    } else {
+      showDirectoryView();
+    }
+  });
 
   async function openBusinessByIdOrFetch(bizId, opts) {
     const numericId = Number(bizId);
@@ -1971,11 +2511,21 @@
   }
 
   // Wire Event Listeners
+  const drawerSearchInput = document.getElementById('drawer-search-q');
+  const drawerClearBtn = document.getElementById('btn-drawer-clear-search');
+
   if (els.searchInput) {
     let timer = null;
     const syncClearBtn = () => {
+      const hasVal = els.searchInput.value.length > 0;
       if (els.searchClearBtn) {
-        els.searchClearBtn.style.display = els.searchInput.value.length > 0 ? 'inline-flex' : 'none';
+        els.searchClearBtn.style.display = hasVal ? 'inline-flex' : 'none';
+      }
+      if (drawerSearchInput && drawerSearchInput.value !== els.searchInput.value) {
+        drawerSearchInput.value = els.searchInput.value;
+      }
+      if (drawerClearBtn) {
+        drawerClearBtn.style.display = hasVal ? 'inline-flex' : 'none';
       }
     };
     els.searchInput.addEventListener('input', (e) => {
@@ -2036,6 +2586,39 @@
     syncClearBtn();
   }
 
+  // Wire Mobile Drawer Search input & clear button (#398)
+  if (drawerSearchInput) {
+    drawerSearchInput.addEventListener('input', (e) => {
+      if (els.searchInput) {
+        els.searchInput.value = e.target.value;
+        els.searchInput.dispatchEvent(new Event('input'));
+      }
+      if (drawerClearBtn) {
+        drawerClearBtn.style.display = e.target.value.length > 0 ? 'inline-flex' : 'none';
+      }
+    });
+    drawerSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (els.searchInput) {
+          els.searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+        }
+      }
+    });
+    if (drawerClearBtn) {
+      drawerClearBtn.addEventListener('click', () => {
+        drawerSearchInput.value = '';
+        drawerClearBtn.style.display = 'none';
+        if (els.searchClearBtn) {
+          els.searchClearBtn.click();
+        } else if (els.searchInput) {
+          els.searchInput.value = '';
+          els.searchInput.dispatchEvent(new Event('input'));
+        }
+      });
+    }
+  }
+
   if (els.sectorSelect) {
     els.sectorSelect.addEventListener('change', (e) => {
       state.selectedSectorId = e.target.value;
@@ -2057,6 +2640,10 @@
     els.countrySelect.addEventListener('change', (e) => {
       state.selectedCountry = e.target.value;
       state.selectedCity = '';
+      els.countrySelect.classList.toggle('active-filter', Boolean(state.selectedCountry));
+      if (els.citySelect) {
+        els.citySelect.classList.remove('active-filter');
+      }
       populateCitiesDropdown(state.selectedCountry);
       fetchBusinesses();
     });
@@ -2065,6 +2652,7 @@
   if (els.citySelect) {
     els.citySelect.addEventListener('change', (e) => {
       state.selectedCity = e.target.value;
+      els.citySelect.classList.toggle('active-filter', Boolean(state.selectedCity));
       fetchBusinesses();
     });
   }
@@ -2102,25 +2690,29 @@
         state.selectedSchool = '';
         state.selectedCountry = '';
         state.selectedCity = '';
-        if (els.countrySelect) els.countrySelect.value = '';
+        if (els.countrySelect) {
+          els.countrySelect.value = '';
+          els.countrySelect.classList.remove('active-filter');
+        }
         if (els.citySelect) {
           populateCitiesDropdown('');
           els.citySelect.value = '';
+          els.citySelect.classList.remove('active-filter');
         }
         document.querySelectorAll('[data-quick-filter]').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+        document.querySelectorAll('[data-quick-filter="all"]').forEach(b => b.classList.add('active'));
       } else if (f === 'open_now') {
         state.openNow = !state.openNow;
-        btn.classList.toggle('active', state.openNow);
+        document.querySelectorAll('[data-quick-filter="open_now"]').forEach(b => b.classList.toggle('active', state.openNow));
       } else if (f === 'has_perk') {
         state.hasPerk = !state.hasPerk;
-        btn.classList.toggle('active', state.hasPerk);
+        document.querySelectorAll('[data-quick-filter="has_perk"]').forEach(b => b.classList.toggle('active', state.hasPerk));
       } else if (f === 'b2b_ready') {
         state.b2bReady = !state.b2bReady;
-        btn.classList.toggle('active', state.b2bReady);
+        document.querySelectorAll('[data-quick-filter="b2b_ready"]').forEach(b => b.classList.toggle('active', state.b2bReady));
       } else if (f === 'bookable') {
         state.bookable = !state.bookable;
-        btn.classList.toggle('active', state.bookable);
+        document.querySelectorAll('[data-quick-filter="bookable"]').forEach(b => b.classList.toggle('active', state.bookable));
       } else if (f === 'AHS' || f === 'AGHS') {
         state.selectedSchool = (state.selectedSchool === f) ? '' : f;
         document.querySelectorAll('[data-quick-filter="AHS"],[data-quick-filter="AGHS"]').forEach(b => {
@@ -2337,6 +2929,9 @@
       if (els.shortlistCount) {
         els.shortlistCount.textContent = String(state.shortlistIds.size);
       }
+      document.querySelectorAll('.drawer-shortlist-count').forEach(el => {
+        el.textContent = String(state.shortlistIds.size);
+      });
       renderCards();
       return;
     }
@@ -2358,9 +2953,11 @@
 
     const cardOrPin = e.target.closest('[data-biz-id]');
     if (cardOrPin) {
+      if (e.target.closest('a') || e.target.closest('button')) {
+        return;
+      }
       const id = Number(cardOrPin.getAttribute('data-biz-id'));
-      const src = cardOrPin.getAttribute('data-open-biz-source') === 'concierge' ? 'concierge' : 'directory';
-      openBusinessModal(id, { source: src });
+      openBusinessModal(id);
       return;
     }
 
@@ -2490,17 +3087,52 @@
     });
   }
 
+  // Map Visibility Toggle Checkbox (#397)
+  function toggleMapVisibility(visible, opts = {}) {
+    const paneMap = document.getElementById('pane-map');
+    const chkSide = document.getElementById('chk-show-map');
+    const chkBottom = document.getElementById('chk-show-map-bottom');
+    const isVisible = Boolean(visible);
+
+    if (chkSide && chkSide.checked !== isVisible) chkSide.checked = isVisible;
+    if (chkBottom && chkBottom.checked !== isVisible) chkBottom.checked = isVisible;
+
+    if (paneMap) {
+      if (isVisible) {
+        paneMap.style.display = 'block';
+        paneMap.classList.remove('mobile-hidden');
+        renderInteractiveMap();
+        if (leafletMap) {
+          setTimeout(() => leafletMap.invalidateSize(), 100);
+        }
+        if (opts && opts.scrollIntoView) {
+          paneMap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      } else {
+        paneMap.style.display = 'none';
+        paneMap.classList.add('mobile-hidden');
+      }
+    }
+  }
+  window.toggleMapVisibility = toggleMapVisibility;
+
   window.addEventListener('bbiz:consent-changed', () => {
     renderInteractiveMap();
   });
 
   // Progressive Web App (PWA): Install Prompt, Guide Modal, Offline Status & Service Worker (#287, #289, #290)
   const btnInstallApp = document.getElementById('btn-install-app');
+  const btnInstallAppDrawer = document.getElementById('btn-install-app-drawer');
   const pwaInstallModal = document.getElementById('pwa-install-modal');
   const btnClosePwaModal = document.getElementById('btn-close-pwa-modal');
   const pwaGuideIos = document.getElementById('pwa-guide-ios');
   const pwaGuideOther = document.getElementById('pwa-guide-other');
   let deferredInstallPrompt = null;
+
+  function syncPwaInstallButtons(visible) {
+    if (btnInstallApp) btnInstallApp.hidden = !visible;
+    if (btnInstallAppDrawer) btnInstallAppDrawer.hidden = !visible;
+  }
 
   function isStandaloneApp() {
     try {
@@ -2531,26 +3163,26 @@
     pwaInstallModal.hidden = true;
   }
 
-  if (btnInstallApp) {
+  if (btnInstallApp || btnInstallAppDrawer) {
     if (!isStandaloneApp()) {
-      btnInstallApp.hidden = false;
+      syncPwaInstallButtons(true);
     }
 
     window.addEventListener('beforeinstallprompt', (ev) => {
       ev.preventDefault();
       deferredInstallPrompt = ev;
       if (!isStandaloneApp()) {
-        btnInstallApp.hidden = false;
+        syncPwaInstallButtons(true);
       }
     });
 
     window.addEventListener('appinstalled', () => {
       deferredInstallPrompt = null;
-      btnInstallApp.hidden = true;
+      syncPwaInstallButtons(false);
       closePwaInstallModal();
     });
 
-    btnInstallApp.addEventListener('click', async () => {
+    const handleInstallClick = async () => {
       if (deferredInstallPrompt && typeof deferredInstallPrompt.prompt === 'function') {
         const promptEvt = deferredInstallPrompt;
         deferredInstallPrompt = null;
@@ -2558,7 +3190,7 @@
           await promptEvt.prompt();
           const choice = promptEvt.userChoice ? await promptEvt.userChoice : null;
           if (choice && choice.outcome === 'accepted') {
-            btnInstallApp.hidden = true;
+            syncPwaInstallButtons(false);
           }
         } catch (_) {
           openPwaInstallModal();
@@ -2566,7 +3198,14 @@
         return;
       }
       openPwaInstallModal();
-    });
+    };
+
+    if (btnInstallApp) {
+      btnInstallApp.addEventListener('click', handleInstallClick);
+    }
+    if (btnInstallAppDrawer) {
+      btnInstallAppDrawer.addEventListener('click', handleInstallClick);
+    }
   }
 
   if (btnClosePwaModal) {
@@ -2923,8 +3562,7 @@
       if (initFilter === 'b2b_ready') state.b2bReady = true;
       if (initFilter === 'bookable') state.bookable = true;
       if (initFilter === 'AHS' || initFilter === 'AGHS') state.selectedSchool = initFilter;
-      const targetPill = document.querySelector(`[data-quick-filter="${initFilter}"]`);
-      if (targetPill) targetPill.classList.add('active');
+      document.querySelectorAll(`[data-quick-filter="${initFilter}"]`).forEach(p => p.classList.add('active'));
       needsInitialFetch = true;
     }
 
@@ -2943,6 +3581,30 @@
       }
     }
 
+    const initCountry = (initParams.get('country') || '').trim();
+    const initCity = (initParams.get('city_county') || initParams.get('city') || '').trim();
+    if (initCountry && els.countrySelect) {
+      state.selectedCountry = initCountry;
+      els.countrySelect.value = initCountry;
+      els.countrySelect.classList.add('active-filter');
+      populateCitiesDropdown(initCountry);
+      if (initCity && els.citySelect) {
+        state.selectedCity = initCity;
+        els.citySelect.value = initCity;
+        els.citySelect.classList.add('active-filter');
+      }
+      needsInitialFetch = true;
+    } else if (initCity && els.citySelect) {
+      state.selectedCity = initCity;
+      els.citySelect.value = initCity;
+      els.citySelect.classList.add('active-filter');
+      needsInitialFetch = true;
+    }
+
+    if (initParams.get('map') === '1' || initParams.get('show_map') === '1') {
+      toggleMapVisibility(true);
+    }
+
     const initMode = (initParams.get('mode') || '').trim().toLowerCase();
     const initAdvisor = initParams.get('advisor');
     if (initMode === 'concierge' || initAdvisor === '1') {
@@ -2956,22 +3618,30 @@
       fetchBusinesses();
     }
 
-    const initBizId = Number(initParams.get('biz') || initParams.get('open_biz') || 0);
-    const initRef = (initParams.get('ref') || '').trim().toLowerCase();
-    if (Number.isFinite(initBizId) && initBizId > 0) {
-      const openSrc = initRef === 'concierge' ? 'concierge' : 'direct';
-      openBusinessByIdOrFetch(initBizId, { source: openSrc });
-      if (openSrc === 'concierge' && !lastHumanInteractionToken) {
-        const creditDeferredConciergeRef = () => {
-          refreshHumanInteractionToken();
-          recordCheckout(initBizId, 'concierge_ref');
+    const initBizSlug = window.REQUESTED_BIZ_SLUG || (initParams.get('biz') && !/^\d+$/.test(initParams.get('biz')) ? initParams.get('biz') : null);
+    if (initBizSlug) {
+      openBizDetail(initBizSlug);
+    } else if (window.location.pathname.startsWith('/biz/')) {
+      const pathSlug = window.location.pathname.replace('/biz/', '').replace(/\/$/, '');
+      if (pathSlug) openBizDetail(pathSlug);
+    } else {
+      const initBizId = Number(initParams.get('biz') || initParams.get('open_biz') || 0);
+      const initRef = (initParams.get('ref') || '').trim().toLowerCase();
+      if (Number.isFinite(initBizId) && initBizId > 0) {
+        const openSrc = initRef === 'concierge' ? 'concierge' : 'direct';
+        openBusinessByIdOrFetch(initBizId, { source: openSrc });
+        if (openSrc === 'concierge' && !lastHumanInteractionToken) {
+          const creditDeferredConciergeRef = () => {
+            refreshHumanInteractionToken();
+            recordCheckout(initBizId, 'concierge_ref');
+            ['pointerdown', 'keydown', 'touchstart'].forEach(ev => {
+              document.removeEventListener(ev, creditDeferredConciergeRef);
+            });
+          };
           ['pointerdown', 'keydown', 'touchstart'].forEach(ev => {
-            document.removeEventListener(ev, creditDeferredConciergeRef);
+            document.addEventListener(ev, creditDeferredConciergeRef, { passive: true });
           });
-        };
-        ['pointerdown', 'keydown', 'touchstart'].forEach(ev => {
-          document.addEventListener(ev, creditDeferredConciergeRef, { passive: true });
-        });
+        }
       }
     }
   } catch (_) {}

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+// Vetting purge and identity validation with Unspecified house support (#386)
 namespace BusherianBiasharas\Services;
 
 use PDO;
@@ -452,7 +453,7 @@ final class VettingPurger
         if (!in_array($schoolCode, ['AHS', 'AGHS'], true)) {
             throw new \InvalidArgumentException('Please select your School (AHS or AGHS).');
         }
-        if ($houseName === '' || mb_strlen($houseName) > 80 || !\BusherianBiasharas\Config\Houses::isValidHouse($schoolCode, $houseName)) {
+        if ($houseName !== '' && $houseName !== 'Unspecified' && (mb_strlen($houseName) > 80 || !\BusherianBiasharas\Config\Houses::isValidHouse($schoolCode, $houseName))) {
             throw new \InvalidArgumentException('Please select a valid confirmed House for your school (80 characters or fewer).');
         }
         $currentYear = (int)date('Y');

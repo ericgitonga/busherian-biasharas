@@ -558,13 +558,24 @@ assertTrue(
     'Swahili term "sanaa" expands to Visual Arts and Performing Arts (#113)'
 );
 
-// 23. Verify Ticket #115: "Same as Direct Phone above" checkboxes on /submit.php & form-enhancements.js
+// 23. Verify Simplified Form Redesign (#386, #395): "Same as Direct Phone above" is retired & Secondary Sector toggle is provided
 $feJs = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/form-enhancements.js');
 assertTrue(
-    str_contains($submitHtml, 'id="same_as_direct_phone_primary"') &&
-    str_contains($submitHtml, 'id="same_as_direct_phone_whatsapp"') &&
-    str_contains($feJs, 'bindSameAsDirectPhone'),
-    'submit.php and form-enhancements.js wire Same as Direct Phone checkboxes for Public Phone and WhatsApp (#115)'
+    !str_contains($submitHtml, 'id="same_as_direct_phone_primary"') &&
+    !str_contains($submitHtml, 'id="same_as_direct_phone_whatsapp"') &&
+    str_contains($submitHtml, 'id="whatsapp_number"') &&
+    str_contains($submitHtml, 'id="toggle-secondary-sector"') &&
+    str_contains($submitHtml, 'id="secondary-sector-container"'),
+    'submit.php retired obsolete Same as Direct Phone checkboxes and provides toggle-secondary-sector checkbox (#386, #395)'
+);
+
+// 23b. Verify H-01 Basic Submission Fallbacks: description defaults to tagline, direct phone defaults to whatsapp, and house defaults to Unspecified
+assertTrue(
+    str_contains($submitHtml, '$description = $tagline;') &&
+    str_contains($submitHtml, '$rawPrimaryPhone = $rawWhatsappPhone;') &&
+    str_contains($submitHtml, "\$houseName = 'Unspecified';") &&
+    str_contains($submitHtml, "\$houseName !== 'Unspecified'"),
+    'submit.php implements H-01 basic submission fallbacks for description, phone, and house'
 );
 
 // 24. Verify Ticket #116: All 197 world countries included in LocationEngine::getPlaceHierarchy
@@ -859,14 +870,13 @@ assertTrue(
 );
 assertTrue(
     str_contains($publicIndexPaginated, 'id="per-page-select"') &&
-    str_contains($publicIndexPaginated, '<option value="10" selected>10 per page</option>') &&
-    str_contains($publicIndexPaginated, '<option value="25">25 per page</option>') &&
-    str_contains($publicIndexPaginated, '<option value="50">50 per page</option>') &&
-    str_contains($publicIndexPaginated, '<option value="100">100 per page</option>') &&
+    str_contains($publicIndexPaginated, '<option value="25"') &&
+    str_contains($publicIndexPaginated, '<option value="50"') &&
+    str_contains($publicIndexPaginated, '<option value="100"') &&
     str_contains($publicIndexPaginated, 'id="directory-pagination"') &&
-    str_contains($directoryJsPaginated, 'ALLOWED_PAGE_SIZES = [10, 25, 50, 100]') &&
+    str_contains($directoryJsPaginated, 'ALLOWED_PAGE_SIZES = [25, 50, 100]') &&
     str_contains($directoryJsPaginated, 'state.perPage = ALLOWED_PAGE_SIZES.includes') && str_contains($directoryJsPaginated, 'per_page'),
-    'public/index.php and directory.js paginate cards to 10/25/50/100 defaulting to 10 (#144)'
+    'public/index.php and directory.js paginate cards to 25/50/100 defaulting to 25 (#144, #389)'
 );
 
 // 34. Verify Tickets #147, #148, #149, #150: Pre-Prod Preview Sandbox (/admin/preprod) isolation, URL rewriter, dummy seeder & self-tests

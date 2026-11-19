@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+// Updated retention policy: founder attribution vs immediate school number disposal (#386)
 require_once dirname(__DIR__) . '/src/bootstrap.php';
 bbiz_send_security_headers(false);
 if (!headers_sent()) {
@@ -47,13 +48,13 @@ if (!headers_sent()) {
         <li><strong>Adult-Only Scope (18+):</strong> Submission, claiming, first-time Google Owner Account onboarding, owner listing edits, and administrator curation each require confirmation that the account holder, listed contacts, and uploaded photographs involve only adults aged 18 or older. Any report involving a person under 18 can be flagged for urgent priority removal on our <a href="/takedown.php" style="color:#7B1113;font-weight:600;">Report or Remove a Listing</a> page.</li>
       </ul>
 
-      <h2 style="color:#114B3E;">2. One-Time Alumni Verification &amp; Reload-Checked Browser Tab Drafts</h2>
+      <h2 style="color:#114B3E;">2. One-Time Alumni Verification, Public Founder Attribution &amp; Reload-Checked Form Drafts</h2>
       <div class="vetting-privacy-banner">
-        <strong>How We Handle School Verification Details &amp; Form Drafts:</strong>
+        <strong>How We Handle School Verification Details, Founder Attribution &amp; Form Drafts:</strong>
         <ul>
-          <li>When you submit a business for review, Step 1 asks for your <strong>School</strong> (AHS or AGHS), <strong>House</strong>, <strong>Year Left</strong>, and optional <strong>School Number</strong>, along with your submitter contact details.</li>
-          <li>Your House, Year Left, and School Number are reviewed <strong>strictly once</strong> inside our restricted administrator console to confirm alumni affiliation, are <strong>never</strong> included in notification emails, and <strong>never</strong> appear in the public directory or Owner Portal.</li>
-          <li>As soon as an administrator approves or declines your submission, those school verification fields are permanently deleted from our active database (and any unreviewed submission older than 30 days is automatically purged).</li>
+          <li>When you submit a business for review, you provide your <strong>School</strong> (AHS or AGHS), <strong>Year Left (Departure Year)</strong>, submitter contact details, and optional <strong>House</strong> or <strong>School Number</strong>.</li>
+          <li><strong>Permanent Deletion of School Number:</strong> Your School Number is reviewed strictly once inside our restricted administrator console to confirm alumni affiliation and is <strong>permanently deleted from our active database immediately upon approval or rejection</strong>, as it is never pertinent beyond initial vetting.</li>
+          <li><strong>Retention for Voluntary Public Founder Attribution:</strong> If you voluntarily choose to showcase your alumni connection on your listing (e.g. <em>"Founded by [Name], [School] '[Year]"</em>), we retain and publish your <strong>Name, School, and Year of Departure</strong> so visitors around the world can see your alumni heritage. If you choose not to display founder attribution, all school verification details remain strictly confidential and are never published.</li>
           <li><strong>Temporary Browser Tab Drafts:</strong> While you type on the registration form, non-sensitive business profile text is held in your current browser tab's session storage with a 2-hour timestamp check evaluated when the form reloads (and cleared automatically when you submit the form or close the browser tab). Your House, Year Left, School Number, uploaded photos, and consent checkboxes are excluded from draft storage.</li>
         </ul>
       </div>
@@ -87,7 +88,9 @@ if (!headers_sent()) {
 
       <h2 style="color:#114B3E;">5. Data Retention Schedule Across Records</h2>
       <ul>
-        <li><strong>Alumni Vetting Queue Details (House, Year Left, School Number):</strong> Deleted immediately upon listing approval or rejection, or automatically after <strong>30 days</strong> if unreviewed.</li>
+        <li><strong>School Number (Admission Number):</strong> Permanently deleted immediately upon listing approval or rejection, or automatically after <strong>30 days</strong> if unreviewed, as it is never pertinent beyond initial vetting.</li>
+        <li><strong>Public Founder Attribution (Name, School, Year of Departure):</strong> Retained and displayed publicly only if the business owner voluntarily opts in to show their alumni connection to the world.</li>
+        <li><strong>Alumni Vetting Queue Records (Unpublished House &amp; Vetting Details):</strong> Deleted immediately upon listing approval or rejection, or automatically after <strong>30 days</strong> if unreviewed.</li>
         <li><strong>Transactional Email Outbox Records:</strong> Recipient address, reply-to address, subject line, and message body are automatically redacted after <strong>30 days</strong>.</li>
         <li><strong>Authentication Codes &amp; Magic-Link Tokens:</strong> Single-use verification codes expire within 15–30 minutes and token records are purged after <strong>7 days</strong>.</li>
         <li><strong>Owner Sessions &amp; Anti-Spam Rate-Limit Hashes:</strong> Revoked or expired owner session records are purged during scheduled cleanup, and anti-spam rate-limit hashes are cleared after <strong>24 hours</strong>.</li>

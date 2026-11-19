@@ -209,7 +209,7 @@ def connect_verified_ftps(
     user: str,
     password: str,
     port: int = 21,
-    timeout: float = 30.0,
+    timeout: float = 60.0,
     cafile: str | None = None,
     tls_servername: str | None = None,
 ) -> VerifiedFTPTLS:
