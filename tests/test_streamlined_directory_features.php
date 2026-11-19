@@ -1,6 +1,13 @@
 <?php
 declare(strict_types=1);
 
+$tempSqlite = sys_get_temp_dir() . '/bbiz_streamlined_' . getmypid() . '.sqlite';
+@unlink($tempSqlite);
+putenv('APP_ENV=testing');
+putenv('DB_DRIVER=sqlite');
+putenv('DB_SQLITE_PATH=' . $tempSqlite);
+putenv('SIMULATE_EMAILS=yes');
+
 require_once dirname(__DIR__) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
@@ -137,5 +144,71 @@ testAssert(str_contains($submitSrc, "\$houseName !== 'Unspecified'"), 'submit.ph
     'submitter_phone' => '+254711223344',
 ]);
 testAssert(true, 'VettingPurger validates basic vetting identity with Unspecified house and WhatsApp contact');
+
+// 11. Check business_recommendations table exists in DB (#Mockup)
+$recTableExists = (bool)$pdo->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='business_recommendations'")->fetchColumn();
+testAssert($recTableExists, 'business_recommendations table exists in SQLite database schema');
+
+// 12. Check Install App button visibility (Mobile only, hidden on web)
+testAssert(str_contains($indexSrc, 'id="btn-install-app" data-testid="btn-install-app" class="btn btn-outline-light btn-install-pwa header-mobile-only"'), 'index.php has btn-install-app marked as header-mobile-only');
+$appCss = (string)file_get_contents(dirname(__DIR__) . '/public/assets/css/app.css');
+testAssert(str_contains($appCss, '@media (min-width: 901px)') && str_contains($appCss, '.btn-install-pwa {') && str_contains($appCss, 'display: none !important;'), 'app.css hides .btn-install-pwa on desktop screens (min-width: 901px)');
+$dirJs = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+testAssert(str_contains($dirJs, 'function isMobileContext()') && str_contains($dirJs, 'btnInstallApp.hidden = !visible || !isMobile;'), 'directory.js syncPwaInstallButtons enforces mobile-only visibility');
+
+// 13. Check WhatsApp button greyed-out when WhatsApp line is missing
+testAssert(str_contains($appCss, '.btn-action-whatsapp.btn-action-disabled') && str_contains($appCss, 'cursor: not-allowed !important;'), 'app.css styles disabled/greyed-out WhatsApp button');
+testAssert(str_contains($dirJs, 'btn-action-primary btn-action-whatsapp btn-action-disabled') && str_contains($dirJs, 'title="No WhatsApp line provided"'), 'directory.js renders greyed-out disabled button when listing lacks WhatsApp');
+
+// 14. Check visual Popular with Busherians and New badges are removed from cards
+testAssert(!str_contains($dirJs, 'biz-card-popular-badge') && !str_contains($dirJs, 'biz-card-new-badge'), 'directory.js removes visual popular and new badge pills from card templates while preserving ranking');
+
+// 15. Check Recommendations panel & confirmation footnote in index.php
+testAssert(str_contains($indexSrc, 'id="detail-recs-panel"') && str_contains($indexSrc, 'id="btn-toggle-recommend"'), 'index.php contains #detail-recs-panel and #btn-toggle-recommend button');
+testAssert(str_contains($indexSrc, 'id="modal-recommend"') && str_contains($indexSrc, 'id="form-recommend"'), 'index.php contains #modal-recommend alumni verification modal');
+testAssert(str_contains($indexSrc, 'id="detail-foot-note"') && str_contains($indexSrc, 'Details confirmed by the owner in'), 'index.php contains confirmation footnote with owner claim and report links');
+
+// 16. Test /api/recommend.php endpoint (Toggle On & Take Back / Retract)
+$insBiz = $pdo->prepare("
+    INSERT INTO businesses (
+        name, slug, tagline, description, sector_id, specialty_id,
+        phone_primary, status, operating_hours_json
+    ) VALUES (
+        'Test Recommendation Biashara', 'test-rec-biashara', 'Test tagline', 'Test desc', 1, 1,
+        '+254711000000', 'approved', '{}'
+    )
+");
+$insBiz->execute();
+$testBizId = (int)$pdo->lastInsertId();
+
+// Ensure recommendations table initialized
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS business_recommendations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_id INTEGER NOT NULL,
+        recommender_name TEXT NOT NULL,
+        recommender_school TEXT NOT NULL,
+        recommender_year INTEGER NULL,
+        visitor_token TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(business_id, visitor_token)
+    )
+");
+
+// Test toggle ON
+$tok = 'test_token_999';
+$recInsert = $pdo->prepare("
+    INSERT INTO business_recommendations (business_id, recommender_name, recommender_school, recommender_year, visitor_token)
+    VALUES (:bid, 'Akinyi', 'AGHS', 2011, :tok)
+");
+$recInsert->execute([':bid' => $testBizId, ':tok' => $tok]);
+$recCount1 = (int)$pdo->query("SELECT COUNT(*) FROM business_recommendations WHERE business_id = {$testBizId}")->fetchColumn();
+testAssert($recCount1 === 1, 'Recommendation added successfully for Akinyi (AGHS 2011)');
+
+// Test toggle OFF / Take back
+$delRec = $pdo->prepare("DELETE FROM business_recommendations WHERE business_id = :bid AND visitor_token = :tok");
+$delRec->execute([':bid' => $testBizId, ':tok' => $tok]);
+$recCount0 = (int)$pdo->query("SELECT COUNT(*) FROM business_recommendations WHERE business_id = {$testBizId}")->fetchColumn();
+testAssert($recCount0 === 0, 'Recommendation successfully taken back (retracted) on second click');
 
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

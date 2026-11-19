@@ -4861,8 +4861,8 @@ assertTrue(
     str_contains($ownerPortalSrc316, 'EngagementRanker::renderOwnerInsightsHtml(') &&
     str_contains($indexSrc314, 'data-testid="sort-select"') &&
     str_contains($dirJsSrc314, 'syncSortToUrl') &&
-    str_contains($dirJsSrc314, 'biz-card-popular-badge'),
-    'Owner insights count 30d/90d windows correctly (ignoring >90d & legacy rows), render owner-only panel, and sort selector + badges are wired (#314, #315, #316)'
+    !str_contains($dirJsSrc314, 'biz-card-popular-badge'),
+    'Owner insights count 30d/90d windows correctly (ignoring >90d & legacy rows), render owner-only panel, sort selector is wired, and card badges are cleaned (#314, #315, #316, #user-request)'
 );
 
 // 53d. Public API exposes only momentum_badge (never engagement_score / reference_count_90d)

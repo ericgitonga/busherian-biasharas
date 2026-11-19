@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.35.0] - 2026-11-20
+### Added
+- **Verified Alumni Recommendations & Take-Back Toggle (#Mockup)**: Added "Recommended by Busherians" panel on canonical business profiles matching Kanyi's prototype, backed by a persistent `business_recommendations` table and `/api/recommend.php`. Alumni can endorse businesses they have used in one tap with automatic alumni credential capture (Name, School, Departure Year), and can tap the button again at any time to take back / retract their recommendation with real-time count updates and engagement score recomputation.
+- **Profile Details Confirmation Footnote Strip (#Mockup)**: Added bottom footnote strip to canonical business profiles stating *"Details confirmed by the owner in [Month Year]"* with direct links to owner claim/login (`/owner/login.php`) and takedown/report (`/takedown.php?biz=[slug]`).
+- **Greyed-Out State for Listings Without WhatsApp**: Automatically detects when a business lacks an active WhatsApp line and renders a disabled, greyed-out button (`.btn-action-disabled`) across directory cards, list view rows, sector view items, and canonical detail headers, preventing dead taps while guiding clients to direct phone calls.
+
+### Changed
+- **Confine Install App Button Strictly to Mobile**: Updated PWA Install App button (`#btn-install-app`) to `header-mobile-only` and enforced desktop suppression (`@media (min-width: 901px) { .btn-install-pwa { display: none !important; } }`), ensuring the installation prompt appears only on mobile phone viewports and inside the mobile navigation drawer.
+- **Clean Business Cards (Omit Visual Popular & New Badges)**: Removed `🔥 Popular` and `✨ New` badge pills from directory cards to keep card headers uncluttered and professional, while leaving all underlying popularity ranking algorithms and 7-day cold-start prominence boosts fully active in the ranking engine.
+
 ## [0.34.0] - 2026-11-19
 ### Fixed
 - **Responsive Zero-Scroll List View (#399)**: Replaced rigid 6-column HTML `<table>` in List View with an adaptive, modern responsive list design (`.biz-list-group` / `.biz-list-item`) that completely eliminates horizontal scrolling on both mobile viewports and desktop/laptop screens. Displays all essential business information with clear visual hierarchy: prominent company title, school badge, live open/closed status badge, specialty, location, founder attribution, alumni perk callout, and 1-tap touch-friendly WhatsApp, Call, and Details action buttons.

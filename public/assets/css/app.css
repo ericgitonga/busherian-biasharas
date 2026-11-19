@@ -1080,6 +1080,11 @@ a {
 }
 
 /* Installable Progressive Web App (PWA) Shell, Offline Banner & Install Modal (#287, #288, #289, #290) */
+@media (min-width: 901px) {
+  .btn-install-pwa {
+    display: none !important;
+  }
+}
 .btn-install-pwa {
   border-color: #FCD34D !important;
   background: rgba(252, 211, 77, 0.14) !important;
@@ -2203,6 +2208,19 @@ a {
   background: #1EBE5D;
 }
 
+.btn-action-whatsapp.btn-action-disabled,
+.btn-list-action.btn-list-wa.btn-action-disabled,
+.btn-action-disabled,
+.btn-action-primary:disabled {
+  background: #E5E7EB !important;
+  color: #9CA3AF !important;
+  border: 1px solid #D1D5DB !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  box-shadow: none !important;
+  opacity: 0.65 !important;
+}
+
 .btn-action-call {
   background: #E8F2EE;
   color: #114B3E !important;
@@ -2997,4 +3015,82 @@ a {
   #pane-map .map-canvas {
     height: 380px !important;
   }
+}
+
+/* Recommendations Card & Confirmation Footer (#Mockup) */
+.recs-card {
+  background: #18201B;
+  border: 1px solid #2D3A31;
+  border-radius: 12px;
+  padding: 22px 24px;
+  margin-top: 28px;
+  color: #FFFFFF;
+}
+.recs-card-title {
+  margin: 0 0 8px 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #FDF8F3;
+}
+.recs-card-summary {
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: #C5D0C9;
+  margin: 0 0 16px 0;
+}
+.recs-card-summary strong {
+  color: #FFFFFF;
+}
+.recs-card-summary .recs-names {
+  color: #A3B3A8;
+}
+.btn-recommend {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 11px 20px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  border: 1.5px solid #22C55E;
+  background: transparent;
+  color: #4ADE80;
+}
+.btn-recommend:hover {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: #4ADE80;
+}
+.btn-recommend.is-recommended {
+  background: rgba(34, 197, 94, 0.18);
+  border-color: #22C55E;
+  color: #4ADE80;
+}
+.btn-recommend.is-recommended:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #EF4444;
+  color: #F87171;
+}
+
+/* Detail Confirmation & Reporting Footnote (#Mockup) */
+.detail-foot-note {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #E5DEC9;
+  font-size: 0.86rem;
+  color: #57645C;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.detail-foot-note a {
+  color: #114B3E;
+  font-weight: 600;
+  text-decoration: underline;
+}
+.detail-foot-note a:hover {
+  color: #0B332A;
 }

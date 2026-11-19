@@ -265,7 +265,7 @@ $pageCanonicalPath = $requestedBiz
         </div>
       </a>
       <nav class="header-actions" aria-label="Primary Navigation">
-        <button type="button" id="btn-install-app" data-testid="btn-install-app" class="btn btn-outline-light btn-install-pwa header-desktop-action" hidden title="Install Busherian Biasharas on your phone or desktop">
+        <button type="button" id="btn-install-app" data-testid="btn-install-app" class="btn btn-outline-light btn-install-pwa header-mobile-only" hidden title="Install Busherian Biasharas on your phone">
           📲 Install App
         </button>
         <button type="button" id="btn-export-shortlist" class="btn btn-outline-light header-desktop-action" title="Export selected B2B vendors as CSV">
@@ -653,7 +653,12 @@ $pageCanonicalPath = $requestedBiz
         </div>
 
         <div class="detail-cta-bar">
-          <a href="<?= ($requestedBiz && !empty($requestedBiz['whatsapp_number'])) ? ('https://wa.me/' . preg_replace('/[^0-9]/', '', (string)$requestedBiz['whatsapp_number']) . '?text=' . urlencode('Hello ' . $requestedBiz['name'])) : '#' ?>" id="detail-wa-btn" class="btn-action-primary btn-action-whatsapp" style="padding:0 20px;height:42px;" target="_blank" rel="noopener">
+          <?php
+          $hasReqWa = $requestedBiz && !empty($requestedBiz['whatsapp_number']) && strlen(preg_replace('/[^0-9]/', '', (string)$requestedBiz['whatsapp_number'])) >= 7;
+          $waReqDigits = $hasReqWa ? preg_replace('/[^0-9]/', '', (string)$requestedBiz['whatsapp_number']) : '';
+          $waReqUrl = $hasReqWa ? ('https://wa.me/' . $waReqDigits . '?text=' . urlencode('Hello ' . $requestedBiz['name'])) : 'javascript:void(0)';
+          ?>
+          <a href="<?= $waReqUrl ?>" id="detail-wa-btn" class="btn-action-primary btn-action-whatsapp<?= $hasReqWa ? '' : ' btn-action-disabled' ?>" style="padding:0 20px;height:42px;" target="_blank" rel="noopener"<?= $hasReqWa ? '' : ' aria-disabled="true" title="No WhatsApp line provided"' ?>>
             <span>💬</span> WhatsApp
           </a>
           <a href="<?= ($requestedBiz && !empty($requestedBiz['phone_primary'])) ? ('tel:' . htmlspecialchars((string)$requestedBiz['phone_primary'], ENT_QUOTES, 'UTF-8')) : '#' ?>" id="detail-call-btn" class="btn-action-primary btn-action-call" style="padding:0 20px;height:42px;">
@@ -702,12 +707,14 @@ $pageCanonicalPath = $requestedBiz
           <span style="font-size:12px;color:#7E8D84;">Three to five photos of the premises, work, or products.</span>
         </section>
 
-        <section class="detail-panel">
-          <h2>Recommended by Busherians</h2>
-          <div style="font-size:14px;color:#18201B;">
-            <strong>Verified Alumni Biashara</strong>
-            <div style="font-size:12.5px;color:#57645C;margin-top:2px;">Peer-vetted under the Busherian Biasharas Community Charter.</div>
+        <section class="recs-card" id="detail-recs-panel">
+          <h2 class="recs-card-title">Recommended by Busherians</h2>
+          <div class="recs-card-summary" id="detail-recs-summary">
+            <span class="note">No recommendations yet. Be the first.</span>
           </div>
+          <button type="button" class="btn-recommend" id="btn-toggle-recommend" data-biz-id="<?= $requestedBiz ? (int)$requestedBiz['id'] : 0 ?>" onclick="if(window.handleRecommendButtonClick){window.handleRecommendButtonClick();}">
+            I have used them and recommend them
+          </button>
         </section>
       </div>
 
@@ -757,11 +764,54 @@ $pageCanonicalPath = $requestedBiz
       <h2>More in This Sector</h2>
       <div class="more-biasharas-grid" id="detail-more-grid"></div>
     </section>
+
+    <!-- Confirmation, Owner Claim & Report Footnote Strip (#Mockup) -->
+    <div class="detail-foot-note" id="detail-foot-note">
+      <span>Details confirmed by the owner in <span id="detail-confirmed-date"><?= $requestedBiz && !empty($requestedBiz['verified_at']) ? date('F Y', strtotime((string)$requestedBiz['verified_at'])) : date('F Y') ?></span>.</span>
+      <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" id="detail-claim-link">Own this business?</a>
+      <a href="/takedown.php<?= $requestedBiz ? '?biz=' . urlencode((string)$requestedBiz['slug']) : '' ?>" id="detail-report-link">Report a problem</a>
+    </div>
   </article>
 
   <!-- Rich Business Detail Modal -->
   <div id="biz-modal-backdrop" data-testid="biz-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-label="Business Details">
     <div id="biz-modal-content" data-testid="biz-modal-content" class="modal-dialog"></div>
+  </div>
+
+  <!-- Lightweight Alumni Recommendation Modal (#Mockup) -->
+  <div id="modal-recommend" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-recommend-title" hidden>
+    <div class="modal-dialog" style="max-width:440px;background:#18201B;color:#FFFFFF;border:1px solid #2D3A31;border-radius:14px;padding:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h3 id="modal-recommend-title" style="margin:0;font-size:1.15rem;color:#FDF8F3;font-weight:700;">Recommend this Biashara</h3>
+        <button type="button" class="modal-close" id="btn-close-recommend-modal" onclick="if(window.closeRecommendationModal){window.closeRecommendationModal();}" style="color:#C5D0C9;font-size:22px;background:none;border:none;cursor:pointer;line-height:1;">&times;</button>
+      </div>
+      <p style="font-size:0.86rem;color:#C5D0C9;margin:0 0 16px 0;line-height:1.5;">
+        Add your name and school so fellow Busherians know who has used and vouches for this business.
+      </p>
+      <form id="form-recommend" onsubmit="event.preventDefault(); if(window.submitRecommendationModal){window.submitRecommendationModal();}">
+        <input type="hidden" id="rec-biz-id" value="">
+        <div style="margin-bottom:14px;">
+          <label for="rec-name" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">Your Name</label>
+          <input type="text" id="rec-name" required placeholder="e.g. Akinyi or Onyango" style="width:100%;padding:9px 12px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:14px;box-sizing:border-box;">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
+          <div>
+            <label for="rec-school" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">School</label>
+            <select id="rec-school" style="width:100%;padding:9px 10px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:13.5px;box-sizing:border-box;">
+              <option value="AHS">Alliance High (AHS)</option>
+              <option value="AGHS">Alliance Girls (AGHS)</option>
+            </select>
+          </div>
+          <div>
+            <label for="rec-year" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">Year Left (Optional)</label>
+            <input type="number" id="rec-year" min="1940" max="2027" placeholder="e.g. 2011" style="width:100%;padding:9px 12px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:14px;box-sizing:border-box;">
+          </div>
+        </div>
+        <button type="submit" class="btn" style="width:100%;background:#22C55E;color:#0B332A;font-weight:700;padding:11px;font-size:14.5px;border:none;border-radius:8px;cursor:pointer;">
+          Vouch &amp; Recommend &rarr;
+        </button>
+      </form>
+    </div>
   </div>
 
   <!-- PWA Home-Screen Install Guide Modal (#290) -->
