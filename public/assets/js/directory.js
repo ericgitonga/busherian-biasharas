@@ -2618,19 +2618,19 @@
           els.citySelect.value = '';
         }
         document.querySelectorAll('[data-quick-filter]').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+        document.querySelectorAll('[data-quick-filter="all"]').forEach(b => b.classList.add('active'));
       } else if (f === 'open_now') {
         state.openNow = !state.openNow;
-        btn.classList.toggle('active', state.openNow);
+        document.querySelectorAll('[data-quick-filter="open_now"]').forEach(b => b.classList.toggle('active', state.openNow));
       } else if (f === 'has_perk') {
         state.hasPerk = !state.hasPerk;
-        btn.classList.toggle('active', state.hasPerk);
+        document.querySelectorAll('[data-quick-filter="has_perk"]').forEach(b => b.classList.toggle('active', state.hasPerk));
       } else if (f === 'b2b_ready') {
         state.b2bReady = !state.b2bReady;
-        btn.classList.toggle('active', state.b2bReady);
+        document.querySelectorAll('[data-quick-filter="b2b_ready"]').forEach(b => b.classList.toggle('active', state.b2bReady));
       } else if (f === 'bookable') {
         state.bookable = !state.bookable;
-        btn.classList.toggle('active', state.bookable);
+        document.querySelectorAll('[data-quick-filter="bookable"]').forEach(b => b.classList.toggle('active', state.bookable));
       } else if (f === 'AHS' || f === 'AGHS') {
         state.selectedSchool = (state.selectedSchool === f) ? '' : f;
         document.querySelectorAll('[data-quick-filter="AHS"],[data-quick-filter="AGHS"]').forEach(b => {
@@ -3480,8 +3480,7 @@
       if (initFilter === 'b2b_ready') state.b2bReady = true;
       if (initFilter === 'bookable') state.bookable = true;
       if (initFilter === 'AHS' || initFilter === 'AGHS') state.selectedSchool = initFilter;
-      const targetPill = document.querySelector(`[data-quick-filter="${initFilter}"]`);
-      if (targetPill) targetPill.classList.add('active');
+      document.querySelectorAll(`[data-quick-filter="${initFilter}"]`).forEach(p => p.classList.add('active'));
       needsInitialFetch = true;
     }
 
