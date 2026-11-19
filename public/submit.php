@@ -181,7 +181,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $regName = '';
                 }
             } elseif ((int)$specialtyId <= 0) {
-                $errors[] = 'Please select a Specialty (or choose "+ Add New Specialty").';
+                // Specialty is optional — if left blank, auto-assign first specialty of the selected sector
+                if ($sectorId > 0) {
+                    $firstSpecStmt = $pdo->prepare("SELECT id FROM categories WHERE parent_id = :sid AND status = 'approved' ORDER BY id ASC LIMIT 1");
+                    $firstSpecStmt->execute([':sid' => $sectorId]);
+                    $autoSpecId = (int)$firstSpecStmt->fetchColumn();
+                    if ($autoSpecId > 0) {
+                        $specialtyId = (string)$autoSpecId;
+                    }
+                }
                 $regName = '';
             } else {
                 if ($sectorId > 0 && !CategoryMatcher::validateSectorAndSpecialtyPair($pdo, $sectorId, (int)$specialtyId)) {
@@ -675,19 +683,41 @@ $aghsHouses = Houses::AGHS_HOUSES;
               <select id="sector_id" name="sector_id" class="select-control" required>
                 <option value="">Choose a sector...</option>
                 <?php foreach ($taxonomyTree as $sec): ?>
-                  <option value="<?= (int)$sec['id'] ?>"><?= htmlspecialchars((string)$sec['name'], ENT_QUOTES, 'UTF-8') ?></option>
+                  <option value="<?= (int)$sec['id'] ?>" <?= (!empty($_POST['sector_id']) && (int)$_POST['sector_id'] === (int)$sec['id']) ? 'selected' : '' ?>><?= htmlspecialchars((string)$sec['name'], ENT_QUOTES, 'UTF-8') ?></option>
                 <?php endforeach; ?>
               </select>
             </div>
 
             <div>
-              <label for="area_town" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Area or town *</label>
-              <input type="text" id="area_town" name="area_town" class="input-control" placeholder="e.g. Kilimani, Nairobi or Ruiru" required>
+              <label for="specialty_id" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Specialty in sector (Optional)</label>
+              <select id="specialty_id" name="specialty_id" class="select-control">
+                <option value="">None — Select Sector first...</option>
+              </select>
             </div>
           </div>
 
+          <!-- Inline Self-Service Custom Category Addition (+ Add New) -->
+          <div id="custom-specialty-wrap" style="display:none;margin-top:0.6rem;margin-bottom:0.6rem;background:#FFFBEB;border:1px solid #F59E0B;border-radius:10px;padding:0.9rem;">
+            <label for="custom_specialty_name" style="font-weight:700;font-size:0.85rem;color:#92400E;display:block;margin-bottom:0.3rem;">
+              + Propose a New Specialty (Subject to Admin Review)
+            </label>
+            <input type="text" id="custom_specialty_name" name="custom_specialty_name" class="input-control"
+              placeholder="e.g. Aviation Charter &amp; Helicopter Services">
+            <div id="fuzzy-suggestion-box" style="margin-top:0.45rem;font-size:0.8rem;color:#78350F;"></div>
+          </div>
+
+          <!-- Conditionally shown ONLY when a regulated specialty is selected -->
+          <div id="regulated-fields-wrap" hidden style="display:none;margin-top:0.6rem;margin-bottom:0.6rem;background:#F0FDF4;border:1px solid #059669;border-radius:10px;padding:0.9rem;">
+            <label for="regulator_name" style="font-weight:700;font-size:0.85rem;color:#065F46;display:block;margin-bottom:0.3rem;">
+              🛡️ Professional Regulator / Statutory Body (Required for Regulated Industry)
+            </label>
+            <select id="regulator_name" name="regulator_name" class="select-control" disabled></select>
+            <input type="text" id="regulator_name_custom" name="regulator_name_custom" class="input-control"
+              placeholder="Specify statutory regulator..." style="margin-top:0.45rem;display:none;" disabled>
+          </div>
+
           <!-- Optional Secondary Industry Sector & Specialty Toggle (#395) -->
-          <div style="margin-top:-0.2rem;margin-bottom:0.2rem;">
+          <div style="margin-top:0.2rem;margin-bottom:0.2rem;">
             <label style="display:inline-flex;align-items:center;gap:0.45rem;cursor:pointer;font-size:0.83rem;color:#374151;">
               <input type="checkbox" id="toggle-secondary-sector" name="toggle_secondary_sector" value="1" <?= (!empty($_POST['toggle_secondary_sector']) || !empty($_POST['secondary_sector_id'])) ? 'checked' : '' ?> style="width:16px;height:16px;accent-color:#114B3E;">
               <span>Operates in an additional industry / sector (spans two fields)</span>
@@ -697,9 +727,16 @@ $aghsHouses = Houses::AGHS_HOUSES;
             </div>
           </div>
 
-          <div>
-            <label for="whatsapp_number" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">WhatsApp number *</label>
-            <input type="tel" id="whatsapp_number" name="whatsapp_number" class="input-control" placeholder="+254 7XX XXX XXX" required autocomplete="tel">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.9rem;">
+            <div>
+              <label for="whatsapp_number" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">WhatsApp number *</label>
+              <input type="tel" id="whatsapp_number" name="whatsapp_number" class="input-control" placeholder="+254 7XX XXX XXX" required autocomplete="tel">
+            </div>
+
+            <div>
+              <label for="area_town" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Area or town *</label>
+              <input type="text" id="area_town" name="area_town" class="input-control" placeholder="e.g. Kilimani, Nairobi or Ruiru" required>
+            </div>
           </div>
         </div>
       </div>
@@ -870,36 +907,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
 
         <?= bbiz_render_specialty_finder($taxonomyTree) ?>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0.9rem;margin-top:0.9rem;margin-bottom:1rem;">
-          <div>
-            <label for="specialty_id" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Specific Specialty</label>
-            <select id="specialty_id" name="specialty_id" class="select-control">
-              <option value="">Select Specialty (or auto-assigned)...</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Inline Self-Service Custom Category Addition (+ Add New) -->
-        <div id="custom-specialty-wrap" style="display:none;margin-bottom:1rem;background:#FFFBEB;border:1px solid #F59E0B;border-radius:10px;padding:0.9rem;">
-          <label for="custom_specialty_name" style="font-weight:700;font-size:0.85rem;color:#92400E;display:block;margin-bottom:0.3rem;">
-            + Propose a New Specialty (Subject to Admin Review)
-          </label>
-          <input type="text" id="custom_specialty_name" name="custom_specialty_name" class="input-control"
-            placeholder="e.g. Aviation Charter &amp; Helicopter Services">
-          <div id="fuzzy-suggestion-box" style="margin-top:0.45rem;font-size:0.8rem;color:#78350F;"></div>
-        </div>
-
-        <!-- Conditionally shown ONLY when a regulated specialty is selected -->
-        <div id="regulated-fields-wrap" hidden style="display:none;margin-bottom:1rem;background:#F0FDF4;border:1px solid #059669;border-radius:10px;padding:0.9rem;">
-          <label for="regulator_name" style="font-weight:700;font-size:0.85rem;color:#065F46;display:block;margin-bottom:0.3rem;">
-            🛡️ Professional Regulator / Statutory Body (Required for Regulated Industry)
-          </label>
-          <select id="regulator_name" name="regulator_name" class="select-control" disabled></select>
-          <input type="text" id="regulator_name_custom" name="regulator_name_custom" class="input-control"
-            placeholder="Specify statutory regulator..." style="margin-top:0.45rem;display:none;" disabled>
-        </div>
-
-        <!-- Regulated specialty & secondary industry are configured above -->
+        <!-- Primary & secondary industry sectors and statutory regulators are configured in Section 1 above -->
 
         <div style="margin-top:0.9rem;margin-bottom:1rem;">
           <label for="alumni_perk" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Busherian Alumni Perk / Discount (Optional)</label>
@@ -1141,7 +1149,21 @@ $aghsHouses = Houses::AGHS_HOUSES;
       }
 
       function populateSpecialties(sectorId, selectedSpecialtyId) {
-        specSel.innerHTML = '<option value="">Select Specialty...</option>';
+        specSel.innerHTML = '';
+        if (!sectorId) {
+          const noneOpt = document.createElement('option');
+          noneOpt.value = '';
+          noneOpt.textContent = 'None — Select Sector first...';
+          specSel.appendChild(noneOpt);
+          updateRegulatorVisibility();
+          return;
+        }
+
+        const generalOpt = document.createElement('option');
+        generalOpt.value = '';
+        generalOpt.textContent = 'None — General in this sector';
+        specSel.appendChild(generalOpt);
+
         const sec = SECTORS.find(s => String(s.id) === String(sectorId));
         if (sec && Array.isArray(sec.specialties)) {
           sec.specialties.forEach(sp => {
@@ -1170,7 +1192,13 @@ $aghsHouses = Houses::AGHS_HOUSES;
         customWrap.style.display = (specSel.value === '__custom__') ? 'block' : 'none';
         updateRegulatorVisibility();
       });
-      updateRegulatorVisibility();
+
+      if (sectorSel.value) {
+        const initialSpecId = <?= !empty($_POST['specialty_id']) ? json_encode((string)$_POST['specialty_id']) : 'null' ?>;
+        populateSpecialties(sectorSel.value, initialSpecId);
+      } else {
+        updateRegulatorVisibility();
+      }
 
       // Live Jaro-Winkler Fuzzy Duplicate Check for custom category
       if (customInput) {
