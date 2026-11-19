@@ -2021,6 +2021,18 @@
     if (hideBtn) hideBtn.textContent = isCollapsed ? 'Show' : 'Hide';
   }
 
+  function toggleMobileDrawer(open) {
+    const sidebar = document.getElementById('filters-sidebar');
+    const backdrop = document.getElementById('drawer-backdrop');
+    if (!sidebar) return;
+    const willOpen = (typeof open === 'boolean') ? open : !sidebar.classList.contains('drawer-open');
+    sidebar.classList.toggle('drawer-open', willOpen);
+    if (backdrop) {
+      backdrop.classList.toggle('active', willOpen);
+    }
+    document.body.style.overflow = willOpen ? 'hidden' : '';
+  }
+
   function filterBySector(sectorId) {
     state.selectedSectorId = sectorId ? String(sectorId) : '';
     if (els.sectorSelect) els.sectorSelect.value = state.selectedSectorId;
@@ -2090,6 +2102,7 @@
   window.showDirectoryView = showDirectoryView;
   window.switchDirectoryView = switchDirectoryView;
   window.toggleSidebarFilters = toggleSidebarFilters;
+  window.toggleMobileDrawer = toggleMobileDrawer;
   window.filterBySector = filterBySector;
   window.filterBySchool = filterBySchool;
   window.toggleQuickCheckbox = toggleQuickCheckbox;
@@ -2425,11 +2438,21 @@
   }
 
   // Wire Event Listeners
+  const drawerSearchInput = document.getElementById('drawer-search-q');
+  const drawerClearBtn = document.getElementById('btn-drawer-clear-search');
+
   if (els.searchInput) {
     let timer = null;
     const syncClearBtn = () => {
+      const hasVal = els.searchInput.value.length > 0;
       if (els.searchClearBtn) {
-        els.searchClearBtn.style.display = els.searchInput.value.length > 0 ? 'inline-flex' : 'none';
+        els.searchClearBtn.style.display = hasVal ? 'inline-flex' : 'none';
+      }
+      if (drawerSearchInput && drawerSearchInput.value !== els.searchInput.value) {
+        drawerSearchInput.value = els.searchInput.value;
+      }
+      if (drawerClearBtn) {
+        drawerClearBtn.style.display = hasVal ? 'inline-flex' : 'none';
       }
     };
     els.searchInput.addEventListener('input', (e) => {
@@ -2488,6 +2511,39 @@
       });
     }
     syncClearBtn();
+  }
+
+  // Wire Mobile Drawer Search input & clear button (#398)
+  if (drawerSearchInput) {
+    drawerSearchInput.addEventListener('input', (e) => {
+      if (els.searchInput) {
+        els.searchInput.value = e.target.value;
+        els.searchInput.dispatchEvent(new Event('input'));
+      }
+      if (drawerClearBtn) {
+        drawerClearBtn.style.display = e.target.value.length > 0 ? 'inline-flex' : 'none';
+      }
+    });
+    drawerSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (els.searchInput) {
+          els.searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+        }
+      }
+    });
+    if (drawerClearBtn) {
+      drawerClearBtn.addEventListener('click', () => {
+        drawerSearchInput.value = '';
+        drawerClearBtn.style.display = 'none';
+        if (els.searchClearBtn) {
+          els.searchClearBtn.click();
+        } else if (els.searchInput) {
+          els.searchInput.value = '';
+          els.searchInput.dispatchEvent(new Event('input'));
+        }
+      });
+    }
   }
 
   if (els.sectorSelect) {
@@ -2791,6 +2847,9 @@
       if (els.shortlistCount) {
         els.shortlistCount.textContent = String(state.shortlistIds.size);
       }
+      document.querySelectorAll('.drawer-shortlist-count').forEach(el => {
+        el.textContent = String(state.shortlistIds.size);
+      });
       renderCards();
       return;
     }
@@ -2981,11 +3040,17 @@
 
   // Progressive Web App (PWA): Install Prompt, Guide Modal, Offline Status & Service Worker (#287, #289, #290)
   const btnInstallApp = document.getElementById('btn-install-app');
+  const btnInstallAppDrawer = document.getElementById('btn-install-app-drawer');
   const pwaInstallModal = document.getElementById('pwa-install-modal');
   const btnClosePwaModal = document.getElementById('btn-close-pwa-modal');
   const pwaGuideIos = document.getElementById('pwa-guide-ios');
   const pwaGuideOther = document.getElementById('pwa-guide-other');
   let deferredInstallPrompt = null;
+
+  function syncPwaInstallButtons(visible) {
+    if (btnInstallApp) btnInstallApp.hidden = !visible;
+    if (btnInstallAppDrawer) btnInstallAppDrawer.hidden = !visible;
+  }
 
   function isStandaloneApp() {
     try {
@@ -3016,26 +3081,26 @@
     pwaInstallModal.hidden = true;
   }
 
-  if (btnInstallApp) {
+  if (btnInstallApp || btnInstallAppDrawer) {
     if (!isStandaloneApp()) {
-      btnInstallApp.hidden = false;
+      syncPwaInstallButtons(true);
     }
 
     window.addEventListener('beforeinstallprompt', (ev) => {
       ev.preventDefault();
       deferredInstallPrompt = ev;
       if (!isStandaloneApp()) {
-        btnInstallApp.hidden = false;
+        syncPwaInstallButtons(true);
       }
     });
 
     window.addEventListener('appinstalled', () => {
       deferredInstallPrompt = null;
-      btnInstallApp.hidden = true;
+      syncPwaInstallButtons(false);
       closePwaInstallModal();
     });
 
-    btnInstallApp.addEventListener('click', async () => {
+    const handleInstallClick = async () => {
       if (deferredInstallPrompt && typeof deferredInstallPrompt.prompt === 'function') {
         const promptEvt = deferredInstallPrompt;
         deferredInstallPrompt = null;
@@ -3043,7 +3108,7 @@
           await promptEvt.prompt();
           const choice = promptEvt.userChoice ? await promptEvt.userChoice : null;
           if (choice && choice.outcome === 'accepted') {
-            btnInstallApp.hidden = true;
+            syncPwaInstallButtons(false);
           }
         } catch (_) {
           openPwaInstallModal();
@@ -3051,7 +3116,14 @@
         return;
       }
       openPwaInstallModal();
-    });
+    };
+
+    if (btnInstallApp) {
+      btnInstallApp.addEventListener('click', handleInstallClick);
+    }
+    if (btnInstallAppDrawer) {
+      btnInstallAppDrawer.addEventListener('click', handleInstallClick);
+    }
   }
 
   if (btnClosePwaModal) {

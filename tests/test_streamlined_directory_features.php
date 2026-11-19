@@ -48,6 +48,9 @@ testAssert(str_contains($indexSrc, 'id="view-biz-detail"'), 'index.php contains 
 testAssert(str_contains($indexSrc, 'class="foot-site"') && str_contains($indexSrc, 'class="foot-cols"'), 'index.php contains 4-column footer');
 testAssert(str_contains($indexSrc, 'https://www.alliancehighschool.ac.ke/') && str_contains($indexSrc, 'https://aghs.sc.ke/'), 'index.php contains official school websites for AHS and AGHS');
 testAssert(!str_contains($indexSrc, 'ahs.png') && !str_contains($indexSrc, 'aghs.png'), 'index.php enforces zero external school logo images policy');
+testAssert(str_contains($indexSrc, 'id="btn-mobile-menu"') && str_contains($indexSrc, 'id="drawer-backdrop"'), 'index.php contains #btn-mobile-menu and #drawer-backdrop (#398)');
+testAssert(str_contains($indexSrc, 'header-desktop-action') && str_contains($indexSrc, 'header-mobile-only'), 'index.php segregates desktop and mobile header actions (#398)');
+testAssert(str_contains($indexSrc, 'id="drawer-search-q"') && str_contains($indexSrc, 'mobile-drawer-only'), 'index.php houses search and actions inside drawer for mobile (#398)');
 
 // 4. Check CSS styling in public/assets/css/app.css (#374)
 $cssSrc = (string)file_get_contents(dirname(__DIR__) . '/public/assets/css/app.css');
@@ -59,6 +62,7 @@ testAssert(str_contains($cssSrc, '.filters-sidebar'), 'app.css contains .filters
 testAssert(str_contains($cssSrc, '.view-switcher-bar'), 'app.css contains .view-switcher-bar');
 testAssert(str_contains($cssSrc, '.founder-attribution'), 'app.css contains .founder-attribution');
 testAssert(str_contains($cssSrc, '.biz-detail-view'), 'app.css contains .biz-detail-view');
+testAssert(str_contains($cssSrc, '.filters-sidebar.drawer-open') && str_contains($cssSrc, '.drawer-backdrop'), 'app.css defines slide-over mobile drawer styles (#398)');
 
 // 5. Check directory.js for 12-item card rendering & view switcher (#372, #373, #384)
 $jsSrc = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
@@ -70,6 +74,7 @@ testAssert(str_contains($jsSrc, 'renderSectorView'), 'directory.js defines rende
 testAssert(str_contains($jsSrc, 'founder-attribution'), 'directory.js renders founder-attribution on cards');
 testAssert(str_contains($jsSrc, 'btn-action-whatsapp') && str_contains($jsSrc, 'btn-action-call'), 'directory.js renders direct WhatsApp and Call action buttons');
 testAssert(str_contains($jsSrc, 'toggleMapVisibility'), 'directory.js defines toggleMapVisibility (#397)');
+testAssert(str_contains($jsSrc, 'toggleMobileDrawer'), 'directory.js defines toggleMobileDrawer (#398)');
 
 // 6. Check submit.php for smart website prefill & founder role radio buttons (#383, #386, #387)
 $submitSrc = (string)file_get_contents(dirname(__DIR__) . '/public/submit.php');

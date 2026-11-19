@@ -266,18 +266,24 @@ $pageCanonicalPath = $requestedBiz
         </div>
       </a>
       <nav class="header-actions" aria-label="Primary Navigation">
-        <button type="button" id="btn-install-app" data-testid="btn-install-app" class="btn btn-outline-light btn-install-pwa" hidden title="Install Busherian Biasharas on your phone or desktop">
+        <button type="button" id="btn-install-app" data-testid="btn-install-app" class="btn btn-outline-light btn-install-pwa header-desktop-action" hidden title="Install Busherian Biasharas on your phone or desktop">
           📲 Install App
         </button>
-        <button type="button" id="btn-export-shortlist" class="btn btn-outline-light" title="Export selected B2B vendors as CSV">
+        <button type="button" id="btn-export-shortlist" class="btn btn-outline-light header-desktop-action" title="Export selected B2B vendors as CSV">
           🏢 B2B Shortlist (<span id="shortlist-count">0</span>/5)
         </button>
-        <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light" style="border-color:#FCD34D;font-weight:700;">✏️ <?= $currentOwner ? 'My Biasharas (Edit)' : 'Owner Sign In / Edit Listing' ?></a>
-        <a href="/privacy.php" class="btn btn-outline-light">🔒 Privacy Notice</a>
-        <a href="/submit.php" class="btn btn-gold">+ List Your Biashara</a>
+        <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light header-desktop-action" style="border-color:#FCD34D;font-weight:700;">✏️ <?= $currentOwner ? 'My Biasharas (Edit)' : 'Owner Sign In / Edit Listing' ?></a>
+        <a href="/privacy.php" class="btn btn-outline-light header-desktop-action">🔒 Privacy Notice</a>
+        <a href="/submit.php" class="btn btn-gold btn-list-biashara">+ List Your Biashara</a>
+        <button type="button" id="btn-mobile-menu" data-testid="btn-mobile-menu" class="btn btn-outline-light btn-hamburger header-mobile-only" aria-label="Open Menu &amp; Filters" onclick="toggleMobileDrawer(true)">
+          <span style="font-size:18px;line-height:1;">☰</span>
+        </button>
       </nav>
     </div>
   </header>
+
+  <!-- Backdrop for Mobile Drawer (#398) -->
+  <div id="drawer-backdrop" class="drawer-backdrop" onclick="toggleMobileDrawer(false)"></div>
 
   <div id="pwa-offline-banner" data-testid="pwa-offline-banner" class="pwa-offline-banner" role="status" aria-live="polite" hidden>
     📶 <strong>Offline Mode:</strong> Showing your saved Busherian Biasharas snapshot. Connect to the internet for live EAT hours, map routes &amp; latest updates.
@@ -289,8 +295,50 @@ $pageCanonicalPath = $requestedBiz
     <!-- Left Filter Panel (#371) -->
     <aside class="filters-sidebar" id="filters-sidebar" aria-label="Directory Filters">
       <div class="sidebar-header">
-        <span class="sidebar-title">Filters</span>
-        <button type="button" class="btn-sidebar-hide" id="btn-sidebar-hide" onclick="toggleSidebarFilters()">Hide</button>
+        <span class="sidebar-title"><span class="mobile-drawer-only">Menu &amp; </span>Filters</span>
+        <button type="button" class="btn-sidebar-hide desktop-only" id="btn-sidebar-hide" onclick="toggleSidebarFilters()">Hide</button>
+        <button type="button" class="btn-sidebar-hide mobile-drawer-only" id="btn-drawer-close" aria-label="Close menu" onclick="toggleMobileDrawer(false)">✕ Close</button>
+      </div>
+
+      <!-- Mobile Drawer Search & Advisor Section (#398) -->
+      <div class="filter-group mobile-drawer-only">
+        <div class="filter-group-title">SEARCH BIASHARAS</div>
+        <div class="search-box" style="background:#FFFFFF;border:1.5px solid #E5DEC9;border-radius:999px;padding:0 14px;height:40px;display:flex;align-items:center;">
+          <span style="color:#7E8D84;margin-right:8px;font-size:14px;">🔍</span>
+          <input type="text" id="drawer-search-q" data-testid="drawer-search-input" class="search-input" style="flex:1;border:none;background:transparent;outline:none;font-size:13px;color:#18201B;"
+            placeholder="Search biasharas, services...">
+          <button type="button" id="btn-drawer-clear-search" class="search-clear-btn" aria-label="Clear search" style="display:none;background:none;border:none;cursor:pointer;color:#6B7280;font-size:14px;">✕</button>
+        </div>
+        <?php if ($isAdvisorEnabled): ?>
+          <button type="button" class="btn btn-gold" id="btn-drawer-advisor" style="width:100%;margin-top:8px;padding:8px 12px;border-radius:999px;font-size:12.5px;font-weight:700;" onclick="toggleMobileDrawer(false); if(window.toggleConciergeMode){window.toggleConciergeMode(true);}">★ Ask Biashara Advisor</button>
+        <?php endif; ?>
+      </div>
+
+      <!-- Mobile Drawer Quick Pills (#398) -->
+      <div class="filter-group mobile-drawer-only">
+        <div class="filter-group-title">QUICK FILTERS</div>
+        <div class="quick-pills" style="display:flex;gap:0.35rem;flex-wrap:wrap;align-items:center;">
+          <button type="button" class="pill active" data-quick-filter="all">All Verified</button>
+          <button type="button" class="pill" data-quick-filter="open_now">🟢 Open Now</button>
+          <button type="button" class="pill" data-quick-filter="has_perk">🎁 Perks</button>
+          <button type="button" class="pill" data-quick-filter="b2b_ready">🏢 B2B Ready</button>
+          <button type="button" class="pill" data-quick-filter="bookable">📅 Bookable</button>
+          <button type="button" class="pill" data-quick-filter="AHS">🦅 AHS</button>
+          <button type="button" class="pill" data-quick-filter="AGHS">🔦 AGHS</button>
+        </div>
+      </div>
+
+      <!-- Mobile Drawer Sort By (#398) -->
+      <div class="filter-group mobile-drawer-only">
+        <div class="filter-group-title">SORT BY</div>
+        <select id="drawer-sort-select" class="sidebar-select" onchange="if(document.getElementById('sort-select')){document.getElementById('sort-select').value=this.value;document.getElementById('sort-select').dispatchEvent(new Event('change'));}">
+          <option value="most_referenced">Most Referenced</option>
+          <option value="trending">Trending This Week</option>
+          <option value="newest">Newest Added</option>
+          <option value="nearest">Nearest to Me</option>
+          <option value="az">Alphabetical (A–Z)</option>
+          <option value="directory_number">Directory #</option>
+        </select>
       </div>
 
       <!-- Sector Filter with Counts -->
@@ -359,83 +407,115 @@ $pageCanonicalPath = $requestedBiz
           <span>Show map at bottom</span>
         </label>
       </div>
+
+      <!-- Mobile Drawer Actions & Account Section (#398) -->
+      <div class="filter-group mobile-drawer-only" style="border-top:1px solid #EFE9DC;padding-top:14px;">
+        <div class="filter-group-title">ACTIONS &amp; ACCOUNT</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light" style="border:1.5px solid #D97706;background:#FFFBEB;color:#92400E;font-weight:700;justify-content:flex-start;font-size:13px;padding:8px 12px;">
+            ✏️ <?= $currentOwner ? 'My Biasharas (Edit)' : 'Owner Sign In / Edit Listing' ?>
+          </a>
+          <button type="button" id="btn-drawer-shortlist" class="btn btn-outline-light" style="border:1px solid #E5DEC9;background:#FBF8F3;color:#18201B;justify-content:flex-start;font-size:13px;padding:8px 12px;" onclick="if(document.getElementById('btn-export-shortlist')){document.getElementById('btn-export-shortlist').click();}">
+            🏢 B2B Shortlist (<span class="drawer-shortlist-count">0</span>/5)
+          </button>
+          <button type="button" id="btn-install-app-drawer" class="btn btn-outline-light" style="border:1px solid #E5DEC9;background:#FBF8F3;color:#18201B;justify-content:flex-start;font-size:13px;padding:8px 12px;" hidden onclick="if(document.getElementById('btn-install-app')){document.getElementById('btn-install-app').click();}">
+            📲 Install App
+          </button>
+          <a href="/privacy.php" class="btn btn-outline-light" style="border:1px solid #E5DEC9;background:#FBF8F3;color:#18201B;justify-content:flex-start;font-size:13px;padding:8px 12px;">
+            🔒 Privacy Notice
+          </a>
+          <a href="/charter.php" class="btn btn-outline-light" style="border:1px solid #E5DEC9;background:#FBF8F3;color:#18201B;justify-content:flex-start;font-size:13px;padding:8px 12px;">
+            📜 Business Charter
+          </a>
+        </div>
+      </div>
+
+      <!-- Mobile Drawer Footer Sticky Action (#398) -->
+      <div class="mobile-drawer-only" style="margin-top:auto;padding-top:12px;border-top:1px solid #EFE9DC;">
+        <button type="button" class="btn btn-green" style="width:100%;font-weight:800;padding:10px;font-size:13.5px;" onclick="toggleMobileDrawer(false)">
+          Show Biasharas &rarr;
+        </button>
+      </div>
     </aside>
 
     <!-- Main Directory Column -->
     <div class="directory-main-col">
 
-      <!-- Keyword Search Input & Preprod Advisor Toggle -->
-      <div style="display:flex;gap:10px;align-items:center;width:100%;">
-        <div class="search-box" style="flex:1;background:#FFFFFF;border:1.5px solid #E5DEC9;border-radius:999px;padding:0 16px;height:42px;display:flex;align-items:center;">
-          <span style="color:#7E8D84;margin-right:10px;font-size:15px;">🔍</span>
-          <input type="text" id="search-q" data-testid="search-input" class="search-input" style="flex:1;border:none;background:transparent;outline:none;font-size:13.5px;color:#18201B;"
-            placeholder="Search biasharas, services, locations (e.g. Mjengo, wakili, Ruiru)...">
-          <button type="button" id="btn-clear-search" data-testid="search-clear-btn" class="search-clear-btn" aria-label="Clear search" title="Clear search" style="display:none;background:none;border:none;cursor:pointer;color:#6B7280;font-size:14px;">✕</button>
+      <!-- Desktop Search Controls (Search box, Advisor, Quick Pills) (#398) -->
+      <div class="desktop-search-controls" id="desktop-search-controls">
+        <!-- Keyword Search Input & Preprod Advisor Toggle -->
+        <div style="display:flex;gap:10px;align-items:center;width:100%;">
+          <div class="search-box" style="flex:1;background:#FFFFFF;border:1.5px solid #E5DEC9;border-radius:999px;padding:0 16px;height:42px;display:flex;align-items:center;">
+            <span style="color:#7E8D84;margin-right:10px;font-size:15px;">🔍</span>
+            <input type="text" id="search-q" data-testid="search-input" class="search-input" style="flex:1;border:none;background:transparent;outline:none;font-size:13.5px;color:#18201B;"
+              placeholder="Search biasharas, services, locations (e.g. Mjengo, wakili, Ruiru)...">
+            <button type="button" id="btn-clear-search" data-testid="search-clear-btn" class="search-clear-btn" aria-label="Clear search" title="Clear search" style="display:none;background:none;border:none;cursor:pointer;color:#6B7280;font-size:14px;">✕</button>
+          </div>
+          <?php if ($isAdvisorEnabled): ?>
+            <button type="button" class="btn btn-gold pill-concierge-toggle" id="btn-concierge-toggle" data-testid="concierge-toggle-pill" aria-pressed="false" style="white-space:nowrap;height:42px;padding:0 16px;border-radius:999px;font-size:13px;font-weight:700;" title="Switch to natural-language AI advisor mode">★ Ask Biashara Advisor</button>
+          <?php endif; ?>
         </div>
+
+        <div class="quick-pills" data-testid="quick-pills" style="margin-top:0.75rem;display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
+          <button type="button" class="pill active" data-quick-filter="all" data-testid="quick-filter-all">All Verified</button>
+          <button type="button" class="pill" data-quick-filter="open_now" data-testid="quick-filter-open-now">🟢 Open Now (EAT)</button>
+          <button type="button" class="pill" data-quick-filter="has_perk" data-testid="quick-filter-has-perk">🎁 Busherian Alumni Perks</button>
+          <button type="button" class="pill" data-quick-filter="b2b_ready" data-testid="quick-filter-b2b">🏢 B2B &amp; LPO Ready</button>
+          <button type="button" class="pill" data-quick-filter="bookable" data-testid="quick-filter-bookable">📅 Book Appointment</button>
+          <button type="button" class="pill" data-quick-filter="AHS" data-testid="quick-filter-AHS">🦅 AHS</button>
+          <button type="button" class="pill" data-quick-filter="AGHS" data-testid="quick-filter-AGHS">🔦 AGHS</button>
+        </div>
+
         <?php if ($isAdvisorEnabled): ?>
-          <button type="button" class="btn btn-gold pill-concierge-toggle" id="btn-concierge-toggle" data-testid="concierge-toggle-pill" aria-pressed="false" style="white-space:nowrap;height:42px;padding:0 16px;border-radius:999px;font-size:13px;font-weight:700;" title="Switch to natural-language AI advisor mode">★ Ask Biashara Advisor</button>
+        <!-- Biashara Advisor Panel (#344) -->
+        <div id="concierge-panel" data-testid="concierge-panel" class="concierge-panel" hidden>
+          <div class="concierge-panel-inner">
+            <div class="concierge-panel-header">
+              <div class="concierge-panel-title">
+                <span class="concierge-badge">★ Biashara Advisor</span>
+                <span class="concierge-subtitle">Describe your business challenge, project, or journey in plain language</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:0.5rem;">
+                <button type="button" id="btn-concierge-reset-consent" data-testid="btn-concierge-reset-consent" style="background:transparent;border:none;color:#6B7280;font-size:0.75rem;cursor:pointer;text-decoration:underline;" title="Withdraw AI consent and reset Advisor preferences">Withdraw AI Consent</button>
+                <button type="button" id="btn-concierge-exit" data-testid="btn-concierge-exit" class="btn-concierge-exit" title="Return to standard keyword search">✕ Exit Advisor Mode</button>
+              </div>
+            </div>
+            <div class="concierge-query-bar" data-testid="concierge-query-bar">
+              <div class="concierge-query-input-wrap">
+                <label for="concierge-panel-input" style="display:none;">Describe your business need or project</label>
+                <input type="text" id="concierge-panel-input" data-testid="concierge-panel-input" class="input-control concierge-panel-input"
+                  placeholder="Type your project or business challenge (e.g. Planning a company launch, commercial build, corporate retreat)..." />
+              </div>
+              <button type="button" id="btn-concierge-panel-submit" data-testid="btn-concierge-panel-submit" class="btn btn-gold btn-concierge-submit">★ Ask Advisor</button>
+            </div>
+            <div class="concierge-starter-prompts" data-testid="concierge-starter-prompts">
+              <span class="concierge-starter-label">Try asking:</span>
+              <button type="button" class="starter-prompt-chip" data-prompt="Launching a new enterprise or company">🚀 Launching a new company</button>
+              <button type="button" class="starter-prompt-chip" data-prompt="Looking for an architect & contractor for a commercial build">🏗️ Commercial architecture &amp; build</button>
+              <button type="button" class="starter-prompt-chip" data-prompt="Planning a corporate leadership offsite or retreat">🏕️ Corporate retreat or offsite</button>
+              <button type="button" class="starter-prompt-chip" data-prompt="Exporting avocados & organic produce to Europe">🥑 Agricultural export &amp; logistics</button>
+              <button type="button" class="starter-prompt-chip" data-prompt="Publishing an industry whitepaper & book launch">📚 Book publishing &amp; communications</button>
+            </div>
+          </div>
+        </div>
         <?php endif; ?>
       </div>
 
-      <div class="quick-pills" data-testid="quick-pills" style="margin-top:0.75rem;display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
-        <button type="button" class="pill active" data-quick-filter="all" data-testid="quick-filter-all">All Verified</button>
-        <button type="button" class="pill" data-quick-filter="open_now" data-testid="quick-filter-open-now">🟢 Open Now (EAT)</button>
-        <button type="button" class="pill" data-quick-filter="has_perk" data-testid="quick-filter-has-perk">🎁 Busherian Alumni Perks</button>
-        <button type="button" class="pill" data-quick-filter="b2b_ready" data-testid="quick-filter-b2b">🏢 B2B &amp; LPO Ready</button>
-        <button type="button" class="pill" data-quick-filter="bookable" data-testid="quick-filter-bookable">📅 Book Appointment</button>
-        <button type="button" class="pill" data-quick-filter="AHS" data-testid="quick-filter-AHS">🦅 AHS</button>
-        <button type="button" class="pill" data-quick-filter="AGHS" data-testid="quick-filter-AGHS">🔦 AGHS</button>
-      </div>
-
-      <?php if ($isAdvisorEnabled): ?>
-      <!-- Biashara Advisor Panel (#344) -->
-      <div id="concierge-panel" data-testid="concierge-panel" class="concierge-panel" hidden>
-        <div class="concierge-panel-inner">
-          <div class="concierge-panel-header">
-            <div class="concierge-panel-title">
-              <span class="concierge-badge">★ Biashara Advisor</span>
-              <span class="concierge-subtitle">Describe your business challenge, project, or journey in plain language</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:0.5rem;">
-              <button type="button" id="btn-concierge-reset-consent" data-testid="btn-concierge-reset-consent" style="background:transparent;border:none;color:#6B7280;font-size:0.75rem;cursor:pointer;text-decoration:underline;" title="Withdraw AI consent and reset Advisor preferences">Withdraw AI Consent</button>
-              <button type="button" id="btn-concierge-exit" data-testid="btn-concierge-exit" class="btn-concierge-exit" title="Return to standard keyword search">✕ Exit Advisor Mode</button>
-            </div>
-          </div>
-          <div class="concierge-query-bar" data-testid="concierge-query-bar">
-            <div class="concierge-query-input-wrap">
-              <label for="concierge-panel-input" style="display:none;">Describe your business need or project</label>
-              <input type="text" id="concierge-panel-input" data-testid="concierge-panel-input" class="input-control concierge-panel-input"
-                placeholder="Type your project or business challenge (e.g. Planning a company launch, commercial build, corporate retreat)..." />
-            </div>
-            <button type="button" id="btn-concierge-panel-submit" data-testid="btn-concierge-panel-submit" class="btn btn-gold btn-concierge-submit">★ Ask Advisor</button>
-          </div>
-          <div class="concierge-starter-prompts" data-testid="concierge-starter-prompts">
-            <span class="concierge-starter-label">Try asking:</span>
-            <button type="button" class="starter-prompt-chip" data-prompt="Launching a new enterprise or company">🚀 Launching a new company</button>
-            <button type="button" class="starter-prompt-chip" data-prompt="Looking for an architect & contractor for a commercial build">🏗️ Commercial architecture &amp; build</button>
-            <button type="button" class="starter-prompt-chip" data-prompt="Planning a corporate leadership offsite or retreat">🏕️ Corporate retreat or offsite</button>
-            <button type="button" class="starter-prompt-chip" data-prompt="Exporting avocados & organic produce to Europe">🥑 Agricultural export &amp; logistics</button>
-            <button type="button" class="starter-prompt-chip" data-prompt="Publishing an industry whitepaper & book launch">📚 Book publishing &amp; communications</button>
-          </div>
-        </div>
-      </div>
-      <?php endif; ?>
-
-      <!-- Top View Switcher Toolbar (#372) -->
+      <!-- Top View Switcher Toolbar (#372, #398) -->
       <div class="view-switcher-bar">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <button type="button" class="btn-toggle-filters-top" id="btn-toggle-filters-top" onclick="toggleSidebarFilters()">
+        <div class="view-switcher-left" style="display:flex;align-items:center;gap:10px;">
+          <button type="button" class="btn-toggle-filters-top desktop-only-filter-btn" id="btn-toggle-filters-top" onclick="toggleSidebarFilters()">
             <span>☰</span> <span>Filters</span>
           </button>
           <div class="view-segment-group">
             <button type="button" class="view-segment-btn active" id="btn-view-grid" onclick="switchDirectoryView('grid')">
-              <span>⊞</span> <span>Grid View</span>
+              <span>⊞</span> <span>Cards</span>
             </button>
             <button type="button" class="view-segment-btn" id="btn-view-list" onclick="switchDirectoryView('list')">
-              <span>☰</span> <span>List View</span>
+              <span>☰</span> <span>List</span>
             </button>
             <button type="button" class="view-segment-btn" id="btn-view-sector" onclick="switchDirectoryView('sector')">
-              <span>🗂️</span> <span>By Sector</span>
+              <span>🗂️</span> <span>By Industry</span>
             </button>
           </div>
         </div>
@@ -483,7 +563,7 @@ $pageCanonicalPath = $requestedBiz
       </div>
 
       <!-- Sticky Proximity & Pin Map Dock -->
-      <aside id="pane-map" class="map-dock mobile-hidden" style="margin-top:1rem;display:none;" aria-label="Interactive Business Map">
+      <aside id="pane-map" class="map-dock" style="margin-top:1rem;display:none;" aria-label="Interactive Business Map">
         <div class="map-toolbar">
           <div>
             <strong style="font-size:0.85rem;color:#114B3E;">🗺️ Live Busherian Proximity &amp; Pin Map</strong>
