@@ -8,6 +8,7 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
 ## [0.34.0] - 2026-11-18
 ### Fixed
+- **Responsive Zero-Scroll List View (#399)**: Replaced rigid 6-column HTML `<table>` in List View with an adaptive, modern responsive list design (`.biz-list-group` / `.biz-list-item`) that completely eliminates horizontal scrolling on both mobile viewports and desktop/laptop screens. Displays all essential business information with clear visual hierarchy: prominent company title, school badge, live open/closed status badge, specialty, location, founder attribution, alumni perk callout, and 1-tap touch-friendly WhatsApp, Call, and Details action buttons.
 - **Directory Card Secondary Taxonomy & Route URL Scheme Sanitization (#186, #278, #394)**: Restored secondary field badge (`.card-taxonomy-secondary`) on directory cards, sanitized Google Maps route links in cards and canonical profile headers via `sanitizeHttpUrl` to prevent unsafe scheme injection, and aligned adversarial E2E suite for regulated business owner verification.
 - **Strict TypeError in Sidebar Location Filter (#371)**: Fixed fatal PHP 8 TypeError where `array_keys()` on sequential county array passed integer index into `htmlspecialchars()`, halting page output inside `<select id="filter-city">` and preventing the directory cards grid, scripts, and footer from rendering.
 

@@ -1928,46 +1928,88 @@
     if (!containerList) return;
     const items = state.businesses || [];
     if (items.length === 0) {
-      containerList.innerHTML = '<p style="padding:20px;text-align:center;color:#6B7280;">No biasharas found.</p>';
+      containerList.innerHTML = `
+        <div style="background:#FFFFFF;border:1px dashed #D1D5DB;border-radius:12px;padding:2rem;text-align:center;">
+          <h3 style="margin:0 0 0.5rem 0;color:#7B1113;">No matching biasharas found</h3>
+          <p style="margin:0;color:#6B7280;font-size:0.9rem;">Try clearing your search or selecting another sector or location.</p>
+        </div>
+      `;
       return;
     }
+
     containerList.innerHTML = `
-      <table class="business-list-table">
-        <thead>
-          <tr>
-            <th>Company Name</th>
-            <th>What They Do</th>
-            <th>Location</th>
-            <th>School</th>
-            <th>Perks</th>
-            <th style="text-align:right;">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${items.map(b => {
-            const waClean = (b.whatsapp_number || b.phone_primary || '').replace(/[^0-9]/g, '');
-            const schoolBadge = b.school_badge === 'BOTH' ? 'AHS & AGHS' : b.school_badge;
-            const schoolCls = b.school_badge ? b.school_badge.toLowerCase() : 'ahs';
-            return `
-              <tr>
-                <td>
-                  <strong style="color:#114B3E;cursor:pointer;" onclick="openBizDetail('${escapeHtml(b.slug)}')">${escapeHtml(b.name)}</strong>
-                  ${b.founder_role && b.founder_role !== 'none' && b.founder_name ? `<div style="font-size:11.5px;color:#57645C;">👤 ${escapeHtml(b.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ')}${escapeHtml(b.founder_name)}</div>` : ''}
-                </td>
-                <td><span style="font-weight:600;color:#7B1113;">${escapeHtml(b.specialty_name || b.sector_name || '')}</span></td>
-                <td><span style="color:#57645C;">📍 ${escapeHtml([b.area_neighborhood, b.city_county].filter(Boolean).join(', '))}</span></td>
-                <td><span class="school-badge ${schoolCls}">${escapeHtml(schoolBadge)}</span></td>
-                <td>${b.alumni_perk ? `<span style="color:#D97706;font-weight:700;">🎁 ${escapeHtml(b.alumni_perk)}</span>` : '<span style="color:#9CA3AF;">—</span>'}</td>
-                <td style="text-align:right;">
-                  ${waClean ? `<a href="https://wa.me/${waClean}" target="_blank" rel="noopener" class="link-secondary" style="color:#25D366;font-weight:700;margin-right:8px;">💬 WA</a>` : ''}
-                  ${b.phone_primary ? `<a href="tel:${escapeHtml(b.phone_primary)}" class="link-secondary" style="color:#114B3E;font-weight:700;margin-right:8px;">📞 Call</a>` : ''}
-                  <a href="/biz/${escapeHtml(b.slug)}" onclick="event.preventDefault(); openBizDetail('${escapeHtml(b.slug)}')" class="link-secondary">Details &rarr;</a>
-                </td>
-              </tr>
+      <div class="biz-list-group" data-testid="biz-list-group">
+        ${items.map(b => {
+          const waClean = (b.whatsapp_number || b.phone_primary || '').replace(/[^0-9]/g, '');
+          const schoolBadge = b.school_badge === 'BOTH' ? 'AHS & AGHS' : (b.school_badge || 'AHS');
+          const schoolCls = (b.school_badge || 'ahs').toLowerCase();
+          const locText = [b.area_neighborhood, b.city_county].filter(Boolean).join(', ');
+
+          const hours = b.hours_status || { state: 'CLOSED', badge_text: 'Closed' };
+          const isOpen = hours.state === 'OPEN_NOW' || hours.state === 'CLOSING_SOON';
+          const statusBadgeHtml = isOpen
+            ? `<span class="badge-status open" style="font-size:11px;padding:2px 8px;border-radius:999px;background:#ECFDF5;color:#065F46;border:1px solid #34D399;font-weight:700;">🟢 Open</span>`
+            : `<span class="badge-status closed" style="font-size:11px;padding:2px 8px;border-radius:999px;background:#F3F4F6;color:#6B7280;border:1px solid #D1D5DB;font-weight:600;">Closed</span>`;
+
+          let founderHtml = '';
+          if (b.founder_role && (b.founder_role === 'founder' || b.founder_role === 'co_founder') && b.founder_name) {
+            const rolePrefix = b.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ';
+            const schoolPart = b.founder_school ? ` (${escapeHtml(b.founder_school)}${b.founder_year ? ` '${escapeHtml(b.founder_year)}` : ''})` : '';
+            founderHtml = `
+              <div class="biz-list-founder">
+                <span>👤</span>
+                <span>${escapeHtml(rolePrefix)}${escapeHtml(b.founder_name)}${schoolPart}</span>
+              </div>
             `;
-          }).join('')}
-        </tbody>
-      </table>
+          }
+
+          const perkHtml = b.alumni_perk
+            ? `<div class="biz-list-perk">🎁 <strong>Perk:</strong> ${escapeHtml(b.alumni_perk)}</div>`
+            : '';
+
+          return `
+            <article class="biz-list-item" data-biz-id="${b.id}" data-testid="biz-list-item">
+              <div class="biz-list-item-inner">
+                <div class="biz-list-main-info">
+                  <div class="biz-list-title-row">
+                    <a href="/biz/${escapeHtml(b.slug)}" class="biz-list-title" onclick="event.preventDefault(); openBizDetail('${escapeHtml(b.slug)}')">
+                      ${escapeHtml(b.name)}
+                    </a>
+                    <div class="biz-list-badges">
+                      <span class="school-badge ${schoolCls}">${escapeHtml(schoolBadge)}</span>
+                      ${statusBadgeHtml}
+                    </div>
+                  </div>
+
+                  <div class="biz-list-meta-row">
+                    <span class="biz-list-specialty">${escapeHtml(b.specialty_name || b.sector_name || '')}</span>
+                    ${locText ? `<span class="biz-list-meta-dot">•</span><span class="biz-list-location">📍 ${escapeHtml(locText)}</span>` : ''}
+                  </div>
+
+                  ${founderHtml}
+                  ${perkHtml}
+                </div>
+
+                <div class="biz-list-actions">
+                  ${waClean ? `
+                    <a href="https://wa.me/${waClean}?text=Hello%20${encodeURIComponent(b.name)}" target="_blank" rel="noopener" class="btn-list-action btn-list-wa" title="Chat on WhatsApp" onclick="event.stopPropagation()">
+                      <span>💬</span> <span>WhatsApp</span>
+                    </a>
+                  ` : ''}
+                  ${b.phone_primary ? `
+                    <a href="tel:${escapeHtml(b.phone_primary)}" class="btn-list-action btn-list-call" title="Call directly" onclick="event.stopPropagation()">
+                      <span>📞</span> <span>Call</span>
+                    </a>
+                  ` : ''}
+                  <a href="/biz/${escapeHtml(b.slug)}" class="btn-list-action btn-list-details" onclick="event.preventDefault(); openBizDetail('${escapeHtml(b.slug)}');">
+                    <span>Details</span> <span>&rarr;</span>
+                  </a>
+                </div>
+              </div>
+            </article>
+          `;
+        }).join('')}
+      </div>
     `;
   }
 

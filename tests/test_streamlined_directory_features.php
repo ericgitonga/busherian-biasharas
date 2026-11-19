@@ -63,6 +63,7 @@ testAssert(str_contains($cssSrc, '.view-switcher-bar'), 'app.css contains .view-
 testAssert(str_contains($cssSrc, '.founder-attribution'), 'app.css contains .founder-attribution');
 testAssert(str_contains($cssSrc, '.biz-detail-view'), 'app.css contains .biz-detail-view');
 testAssert(str_contains($cssSrc, '.filters-sidebar.drawer-open') && str_contains($cssSrc, '.drawer-backdrop'), 'app.css defines slide-over mobile drawer styles (#398)');
+testAssert(str_contains($cssSrc, '.biz-list-group') && str_contains($cssSrc, '.biz-list-item'), 'app.css contains responsive zero-scroll .biz-list-group and .biz-list-item (#399)');
 
 // 5. Check directory.js for 12-item card rendering & view switcher (#372, #373, #384)
 $jsSrc = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
@@ -70,6 +71,7 @@ testAssert(str_contains($jsSrc, 'openBizDetail'), 'directory.js defines openBizD
 testAssert(str_contains($jsSrc, 'showDirectoryView'), 'directory.js defines showDirectoryView');
 testAssert(str_contains($jsSrc, 'switchDirectoryView'), 'directory.js defines switchDirectoryView');
 testAssert(str_contains($jsSrc, 'renderListView'), 'directory.js defines renderListView');
+testAssert(str_contains($jsSrc, 'biz-list-group') && str_contains($jsSrc, 'biz-list-item'), 'directory.js renders responsive zero-scroll biz-list-group (#399)');
 testAssert(str_contains($jsSrc, 'renderSectorView'), 'directory.js defines renderSectorView');
 testAssert(str_contains($jsSrc, 'founder-attribution'), 'directory.js renders founder-attribution on cards');
 testAssert(str_contains($jsSrc, 'btn-action-whatsapp') && str_contains($jsSrc, 'btn-action-call'), 'directory.js renders direct WhatsApp and Call action buttons');
