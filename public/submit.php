@@ -582,27 +582,6 @@ $aghsHouses = Houses::AGHS_HOUSES;
       </p>
     </section>
 
-    <!-- ONE-CLICK WEBSITE URL AUTO-FILL BAR -->
-    <section class="autofill-box" aria-label="One-Click Website Auto-Fill">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.55rem;">
-        <h2 style="margin:0;font-size:1.08rem;color:#7B1113;">⚡ Have a Business Website? Auto-Fill Your Listing in 1 Click</h2>
-        <button type="button" id="btn-try-demo-url" class="btn btn-outline" style="font-size:0.75rem;padding:0.25rem 0.65rem;">
-          Try Sample Business Website
-        </button>
-      </div>
-      <p style="margin:0 0 0.75rem 0;font-size:0.86rem;color:#4B5563;">
-        Type in your business website URL below and click <strong>Extract &amp; Auto-Fill from Website</strong> to automatically populate your Business Name, Tagline, Description, Category, Phone, WhatsApp, Email, Social Media links, and Location!
-      </p>
-      <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
-        <input type="url" id="autofill-url-input" class="input-control" style="flex:1;min-width:240px;"
-          placeholder="https://www.yourbusiness.co.ke">
-        <button type="button" id="btn-autofill-extract" class="btn btn-crimson">
-          ✨ Extract &amp; Auto-Fill from Website
-        </button>
-      </div>
-      <div id="autofill-status" style="margin-top:0.65rem;font-size:0.84rem;display:none;"></div>
-    </section>
-
     <!-- AUTOMATIC DRAFT PERSISTENCE BANNER (#95) -->
     <div id="draft-restored-banner" style="display:none;background:#ECFDF5;border:1px solid #059669;border-radius:12px;padding:0.85rem 1.15rem;margin-bottom:1.15rem;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
       <div style="font-size:0.86rem;color:#065F46;">
@@ -629,109 +608,162 @@ $aghsHouses = Houses::AGHS_HOUSES;
         <input type="text" id="field_website_ref" name="website" value="" tabindex="-1" autocomplete="nope">
       </div>
 
-      <!-- WebsiteEnricher: Smart Pre-Fill from Website (#387) -->
-      <div class="enrich-box" style="background:#E8F2EE;border:1.5px dashed #114B3E;border-radius:12px;padding:16px 18px;margin-bottom:1.5rem;display:flex;flex-direction:column;gap:10px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+      <!-- ONE-CLICK WEBSITE URL AUTO-FILL / ENRICHER (#387) -->
+      <div class="enrich-box autofill-box" style="background:#E8F2EE;border:1.5px dashed #114B3E;border-radius:12px;padding:16px 18px;margin-bottom:1.5rem;display:flex;flex-direction:column;gap:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
           <span style="font-size:13.5px;font-weight:800;color:#114B3E;display:flex;align-items:center;gap:6px;">
-            ✨ Have a website or social page? Pre-fill details automatically
+            ✨ Have a business website? Pre-fill details automatically
           </span>
-          <span style="font-size:11px;color:#114B3E;font-weight:700;">Fast 2-Minute Setup</span>
+          <button type="button" id="btn-try-demo-url" class="btn btn-outline" style="font-size:0.75rem;padding:0.25rem 0.65rem;">
+            Try Sample Business Website
+          </button>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <input type="url" id="enrich-url-input" class="input-control" placeholder="https://yourbusiness.co.ke" style="flex:1;min-width:240px;background:#fff;">
-          <button type="button" id="btn-enrich-website" class="btn btn-green" style="white-space:nowrap;padding:0.45rem 1rem;" onclick="enrichFromWebsite()">Extract Details</button>
+          <input type="url" id="autofill-url-input" class="input-control" placeholder="https://yourbusiness.co.ke" style="flex:1;min-width:240px;background:#fff;">
+          <button type="button" id="btn-autofill-extract" class="btn btn-green" style="white-space:nowrap;padding:0.45rem 1rem;">Extract &amp; Auto-Fill</button>
         </div>
         <p style="font-size:11.5px;color:#57645C;margin:0;">
           Our smart enricher extracts business name, tagline, description, sector, and contact phone instantly from your website.
         </p>
-        <div id="enrich-status" style="font-size:12px;font-weight:600;display:none;"></div>
+        <div id="autofill-status" style="font-size:12px;font-weight:600;display:none;"></div>
       </div>
 
-      <!-- STEP 1: ONE-TIME ALUMNI VETTING (STRICT PRIVACY & IMMEDIATE DISPOSAL) -->
-      <fieldset style="border:none;padding:0;margin:0 0 1.75rem 0;">
-        <legend style="font-size:1.15rem;font-weight:800;color:#7B1113;margin-bottom:0.65rem;">
-          Step 1 of 4: One-Time Busherian Alumni Vetting
-        </legend>
+      <!-- SECTION 1: YOUR BUSINESS (Simple Form Matching Kanyi Mockup #386) -->
+      <div style="margin-bottom:1.5rem;">
+        <h2 style="font-size:1.2rem;font-weight:800;color:#114B3E;margin:0 0 0.85rem 0;padding-bottom:0.4rem;border-bottom:1.5px solid #E5DEC9;">
+          Your business
+        </h2>
 
-        <div class="vetting-privacy-banner">
-          <strong style="color:#114B3E;font-size:0.92rem;display:block;margin-bottom:0.25rem;">
-            🔒 Strict Alumni Privacy &amp; Immediate Deletion Guarantee
-          </strong>
-          <p style="margin:0;font-size:0.84rem;color:#1F2937;">
-            Your <strong>House</strong>, <strong>Year Left</strong>, and optional <strong>School Number</strong> are collected <strong>strictly for one-time alumni vetting</strong>.
-            <strong>Houses and Years DO NOT feature anywhere in the public directory</strong>, are never shown to visitors, and are <strong>permanently deleted from our records the instant your listing is reviewed</strong>.
-          </p>
-        </div>
-
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.9rem;">
+        <div style="display:flex;flex-direction:column;gap:0.9rem;">
           <div>
-            <label for="school_code" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">School *</label>
-            <select id="school_code" name="school_code" class="select-control" required>
-              <option value="AHS">AHS (Alliance High School)</option>
-              <option value="AGHS">AGHS (Alliance Girls High School)</option>
-            </select>
+            <label for="biz_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Business name *</label>
+            <input type="text" id="biz_name" name="name" class="input-control" placeholder="e.g. Kikuyu Springs Dental Clinic" required autocomplete="organization">
           </div>
 
           <div>
-            <label for="house_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">House * (Compulsory for Vetting Only)</label>
-            <select id="house_name" name="house_name" class="select-control" required></select>
+            <label for="biz_tagline" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">What you do, in one line *</label>
+            <input type="text" id="biz_tagline" name="tagline" maxlength="120" class="input-control" placeholder="One crisp line describing what you offer..." required>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.9rem;">
+            <div>
+              <label for="sector_id" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Sector *</label>
+              <select id="sector_id" name="sector_id" class="select-control" required>
+                <option value="">Choose a sector...</option>
+                <?php foreach ($taxonomyTree as $sec): ?>
+                  <option value="<?= (int)$sec['id'] ?>"><?= htmlspecialchars((string)$sec['name'], ENT_QUOTES, 'UTF-8') ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <div>
+              <label for="area_town" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Area or town *</label>
+              <input type="text" id="area_town" name="area_town" class="input-control" placeholder="e.g. Kilimani, Nairobi or Ruiru" required>
+            </div>
+          </div>
+
+          <div>
+            <label for="whatsapp_number" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">WhatsApp number *</label>
+            <input type="tel" id="whatsapp_number" name="whatsapp_number" class="input-control" placeholder="+254 7XX XXX XXX" required autocomplete="tel">
+            <label style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:#374151;margin-top:0.35rem;cursor:pointer;">
+              <input type="checkbox" id="same_as_direct_phone_whatsapp" name="same_as_direct_phone_whatsapp" value="1">
+              <span>Same as Direct Phone above</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 2: ABOUT YOU, FOR VETTING (Simple Form Matching Kanyi Mockup #386) -->
+      <div style="margin-bottom:1.5rem;">
+        <h2 style="font-size:1.2rem;font-weight:800;color:#114B3E;margin:0 0 0.25rem 0;padding-bottom:0.4rem;border-bottom:1.5px solid #E5DEC9;">
+          About you, for vetting
+        </h2>
+        <p style="font-size:0.82rem;color:#4B5563;margin:0 0 0.9rem 0;">
+          Used only to confirm you are an alum. Not shown publicly unless you tick the box below.
+        </p>
+
+        <div style="display:flex;flex-direction:column;gap:0.9rem;">
+          <div>
+            <label for="submitter_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your name *</label>
+            <input type="text" id="submitter_name" name="submitter_name" maxlength="150" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['full_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. Jane Wanjiku" required autocomplete="name">
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.9rem;">
+            <div>
+              <label for="school_code" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">School *</label>
+              <select id="school_code" name="school_code" class="select-control" required>
+                <option value="">Choose a school...</option>
+                <option value="AHS">Alliance High School (AHS)</option>
+                <option value="AGHS">Alliance Girls High School (AGHS)</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="year_left" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Year you left *</label>
+              <input type="number" id="year_left" name="year_left" class="input-control" min="1940" max="<?= (int)date('Y') ?>" placeholder="e.g. 1998" required>
+            </div>
+          </div>
+
+          <div>
+            <label for="school_number" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">School number (optional)</label>
+            <input type="text" id="school_number" name="school_number" inputmode="numeric" maxlength="30" class="input-control" placeholder="The admission number you were given at school">
+            <p style="font-size:0.78rem;color:#6B7280;margin:0.25rem 0 0 0;">
+              Speeds up vetting. Never shown publicly and deleted once you are approved.
+            </p>
+          </div>
+
+          <div>
+            <label for="submitter_email" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Owner Login &amp; Claim Email *</label>
+            <input type="email" id="submitter_email" name="submitter_email" maxlength="190" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="you@company.co.ke" required autocomplete="email">
+            <p style="font-size:0.78rem;color:#6B7280;margin:0.25rem 0 0 0;">
+              Used to send your approval verification code and access your listing dashboard.
+            </p>
+          </div>
+
+          <div style="margin-top:0.4rem;display:flex;flex-direction:column;gap:0.55rem;">
+            <label style="display:flex;align-items:flex-start;gap:0.5rem;font-size:0.88rem;cursor:pointer;">
+              <input type="checkbox" id="l-show" name="show_founder_publicly" value="1" style="margin-top:0.2rem;accent-color:#114B3E;">
+              <span>Show "Founded by [my name], [school] '[year]" on my listing</span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:0.5rem;font-size:0.88rem;cursor:pointer;">
+              <input type="checkbox" id="l-assist" name="assist_requested" value="1" style="margin-top:0.2rem;accent-color:#114B3E;">
+              <span>I would like the team to help me complete my listing</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- ADVANCED / ADDITIONAL QUESTIONS TOGGLE (#386) -->
+      <div class="advanced-toggle-wrap" style="margin:1.5rem 0 1rem 0;padding:14px 16px;background:#F9FAFB;border-radius:12px;border:1.5px solid #E5DEC9;">
+        <label style="display:flex;align-items:center;gap:10px;font-weight:700;cursor:pointer;margin:0;color:#114B3E;font-size:0.95rem;">
+          <input type="checkbox" id="toggle-advanced-details" name="toggle_advanced_details" value="1" style="width:18px;height:18px;accent-color:#114B3E;">
+          <span>⚙️ Show Advanced / Additional Details (House, Specialty, Full Description, Pin, Perks, B2B, Hours, Socials, Photos)</span>
+        </label>
+        <p style="margin:4px 0 0 28px;font-size:12px;color:#6B7280;">
+          Optional. Check this box if you want to enter your House, full description, operating hours, physical address/pin, perks, or upload photos now. Otherwise, you can submit directly and add them anytime from your Owner Dashboard.
+        </p>
+      </div>
+
+      <!-- ADVANCED FIELDS CONTAINER (Collapsed by Default) -->
+      <div id="advanced-fields-container" style="display:none;background:#FAFAFA;border:1px solid #E5DEC9;border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;">
+        <div style="font-weight:800;font-size:1rem;color:#7B1113;margin-bottom:1rem;padding-bottom:0.4rem;border-bottom:1px solid #E5DEC9;">
+          Additional Details &amp; Customization
+        </div>
+
+        <!-- House & Submitter Phone (Optional Vetting Details) -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.9rem;margin-bottom:1.25rem;">
+          <div>
+            <label for="house_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">House (For Vetting Only)</label>
+            <select id="house_name" name="house_name" class="select-control"></select>
             <input type="text" id="house_custom" name="house_custom" maxlength="80" class="input-control"
               placeholder="Enter your AGHS House name..." style="margin-top:0.45rem;display:none;">
           </div>
-
           <div>
-            <label for="year_left" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Year Left * (Compulsory for Vetting Only)</label>
-            <input type="number" id="year_left" name="year_left" class="input-control" min="1940" max="<?= (int)date('Y') ?>" placeholder="e.g. 2004" required>
-          </div>
-
-          <div>
-            <label for="school_number" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">School Number (Optional — Vetting Only)</label>
-            <input type="text" id="school_number" name="school_number" maxlength="30" class="input-control" placeholder="Optional School Number (e.g. 6412)">
-          </div>
-        </div>
-
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.9rem;margin-top:0.9rem;">
-          <div>
-            <label for="submitter_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your Full Name *</label>
-            <input type="text" id="submitter_name" name="submitter_name" maxlength="150" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['full_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. Eng. Jane Wanjiku" required>
+            <label for="submitter_phone" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Direct Submitter Phone</label>
+            <input type="tel" id="submitter_phone" name="submitter_phone" maxlength="40" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['phone'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="+254722000000">
           </div>
           <div>
-            <label for="submitter_email" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your Owner Login Email (For Approval &amp; Editing) *</label>
-            <input type="email" id="submitter_email" name="submitter_email" maxlength="190" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="you@company.co.ke" required>
-          </div>
-          <div>
-            <label for="submitter_phone" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Your Direct Phone *</label>
-            <input type="tel" id="submitter_phone" name="submitter_phone" maxlength="40" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['phone'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="+254722000000" required>
-          </div>
-        </div>
-
-        <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:0.95rem 1.05rem;margin-top:0.95rem;">
-          <div style="font-weight:800;font-size:0.86rem;color:#1E40AF;margin-bottom:0.2rem;">
-            🔑 <?= $loggedOwner !== null ? 'Signed In as Verified Business Owner' : 'Verified Owner Account &amp; Password Setup' ?>
-          </div>
-          <p style="margin:0;font-size:0.8rem;color:#1E3A8A;">
-            <?php if ($loggedOwner !== null): ?>
-              Submitting under <strong><?= htmlspecialchars((string)$loggedOwner['email'], ENT_QUOTES, 'UTF-8') ?></strong> links this listing directly to your active Owner Account. You can update your password anytime from <a href="/owner/index.php" style="color:#1E40AF;font-weight:700;text-decoration:underline;">My Biasharas</a>.
-            <?php else: ?>
-              To protect business owners from impersonation, passwords are set only after verifying your email inbox with a 6-digit code right after submission (or by <a href="/owner/login.php" style="color:#1E40AF;font-weight:700;text-decoration:underline;">signing in first</a> if you already have an Owner Account).
-            <?php endif; ?>
-          </p>
-        </div>
-      </fieldset>
-
-      <!-- STEP 2: BUSINESS IDENTITY & 2-LEVEL CATEGORY -->
-      <fieldset style="border:none;padding:1.25rem 0 0 0;margin:0 0 1.75rem 0;border-top:1px solid #E5E7EB;">
-        <legend style="font-size:1.15rem;font-weight:800;color:#7B1113;margin-bottom:0.65rem;">
-          Step 2 of 4: Business Identity &amp; Category
-        </legend>
-
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0.9rem;">
-          <div>
-            <label for="biz_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Business Name *</label>
-            <input type="text" id="biz_name" name="name" class="input-control" placeholder="e.g. Kikuyu Springs Dental Clinic" required>
-          </div>
-          <div>
-            <label for="service_mode" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Service Mode *</label>
+            <label for="service_mode" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Service Mode</label>
             <select id="service_mode" name="service_mode" class="select-control">
               <option value="physical">Physical Premises / Walk-In</option>
               <option value="hybrid">Hybrid (Physical Office + Online Delivery)</option>
@@ -740,26 +772,17 @@ $aghsHouses = Houses::AGHS_HOUSES;
           </div>
         </div>
 
-        <div style="margin-top:0.9rem;">
-          <label for="biz_tagline" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Short Tagline (Shown on Directory Card — max 160 chars) *</label>
-          <input type="text" id="biz_tagline" name="tagline" maxlength="175" class="input-control"
-            placeholder="One crisp sentence describing what you offer..." required>
-        </div>
-
-        <div style="margin-top:0.9rem;">
-          <label for="biz_description" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Full Business Description (Shown in Detail Modal) *</label>
+        <div style="margin-bottom:1.25rem;">
+          <label for="biz_description" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Full Business Description</label>
           <textarea id="biz_description" name="description" rows="3" class="input-control"
-            placeholder="Describe your products, services, target clients, and key strengths..." required></textarea>
+            placeholder="Describe your products, services, target clients, and key strengths..."></textarea>
         </div>
 
         <!-- Founder / Co-Founder Attribution (#383, #384) -->
-        <div style="margin-top:1.25rem;padding:1rem;background:#FBF8F3;border:1px solid #E5DEC9;border-radius:10px;">
+        <div style="margin-bottom:1.25rem;padding:1rem;background:#FBF8F3;border:1px solid #E5DEC9;border-radius:10px;">
           <label style="font-size:0.88rem;font-weight:800;color:#114B3E;display:block;margin-bottom:0.4rem;">
-            Founder / Co-Founder Attribution (Optional Public Display)
+            Founder / Co-Founder Attribution (Detailed Mode)
           </label>
-          <p style="font-size:0.78rem;color:#6B7280;margin:0 0 0.75rem 0;">
-            Highlight your leadership role and alumni heritage on your business card and profile page.
-          </p>
           <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;cursor:pointer;">
               <input type="radio" name="founder_role" value="none" <?= (empty($_POST['founder_role']) || $_POST['founder_role'] === 'none') ? 'checked' : '' ?> onchange="toggleFounderFields(this.value)">
@@ -796,27 +819,17 @@ $aghsHouses = Houses::AGHS_HOUSES;
 
         <?= bbiz_render_specialty_finder($taxonomyTree) ?>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0.9rem;margin-top:0.9rem;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0.9rem;margin-top:0.9rem;margin-bottom:1rem;">
           <div>
-            <label for="sector_id" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Industry Sector *</label>
-            <select id="sector_id" name="sector_id" class="select-control" required>
-              <option value="">Select Industry Sector...</option>
-              <?php foreach ($taxonomyTree as $sec): ?>
-                <option value="<?= (int)$sec['id'] ?>"><?= htmlspecialchars((string)$sec['name'], ENT_QUOTES, 'UTF-8') ?></option>
-              <?php endforeach; ?>
-            </select>
-          </div>
-
-          <div>
-            <label for="specialty_id" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Specialty / Product or Service Type *</label>
-            <select id="specialty_id" name="specialty_id" class="select-control" required>
-              <option value="">Select Industry Sector first...</option>
+            <label for="specialty_id" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Specific Specialty</label>
+            <select id="specialty_id" name="specialty_id" class="select-control">
+              <option value="">Select Specialty (or auto-assigned)...</option>
             </select>
           </div>
         </div>
 
         <!-- Inline Self-Service Custom Category Addition (+ Add New) -->
-        <div id="custom-specialty-wrap" style="display:none;margin-top:0.85rem;background:#FFFBEB;border:1px solid #F59E0B;border-radius:10px;padding:0.9rem;">
+        <div id="custom-specialty-wrap" style="display:none;margin-bottom:1rem;background:#FFFBEB;border:1px solid #F59E0B;border-radius:10px;padding:0.9rem;">
           <label for="custom_specialty_name" style="font-weight:700;font-size:0.85rem;color:#92400E;display:block;margin-bottom:0.3rem;">
             + Propose a New Specialty (Subject to Admin Review)
           </label>
@@ -825,10 +838,10 @@ $aghsHouses = Houses::AGHS_HOUSES;
           <div id="fuzzy-suggestion-box" style="margin-top:0.45rem;font-size:0.8rem;color:#78350F;"></div>
         </div>
 
-        <!-- Conditionally shown & required ONLY when a regulated specialty is selected -->
-        <div id="regulated-fields-wrap" hidden style="display:none;margin-top:0.9rem;background:#F0FDF4;border:1px solid #059669;border-radius:10px;padding:0.9rem;">
+        <!-- Conditionally shown ONLY when a regulated specialty is selected -->
+        <div id="regulated-fields-wrap" hidden style="display:none;margin-bottom:1rem;background:#F0FDF4;border:1px solid #059669;border-radius:10px;padding:0.9rem;">
           <label for="regulator_name" style="font-weight:700;font-size:0.85rem;color:#065F46;display:block;margin-bottom:0.3rem;">
-            🛡️ Professional Regulator / Statutory Body * (Required for Regulated Industry)
+            🛡️ Professional Regulator / Statutory Body (Required for Regulated Industry)
           </label>
           <select id="regulator_name" name="regulator_name" class="select-control" disabled></select>
           <input type="text" id="regulator_name_custom" name="regulator_name_custom" class="input-control"
@@ -837,12 +850,12 @@ $aghsHouses = Houses::AGHS_HOUSES;
 
         <?= bbiz_render_secondary_specialty_fields($taxonomyTree, isset($_POST['secondary_sector_id']) ? (int)$_POST['secondary_sector_id'] : null, isset($_POST['secondary_specialty_id']) ? (int)$_POST['secondary_specialty_id'] : null, (string)($_POST['regulator_name'] ?? '')) ?>
 
-        <div style="margin-top:0.9rem;">
+        <div style="margin-top:0.9rem;margin-bottom:1rem;">
           <label for="alumni_perk" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Busherian Alumni Perk / Discount (Optional)</label>
           <input type="text" id="alumni_perk" name="alumni_perk" class="input-control" placeholder="e.g. 10% off for fellow Busherians">
         </div>
 
-        <div style="display:flex;gap:1.25rem;flex-wrap:wrap;margin-top:0.75rem;font-size:0.85rem;">
+        <div style="display:flex;gap:1.25rem;flex-wrap:wrap;margin-bottom:1.25rem;font-size:0.85rem;">
           <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
             <input type="checkbox" name="b2b_ready" value="1"> <strong>B2B Corporate Vendor Ready</strong>
           </label>
@@ -850,15 +863,12 @@ $aghsHouses = Houses::AGHS_HOUSES;
             <input type="checkbox" name="accepts_lpo" value="1"> <strong>Accepts Corporate Purchase Orders (LPO) &amp; Invoices</strong>
           </label>
         </div>
-      </fieldset>
 
-      <!-- STEP 3: LOCATION PIN, PLUS CODE & OPERATING HOURS -->
-      <fieldset style="border:none;padding:1.25rem 0 0 0;margin:0 0 1.75rem 0;border-top:1px solid #E5E7EB;">
-        <legend style="font-size:1.15rem;font-weight:800;color:#7B1113;margin-bottom:0.65rem;">
-          Step 3 of 4: Physical Location, Map Pin &amp; Operating Hours (EAT)
-        </legend>
-
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.9rem;">
+        <!-- Physical Location & Operating Hours -->
+        <div style="font-weight:800;font-size:0.92rem;color:#114B3E;margin-bottom:0.6rem;padding-top:0.8rem;border-top:1px solid #E5DEC9;">
+          Physical Location, Coordinates &amp; Directions
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.9rem;margin-bottom:1rem;">
           <div>
             <label for="building_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Building / Plaza Name</label>
             <input type="text" id="building_name" name="building_name" class="input-control" placeholder="e.g. Britam Tower">
@@ -882,7 +892,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
           </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.9rem;margin-top:0.9rem;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.9rem;margin-bottom:1.25rem;">
           <div>
             <label for="google_maps_url" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Google Maps Share Link</label>
             <input type="url" id="google_maps_url" name="google_maps_url" class="input-control" placeholder="https://www.google.com/maps?q=-1.2647,36.8021">
@@ -902,28 +912,18 @@ $aghsHouses = Houses::AGHS_HOUSES;
         </div>
 
         <?= bbiz_render_hours_and_photos_fields() ?>
-      </fieldset>
 
-      <!-- STEP 4: DIRECT CONTACTS, SOCIAL MEDIA & KENYA DPA 2019 CONSENT -->
-      <fieldset style="border:none;padding:1.25rem 0 0 0;margin:0;border-top:1px solid #E5E7EB;">
-        <legend style="font-size:1.15rem;font-weight:800;color:#7B1113;margin-bottom:0.65rem;">
-          Step 4 of 4: Public Contacts, Social Media &amp; Privacy Confirmation
-        </legend>
+        <!-- Public Contacts & Socials -->
+        <div style="font-weight:800;font-size:0.92rem;color:#114B3E;margin-top:1.25rem;margin-bottom:0.6rem;padding-top:0.8rem;border-top:1px solid #E5DEC9;">
+          Public Direct Contacts, Booking &amp; Social Links
+        </div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0.9rem;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0.9rem;margin-bottom:1rem;">
           <div>
-            <label for="phone_primary" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Public Business Phone *</label>
-            <input type="tel" id="phone_primary" name="phone_primary" class="input-control" placeholder="+254722100200" required>
+            <label for="phone_primary" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Public Direct Phone</label>
+            <input type="tel" id="phone_primary" name="phone_primary" class="input-control" placeholder="+254722100200">
             <label style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:#374151;margin-top:0.35rem;cursor:pointer;">
               <input type="checkbox" id="same_as_direct_phone_primary" name="same_as_direct_phone_primary" value="1">
-              <span>Same as Direct Phone above</span>
-            </label>
-          </div>
-          <div>
-            <label for="whatsapp_number" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">WhatsApp Business Number</label>
-            <input type="tel" id="whatsapp_number" name="whatsapp_number" class="input-control" placeholder="+254722100200">
-            <label style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:#374151;margin-top:0.35rem;cursor:pointer;">
-              <input type="checkbox" id="same_as_direct_phone_whatsapp" name="same_as_direct_phone_whatsapp" value="1">
               <span>Same as Direct Phone above</span>
             </label>
           </div>
@@ -965,24 +965,25 @@ $aghsHouses = Houses::AGHS_HOUSES;
             <input type="url" id="social_youtube" name="social_youtube" class="input-control" placeholder="https://www.youtube.com/@...">
           </div>
         </div>
+      </div><!-- /#advanced-fields-container -->
 
-        <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;padding:1rem;margin-top:1.15rem;font-size:0.84rem;">
-          <label style="display:flex;align-items:flex-start;gap:0.55rem;margin-bottom:0.55rem;cursor:pointer;">
-            <input type="checkbox" name="age_attestation_18" value="1" required style="margin-top:0.2rem;">
-            <span><strong>Adult-Only Attestation (Kenya DPA s. 33):</strong> I confirm that I am 18 years of age or older, authorized to list this business, and that this listing and its photographs contain no personal contact details or identifiable images of any person under 18. *</span>
-          </label>
-          <label style="display:flex;align-items:flex-start;gap:0.55rem;cursor:pointer;">
-            <input type="checkbox" name="dpa_consent_directory" value="1" required style="margin-top:0.2rem;">
-            <span><strong>Directory Publication Consent &amp; Privacy Notice:</strong> I have read the <a href="/privacy.php" target="_blank" style="color:#7B1113;text-decoration:underline;">Privacy Notice</a> and explicitly consent to publishing the business profile, location, and public contact details above in the public Busherian Biasharas directory. I understand that my House, Year Left, and School Number are used strictly once for alumni verification, are never published, and are permanently deleted upon review. *</span>
-          </label>
-        </div>
+      <!-- TERMS, AGE ATTESTATION & KENYA DPA CONSENT (Explicit Retention & Deletion Terms) -->
+      <div style="background:#F9FAFB;border:1px solid #E5DEC9;border-radius:10px;padding:1rem;margin-top:1.15rem;font-size:0.84rem;">
+        <label style="display:flex;align-items:flex-start;gap:0.55rem;margin-bottom:0.55rem;cursor:pointer;">
+          <input type="checkbox" name="age_attestation_18" value="1" required style="margin-top:0.2rem;accent-color:#114B3E;">
+          <span><strong>Adult-Only Attestation (Kenya DPA s. 33):</strong> I confirm that I am 18 years of age or older, authorized to list this business, and that this listing and its photographs contain no personal contact details or identifiable images of any person under 18. *</span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:0.55rem;cursor:pointer;">
+          <input type="checkbox" name="dpa_consent_directory" value="1" required style="margin-top:0.2rem;accent-color:#114B3E;">
+          <span><strong>Directory Publication Consent &amp; Privacy Notice:</strong> I have read the <a href="/privacy.php" target="_blank" style="color:#7B1113;text-decoration:underline;">Privacy Notice</a> and <a href="/charter.php" target="_blank" style="color:#7B1113;text-decoration:underline;">Community Charter</a>, and explicitly consent to publishing the business profile, location, and public contact details in the public Busherian Biasharas directory. I understand that my School Number is used strictly once for alumni verification and is permanently deleted immediately upon review, while my Name and Year of Departure are retained and publicly displayed to show the world only if I choose founder attribution. *</span>
+        </label>
+      </div>
 
-        <div style="margin-top:1.35rem;display:flex;justify-content:flex-end;gap:0.75rem;">
-          <button type="submit" class="btn btn-crimson" style="padding:0.75rem 1.65rem;font-size:0.95rem;">
-            Submit Business for Alumni Vetting &rarr;
-          </button>
-        </div>
-      </fieldset>
+      <div style="margin-top:1.35rem;display:flex;justify-content:flex-end;gap:0.75rem;">
+        <button type="submit" class="btn btn-crimson" style="padding:0.75rem 1.65rem;font-size:0.95rem;">
+          Submit for Alumni Vetting &rarr;
+        </button>
+      </div>
     </form>
   </main>
 
@@ -1264,6 +1265,43 @@ $aghsHouses = Houses::AGHS_HOUSES;
         const wrap = document.getElementById('founder-fields-wrap');
         if (wrap) wrap.style.display = (val === 'founder' || val === 'co_founder') ? 'grid' : 'none';
       };
+
+      // Advanced details accordion toggle (#386)
+      const toggleAdv = document.getElementById('toggle-advanced-details');
+      const advContainer = document.getElementById('advanced-fields-container');
+      if (toggleAdv && advContainer) {
+        toggleAdv.addEventListener('change', () => {
+          advContainer.style.display = toggleAdv.checked ? 'block' : 'none';
+        });
+      }
+
+      // Founder checkbox sync with radio options
+      const lShow = document.getElementById('l-show');
+      if (lShow) {
+        lShow.addEventListener('change', () => {
+          const founderRadio = document.querySelector('input[name="founder_role"][value="founder"]');
+          const noneRadio = document.querySelector('input[name="founder_role"][value="none"]');
+          if (lShow.checked && founderRadio) {
+            founderRadio.checked = true;
+            toggleFounderFields('founder');
+          } else if (!lShow.checked && noneRadio) {
+            noneRadio.checked = true;
+            toggleFounderFields('none');
+          }
+        });
+      }
+
+      // Sync autofill area_town
+      const origSetField = setField;
+      if (typeof setField === 'function') {
+        setField = function(id, val) {
+          origSetField(id, val);
+          if (id === 'area_neighborhood' && val) {
+            const at = document.getElementById('area_town');
+            if (at && !at.value) at.value = val;
+          }
+        };
+      }
     })();
   </script>
   <script>

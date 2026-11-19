@@ -91,4 +91,13 @@ testAssert(str_contains($renderedIndexHtml, 'id="cards-grid"'), 'index.php rende
 testAssert(str_contains($renderedIndexHtml, '</html>'), 'index.php renders complete HTML document with closing </html>');
 testAssert(str_contains($renderedIndexHtml, 'All locations'), 'index.php renders location dropdown options');
 
+// 9. Check simplified submit.php form fields, advanced toggle, and updated privacy terms (#386)
+testAssert(str_contains($submitSrc, "id=\"toggle-advanced-details\""), "submit.php has #toggle-advanced-details checkbox");
+testAssert(str_contains($submitSrc, "id=\"advanced-fields-container\""), "submit.php has #advanced-fields-container");
+testAssert(str_contains($submitSrc, "name=\"area_town\""), "submit.php captures area_town on simple form");
+testAssert(str_contains($submitSrc, "name=\"show_founder_publicly\""), "submit.php has show_founder_publicly checkbox");
+testAssert(str_contains($submitSrc, "name=\"assist_requested\""), "submit.php has assist_requested checkbox");
+testAssert(str_contains($submitSrc, "School Number is used strictly once for alumni verification and is permanently deleted immediately upon review"), "submit.php terms explicitly state School Number permanent deletion upon review");
+testAssert(str_contains($submitSrc, "Name and Year of Departure are retained and publicly displayed to show the world only if I choose founder attribution"), "submit.php terms explicitly state Name and Departure Year retention for founder attribution");
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
