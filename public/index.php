@@ -21,13 +21,12 @@ $isAdminVisitor = AdminAuth::isAuthenticated();
 $taxonomyTree = CategoryMatcher::getTaxonomyTree($pdo, false);
 $placeHierarchy = LocationEngine::getPlaceHierarchy();
 
-// Biashara Advisor visibility (#375, #376): active in Preprod sandbox (/admin/preprod), automated test suites, or via on-demand preview (?advisor=1)
-$isAdvisorEnabled = \BusherianBiasharas\Services\PreprodSandbox::isPreprod()
+// Biashara Advisor visibility (#375, #376): active in Preprod sandbox (/admin/preprod), automated test suites, or via preview. Disabled on production.
+$isAdvisorEnabled = (\BusherianBiasharas\Services\PreprodSandbox::isPreprod()
     || strtolower((string)(getenv('APP_ENV') ?: ($_ENV['APP_ENV'] ?? 'development'))) === 'testing'
     || (defined('BBIZ_ENABLE_ADVISOR') && BBIZ_ENABLE_ADVISOR === true)
-    || (getenv('BBIZ_ENABLE_ADVISOR') === 'true')
-    || (isset($_GET['advisor']) && $_GET['advisor'] === '1')
-    || (isset($_GET['preprod']) && $_GET['preprod'] === '1');
+    || (getenv('BBIZ_ENABLE_ADVISOR') === 'true'))
+    && (strtolower((string)(getenv('APP_ENV') ?: ($_ENV['APP_ENV'] ?? 'development'))) !== 'production');
 
 // Load bounded initial page-1 approved businesses (#180, #389: LIMIT 25 OFFSET 0, zero N+1, zero vetting columns)
 $allowedPageSizes = [25, 50, 100];
