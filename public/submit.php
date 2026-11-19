@@ -666,10 +666,6 @@ $aghsHouses = Houses::AGHS_HOUSES;
           <div>
             <label for="whatsapp_number" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">WhatsApp number *</label>
             <input type="tel" id="whatsapp_number" name="whatsapp_number" class="input-control" placeholder="+254 7XX XXX XXX" required autocomplete="tel">
-            <label style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:#374151;margin-top:0.35rem;cursor:pointer;">
-              <input type="checkbox" id="same_as_direct_phone_whatsapp" name="same_as_direct_phone_whatsapp" value="1">
-              <span>Same as Direct Phone above</span>
-            </label>
           </div>
         </div>
       </div>
@@ -923,10 +919,6 @@ $aghsHouses = Houses::AGHS_HOUSES;
           <div>
             <label for="phone_primary" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Public Direct Phone</label>
             <input type="tel" id="phone_primary" name="phone_primary" class="input-control" placeholder="+254722100200">
-            <label style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:#374151;margin-top:0.35rem;cursor:pointer;">
-              <input type="checkbox" id="same_as_direct_phone_primary" name="same_as_direct_phone_primary" value="1">
-              <span>Same as Direct Phone above</span>
-            </label>
           </div>
           <div>
             <label for="email_public" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Public Business Email</label>

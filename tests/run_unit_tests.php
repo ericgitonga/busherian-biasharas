@@ -558,13 +558,13 @@ assertTrue(
     'Swahili term "sanaa" expands to Visual Arts and Performing Arts (#113)'
 );
 
-// 23. Verify Ticket #115: "Same as Direct Phone above" checkboxes on /submit.php & form-enhancements.js
+// 23. Verify Simplified Form Redesign (#386): "Same as Direct Phone above" is retired in favor of direct WhatsApp number
 $feJs = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/form-enhancements.js');
 assertTrue(
-    str_contains($submitHtml, 'id="same_as_direct_phone_primary"') &&
-    str_contains($submitHtml, 'id="same_as_direct_phone_whatsapp"') &&
-    str_contains($feJs, 'bindSameAsDirectPhone'),
-    'submit.php and form-enhancements.js wire Same as Direct Phone checkboxes for Public Phone and WhatsApp (#115)'
+    !str_contains($submitHtml, 'id="same_as_direct_phone_primary"') &&
+    !str_contains($submitHtml, 'id="same_as_direct_phone_whatsapp"') &&
+    str_contains($submitHtml, 'id="whatsapp_number"'),
+    'submit.php retired obsolete Same as Direct Phone checkboxes in favor of simplified direct WhatsApp number (#386)'
 );
 
 // 24. Verify Ticket #116: All 197 world countries included in LocationEngine::getPlaceHierarchy

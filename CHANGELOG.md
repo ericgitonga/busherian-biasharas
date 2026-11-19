@@ -11,7 +11,9 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 - **Strict TypeError in Sidebar Location Filter (#371)**: Fixed fatal PHP 8 TypeError where `array_keys()` on sequential county array passed integer index into `htmlspecialchars()`, halting page output inside `<select id="filter-city">` and preventing the directory cards grid, scripts, and footer from rendering.
 
 ### Added
-- **Streamlined 8-Field Business Registration & Collapsible Advanced Questions (`#386`, `#390`, Parent `#386`)**:
+- **Retired Obsolete "Same as Direct Phone above" Checkboxes (#386)**:
+    - Removed redundant `same_as_direct_phone_whatsapp` and `same_as_direct_phone_primary` checkboxes from `/submit.php`, streamlining the form so WhatsApp is entered directly under business details and primary phone defaults cleanly without obsolete cross-field sync checkboxes.
+  - **Streamlined 8-Field Business Registration & Collapsible Advanced Questions (`#386`, `#390`, Parent `#386`)**:
   - Restructured `public/submit.php` to present an ultra-simple 8-field registration form matching Kanyi's mockup: Business name, What you do in one line, Sector, Area or town, WhatsApp number, Your name, School (AHS/AGHS), Year left, optional School number, and one-tap founder attribution and listing completion checkboxes.
   - Retained the single URL link window (`WebsiteEnricher` / `autofill-box`) at the top of the form for 1-click automatic extraction of business details from websites.
   - Collapsed all comprehensive secondary questions (House, Level 2 Specialty & regulator, full description, service mode, address/pin/hours, perks, B2B checkboxes, direct phone, public email, website, booking, socials, photos) under a `Show Advanced / Additional Details` (`#toggle-advanced-details`) checkbox, allowing immediate submission without forcing users through advanced configurations.
