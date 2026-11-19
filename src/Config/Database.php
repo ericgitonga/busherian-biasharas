@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v34-recommendations';
+    public const SCHEMA_INIT_VERSION = '2026-11-v35-kenya-phone-normalization';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -547,6 +547,14 @@ final class Database
                 self::setSetting($pdo, 'scrubbed_outbox_vetting_pii_v1', 'done');
             } catch (\Throwable $migErr) {
                 error_log('[Database::ensureInitialized] scrubbed_outbox_vetting_pii_v1 failed: ' . $migErr->getMessage());
+            }
+        }
+        if (self::getSetting($pdo, 'kenya_phone_normalization_v1') !== 'done') {
+            try {
+                \BusherianBiasharas\Services\PhoneNormalizer::remediateStoredPhoneNumbers($pdo);
+                self::setSetting($pdo, 'kenya_phone_normalization_v1', 'done');
+            } catch (\Throwable $migErr) {
+                error_log('[Database::ensureInitialized] kenya_phone_normalization_v1 failed: ' . $migErr->getMessage());
             }
         }
 

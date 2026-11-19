@@ -351,7 +351,49 @@ final class PhoneNormalizer
             return '';
         }
 
-        // Already international
+        $name = self::resolveCountry($country);
+        $isExplicitKenya = ($name === 'Kenya');
+
+        // Kenyan mobile & national number patterns
+        if ($isExplicitKenya) {
+            // Transposition typo: 245 -> 254 (e.g. +245722366164 -> +254722366164)
+            if (preg_match('/^245([71]\d{8})$/', $digits, $m)) {
+                return '+254' . $m[1];
+            }
+            // Redundant trunk zero after country code: 2540 -> 254 (e.g. +254 (0) 746... -> +254746...)
+            if (preg_match('/^2540([71]\d{8})$/', $digits, $m)) {
+                return '+254' . $m[1];
+            }
+            if (preg_match('/^2540(20\d{6,7})$/', $digits, $m)) {
+                return '+254' . $m[1];
+            }
+            // Standard full E.164 Kenya (12 digits mobile or 10-12 digits landline)
+            if (preg_match('/^254([71]\d{8}|20\d{6,7}|\d{8,9})$/', $digits, $m)) {
+                return '+254' . $m[1];
+            }
+            // Local 9-digit without trunk 0 (e.g. 746588589 or +746588589 missing 25, +110123456 missing 254)
+            if (preg_match('/^[71]\d{8}$/', $digits)) {
+                return '+254' . $digits;
+            }
+            // Local 10-digit with trunk 0 (e.g. 0746588589, 0110123456, +0746588589)
+            if (preg_match('/^0([71]\d{8})$/', $digits, $m)) {
+                return '+254' . $m[1];
+            }
+            // Nairobi / Kenyan landlines
+            if (preg_match('/^0?(20\d{6,7})$/', $digits, $m)) {
+                return '+254' . $m[1];
+            }
+            // Explicit international numbers entered for a Kenyan listing (e.g. +41..., +44..., +1...)
+            if (str_starts_with(ltrim($trimmed), '+')) {
+                return '+' . $digits;
+            }
+            if (str_starts_with($digits, '00') && strlen($digits) > 9) {
+                return '+' . substr($digits, 2);
+            }
+            return '+254' . $digits;
+        }
+
+        // Already international for non-Kenyan countries
         if (str_starts_with(ltrim($trimmed), '+')) {
             return '+' . $digits;
         }
@@ -359,11 +401,15 @@ final class PhoneNormalizer
             return '+' . substr($digits, 2);
         }
 
-        $name = self::resolveCountry($country);
         if ($name === null) {
             return $digits; // Unknown country: do not guess.
         }
         [, $code, $trunk] = self::COUNTRIES[$name];
+
+        // Strip redundant trunk zero if preceded by calling code (e.g. UK +44 (0) 7911... -> 4407911...)
+        if ($trunk !== '' && str_starts_with($digits, $code . $trunk) && strlen($digits) - strlen($code . $trunk) >= 6) {
+            return '+' . $code . substr($digits, strlen($code . $trunk));
+        }
 
         // NANP (+1): 10-digit national numbers, optional leading trunk "1"
         if ($code === '1') {
@@ -393,6 +439,78 @@ final class PhoneNormalizer
             return '+' . $code . $digits;
         }
         return $digits;
+    }
+
+    /**
+     * Remediate stored Kenyan phone numbers in businesses, vetting queue, and owners table.
+     * Fixes malformed legacy numbers like '+746588589', '+245722366164', or un-prefixed '0746588589'.
+     *
+     * @return array{businesses_updated: int, vetting_updated: int, owners_updated: int}
+     */
+    public static function remediateStoredPhoneNumbers(\PDO $pdo): array
+    {
+        $bizUpdated = 0;
+        $vettingUpdated = 0;
+        $ownersUpdated = 0;
+
+        // 1. Businesses table
+        $stmt = $pdo->query("SELECT id, country, phone_primary, whatsapp_number FROM businesses");
+        $updateStmt = $pdo->prepare("UPDATE businesses SET phone_primary = :pp, whatsapp_number = :wa WHERE id = :id");
+        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+            $country = (string)($row['country'] ?? 'Kenya');
+            $origPp = (string)($row['phone_primary'] ?? '');
+            $origWa = (string)($row['whatsapp_number'] ?? '');
+
+            $normPp = self::normalize($origPp, $country);
+            $normWa = $origWa !== '' ? (self::normalize($origWa, $country) ?: null) : null;
+
+            if ($normPp !== $origPp || $normWa !== $origWa) {
+                $updateStmt->execute([
+                    ':pp' => $normPp !== '' ? $normPp : $origPp,
+                    ':wa' => $normWa,
+                    ':id' => $row['id'],
+                ]);
+                $bizUpdated++;
+            }
+        }
+
+        // 2. Business vetting queue table
+        try {
+            $vqStmt = $pdo->query("SELECT business_id, submitter_phone FROM business_vetting_queue");
+            $vqUpdate = $pdo->prepare("UPDATE business_vetting_queue SET submitter_phone = :sp WHERE business_id = :id");
+            while ($row = $vqStmt->fetch(\PDO::FETCH_ASSOC)) {
+                $origSp = (string)($row['submitter_phone'] ?? '');
+                $normSp = self::normalize($origSp, 'Kenya');
+                if ($normSp !== '' && $normSp !== $origSp) {
+                    $vqUpdate->execute([':sp' => $normSp, ':id' => $row['business_id']]);
+                    $vettingUpdated++;
+                }
+            }
+        } catch (\Throwable $e) {
+            // Queue table may be empty or unmigrated
+        }
+
+        // 3. Business owners table
+        try {
+            $boStmt = $pdo->query("SELECT id, phone FROM business_owners WHERE phone IS NOT NULL AND phone != ''");
+            $boUpdate = $pdo->prepare("UPDATE business_owners SET phone = :ph WHERE id = :id");
+            while ($row = $boStmt->fetch(\PDO::FETCH_ASSOC)) {
+                $origPh = (string)($row['phone'] ?? '');
+                $normPh = self::normalize($origPh, 'Kenya');
+                if ($normPh !== '' && $normPh !== $origPh) {
+                    $boUpdate->execute([':ph' => $normPh, ':id' => $row['id']]);
+                    $ownersUpdated++;
+                }
+            }
+        } catch (\Throwable $e) {
+            // Table may be absent
+        }
+
+        return [
+            'businesses_updated' => $bizUpdated,
+            'vetting_updated' => $vettingUpdated,
+            'owners_updated' => $ownersUpdated,
+        ];
     }
 
     /**

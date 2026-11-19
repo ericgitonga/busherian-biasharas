@@ -113,6 +113,43 @@
     }
   }
 
+  function formatKenyaPhone(phone, country) {
+    if (!phone) return '';
+    const clean = String(phone).trim();
+    if (!clean) return '';
+    const isKenya = !country || country.toLowerCase() === 'kenya';
+    if (!isKenya) return clean;
+
+    const digits = clean.replace(/\D/g, '');
+    if (!digits) return clean;
+
+    // Transposition typo: 2457... -> +2547...
+    if (/^245([71]\d{8})$/.test(digits)) {
+      return '+254' + digits.slice(3);
+    }
+    // Redundant trunk zero after country code: 25407... -> +2547...
+    if (/^2540([71]\d{8})$/.test(digits)) {
+      return '+254' + digits.slice(4);
+    }
+    // Standard full Kenya (mobile 12-digit or landline)
+    if (/^254([71]\d{8}|20\d{6,7})$/.test(digits)) {
+      return '+' + digits;
+    }
+    // Local 9-digit without trunk 0 (or +7... / +1... missing 25/254)
+    if (/^[71]\d{8}$/.test(digits)) {
+      return '+254' + digits;
+    }
+    // Local 10-digit with trunk 0 (e.g. 07... or 01...)
+    if (/^0([71]\d{8})$/.test(digits)) {
+      return '+254' + digits.slice(1);
+    }
+    // Nairobi / Kenyan landline
+    if (/^0?(20\d{6,7})$/.test(digits)) {
+      return '+254' + digits.replace(/^0?/, '');
+    }
+    return clean;
+  }
+
   function isValidLatLng(lat, lng) {
     if (lat === null || lat === '' || typeof lat === 'undefined') return false;
     if (lng === null || lng === '' || typeof lng === 'undefined') return false;
@@ -613,10 +650,12 @@
     const cardClasses = isEcosystem ? 'biz-card biz-card-ecosystem' : 'biz-card';
     const openSource = isConcierge ? 'concierge' : 'directory';
 
-    const hasWa = Boolean(biz.whatsapp_number && String(biz.whatsapp_number).trim() && String(biz.whatsapp_number).replace(/[^0-9]/g, '').length >= 7);
-    const waNumber = hasWa ? String(biz.whatsapp_number).replace(/[^0-9]/g, '') : '';
+    const normWa = formatKenyaPhone(biz.whatsapp_number, biz.country);
+    const normPhone = formatKenyaPhone(biz.phone_primary, biz.country);
+    const hasWa = Boolean(normWa && normWa.replace(/[^0-9]/g, '').length >= 7);
+    const waNumber = hasWa ? normWa.replace(/[^0-9]/g, '') : '';
     const waUrl = hasWa ? `https://wa.me/${waNumber}?text=Hello%20${encodeURIComponent(biz.name)}` : '#';
-    const callUrl = biz.phone_primary ? `tel:${biz.phone_primary}` : '#';
+    const callUrl = normPhone ? `tel:${normPhone}` : '#';
     const safeCardGmaps = sanitizeHttpUrl(biz.google_maps_url);
     const routeUrl = safeCardGmaps || (hasCoords ? `https://www.google.com/maps/search/?api=1&query=${biz.latitude},${biz.longitude}` : `https://maps.google.com/?q=${encodeURIComponent([biz.name, biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(' '))}`);
 
@@ -1790,8 +1829,10 @@
       }
     }
 
-    const hasWa = Boolean(biz.whatsapp_number && String(biz.whatsapp_number).trim() && String(biz.whatsapp_number).replace(/[^0-9]/g, '').length >= 7);
-    const waClean = hasWa ? String(biz.whatsapp_number).replace(/[^0-9]/g, '') : '';
+    const normWa = formatKenyaPhone(biz.whatsapp_number, biz.country);
+    const normPhone = formatKenyaPhone(biz.phone_primary, biz.country);
+    const hasWa = Boolean(normWa && normWa.replace(/[^0-9]/g, '').length >= 7);
+    const waClean = hasWa ? normWa.replace(/[^0-9]/g, '') : '';
     const waBtn = document.getElementById('detail-wa-btn');
     if (waBtn) {
       if (hasWa) {
@@ -1810,7 +1851,7 @@
 
     const callBtn = document.getElementById('detail-call-btn');
     if (callBtn) {
-      callBtn.href = biz.phone_primary ? `tel:${biz.phone_primary}` : '#';
+      callBtn.href = normPhone ? `tel:${normPhone}` : '#';
     }
 
     const routeBtn = document.getElementById('detail-route-btn');
@@ -1896,7 +1937,8 @@
 
     const phoneRow = document.getElementById('detail-phone-row');
     if (phoneRow) {
-      phoneRow.innerHTML = `<strong>${escapeHtml(biz.phone_primary || 'Contact via WhatsApp')}</strong><div style="font-size:12px;color:#7E8D84;">Primary business phone and verified WhatsApp</div>`;
+      const displayPhone = formatKenyaPhone(biz.phone_primary, biz.country);
+      phoneRow.innerHTML = `<strong>${escapeHtml(displayPhone || 'Contact via WhatsApp')}</strong><div style="font-size:12px;color:#7E8D84;">Primary business phone and verified WhatsApp</div>`;
     }
     const locRow = document.getElementById('detail-loc-row');
     if (locRow) {
@@ -2399,8 +2441,10 @@
     containerList.innerHTML = `
       <div class="biz-list-group" data-testid="biz-list-group">
         ${items.map(b => {
-          const hasWa = Boolean(b.whatsapp_number && String(b.whatsapp_number).trim() && String(b.whatsapp_number).replace(/[^0-9]/g, '').length >= 7);
-          const waClean = hasWa ? String(b.whatsapp_number).replace(/[^0-9]/g, '') : '';
+          const normWa = formatKenyaPhone(b.whatsapp_number, b.country);
+          const normPhone = formatKenyaPhone(b.phone_primary, b.country);
+          const hasWa = Boolean(normWa && normWa.replace(/[^0-9]/g, '').length >= 7);
+          const waClean = hasWa ? normWa.replace(/[^0-9]/g, '') : '';
           const schoolBadge = b.school_badge === 'BOTH' ? 'AHS & AGHS' : (b.school_badge || 'AHS');
           const schoolCls = (b.school_badge || 'ahs').toLowerCase();
           const locText = [b.area_neighborhood, b.city_county].filter(Boolean).join(', ');
@@ -2460,8 +2504,8 @@
                       <span>💬</span> <span>WhatsApp</span>
                     </button>
                   `}
-                  ${b.phone_primary ? `
-                    <a href="tel:${escapeHtml(b.phone_primary)}" class="btn-list-action btn-list-call" title="Call directly" onclick="event.stopPropagation()">
+                  ${normPhone ? `
+                    <a href="tel:${escapeHtml(normPhone)}" class="btn-list-action btn-list-call" title="Call directly" onclick="event.stopPropagation()">
                       <span>📞</span> <span>Call</span>
                     </a>
                   ` : ''}
@@ -2500,8 +2544,10 @@
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));gap:16px;">
           ${bizList.map(b => {
-            const hasWa = Boolean(b.whatsapp_number && String(b.whatsapp_number).trim() && String(b.whatsapp_number).replace(/[^0-9]/g, '').length >= 7);
-            const waClean = hasWa ? String(b.whatsapp_number).replace(/[^0-9]/g, '') : '';
+            const normWa = formatKenyaPhone(b.whatsapp_number, b.country);
+            const normPhone = formatKenyaPhone(b.phone_primary, b.country);
+            const hasWa = Boolean(normWa && normWa.replace(/[^0-9]/g, '').length >= 7);
+            const waClean = hasWa ? normWa.replace(/[^0-9]/g, '') : '';
             return `
               <div style="border:1px solid #E5DEC9;border-radius:10px;padding:16px;background:#FBF8F3;">
                 <div style="font-weight:800;font-size:16px;color:#114B3E;cursor:pointer;" onclick="openBizDetail('${escapeHtml(b.slug)}')">${escapeHtml(b.name)}</div>
@@ -2509,7 +2555,7 @@
                 ${b.founder_role && b.founder_role !== 'none' && b.founder_name ? `<div style="font-size:12px;color:#57645C;margin:4px 0;">👤 ${escapeHtml(b.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ')}${escapeHtml(b.founder_name)}</div>` : ''}
                 <div style="display:flex;gap:6px;margin-top:12px;align-items:center;">
                   ${hasWa ? `<a href="https://wa.me/${waClean}" target="_blank" rel="noopener" class="btn-action-primary btn-action-whatsapp" style="font-size:12px;height:32px;padding:0 12px;">💬 WhatsApp</a>` : `<button type="button" class="btn-action-primary btn-action-whatsapp btn-action-disabled" disabled style="font-size:12px;height:32px;padding:0 12px;" title="No WhatsApp line provided">💬 WhatsApp</button>`}
-                  ${b.phone_primary ? `<a href="tel:${escapeHtml(b.phone_primary)}" class="btn-action-primary btn-action-call" style="font-size:12px;height:32px;padding:0 12px;">📞 Call</a>` : ''}
+                  ${normPhone ? `<a href="tel:${escapeHtml(normPhone)}" class="btn-action-primary btn-action-call" style="font-size:12px;height:32px;padding:0 12px;">📞 Call</a>` : ''}
                   <a href="/biz/${escapeHtml(b.slug)}" onclick="event.preventDefault(); openBizDetail('${escapeHtml(b.slug)}')" class="link-secondary" style="margin-left:auto;font-size:12px;">Details &rarr;</a>
                 </div>
               </div>
@@ -2695,7 +2741,8 @@
       </tr>`;
     }).join('');
 
-    const waNumber = (biz.whatsapp_number || biz.phone_primary || '').replace(/[^0-9]/g, '');
+    const normWaModal = formatKenyaPhone(biz.whatsapp_number || biz.phone_primary, biz.country);
+    const waNumber = normWaModal.replace(/[^0-9]/g, '');
     const waText = encodeURIComponent(`Hi ${biz.name}, I found your business on Busherian Biasharas!`);
     const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${waText}` : '';
 
@@ -2795,7 +2842,7 @@
                 ? `<button type="button" data-open-booking-drawer="${biz.id}" data-testid="modal-book-appointment-cta" aria-expanded="false" aria-controls="modal-booking-drawer-${biz.id}" class="btn btn-booking">📅 Book Appointment</button>`
                 : '')}
           ${safeWebsiteHref ? `<a href="${escapeHtml(safeWebsiteHref)}" target="_blank" rel="noopener noreferrer" data-track="website" class="btn btn-crimson">🌐 Visit Website &nearr;</a>` : ''}
-          ${biz.phone_primary ? `<a href="tel:${escapeHtml(biz.phone_primary)}" data-track="call" class="btn btn-green">📞 Call ${escapeHtml(biz.phone_primary)}</a>` : ''}
+          ${biz.phone_primary ? `<a href="tel:${escapeHtml(formatKenyaPhone(biz.phone_primary, biz.country))}" data-track="call" class="btn btn-green">📞 Call ${escapeHtml(formatKenyaPhone(biz.phone_primary, biz.country))}</a>` : ''}
           ${waUrl ? `<a href="${escapeHtml(waUrl)}" target="_blank" rel="noopener noreferrer" data-track="whatsapp" class="btn btn-gold">💬 WhatsApp Now</a>` : ''}
           ${biz.email_public ? `<a href="mailto:${escapeHtml(biz.email_public)}" data-track="email" class="btn btn-outline">✉️ Email Business</a>` : ''}
         </div>

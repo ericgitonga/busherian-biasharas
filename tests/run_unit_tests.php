@@ -4920,6 +4920,59 @@ assertTrue(
     'PhoneNormalizer normalizes Kenya, Switzerland, USA, UK, Italy & Hungary numbers and never converts non-Kenyan numbers to +254 (#318)' . ($phoneFailures318 ? ' :: ' . implode('; ', $phoneFailures318) : '')
 );
 
+$kenyaPhoneCases = [
+    ['0746588589', 'Kenya', '+254746588589'],
+    ['746588589', 'Kenya', '+254746588589'],
+    ['+746588589', 'Kenya', '+254746588589'],
+    ['+0746588589', 'Kenya', '+254746588589'],
+    ['+721261661', 'Kenya', '+254721261661'],
+    ['+245722366164', 'Kenya', '+254722366164'],
+    ['+2540746588589', 'Kenya', '+254746588589'],
+    ['+254 (0) 746-588-589', 'Kenya', '+254746588589'],
+    ['0110123456', 'Kenya', '+254110123456'],
+    ['110123456', 'Kenya', '+254110123456'],
+    ['+110123456', 'Kenya', '+254110123456'],
+];
+$kenyaPhoneFailures = [];
+foreach ($kenyaPhoneCases as [$raw, $ctry, $want]) {
+    $got = $PN::normalize($raw, $ctry);
+    if ($got !== $want) {
+        $kenyaPhoneFailures[] = "{$raw} [{$ctry}] => {$got} (want {$want})";
+    }
+}
+assertTrue(
+    $kenyaPhoneFailures === [],
+    'PhoneNormalizer normalizes local Kenyan numbers, +7/+1 missing-code accidents, 245 typos, and redundant trunk zeros to +254' . ($kenyaPhoneFailures ? ' :: ' . implode('; ', $kenyaPhoneFailures) : '')
+);
+
+// Verify database phone remediation routine
+$remTestBiz = $pdo->prepare("
+    INSERT INTO businesses (
+        business_id, business_number, name, slug, tagline, description, school_badge,
+        founder_role, founder_name, founder_school, founder_year,
+        sector_id, specialty_id, service_mode,
+        country, city_county, operating_hours_json,
+        phone_primary, whatsapp_number, status
+    ) VALUES (
+        'rem-phone-test-1', 998877, 'Phone Remediation Test', 'phone-rem-test', 'Testing remediation', 'Desc', 'AHS',
+        'founder', 'Rem Tester', 'AHS', 2012,
+        1, 1, 'physical_location',
+        'Kenya', 'Nairobi', '[]',
+        '+746588589', '+721261661', 'approved'
+    )
+");
+$remTestBiz->execute();
+$remTestId = (int)$pdo->lastInsertId();
+$remRes = $PN::remediateStoredPhoneNumbers($pdo);
+$remCheck = $pdo->query("SELECT phone_primary, whatsapp_number FROM businesses WHERE id = {$remTestId}")->fetch(PDO::FETCH_ASSOC);
+assertTrue(
+    $remCheck['phone_primary'] === '+254746588589' &&
+    $remCheck['whatsapp_number'] === '+254721261661' &&
+    $remRes['businesses_updated'] >= 1,
+    'PhoneNormalizer::remediateStoredPhoneNumbers correctly heals malformed Kenyan phone and whatsapp numbers in database'
+);
+$pdo->exec("DELETE FROM businesses WHERE id = {$remTestId}");
+
 $countryMapOk318 = true;
 foreach (array_keys(\BusherianBiasharas\Services\LocationEngine::getPlaceHierarchy()) as $ctryName) {
     if ($PN::callingCodeFor($ctryName) === null) {
