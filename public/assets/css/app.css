@@ -5,7 +5,7 @@
   --bush-green-dark: #0B332A;
   --bush-gold: #D4AF37;
   --bush-gold-soft: #FEF3C7;
-  --bg-ivory: #FAF8F5;
+  --bg-ivory: #FBF8F3;
   --surface: #FFFFFF;
   --ink-900: #111827;
   --ink-700: #374151;
@@ -31,7 +31,7 @@
 body {
   margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif;
-  background: var(--surface);
+  background: var(--bg-ivory);
   color: var(--ink-900);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -42,15 +42,15 @@ a {
   text-decoration: none;
 }
 
-/* Header & Heritage Banner (Heritage Ivory #FBF8F3) */
+/* Header & Heritage Banner (Jungle Green / Maroon Blend) */
 .site-header {
-  background: #FBF8F3;
-  color: var(--ink-900);
-  border-bottom: 1px solid #E5DEC9;
+  background: linear-gradient(135deg, var(--bush-green-dark) 0%, var(--bush-green) 35%, var(--bush-crimson) 75%, var(--bush-crimson-dark) 100%);
+  color: #FFFFFF;
+  border-bottom: 3px solid var(--bush-gold);
   position: sticky;
   top: 0;
   z-index: 40;
-  box-shadow: 0 2px 6px rgba(17, 75, 62, 0.04);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
 }
 
 .header-inner {
@@ -74,9 +74,9 @@ a {
   width: 44px;
   height: 44px;
   border-radius: 11px;
-  background: linear-gradient(135deg, #114B3E 0%, #1F513F 32%, #582428 68%, #7B1113 100%);
-  border: none;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
+  background: rgba(255, 255, 255, 0.16);
+  border: 1.5px solid rgba(253, 230, 138, 0.45);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -91,26 +91,27 @@ a {
   font-size: 1.25rem;
   font-weight: 800;
   letter-spacing: -0.01em;
-  color: #114B3E;
+  color: #FFFFFF;
 }
 
 .brand-subtitle {
   margin: 0;
   font-size: 0.78rem;
-  color: #57645C;
+  color: #FDE68A;
   font-weight: 500;
 }
 
 .site-header .btn-outline-light {
-  border: 1.5px solid #E5DEC9;
-  color: #114B3E;
-  background: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(4px);
 }
 
 .site-header .btn-outline-light:hover {
-  background: #E8F2EE;
-  color: #114B3E;
-  border-color: #114B3E;
+  background: rgba(255, 255, 255, 0.24);
+  color: #FFFFFF;
+  border-color: rgba(255, 255, 255, 0.55);
 }
 
 .header-actions {
@@ -2486,11 +2487,12 @@ a {
 
 /* ==============================================================
    4-COLUMN HERITAGE FOOTER (#379 - #381)
+   (Jungle Green / Maroon Blend)
    ============================================================== */
 .foot-site {
-  background: #FBF8F3;
-  color: #18201B;
-  border-top: 1px solid #E5DEC9;
+  background: linear-gradient(135deg, var(--bush-green-dark) 0%, var(--bush-green) 35%, var(--bush-crimson) 75%, var(--bush-crimson-dark) 100%);
+  color: #F3F4F6;
+  border-top: 3px solid var(--bush-gold);
   margin-top: 48px;
   padding: 44px 24px 36px;
 }
@@ -2501,6 +2503,38 @@ a {
   display: flex;
   flex-direction: column;
   gap: 32px;
+}
+
+.foot-site .footer-charter-strip {
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-left: 4px solid var(--bush-gold);
+  border-radius: 10px;
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #FDF6E2;
+}
+
+.foot-site .footer-charter-btn {
+  background: var(--bush-gold);
+  color: #111827 !important;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none !important;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.foot-site .footer-charter-btn:hover {
+  background: #E5C148;
+  color: #111827 !important;
+  text-decoration: none !important;
 }
 
 .foot-cols {
@@ -2517,12 +2551,12 @@ a {
 }
 
 .foot-col h2 {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: .08em;
   text-transform: uppercase;
-  color: #7B1113;
+  color: #FCD34D;
 }
 
 .foot-col a, .foot-col button {
@@ -2533,7 +2567,7 @@ a {
   background: transparent;
   padding: 0;
   font-size: 13.5px;
-  color: #18201B;
+  color: #E5E7EB;
   text-decoration: none;
   text-align: left;
   cursor: pointer;
@@ -2542,13 +2576,13 @@ a {
 }
 
 .foot-col a:hover, .foot-col button:hover {
-  color: #114B3E;
+  color: #FFFFFF;
   text-decoration: underline;
 }
 
 .foot-note {
   font-size: 12px;
-  color: #57645C;
+  color: #D1D5DB;
   margin-top: 4px;
 }
 
@@ -2556,7 +2590,7 @@ a {
   display: flex;
   align-items: center;
   gap: 16px;
-  border-top: 1px solid #E5DEC9;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
   padding-top: 24px;
   flex-wrap: wrap;
 }
@@ -2567,18 +2601,25 @@ a {
   gap: 12px;
 }
 
+.foot-crests .brand-crest {
+  background: rgba(255, 255, 255, 0.16);
+  border: 1.5px solid rgba(253, 230, 138, 0.4);
+  color: #FDF6E2;
+}
+
 .foot-base-text strong {
   display: block;
   font-size: 14.5px;
   font-weight: 800;
-  color: #114B3E;
+  color: #FDE68A;
   letter-spacing: 0.02em;
 }
 
 .foot-base-text .note {
   font-size: 12.5px;
-  color: #57645C;
+  color: #D1D5DB;
   margin-top: 3px;
+  line-height: 1.5;
 }
 
 @media (max-width: 900px) {

@@ -50,8 +50,9 @@ testAssert(!str_contains($indexSrc, 'ahs.png') && !str_contains($indexSrc, 'aghs
 
 // 4. Check CSS styling in public/assets/css/app.css (#374)
 $cssSrc = (string)file_get_contents(dirname(__DIR__) . '/public/assets/css/app.css');
-testAssert(str_contains($cssSrc, 'background: #FBF8F3;') || str_contains($cssSrc, 'background: var(--bg-ivory);'), 'app.css styles site-header in Heritage Ivory');
-testAssert(str_contains($cssSrc, '.foot-site') && str_contains($cssSrc, 'background: #FBF8F3;'), 'app.css styles 4-column footer in Heritage Ivory');
+testAssert(str_contains($cssSrc, 'background: var(--bg-ivory);'), 'app.css styles body in Ivory');
+testAssert(str_contains($cssSrc, '.site-header') && str_contains($cssSrc, 'var(--bush-green)') && str_contains($cssSrc, 'var(--bush-crimson)'), 'app.css styles site-header in jungle green / maroon blend');
+testAssert(str_contains($cssSrc, '.foot-site') && str_contains($cssSrc, 'var(--bush-green)') && str_contains($cssSrc, 'var(--bush-crimson)'), 'app.css styles 4-column footer in jungle green / maroon blend');
 testAssert(str_contains($cssSrc, '.directory-layout-wrapper'), 'app.css contains .directory-layout-wrapper');
 testAssert(str_contains($cssSrc, '.filters-sidebar'), 'app.css contains .filters-sidebar');
 testAssert(str_contains($cssSrc, '.view-switcher-bar'), 'app.css contains .view-switcher-bar');

@@ -749,11 +749,11 @@ $pageCanonicalPath = $requestedBiz
   <!-- 4-Column Heritage Footer (#379 - #381) -->
   <footer class="foot-site">
     <div class="foot-inner">
-      <div class="footer-charter-strip" data-testid="footer-charter-strip" style="background:#FFFFFF;border:1px solid #E5DEC9;border-radius:10px;padding:12px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+      <div class="footer-charter-strip" data-testid="footer-charter-strip">
         <span>
           📜 <strong>100% Free-Forever Core Directory:</strong> Verified AHS &amp; AGHS standard listings, map pins, direct contacts &amp; self-served bookings carry <strong>zero listing or commission fees</strong>.
         </span>
-        <a href="/charter.php" id="btn-open-charter-modal" data-testid="btn-open-charter-modal" class="footer-charter-btn" style="color:#114B3E;font-weight:700;text-decoration:underline;">Read Community Charter</a>
+        <a href="/charter.php" id="btn-open-charter-modal" data-testid="btn-open-charter-modal" class="footer-charter-btn">Read Community Charter</a>
       </div>
 
       <div class="foot-cols">
