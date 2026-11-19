@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v33-founder-layout';
+    public const SCHEMA_INIT_VERSION = '2026-11-v34-recommendations';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -504,6 +504,7 @@ final class Database
         // Ensure business_id and business_number columns exist on pre-existing databases
         self::ensureBusinessIdentityAndNumberColumns($pdo, $driver);
         self::ensureFounderAttributionColumns($pdo, $driver);
+        self::ensureBusinessRecommendationsTable($pdo, $driver);
         self::ensureUsageMetricsTable($pdo, $driver);
         self::ensureOwnerTables($pdo, $driver);
         self::ensureOutboxAndTakedownTables($pdo, $driver);
@@ -917,6 +918,41 @@ final class Database
                     INDEX idx_ai_content_hash (content_hash),
                     INDEX idx_ai_updated_at (updated_at),
                     CONSTRAINT fk_ai_index_business FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        }
+    }
+
+    private static function ensureBusinessRecommendationsTable(PDO $pdo, string $driver): void
+    {
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS business_recommendations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    business_id INTEGER NOT NULL,
+                    recommender_name TEXT NOT NULL,
+                    recommender_school TEXT NOT NULL,
+                    recommender_year INTEGER NULL,
+                    visitor_token TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(business_id, visitor_token)
+                );
+                CREATE INDEX IF NOT EXISTS idx_recs_biz ON business_recommendations(business_id);
+                CREATE INDEX IF NOT EXISTS idx_recs_token ON business_recommendations(visitor_token);
+            ");
+        } elseif ($driver === 'mysql') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS business_recommendations (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    business_id INT UNSIGNED NOT NULL,
+                    recommender_name VARCHAR(120) NOT NULL,
+                    recommender_school VARCHAR(32) NOT NULL,
+                    recommender_year SMALLINT UNSIGNED NULL,
+                    visitor_token VARCHAR(64) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uniq_biz_visitor (business_id, visitor_token),
+                    INDEX idx_recs_biz (business_id),
+                    INDEX idx_recs_token (visitor_token)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
         }

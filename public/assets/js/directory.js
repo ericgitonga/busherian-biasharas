@@ -613,8 +613,9 @@
     const cardClasses = isEcosystem ? 'biz-card biz-card-ecosystem' : 'biz-card';
     const openSource = isConcierge ? 'concierge' : 'directory';
 
-    const waNumber = (biz.whatsapp_number || biz.phone_primary || '').replace(/[^0-9]/g, '');
-    const waUrl = waNumber ? `https://wa.me/${waNumber}?text=Hello%20${encodeURIComponent(biz.name)}` : '#';
+    const hasWa = Boolean(biz.whatsapp_number && String(biz.whatsapp_number).trim() && String(biz.whatsapp_number).replace(/[^0-9]/g, '').length >= 7);
+    const waNumber = hasWa ? String(biz.whatsapp_number).replace(/[^0-9]/g, '') : '';
+    const waUrl = hasWa ? `https://wa.me/${waNumber}?text=Hello%20${encodeURIComponent(biz.name)}` : '#';
     const callUrl = biz.phone_primary ? `tel:${biz.phone_primary}` : '#';
     const safeCardGmaps = sanitizeHttpUrl(biz.google_maps_url);
     const routeUrl = safeCardGmaps || (hasCoords ? `https://www.google.com/maps/search/?api=1&query=${biz.latitude},${biz.longitude}` : `https://maps.google.com/?q=${encodeURIComponent([biz.name, biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(' '))}`);
@@ -662,8 +663,6 @@
             </button>
             ${needBadge}
             ${(biz.is_bookable || biz.booking_enabled || biz.booking_url) ? `<span class="badge-bookable" data-testid="biz-card-bookable-badge">📅 Book Appointment</span>` : ''}
-            ${biz.momentum_badge === 'popular' ? `<span class="badge-momentum badge-popular" data-testid="biz-card-popular-badge">🔥 Popular</span>` : ''}
-            ${biz.momentum_badge === 'new' ? `<span class="badge-momentum badge-new" data-testid="biz-card-new-badge">✨ New</span>` : ''}
           </div>
           <button type="button" class="btn-share" onclick="event.stopPropagation(); shareBiz('${escapeHtml(biz.slug)}', '${escapeHtml(biz.name)}')">
             <span>🔗</span>
@@ -699,10 +698,17 @@
 
         <!-- 7. Action buttons (WhatsApp / Call) & 8. Details & 9. Route -->
         <div class="card-action-buttons">
-          <a href="${escapeHtml(waUrl)}" class="btn-action-primary btn-action-whatsapp" target="_blank" rel="noopener" onclick="event.stopPropagation();">
-            <span>💬</span>
-            <span>WhatsApp</span>
-          </a>
+          ${hasWa ? `
+            <a href="${escapeHtml(waUrl)}" class="btn-action-primary btn-action-whatsapp" target="_blank" rel="noopener" onclick="event.stopPropagation();">
+              <span>💬</span>
+              <span>WhatsApp</span>
+            </a>
+          ` : `
+            <button type="button" class="btn-action-primary btn-action-whatsapp btn-action-disabled" disabled title="No WhatsApp line provided" onclick="event.stopPropagation();">
+              <span>💬</span>
+              <span>WhatsApp</span>
+            </button>
+          `}
           <a href="${escapeHtml(callUrl)}" class="btn-action-primary btn-action-call" onclick="event.stopPropagation();">
             <span>📞</span>
             <span>Call</span>
@@ -1784,10 +1790,22 @@
       }
     }
 
-    const waClean = (biz.whatsapp_number || biz.phone_primary || '').replace(/[^0-9]/g, '');
+    const hasWa = Boolean(biz.whatsapp_number && String(biz.whatsapp_number).trim() && String(biz.whatsapp_number).replace(/[^0-9]/g, '').length >= 7);
+    const waClean = hasWa ? String(biz.whatsapp_number).replace(/[^0-9]/g, '') : '';
     const waBtn = document.getElementById('detail-wa-btn');
     if (waBtn) {
-      waBtn.href = waClean ? `https://wa.me/${waClean}?text=Hello%20${encodeURIComponent(biz.name)}` : '#';
+      if (hasWa) {
+        waBtn.href = `https://wa.me/${waClean}?text=Hello%20${encodeURIComponent(biz.name)}`;
+        waBtn.classList.remove('btn-action-disabled');
+        waBtn.removeAttribute('aria-disabled');
+        waBtn.title = 'Chat on WhatsApp';
+      } else {
+        waBtn.href = '#';
+        waBtn.classList.add('btn-action-disabled');
+        waBtn.setAttribute('aria-disabled', 'true');
+        waBtn.title = 'No WhatsApp line provided';
+        waBtn.onclick = (e) => e.preventDefault();
+      }
     }
 
     const callBtn = document.getElementById('detail-call-btn');
@@ -1876,7 +1894,218 @@
         moreSection.style.display = 'none';
       }
     }
+
+    const confDateEl = document.getElementById('detail-confirmed-date');
+    if (confDateEl) {
+      const dStr = biz.verified_at || biz.created_at || '2026-10-01';
+      const d = new Date(dStr);
+      const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      confDateEl.textContent = `${months[d.getMonth()]} ${d.getFullYear()}`;
+    }
+    const reportLink = document.getElementById('detail-report-link');
+    if (reportLink) {
+      reportLink.href = `/takedown.php?biz=${encodeURIComponent(biz.slug)}`;
+    }
+
+    renderRecommendationsPanel(biz.id, biz.recommendations);
   }
+
+  function getVisitorToken() {
+    let token = localStorage.getItem('bbiz_visitor_token');
+    if (!token) {
+      token = 'bbvt_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      try { localStorage.setItem('bbiz_visitor_token', token); } catch (_) {}
+    }
+    return token;
+  }
+
+  function getRecommenderProfile() {
+    try {
+      const raw = localStorage.getItem('bbiz_recommender_profile');
+      if (raw) return JSON.parse(raw);
+    } catch (_) {}
+    return null;
+  }
+
+  function saveRecommenderProfile(prof) {
+    try {
+      localStorage.setItem('bbiz_recommender_profile', JSON.stringify(prof));
+    } catch (_) {}
+  }
+
+  function renderRecommendationsPanel(bizId, initialRecs) {
+    const btn = document.getElementById('btn-toggle-recommend');
+    if (btn) btn.setAttribute('data-biz-id', String(bizId));
+
+    if (initialRecs && typeof initialRecs === 'object') {
+      updateRecommendationsUI(initialRecs);
+    }
+
+    // Fetch live recommendation status for this visitor
+    fetch(`/api/recommend.php?business_id=${bizId}&visitor_token=${encodeURIComponent(getVisitorToken())}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.status === 'ok') {
+          updateRecommendationsUI(data);
+        }
+      })
+      .catch(() => {});
+  }
+
+  function updateRecommendationsUI(data) {
+    const summaryEl = document.getElementById('detail-recs-summary');
+    if (summaryEl && data.summary_html) {
+      summaryEl.innerHTML = data.summary_html;
+    }
+    const btn = document.getElementById('btn-toggle-recommend');
+    if (btn) {
+      if (data.user_recommended) {
+        btn.textContent = '✓ You recommended this (Click to take back)';
+        btn.classList.add('is-recommended');
+      } else {
+        btn.textContent = 'I have used them and recommend them';
+        btn.classList.remove('is-recommended');
+      }
+    }
+  }
+
+  window.handleRecommendButtonClick = async function() {
+    const btn = document.getElementById('btn-toggle-recommend');
+    if (!btn) return;
+    const bizId = Number(btn.getAttribute('data-biz-id'));
+    if (!bizId) return;
+
+    const isAlreadyRecommended = btn.classList.contains('is-recommended');
+
+    if (isAlreadyRecommended) {
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/api/recommend.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            business_id: bizId,
+            visitor_token: getVisitorToken(),
+            action: 'toggle'
+          })
+        });
+        const data = await resp.json();
+        if (data.status === 'ok') {
+          updateRecommendationsUI(data);
+          showToast('Recommendation taken back');
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('Could not take back recommendation');
+      } finally {
+        btn.disabled = false;
+      }
+      return;
+    }
+
+    const profile = getRecommenderProfile();
+    if (!profile || !profile.name) {
+      window.openRecommendationModal(bizId);
+      return;
+    }
+
+    btn.disabled = true;
+    try {
+      const resp = await fetch('/api/recommend.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id: bizId,
+          visitor_token: getVisitorToken(),
+          action: 'toggle',
+          name: profile.name,
+          school: profile.school,
+          year: profile.year
+        })
+      });
+      const data = await resp.json();
+      if (data.status === 'ok') {
+        updateRecommendationsUI(data);
+        showToast('✓ Recommendation added!');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Could not add recommendation');
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  window.openRecommendationModal = function(bizId) {
+    const modal = document.getElementById('modal-recommend');
+    if (!modal) return;
+    const bizInput = document.getElementById('rec-biz-id');
+    if (bizInput) bizInput.value = String(bizId);
+    const prof = getRecommenderProfile();
+    if (prof) {
+      if (prof.name) {
+        const nameEl = document.getElementById('rec-name');
+        if (nameEl) nameEl.value = prof.name;
+      }
+      if (prof.school) {
+        const schoolEl = document.getElementById('rec-school');
+        if (schoolEl) schoolEl.value = prof.school;
+      }
+      if (prof.year) {
+        const yearEl = document.getElementById('rec-year');
+        if (yearEl) yearEl.value = prof.year;
+      }
+    }
+    modal.hidden = false;
+    modal.classList.add('open');
+  };
+
+  window.closeRecommendationModal = function() {
+    const modal = document.getElementById('modal-recommend');
+    if (!modal) return;
+    modal.classList.remove('open');
+    modal.hidden = true;
+  };
+
+  window.submitRecommendationModal = async function() {
+    const bizId = Number(document.getElementById('rec-biz-id').value);
+    const name = document.getElementById('rec-name').value.trim();
+    const school = document.getElementById('rec-school').value;
+    const year = document.getElementById('rec-year').value.trim();
+
+    if (!name) return;
+
+    saveRecommenderProfile({ name, school, year: year ? Number(year) : null });
+    window.closeRecommendationModal();
+
+    const btn = document.getElementById('btn-toggle-recommend');
+    if (btn) btn.disabled = true;
+
+    try {
+      const resp = await fetch('/api/recommend.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id: bizId,
+          visitor_token: getVisitorToken(),
+          action: 'toggle',
+          name: name,
+          school: school,
+          year: year ? Number(year) : null
+        })
+      });
+      const data = await resp.json();
+      if (data.status === 'ok') {
+        updateRecommendationsUI(data);
+        showToast('✓ Recommendation added!');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Could not add recommendation');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
 
   function showDirectoryView() {
     const detailShell = document.getElementById('view-directory-shell');
@@ -1940,7 +2169,8 @@
     containerList.innerHTML = `
       <div class="biz-list-group" data-testid="biz-list-group">
         ${items.map(b => {
-          const waClean = (b.whatsapp_number || b.phone_primary || '').replace(/[^0-9]/g, '');
+          const hasWa = Boolean(b.whatsapp_number && String(b.whatsapp_number).trim() && String(b.whatsapp_number).replace(/[^0-9]/g, '').length >= 7);
+          const waClean = hasWa ? String(b.whatsapp_number).replace(/[^0-9]/g, '') : '';
           const schoolBadge = b.school_badge === 'BOTH' ? 'AHS & AGHS' : (b.school_badge || 'AHS');
           const schoolCls = (b.school_badge || 'ahs').toLowerCase();
           const locText = [b.area_neighborhood, b.city_county].filter(Boolean).join(', ');
@@ -1991,11 +2221,15 @@
                 </div>
 
                 <div class="biz-list-actions">
-                  ${waClean ? `
+                  ${hasWa ? `
                     <a href="https://wa.me/${waClean}?text=Hello%20${encodeURIComponent(b.name)}" target="_blank" rel="noopener" class="btn-list-action btn-list-wa" title="Chat on WhatsApp" onclick="event.stopPropagation()">
                       <span>💬</span> <span>WhatsApp</span>
                     </a>
-                  ` : ''}
+                  ` : `
+                    <button type="button" class="btn-list-action btn-list-wa btn-action-disabled" disabled title="No WhatsApp line provided" onclick="event.stopPropagation()">
+                      <span>💬</span> <span>WhatsApp</span>
+                    </button>
+                  `}
                   ${b.phone_primary ? `
                     <a href="tel:${escapeHtml(b.phone_primary)}" class="btn-list-action btn-list-call" title="Call directly" onclick="event.stopPropagation()">
                       <span>📞</span> <span>Call</span>
@@ -2036,14 +2270,15 @@
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));gap:16px;">
           ${bizList.map(b => {
-            const waClean = (b.whatsapp_number || b.phone_primary || '').replace(/[^0-9]/g, '');
+            const hasWa = Boolean(b.whatsapp_number && String(b.whatsapp_number).trim() && String(b.whatsapp_number).replace(/[^0-9]/g, '').length >= 7);
+            const waClean = hasWa ? String(b.whatsapp_number).replace(/[^0-9]/g, '') : '';
             return `
               <div style="border:1px solid #E5DEC9;border-radius:10px;padding:16px;background:#FBF8F3;">
                 <div style="font-weight:800;font-size:16px;color:#114B3E;cursor:pointer;" onclick="openBizDetail('${escapeHtml(b.slug)}')">${escapeHtml(b.name)}</div>
                 <div style="font-size:12.5px;color:#7B1113;font-weight:700;margin-top:2px;">${escapeHtml(b.specialty_name || '')} · ${escapeHtml(b.city_county || '')}</div>
                 ${b.founder_role && b.founder_role !== 'none' && b.founder_name ? `<div style="font-size:12px;color:#57645C;margin:4px 0;">👤 ${escapeHtml(b.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ')}${escapeHtml(b.founder_name)}</div>` : ''}
                 <div style="display:flex;gap:6px;margin-top:12px;align-items:center;">
-                  ${waClean ? `<a href="https://wa.me/${waClean}" target="_blank" rel="noopener" class="btn-action-primary btn-action-whatsapp" style="font-size:12px;height:32px;padding:0 12px;">💬 WhatsApp</a>` : ''}
+                  ${hasWa ? `<a href="https://wa.me/${waClean}" target="_blank" rel="noopener" class="btn-action-primary btn-action-whatsapp" style="font-size:12px;height:32px;padding:0 12px;">💬 WhatsApp</a>` : `<button type="button" class="btn-action-primary btn-action-whatsapp btn-action-disabled" disabled style="font-size:12px;height:32px;padding:0 12px;" title="No WhatsApp line provided">💬 WhatsApp</button>`}
                   ${b.phone_primary ? `<a href="tel:${escapeHtml(b.phone_primary)}" class="btn-action-primary btn-action-call" style="font-size:12px;height:32px;padding:0 12px;">📞 Call</a>` : ''}
                   <a href="/biz/${escapeHtml(b.slug)}" onclick="event.preventDefault(); openBizDetail('${escapeHtml(b.slug)}')" class="link-secondary" style="margin-left:auto;font-size:12px;">Details &rarr;</a>
                 </div>
@@ -3129,9 +3364,19 @@
   const pwaGuideOther = document.getElementById('pwa-guide-other');
   let deferredInstallPrompt = null;
 
+  function isMobileContext() {
+    try {
+      if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) return true;
+      if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
+      if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) return true;
+    } catch (_) {}
+    return false;
+  }
+
   function syncPwaInstallButtons(visible) {
-    if (btnInstallApp) btnInstallApp.hidden = !visible;
-    if (btnInstallAppDrawer) btnInstallAppDrawer.hidden = !visible;
+    const isMobile = isMobileContext();
+    if (btnInstallApp) btnInstallApp.hidden = !visible || !isMobile;
+    if (btnInstallAppDrawer) btnInstallAppDrawer.hidden = !visible || !isMobile;
   }
 
   function isStandaloneApp() {
@@ -3180,6 +3425,12 @@
       deferredInstallPrompt = null;
       syncPwaInstallButtons(false);
       closePwaInstallModal();
+    });
+
+    window.addEventListener('resize', () => {
+      if (!isStandaloneApp()) {
+        syncPwaInstallButtons(true);
+      }
     });
 
     const handleInstallClick = async () => {

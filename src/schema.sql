@@ -339,3 +339,18 @@ CREATE TABLE IF NOT EXISTS business_ai_index (
     INDEX idx_ai_updated_at (updated_at),
     CONSTRAINT fk_ai_index_business FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 17. Verified Alumni Business Recommendations (#Mockup)
+CREATE TABLE IF NOT EXISTS business_recommendations (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    business_id INT UNSIGNED NOT NULL,
+    recommender_name VARCHAR(120) NOT NULL,
+    recommender_school VARCHAR(32) NOT NULL,
+    recommender_year SMALLINT UNSIGNED NULL,
+    visitor_token VARCHAR(64) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_biz_visitor (business_id, visitor_token),
+    INDEX idx_recs_biz (business_id),
+    INDEX idx_recs_token (visitor_token),
+    CONSTRAINT fk_rec_business FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

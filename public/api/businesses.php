@@ -316,6 +316,34 @@ try {
         ? OwnerAuth::getMaskedOwnerEmailHintsForBusinesses($pdo, $pageBizIds)
         : [];
 
+    $batchedRecs = [];
+    if (!empty($pageBizIds)) {
+        try {
+            $inQ = implode(',', array_fill(0, count($pageBizIds), '?'));
+            $rStmt = $pdo->prepare("
+                SELECT business_id, recommender_name, recommender_school, recommender_year, visitor_token
+                FROM business_recommendations
+                WHERE business_id IN ($inQ)
+                ORDER BY id DESC
+            ");
+            $rStmt->execute($pageBizIds);
+            while ($rRow = $rStmt->fetch(PDO::FETCH_ASSOC)) {
+                $bId = (int)$rRow['business_id'];
+                if (!isset($batchedRecs[$bId])) {
+                    $batchedRecs[$bId] = ['count' => 0, 'alumni' => [], 'tokens' => []];
+                }
+                $batchedRecs[$bId]['count']++;
+                $batchedRecs[$bId]['tokens'][] = (string)$rRow['visitor_token'];
+                if (count($batchedRecs[$bId]['alumni']) < 5) {
+                    $yr = !empty($rRow['recommender_year']) ? (" '" . substr((string)$rRow['recommender_year'], -2)) : '';
+                    $batchedRecs[$bId]['alumni'][] = htmlspecialchars($rRow['recommender_name'], ENT_QUOTES, 'UTF-8') . ', ' .
+                                                     htmlspecialchars($rRow['recommender_school'], ENT_QUOTES, 'UTF-8') . $yr;
+                }
+            }
+        } catch (\Throwable $ignoredRecErr) {
+        }
+    }
+
     $momentumCtx = EngagementRanker::computeMomentumContext($pdo);
 
     $results = [];
@@ -394,6 +422,24 @@ try {
                 'tiktok'    => $row['social_tiktok'],
                 'youtube'   => $row['social_youtube'],
             ]),
+        ];
+
+        $bRec = $batchedRecs[$bizId] ?? ['count' => 0, 'alumni' => [], 'tokens' => []];
+        $recCount = (int)$bRec['count'];
+        $summaryHtml = '';
+        if ($recCount === 0) {
+            $summaryHtml = '<span class="note">No recommendations yet. Be the first.</span>';
+        } elseif ($recCount === 1) {
+            $summaryHtml = '<strong>1 alumnus recommends this business.</strong> <span class="recs-names">' . $bRec['alumni'][0] . '</span>';
+        } elseif ($recCount === 2) {
+            $summaryHtml = '<strong>2 alumni recommend this business.</strong> <span class="recs-names">' . implode('; ', array_slice($bRec['alumni'], 0, 2)) . '</span>';
+        } else {
+            $summaryHtml = '<strong>' . $recCount . ' alumni recommend this business.</strong> <span class="recs-names">' . implode('; ', array_slice($bRec['alumni'], 0, 2)) . '; and others</span>';
+        }
+        $item['recommendations'] = [
+            'count' => $recCount,
+            'alumni' => $bRec['alumni'],
+            'summary_html' => $summaryHtml,
         ];
 
         // Privacy (#180): Omit owner_email_hints from unauthenticated public directory feeds

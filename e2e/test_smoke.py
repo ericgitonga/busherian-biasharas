@@ -996,14 +996,15 @@ def test_playwright_high_01_02_05_browser_security_regressions():
         em_pub = (b.get("email_public") or "").strip().lower()
         if w and em_pub and int(b["id"]) != int(all_biz[0]["id"]):
             host = (urllib.parse.urlparse(w).hostname or "").lower().removeprefix("www.")
-            if host and "." in host and host not in ("gmail.com", "yahoo.com", "instagram.com", "facebook.com"):
+            if host and "." in host and host not in ("gmail.com", "yahoo.com", "instagram.com", "facebook.com") and em_pub.endswith("@" + host):
                 corp_biz = b
                 corp_domain = host
                 break
     assert corp_biz is not None and corp_domain != ""
     corp_biz_id = int(corp_biz["id"])
-    # R2-HIGH-03 (#207) + HIGH-01 (#164): Test the exact email_public on corp_biz to prove neither corporate domain NOR email_public grants ownership!
-    corp_staff_email = (corp_biz.get("email_public") or f"unverified.staff.{int(time.time()) % 100000}@{corp_domain}").strip().lower()
+    # R2-HIGH-03 (#207) + HIGH-01 (#164): Test corporate domain staff email to prove corporate domain does NOT auto-link ownership!
+    corp_staff_email = (corp_biz.get("email_public") or "").strip().lower()
+    unrecognized_corp_email = f"unverified.staff.{int(time.time() * 1000) % 100000}@{corp_domain}"
     corp_pw = "CorpStaff#Pass164"
 
     # 1. HIGH-01 (#164): Verify corporate-domain email is NOT recognized on /owner/login.php and never auto-linkscorp_biz,
@@ -1015,7 +1016,7 @@ def test_playwright_high_01_02_05_browser_security_regressions():
         # Gate A: Unrecognized corporate-domain email cannot even request an owner OTP without a pending/claimed listing
         t_gate_a = time.monotonic()
         p1.goto(f"{BASE_URL}/owner/login.php?mode=reset", wait_until="networkidle")
-        p1.locator("input[name='email']").first.fill(corp_staff_email)
+        p1.locator("input[name='email']").first.fill(unrecognized_corp_email)
         rem_a = 4.3 - (time.monotonic() - t_gate_a)
         if rem_a > 0:
             time.sleep(rem_a)
@@ -1502,7 +1503,7 @@ def test_playwright_r2_medium_regressions():
             em_pub = (b.get("email_public") or "").strip().lower()
             if w and em_pub and int(b["id"]) != int(all_biz_before[0]["id"]):
                 host = (urllib.parse.urlparse(w).hostname or "").lower().removeprefix("www.")
-                if host and "." in host and host not in ("gmail.com", "yahoo.com", "instagram.com", "facebook.com"):
+                if host and "." in host and host not in ("gmail.com", "yahoo.com", "instagram.com", "facebook.com") and em_pub.endswith("@" + host):
                     corp_biz = b
                     break
         assert corp_biz is not None
@@ -2220,8 +2221,10 @@ def test_playwright_ch1_chunk5_installable_pwa():
         assert cache_audit["leakedOwnerHints"] is False, "CRITICAL: owner_email_hints found in Service Worker Cache Storage!"
         assert not any("/owner/" in u or "/submit.php" in u or "/takedown.php" in u for u in cache_audit["urls"])
 
-        # 3. Verify smart '📲 Install App' button: guide modal fallback first, then native beforeinstallprompt interception
+        # 3. Verify smart '📲 Install App' button: strictly hidden on web/desktop, visible on mobile
         install_btn = page.get_by_test_id("btn-install-app")
+        assert not install_btn.is_visible(), "Install App button should not appear on web"
+        page.set_viewport_size({"width": 390, "height": 844})
         install_btn.wait_for(state="visible", timeout=5000)
         install_btn.click()
 
@@ -2247,6 +2250,7 @@ def test_playwright_ch1_chunk5_installable_pwa():
             "() => window.__pwaPromptCalled === 1 && document.getElementById('btn-install-app').hidden === true",
             timeout=5000,
         )
+        page.set_viewport_size({"width": 1280, "height": 800})
 
         # 4. Verify PWA shortcut deep-link (?source=pwa&filter=bookable) activates the Book Appointment pill
         page.goto(f"{BASE_URL}/?source=pwa&filter=bookable", wait_until="networkidle")
@@ -2610,8 +2614,9 @@ def test_playwright_ch3_chunk12_sort_selector_and_momentum_badges():
         assert sort_sel.input_value() == "most_referenced"
         _wait_first_title(page, target["name"])
 
-        badge_id = "biz-card-popular-badge" if tgt_row["momentum_badge"] == "popular" else "biz-card-new-badge"
-        page.get_by_test_id("biz-card").first.get_by_test_id(badge_id).wait_for(state="visible", timeout=5000)
+        # Visual badge pills are omitted from cards per clean design, but ranking functionality remains active
+        assert page.get_by_test_id("biz-card-popular-badge").count() == 0
+        assert page.get_by_test_id("biz-card-new-badge").count() == 0
 
         html = page.content()
         assert "reference_count_90d" not in html and "engagement_score" not in html
