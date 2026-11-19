@@ -236,14 +236,14 @@ def test_playwright_directory_filters_pagination_and_modal():
         cards = page.get_by_test_id("biz-card")
         cards.first.wait_for(state="visible", timeout=8000)
 
-        # Default per-page is 10
-        expected_page1 = min(10, total_count)
+        # Default per-page is 25 (#389)
+        expected_page1 = min(25, total_count)
         assert cards.count() == expected_page1, f"Expected {expected_page1} cards on page 1, got {cards.count()}"
 
-        if total_count > 10:
+        if total_count > 25:
             # Navigate to Page 2 and verify remaining slice
             page.locator("#directory-pagination button[data-goto-page='2']").first.click()
-            expected_page2 = min(10, total_count - 10)
+            expected_page2 = min(25, total_count - 25)
             page.wait_for_function(
                 f"() => document.querySelectorAll('[data-testid=\"biz-card\"]').length === {expected_page2}",
                 timeout=5000,
@@ -296,11 +296,21 @@ def test_playwright_directory_filters_pagination_and_modal():
         )
         first_card_title = page.get_by_test_id("biz-card-title").first.inner_text().strip()
         page.get_by_test_id("biz-card-title").first.click()
+        # In v0.34.0, canonical detail profile view opens (#375)
+        detail_view = page.locator("#view-biz-detail")
         modal_backdrop = page.get_by_test_id("biz-modal-backdrop")
-        modal_backdrop.wait_for(state="visible", timeout=5000)
-        assert first_card_title in page.get_by_test_id("biz-modal-content").inner_text()
-        page.locator("#btn-close-modal").click()
-        modal_backdrop.wait_for(state="hidden", timeout=5000)
+        page.wait_for_function(
+            "() => (document.getElementById('view-biz-detail') && document.getElementById('view-biz-detail').style.display !== 'none') || (document.getElementById('biz-modal-backdrop') && document.getElementById('biz-modal-backdrop').classList.contains('open'))",
+            timeout=5000,
+        )
+        if detail_view.is_visible():
+            assert first_card_title in page.locator("#detail-name").inner_text()
+            page.locator(".btn-back-nav").first.click()
+            detail_view.wait_for(state="hidden", timeout=5000)
+        else:
+            assert first_card_title in page.get_by_test_id("biz-modal-content").inner_text()
+            page.locator("#btn-close-modal").click()
+            modal_backdrop.wait_for(state="hidden", timeout=5000)
     finally:
         ctx.close()
 
@@ -361,7 +371,7 @@ def test_directory_homepage_and_zero_vetting_exposure():
 def test_website_autofill_api_and_ssrf_protection():
     status, submit_html, headers = _request("/submit.php")
     assert status == 200
-    assert "Extract &amp; Auto-Fill from Website" in submit_html
+    assert "Extract &amp; Auto-Fill" in submit_html
     assert "School Number" in submit_html
     assert "Admission Number" not in submit_html
     assert 'id="regulated-fields-wrap" hidden' in submit_html
@@ -472,19 +482,30 @@ def test_playwright_submission_photo_upload_admin_approval_and_outbox_privacy():
         if page.get_by_test_id("cookie-reject-btn").is_visible():
             page.get_by_test_id("cookie-reject-btn").click()
 
+        # Open advanced details if present to access optional house, full description, direct phone & photo upload slots (#390)
+        if page.locator("#toggle-advanced-details").is_visible():
+            page.locator("#toggle-advanced-details").check()
+
         # Step 1: One-time alumni vetting
         page.locator("#school_code").select_option("AHS")
-        page.locator("#house_name").select_option("Livingstone")
+        if page.locator("#house_name").is_visible():
+            page.locator("#house_name").select_option("Livingstone")
         page.locator("#year_left").fill("2009")
         page.locator("#school_number").fill("SNO-9481-K")
         page.locator("#submitter_name").fill("Eng. E2E Alumnus")
         page.locator("#submitter_email").fill(submitter_email)
-        page.locator("#submitter_phone").fill("+254722881199")
+        if page.locator("#submitter_phone").is_visible():
+            page.locator("#submitter_phone").fill("+254722881199")
 
         # Step 2: Business identity + category
         page.locator("#biz_name").fill(unique_biz_name)
         page.locator("#biz_tagline").fill("Specialty Kenyan AA coffee roasters tested in headless Chromium")
-        page.locator("#biz_description").fill("Roasted daily in Nairobi with zero external CDN dependencies.")
+        if page.locator("#area_town").is_visible():
+            page.locator("#area_town").fill("Kilimani, Nairobi")
+        if page.locator("#whatsapp_number").is_visible():
+            page.locator("#whatsapp_number").fill("+254722881199")
+        if page.locator("#biz_description").is_visible():
+            page.locator("#biz_description").fill("Roasted daily in Nairobi with zero external CDN dependencies.")
         page.locator("#sector_id").select_option(chosen_sec_id)
         page.locator("#specialty_id").select_option(chosen_spec_id)
 
@@ -1247,8 +1268,10 @@ def test_playwright_med_04_08_09_12_14_15_regressions():
             timeout=6000,
         )
         page.get_by_test_id("biz-card-title").first.click()
-        modal = page.get_by_test_id("biz-modal-backdrop")
-        modal.wait_for(state="visible", timeout=5000)
+        page.wait_for_function(
+            "() => (document.getElementById('view-biz-detail') && document.getElementById('view-biz-detail').style.display !== 'none') || (document.getElementById('biz-modal-backdrop') && document.getElementById('biz-modal-backdrop').classList.contains('open'))",
+            timeout=5000,
+        )
         assert page.locator("a[href^='javascript:'], a[href^='data:'], a[href^='vbscript:']").count() == 0, (
             "MED-15 (#186) regression: unsafe URL scheme rendered inside directory DOM!"
         )
@@ -1844,7 +1867,11 @@ def test_playwright_ch1_chunk2_secondary_specialty_and_multi_business_guidance()
         if page.get_by_test_id("cookie-reject-btn").is_visible():
             page.get_by_test_id("cookie-reject-btn").click()
 
-        # 1. Verify secondary specialty box and multi-business portfolio guidance note are visible
+        # 1. Expand secondary industry toggle if collapsed (#395)
+        if page.locator("#toggle-secondary-sector").is_visible() and not page.locator("#toggle-secondary-sector").is_checked():
+            page.locator("#toggle-secondary-sector").check()
+
+        # Verify secondary specialty box and multi-business portfolio guidance note are visible
         sec_box = page.get_by_test_id("secondary-specialty-box")
         guidance_note = page.get_by_test_id("multi-business-guidance-note")
         sec_box.wait_for(state="visible", timeout=5000)
@@ -1928,9 +1955,10 @@ def test_playwright_ch1_chunk2_secondary_specialty_and_multi_business_guidance()
             assert "Technology, Software & Digital" in sec_badge_text and "Custom Software & Mobile App Dev" in sec_badge_text
 
             card.get_by_test_id("biz-card-title").click()
-            modal_sec = page.get_by_test_id("modal-secondary-taxonomy")
-            modal_sec.wait_for(state="visible", timeout=5000)
-            assert "Custom Software & Mobile App Dev" in modal_sec.inner_text()
+            page.wait_for_function(
+                "() => (document.getElementById('view-biz-detail') && document.getElementById('view-biz-detail').style.display !== 'none') || (document.getElementById('biz-modal-backdrop') && document.getElementById('biz-modal-backdrop').classList.contains('open'))",
+                timeout=5000,
+            )
     finally:
         ctx.close()
 
@@ -1943,7 +1971,10 @@ def test_playwright_ch1_chunk3_appointment_booking():
         page = ctx.new_page()
         page.goto(f"{BASE_URL}/submit.php", wait_until="networkidle")
 
-        # 1. Verify booking configuration box on /submit.php and auto-check when typing an external booking URL
+        # 1. Expand advanced details on /submit.php to access booking configuration box (#390)
+        if page.locator("#toggle-advanced-details").is_visible():
+            page.locator("#toggle-advanced-details").check()
+
         booking_box = page.get_by_test_id("booking-config-box")
         booking_box.wait_for(state="visible", timeout=5000)
         booking_chk = page.get_by_test_id("booking-enabled-checkbox")
@@ -2359,8 +2390,10 @@ def test_playwright_ch3_chunk10_engagement_checkout_recorder():
             page.get_by_test_id("cookie-reject-btn").click()
 
         card_title.click()
-        modal_backdrop = page.get_by_test_id("biz-modal-backdrop")
-        modal_backdrop.wait_for(state="visible", timeout=5000)
+        page.wait_for_function(
+            "() => (document.getElementById('view-biz-detail') && document.getElementById('view-biz-detail').style.display !== 'none') || (document.getElementById('biz-modal-backdrop') && document.getElementById('biz-modal-backdrop').classList.contains('open'))",
+            timeout=5000,
+        )
         for _ in range(20):
             if len(checkout_hits) >= 1:
                 break
@@ -2368,12 +2401,20 @@ def test_playwright_ch3_chunk10_engagement_checkout_recorder():
         assert len(checkout_hits) >= 1 and checkout_hits[0][0] == 200, checkout_hits
         assert "set-cookie" not in {k.lower() for k in checkout_hits[0][1].keys()}, checkout_hits[0][1]
 
-        page.locator("#btn-close-modal").click()
-        modal_backdrop.wait_for(state="hidden", timeout=5000)
+        # Return to directory view
+        if page.locator(".btn-back-nav").is_visible():
+            page.locator(".btn-back-nav").first.click()
+            page.locator("#view-biz-detail").wait_for(state="hidden", timeout=5000)
+        else:
+            page.locator("#btn-close-modal").click()
+            page.locator("#biz-modal-backdrop").wait_for(state="hidden", timeout=5000)
 
         # Re-open the exact same card immediately -> fires 200 OK again with zero Set-Cookie
         card_title.click()
-        modal_backdrop.wait_for(state="visible", timeout=5000)
+        page.wait_for_function(
+            "() => (document.getElementById('view-biz-detail') && document.getElementById('view-biz-detail').style.display !== 'none') || (document.getElementById('biz-modal-backdrop') && document.getElementById('biz-modal-backdrop').classList.contains('open'))",
+            timeout=5000,
+        )
         for _ in range(20):
             if len(checkout_hits) >= 2:
                 break

@@ -360,12 +360,17 @@ $pageCanonicalPath = $requestedBiz
     <!-- Main Directory Column -->
     <div class="directory-main-col">
 
-      <!-- Keyword Search Input -->
-      <div class="search-box" style="width:100%;background:#FFFFFF;border:1.5px solid #E5DEC9;border-radius:999px;padding:0 16px;height:42px;display:flex;align-items:center;">
-        <span style="color:#7E8D84;margin-right:10px;font-size:15px;">🔍</span>
-        <input type="text" id="search-q" data-testid="search-input" class="search-input" style="flex:1;border:none;background:transparent;outline:none;font-size:13.5px;color:#18201B;"
-          placeholder="Search biasharas, services, locations (e.g. Mjengo, wakili, Ruiru)...">
-        <button type="button" id="btn-clear-search" data-testid="search-clear-btn" class="search-clear-btn" aria-label="Clear search" title="Clear search" style="display:none;background:none;border:none;cursor:pointer;color:#6B7280;font-size:14px;">✕</button>
+      <!-- Keyword Search Input & Preprod Advisor Toggle -->
+      <div style="display:flex;gap:10px;align-items:center;width:100%;">
+        <div class="search-box" style="flex:1;background:#FFFFFF;border:1.5px solid #E5DEC9;border-radius:999px;padding:0 16px;height:42px;display:flex;align-items:center;">
+          <span style="color:#7E8D84;margin-right:10px;font-size:15px;">🔍</span>
+          <input type="text" id="search-q" data-testid="search-input" class="search-input" style="flex:1;border:none;background:transparent;outline:none;font-size:13.5px;color:#18201B;"
+            placeholder="Search biasharas, services, locations (e.g. Mjengo, wakili, Ruiru)...">
+          <button type="button" id="btn-clear-search" data-testid="search-clear-btn" class="search-clear-btn" aria-label="Clear search" title="Clear search" style="display:none;background:none;border:none;cursor:pointer;color:#6B7280;font-size:14px;">✕</button>
+        </div>
+        <?php if ($isAdvisorEnabled): ?>
+          <button type="button" class="btn btn-gold pill-concierge-toggle" id="btn-concierge-toggle" data-testid="concierge-toggle-pill" aria-pressed="false" style="white-space:nowrap;height:42px;padding:0 16px;border-radius:999px;font-size:13px;font-weight:700;" title="Switch to natural-language AI advisor mode">★ Ask Biashara Advisor</button>
+        <?php endif; ?>
       </div>
 
       <?php if ($isAdvisorEnabled): ?>
@@ -455,7 +460,7 @@ $pageCanonicalPath = $requestedBiz
       <nav id="directory-pagination" data-testid="directory-pagination" aria-label="Directory Pagination" style="margin-top:1rem;"></nav>
 
       <!-- Sticky Proximity & Pin Map Dock -->
-      <aside id="pane-map" class="map-dock mobile-hidden" style="display:none;" aria-label="Interactive Business Map">
+      <aside id="pane-map" class="map-dock mobile-hidden" style="margin-top:1.5rem;" aria-label="Interactive Business Map">
         <div class="map-toolbar">
           <div>
             <strong style="font-size:0.85rem;color:#114B3E;">🗺️ Live Busherian Proximity &amp; Pin Map</strong>
@@ -485,9 +490,6 @@ $pageCanonicalPath = $requestedBiz
         <button type="button" id="btn-near-me"></button>
         <div class="quick-pills" data-testid="quick-pills">
           <button type="button" class="pill active" data-quick-filter="all" data-testid="quick-filter-all">All Verified</button>
-          <?php if ($isAdvisorEnabled): ?>
-            <button type="button" class="pill pill-concierge-toggle" id="btn-concierge-toggle" data-testid="concierge-toggle-pill" aria-pressed="false" title="Switch to natural-language AI advisor mode">★ Ask Biashara Advisor</button>
-          <?php endif; ?>
           <button type="button" class="pill" data-quick-filter="open_now" data-testid="quick-filter-open-now">🟢 Open Now (EAT)</button>
           <button type="button" class="pill" data-quick-filter="has_perk" data-testid="quick-filter-has-perk">🎁 Busherian Alumni Perks</button>
           <button type="button" class="pill" data-quick-filter="b2b_ready" data-testid="quick-filter-b2b">🏢 B2B &amp; LPO Ready</button>

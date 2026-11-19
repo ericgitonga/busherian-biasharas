@@ -704,7 +704,7 @@
             <span>Call</span>
           </a>
           <div class="card-secondary-row">
-            <a href="javascript:void(0)" onclick="openBizDetail('${escapeHtml(biz.slug)}')" class="link-secondary">Details &rarr;</a>
+            <a href="/biz/${escapeHtml(biz.slug)}" onclick="event.preventDefault(); openBizDetail('${escapeHtml(biz.slug)}')" class="link-secondary">Details &rarr;</a>
             <a href="${escapeHtml(routeUrl)}" target="_blank" rel="noopener" data-route-biz-id="${biz.id}" class="link-secondary" onclick="event.stopPropagation();">🧭 Route</a>
             <button type="button" class="btn-shortlist-toggle" data-shortlist-id="${biz.id}" title="Add to B2B Procurement Shortlist" style="background:${inShortlist ? '#114B3E' : '#F3F4F6'};color:${inShortlist ? '#fff' : '#374151'};border:none;border-radius:6px;padding:0.25rem 0.55rem;font-size:0.74rem;font-weight:600;cursor:pointer;margin-left:auto;" onclick="event.stopPropagation();">
               ${inShortlist ? '✓ Shortlisted' : '+ Shortlist'}
@@ -1717,6 +1717,7 @@
     if (!biz) return;
     state.activeBusiness = biz;
     state.focusedBusinessId = biz.id;
+    recordCheckout(biz.id, 'profile_checkout');
 
     if (window.history && window.history.pushState) {
       window.history.pushState({ slug: biz.slug }, biz.name + ' — Busherian Biasharas', '/biz/' + encodeURIComponent(biz.slug));
@@ -1859,7 +1860,7 @@
       const sameSector = state.businesses.filter(b => b.id !== biz.id && b.sector_id === biz.sector_id).slice(0, 4);
       if (sameSector.length > 0) {
         moreGrid.innerHTML = sameSector.map(b => `
-          <a class="mini-biz-card" href="javascript:void(0)" onclick="openBizDetail('${escapeHtml(b.slug)}')">
+          <a class="mini-biz-card" href="/biz/${escapeHtml(b.slug)}" onclick="event.preventDefault(); openBizDetail('${escapeHtml(b.slug)}')">
             <strong style="color:#114B3E;">${escapeHtml(b.name)}</strong>
             <span style="font-size:12px;color:#7B1113;">${escapeHtml(b.specialty_name || '')}</span>
             <span style="font-size:11.5px;color:#7E8D84;">${escapeHtml(b.city_county || '')}</span>
@@ -1955,7 +1956,7 @@
                 <td style="text-align:right;">
                   ${waClean ? `<a href="https://wa.me/${waClean}" target="_blank" rel="noopener" class="link-secondary" style="color:#25D366;font-weight:700;margin-right:8px;">💬 WA</a>` : ''}
                   ${b.phone_primary ? `<a href="tel:${escapeHtml(b.phone_primary)}" class="link-secondary" style="color:#114B3E;font-weight:700;margin-right:8px;">📞 Call</a>` : ''}
-                  <a href="javascript:void(0)" onclick="openBizDetail('${escapeHtml(b.slug)}')" class="link-secondary">Details &rarr;</a>
+                  <a href="/biz/${escapeHtml(b.slug)}" onclick="event.preventDefault(); openBizDetail('${escapeHtml(b.slug)}')" class="link-secondary">Details &rarr;</a>
                 </td>
               </tr>
             `;
@@ -1997,7 +1998,7 @@
                 <div style="display:flex;gap:6px;margin-top:12px;align-items:center;">
                   ${waClean ? `<a href="https://wa.me/${waClean}" target="_blank" rel="noopener" class="btn-action-primary btn-action-whatsapp" style="font-size:12px;height:32px;padding:0 12px;">💬 WhatsApp</a>` : ''}
                   ${b.phone_primary ? `<a href="tel:${escapeHtml(b.phone_primary)}" class="btn-action-primary btn-action-call" style="font-size:12px;height:32px;padding:0 12px;">📞 Call</a>` : ''}
-                  <a href="javascript:void(0)" onclick="openBizDetail('${escapeHtml(b.slug)}')" class="link-secondary" style="margin-left:auto;font-size:12px;">Details &rarr;</a>
+                  <a href="/biz/${escapeHtml(b.slug)}" onclick="event.preventDefault(); openBizDetail('${escapeHtml(b.slug)}')" class="link-secondary" style="margin-left:auto;font-size:12px;">Details &rarr;</a>
                 </div>
               </div>
             `;

@@ -59,17 +59,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $houseSelect   = trim((string)($_POST['house_name'] ?? ''));
             $houseCustom   = trim((string)($_POST['house_custom'] ?? ''));
             $houseName     = ($houseSelect === 'Other / Unlisted House' && $houseCustom !== '') ? $houseCustom : $houseSelect;
+            if ($houseName === '') {
+                $houseName = 'Unspecified';
+            }
             $yearLeft      = (int)($_POST['year_left'] ?? 0);
             $schoolNumber  = trim((string)($_POST['school_number'] ?? '')); // Strictly optional "School Number"
             $submitterName = trim((string)($_POST['submitter_name'] ?? ''));
             $submitterEmail = strtolower(trim((string)($_POST['submitter_email'] ?? '')));
             $rawSubmitterPhone = trim((string)($_POST['submitter_phone'] ?? ''));
+            $rawWhatsappPhone  = trim((string)($_POST['whatsapp_number'] ?? ''));
+            if ($rawSubmitterPhone === '' && $rawWhatsappPhone !== '') {
+                $rawSubmitterPhone = $rawWhatsappPhone;
+            }
             $listingCountryForPhones = LocationEngine::resolvePlaceFromPost($_POST)['country'];
             $submitterPhone = PhoneNormalizer::normalize($rawSubmitterPhone, $listingCountryForPhones);
 
             if (!in_array($schoolCode, ['AHS', 'AGHS'], true)) {
                 $errors[] = 'Please select your School (AHS or AGHS).';
-            } elseif ($houseName === '' || mb_strlen($houseName) > 80 || !Houses::isValidHouse($schoolCode, $houseName)) {
+            } elseif ($houseName !== 'Unspecified' && (mb_strlen($houseName) > 80 || !Houses::isValidHouse($schoolCode, $houseName))) {
                 $errors[] = 'Please select a valid confirmed House for your school (80 characters or fewer).';
             }
 
@@ -139,7 +146,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Please enter a short 1-2 line Business Tagline.';
             }
             if ($description === '') {
-                $errors[] = 'Please enter a Business Description.';
+                // If description is omitted on simplified form, default gracefully to tagline
+                $description = $tagline;
             }
             if ($sectorId <= 0) {
                 $errors[] = 'Please select an Industry Sector.';
@@ -214,7 +222,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $rawWhatsappPhone = trim((string)($_POST['whatsapp_number'] ?? ''));
             if (!empty($_POST['same_as_direct_phone_whatsapp']) && $submitterPhone !== '') {
                 $rawWhatsappPhone = $submitterPhone;
-            } elseif ($rawWhatsappPhone === '') {
+            }
+            // Pair primary phone and WhatsApp: if one is omitted, fall back to the other
+            if ($rawPrimaryPhone === '' && $rawWhatsappPhone !== '') {
+                $rawPrimaryPhone = $rawWhatsappPhone;
+            } elseif ($rawWhatsappPhone === '' && $rawPrimaryPhone !== '') {
                 $rawWhatsappPhone = $rawPrimaryPhone;
             }
             $phonePrimary = PhoneNormalizer::normalize($rawPrimaryPhone, $listingCountryForPhones);
@@ -246,8 +258,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $founderYear = (string)$yearLeft;
             }
 
-            if ($phonePrimary === '') {
-                $errors[] = 'Please enter a primary business phone number.';
+            if ($phonePrimary === '' && $whatsappNum === '') {
+                $errors[] = 'Please enter a WhatsApp or primary business phone number.';
+            } elseif ($phonePrimary === '') {
+                $phonePrimary = $whatsappNum;
             }
 
             $bookingPair = ['booking_enabled' => 0, 'booking_url' => null];
@@ -298,6 +312,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'name' => $bizName,
                         'tagline' => $tagline,
                         'description' => $description,
+                        'area_neighborhood' => trim((string)($_POST['area_neighborhood'] ?? ($_POST['area_town'] ?? ''))),
                         'sector_id' => $sectorId,
                         'specialty_id' => $finalSpecialtyId,
                         'secondary_sector_id' => $secondaryPair['secondary_sector_id'],
@@ -393,7 +408,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':building_name' => trim((string)($_POST['building_name'] ?? '')) ?: null,
                         ':floor_suite' => trim((string)($_POST['floor_suite'] ?? '')) ?: null,
                         ':street_road' => trim((string)($_POST['street_road'] ?? '')) ?: null,
-                        ':area_neighborhood' => trim((string)($_POST['area_neighborhood'] ?? '')) ?: null,
+                        ':area_neighborhood' => trim((string)($_POST['area_neighborhood'] ?? ($_POST['area_town'] ?? ''))) ?: null,
                         ':country' => LocationEngine::resolvePlaceFromPost($_POST)['country'],
                         ':city_county' => LocationEngine::resolvePlaceFromPost($_POST)['city_county'],
                         ':landmark_directions' => trim((string)($_POST['landmark_directions'] ?? '')) ?: null,
@@ -676,6 +691,8 @@ $aghsHouses = Houses::AGHS_HOUSES;
             <label for="biz_tagline" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">What you do, in one line *</label>
             <input type="text" id="biz_tagline" name="tagline" maxlength="120" class="input-control" placeholder="One crisp line describing what you offer..." required>
           </div>
+
+          <?= bbiz_render_specialty_finder($taxonomyTree) ?>
 
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.9rem;">
             <div>

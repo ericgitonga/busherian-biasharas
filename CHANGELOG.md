@@ -38,7 +38,7 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
   - Retired obsolete "Same as Direct Phone above" checkboxes (`#393`) from `public/submit.php`, streamlining the form so WhatsApp is entered directly under business details and primary phone defaults cleanly.
   - Added collapsible toggle checkbox `[ ] Operates in an additional industry / sector (spans two fields)` (`#toggle-secondary-sector`, `#395`) directly below the primary Sector selection, smoothly revealing secondary sector/specialty pickers on demand while keeping the default registration form completely clutter-free.
   - Realigned Sector and Contact rows on registration form (`#396`): placed optional `Specialty in sector` to the right of `Sector *` in a 2-column grid (with `None — Select Sector first...` placeholder), and paired `Area or town *` to the right of `WhatsApp number *` in a balanced 2-column grid.
-  - Added backend fallback normalizations in `public/submit.php` and `src/Services/VettingPurger.php` so submissions with collapsed advanced fields gracefully assign default specialty, house (`'Unspecified'`), area, and phones.
+  - Resolved Adversarial Audit finding H-01 in `public/submit.php` and `src/Services/VettingPurger.php`: enabled graceful fallbacks when advanced fields are collapsed, automatically defaulting business description to tagline, direct phone and submitter phone to WhatsApp number, house name to `'Unspecified'` without failing vetting validation, and area_neighborhood to area_town.
 
 ## [0.33.0] - 2026-11-18
 ### Added
