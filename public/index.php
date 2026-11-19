@@ -341,10 +341,16 @@ $pageCanonicalPath = $requestedBiz
         </select>
       </div>
 
-      <!-- Sector Filter with Counts -->
+      <!-- Sector Filter with Counts (Collapsible #400) -->
       <div class="filter-group">
-        <div class="filter-group-title">SECTOR</div>
-        <div class="sector-vertical-nav" id="sidebar-sector-nav">
+        <button type="button" class="filter-group-title filter-collapse-btn" id="btn-toggle-sector-collapse" data-testid="btn-toggle-sector-collapse" aria-expanded="false" aria-controls="sidebar-sector-nav" onclick="toggleSectorCollapse()">
+          <span style="display:inline-flex;align-items:center;gap:6px;">
+            <span>SECTOR</span>
+            <span id="sector-selected-hint" class="sector-selected-hint" style="display:none;font-size:10px;text-transform:none;letter-spacing:normal;color:#114B3E;background:#E8F2EE;padding:1px 7px;border-radius:999px;font-weight:700;"></span>
+          </span>
+          <span class="collapse-arrow" id="sector-collapse-arrow" aria-hidden="true">▾</span>
+        </button>
+        <div class="sector-vertical-nav collapsed" id="sidebar-sector-nav">
           <button type="button" class="sector-nav-item active" data-sector-id="" onclick="filterBySector('')">
             <span>All sectors</span>
             <span class="sector-count"><?= $totalApprovedCount ?></span>

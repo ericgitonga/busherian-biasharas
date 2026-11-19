@@ -2063,6 +2063,35 @@
     if (hideBtn) hideBtn.textContent = isCollapsed ? 'Show' : 'Hide';
   }
 
+  function toggleSectorCollapse(forceOpen) {
+    const nav = document.getElementById('sidebar-sector-nav');
+    const btn = document.getElementById('btn-toggle-sector-collapse');
+    if (!nav || !btn) return;
+    const isCurrentlyCollapsed = nav.classList.contains('collapsed');
+    const willOpen = typeof forceOpen === 'boolean' ? forceOpen : isCurrentlyCollapsed;
+    nav.classList.toggle('collapsed', !willOpen);
+    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  }
+
+  function updateSectorHeaderHint() {
+    const hintEl = document.getElementById('sector-selected-hint');
+    if (!hintEl) return;
+    if (!state.selectedSectorId) {
+      hintEl.style.display = 'none';
+      hintEl.textContent = '';
+    } else {
+      const activeBtn = document.querySelector(`#sidebar-sector-nav .sector-nav-item[data-sector-id="${state.selectedSectorId}"]`);
+      const name = activeBtn ? (activeBtn.querySelector('span:first-child')?.textContent || '').trim() : '';
+      if (name && name !== 'All sectors') {
+        hintEl.textContent = name.length > 18 ? (name.slice(0, 16) + '…') : name;
+        hintEl.style.display = 'inline-block';
+      } else {
+        hintEl.style.display = 'none';
+        hintEl.textContent = '';
+      }
+    }
+  }
+
   function toggleMobileDrawer(open) {
     const sidebar = document.getElementById('filters-sidebar');
     const backdrop = document.getElementById('drawer-backdrop');
@@ -2083,6 +2112,7 @@
       const sid = btn.getAttribute('data-sector-id') || '';
       btn.classList.toggle('active', sid === state.selectedSectorId);
     });
+    updateSectorHeaderHint();
     fetchBusinesses();
   }
 
@@ -2145,6 +2175,7 @@
   window.switchDirectoryView = switchDirectoryView;
   window.toggleSidebarFilters = toggleSidebarFilters;
   window.toggleMobileDrawer = toggleMobileDrawer;
+  window.toggleSectorCollapse = toggleSectorCollapse;
   window.filterBySector = filterBySector;
   window.filterBySchool = filterBySchool;
   window.toggleQuickCheckbox = toggleQuickCheckbox;

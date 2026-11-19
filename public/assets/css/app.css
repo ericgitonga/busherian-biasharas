@@ -1673,6 +1673,38 @@ a {
   margin-bottom: 2px;
 }
 
+/* Collapsible Filter Header & Arrow (#400) */
+.filter-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+  transition: opacity 0.15s ease;
+}
+
+.filter-collapse-btn:hover {
+  opacity: 0.82;
+}
+
+.collapse-arrow {
+  font-size: 13px;
+  color: #7B1113;
+  line-height: 1;
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  display: inline-block;
+  transform: rotate(-90deg); /* Points right ▸ when collapsed */
+}
+
+.filter-collapse-btn[aria-expanded="true"] .collapse-arrow {
+  transform: rotate(0deg); /* Points down ▾ when expanded */
+}
+
 /* Sector Vertical Navigation */
 .sector-vertical-nav {
   display: flex;
@@ -1680,6 +1712,11 @@ a {
   gap: 2px;
   max-height: 380px;
   overflow-y: auto;
+  transition: max-height 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+}
+
+.sector-vertical-nav.collapsed {
+  display: none !important;
 }
 
 .sector-nav-item {
