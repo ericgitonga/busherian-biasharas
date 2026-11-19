@@ -12,6 +12,7 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 - **Strict TypeError in Sidebar Location Filter (#371)**: Fixed fatal PHP 8 TypeError where `array_keys()` on sequential county array passed integer index into `htmlspecialchars()`, halting page output inside `<select id="filter-city">` and preventing the directory cards grid, scripts, and footer from rendering.
 
 ### Added
+- **Opt-In Bottom Map Visibility Checkboxes (#397)**: Kept the bottom proximity and pin map dock (`#pane-map`) hidden by default (`display: none`), providing synchronized toggle checkboxes in both the left sidebar under *Show Only* (`#chk-show-map`) and in a dedicated bar above the bottom map dock (`#chk-show-map-bottom`), with automatic reveal when clicking *Route* on any business card.
 - **Streamlined Directory Layout & Left Filter Panel (`#370`, `#371`, `#372`, `#373`, `#374`, `#389`, Parent `#370`)**:
   - Implemented responsive left sidebar filter panel (`#filters-sidebar`) with collapsible toggle, real-time sector category vertical list with business counts, location dropdown with "Near me" GPS filter, signature school text buttons (without logos), and "Show Only" checkboxes (`Open now` and `Offers an alumni perk`).
   - Added top view switcher toolbar (`.view-switcher-bar`) with Grid View (`#btn-view-grid`), List View (`#btn-view-list`), and By Sector (`#btn-view-sector`) modes, active count indicator, and directory sorting select.

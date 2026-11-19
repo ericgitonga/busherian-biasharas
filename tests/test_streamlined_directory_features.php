@@ -42,6 +42,7 @@ testAssert(str_contains($indexSrc, 'id="filters-sidebar"'), 'index.php contains 
 testAssert(str_contains($indexSrc, 'id="sidebar-sector-nav"'), 'index.php contains #sidebar-sector-nav with sector counts');
 testAssert(str_contains($indexSrc, 'id="sidebar-school-nav"'), 'index.php contains #sidebar-school-nav with zero logo images');
 testAssert(str_contains($indexSrc, 'id="chk-open-now"') && str_contains($indexSrc, 'id="chk-offers-perk"'), 'index.php contains Show Only checkboxes (Open now & Offers an alumni perk)');
+testAssert(str_contains($indexSrc, 'id="chk-show-map"') && str_contains($indexSrc, 'id="chk-show-map-bottom"'), 'index.php contains #chk-show-map and #chk-show-map-bottom checkboxes (#397)');
 testAssert(str_contains($indexSrc, 'id="btn-view-grid"') && str_contains($indexSrc, 'id="btn-view-list"') && str_contains($indexSrc, 'id="btn-view-sector"'), 'index.php contains Top View Switcher Toolbar (Grid, List, By Sector)');
 testAssert(str_contains($indexSrc, 'id="view-biz-detail"'), 'index.php contains canonical detail view #view-biz-detail');
 testAssert(str_contains($indexSrc, 'class="foot-site"') && str_contains($indexSrc, 'class="foot-cols"'), 'index.php contains 4-column footer');
@@ -68,6 +69,7 @@ testAssert(str_contains($jsSrc, 'renderListView'), 'directory.js defines renderL
 testAssert(str_contains($jsSrc, 'renderSectorView'), 'directory.js defines renderSectorView');
 testAssert(str_contains($jsSrc, 'founder-attribution'), 'directory.js renders founder-attribution on cards');
 testAssert(str_contains($jsSrc, 'btn-action-whatsapp') && str_contains($jsSrc, 'btn-action-call'), 'directory.js renders direct WhatsApp and Call action buttons');
+testAssert(str_contains($jsSrc, 'toggleMapVisibility'), 'directory.js defines toggleMapVisibility (#397)');
 
 // 6. Check submit.php for smart website prefill & founder role radio buttons (#383, #386, #387)
 $submitSrc = (string)file_get_contents(dirname(__DIR__) . '/public/submit.php');

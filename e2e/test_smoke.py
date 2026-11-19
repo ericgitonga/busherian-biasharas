@@ -159,6 +159,9 @@ def test_playwright_pre_consent_network_and_cookie_gate():
         assert not any("tile.openstreetmap.org" in u for u in seen_urls), (
             f"MED-07 (#178) violation: OpenStreetMap tiles requested prior to consent: {seen_urls}"
         )
+        # Bottom map dock is hidden by default until checked (#397)
+        assert not page.locator("#pane-map").is_visible(), "Expected bottom map dock to be hidden by default (#397)"
+        page.locator("#chk-show-map").check()
         page.get_by_test_id("map-consent-placeholder").wait_for(state="visible", timeout=5000)
         for bad_host in forbidden_hosts:
             assert not any(bad_host in u for u in seen_urls), f"Forbidden external request to {bad_host}: {seen_urls}"

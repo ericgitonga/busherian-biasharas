@@ -1417,9 +1417,9 @@
     const biz = state.businesses.find(b => Number(b.id) === Number(bizId));
     if (!biz || biz.latitude === null || biz.longitude === null) return;
 
-    // Isolate this specific business on the map immediately
+    // Isolate this specific business on the map immediately and reveal map dock
     state.focusedBusinessId = biz.id;
-    renderInteractiveMap();
+    toggleMapVisibility(true, { scrollIntoView: true });
 
     const loadingHtml = `<div style="font-weight:700;color:#114B3E;">📍 Getting your location &amp; calculating route to ${escapeHtml(biz.name)}...</div>`;
     if (els.mapRouteDrawer) {
@@ -2946,6 +2946,35 @@
     });
   }
 
+  // Map Visibility Toggle Checkbox (#397)
+  function toggleMapVisibility(visible, opts = {}) {
+    const paneMap = document.getElementById('pane-map');
+    const chkSide = document.getElementById('chk-show-map');
+    const chkBottom = document.getElementById('chk-show-map-bottom');
+    const isVisible = Boolean(visible);
+
+    if (chkSide && chkSide.checked !== isVisible) chkSide.checked = isVisible;
+    if (chkBottom && chkBottom.checked !== isVisible) chkBottom.checked = isVisible;
+
+    if (paneMap) {
+      if (isVisible) {
+        paneMap.style.display = 'block';
+        paneMap.classList.remove('mobile-hidden');
+        renderInteractiveMap();
+        if (leafletMap) {
+          setTimeout(() => leafletMap.invalidateSize(), 100);
+        }
+        if (opts && opts.scrollIntoView) {
+          paneMap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      } else {
+        paneMap.style.display = 'none';
+        paneMap.classList.add('mobile-hidden');
+      }
+    }
+  }
+  window.toggleMapVisibility = toggleMapVisibility;
+
   window.addEventListener('bbiz:consent-changed', () => {
     renderInteractiveMap();
   });
@@ -3397,6 +3426,10 @@
       if (initSort !== (initialPagination && initialPagination.sort)) {
         needsInitialFetch = true;
       }
+    }
+
+    if (initParams.get('map') === '1' || initParams.get('show_map') === '1') {
+      toggleMapVisibility(true);
     }
 
     const initMode = (initParams.get('mode') || '').trim().toLowerCase();

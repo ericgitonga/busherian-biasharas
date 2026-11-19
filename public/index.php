@@ -354,6 +354,10 @@ $pageCanonicalPath = $requestedBiz
           <input type="checkbox" id="chk-offers-perk" onchange="toggleQuickCheckbox('has_perk', this.checked)">
           <span>Offers an alumni perk</span>
         </label>
+        <label class="filter-checkbox-label">
+          <input type="checkbox" id="chk-show-map" data-testid="chk-show-map" onchange="toggleMapVisibility(this.checked)">
+          <span>Show map at bottom</span>
+        </label>
       </div>
     </aside>
 
@@ -469,8 +473,17 @@ $pageCanonicalPath = $requestedBiz
 
       <nav id="directory-pagination" data-testid="directory-pagination" aria-label="Directory Pagination" style="margin-top:1rem;"></nav>
 
+      <!-- Bottom Map Toggle Bar (#397) -->
+      <div id="map-toggle-bar" class="map-toggle-bar" data-testid="map-toggle-bar" style="margin-top:1.5rem;background:#FFFFFF;border:1.5px solid #E5DEC9;border-radius:12px;padding:0.9rem 1.25rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+        <label for="chk-show-map-bottom" style="display:inline-flex;align-items:center;gap:0.55rem;font-size:0.9rem;font-weight:700;color:#114B3E;cursor:pointer;user-select:none;margin:0;">
+          <input type="checkbox" id="chk-show-map-bottom" data-testid="chk-show-map-bottom" style="width:17px;height:17px;cursor:pointer;accent-color:#114B3E;" onchange="toggleMapVisibility(this.checked)">
+          <span>🗺️ Show Busherian Proximity &amp; Pin Map</span>
+        </label>
+        <span style="font-size:0.76rem;color:#6B7280;">Check to view interactive location pins, clusters &amp; route directions</span>
+      </div>
+
       <!-- Sticky Proximity & Pin Map Dock -->
-      <aside id="pane-map" class="map-dock mobile-hidden" style="margin-top:1.5rem;" aria-label="Interactive Business Map">
+      <aside id="pane-map" class="map-dock mobile-hidden" style="margin-top:1rem;display:none;" aria-label="Interactive Business Map">
         <div class="map-toolbar">
           <div>
             <strong style="font-size:0.85rem;color:#114B3E;">🗺️ Live Busherian Proximity &amp; Pin Map</strong>
