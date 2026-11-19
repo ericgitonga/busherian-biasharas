@@ -99,5 +99,9 @@ testAssert(str_contains($submitSrc, "name=\"show_founder_publicly\""), "submit.p
 testAssert(str_contains($submitSrc, "name=\"assist_requested\""), "submit.php has assist_requested checkbox");
 testAssert(str_contains($submitSrc, "School Number is used strictly once for alumni verification and is permanently deleted immediately upon review"), "submit.php terms explicitly state School Number permanent deletion upon review");
 testAssert(str_contains($submitSrc, "Name and Year of Departure are retained and publicly displayed to show the world only if I choose founder attribution"), "submit.php terms explicitly state Name and Departure Year retention for founder attribution");
+testAssert(str_contains($submitSrc, "id=\"founder-role-choice-wrap\""), "submit.php has #founder-role-choice-wrap container");
+testAssert(str_contains($submitSrc, "name=\"simple_founder_role\""), "submit.php has simple_founder_role radio inputs for solo vs co-founder");
+testAssert(str_contains($submitSrc, "Founder (Solo)"), "submit.php allows selecting Founder (Solo)");
+testAssert(str_contains($submitSrc, "Co-Founder (Joint with others)"), "submit.php allows selecting Co-Founder (Joint with others)");
 
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

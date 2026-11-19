@@ -210,10 +210,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $emailPublic  = strtolower(trim((string)($_POST['email_public'] ?? '')));
             $websiteUrl   = trim((string)($_POST['website_url'] ?? ''));
 
-            $founderRole = in_array($_POST['founder_role'] ?? '', ['founder', 'co_founder'], true) ? $_POST['founder_role'] : 'none';
+            // Founder / Co-Founder Attribution (Solo vs Joint with others #386)
+            $showFounderPublicly = !empty($_POST['show_founder_publicly']);
+            $simpleFounderRole   = in_array($_POST['simple_founder_role'] ?? '', ['founder', 'co_founder'], true) ? $_POST['simple_founder_role'] : 'founder';
+            $rawFounderRole      = in_array($_POST['founder_role'] ?? '', ['founder', 'co_founder', 'none'], true) ? $_POST['founder_role'] : '';
+
+            if ($showFounderPublicly) {
+                $founderRole = ($rawFounderRole !== '' && $rawFounderRole !== 'none') ? $rawFounderRole : $simpleFounderRole;
+            } else {
+                $founderRole = ($rawFounderRole === 'founder' || $rawFounderRole === 'co_founder') ? $rawFounderRole : 'none';
+            }
+
             $founderName = $founderRole !== 'none' ? trim((string)($_POST['founder_name'] ?? '')) : null;
+            if ($founderRole !== 'none' && ($founderName === null || $founderName === '')) {
+                $founderName = $submitterName;
+            }
             $founderSchool = $founderRole !== 'none' ? (in_array($_POST['founder_school'] ?? '', ['AHS', 'AGHS'], true) ? $_POST['founder_school'] : null) : null;
+            if ($founderRole !== 'none' && $founderSchool === null) {
+                $founderSchool = $schoolCode;
+            }
             $founderYear = $founderRole !== 'none' ? trim((string)($_POST['founder_year'] ?? '')) : null;
+            if ($founderRole !== 'none' && ($founderYear === null || $founderYear === '')) {
+                $founderYear = (string)$yearLeft;
+            }
 
             if ($phonePrimary === '') {
                 $errors[] = 'Please enter a primary business phone number.';
@@ -718,10 +737,30 @@ $aghsHouses = Houses::AGHS_HOUSES;
           </div>
 
           <div style="margin-top:0.4rem;display:flex;flex-direction:column;gap:0.55rem;">
-            <label style="display:flex;align-items:flex-start;gap:0.5rem;font-size:0.88rem;cursor:pointer;">
-              <input type="checkbox" id="l-show" name="show_founder_publicly" value="1" style="margin-top:0.2rem;accent-color:#114B3E;">
-              <span>Show "Founded by [my name], [school] '[year]" on my listing</span>
-            </label>
+            <div style="padding:0.75rem 0.9rem;background:#FBF8F3;border:1px solid #E5DEC9;border-radius:10px;">
+              <label style="display:flex;align-items:flex-start;gap:0.5rem;font-size:0.88rem;cursor:pointer;font-weight:700;color:#114B3E;">
+                <input type="checkbox" id="l-show" name="show_founder_publicly" value="1" <?= (in_array($_POST['founder_role'] ?? '', ['founder', 'co_founder'], true) || !empty($_POST['show_founder_publicly'])) ? 'checked' : '' ?> style="margin-top:0.2rem;accent-color:#114B3E;">
+                <span>Show founder attribution on my listing</span>
+              </label>
+
+              <div id="founder-role-choice-wrap" style="<?= (in_array($_POST['founder_role'] ?? '', ['founder', 'co_founder'], true) || !empty($_POST['show_founder_publicly'])) ? '' : 'display:none;' ?>margin-top:0.6rem;padding-top:0.6rem;border-top:1px dashed #D4AF37;">
+                <div style="font-size:0.82rem;font-weight:700;color:#374151;margin-bottom:0.35rem;">Choose your founding role:</div>
+                <div style="display:flex;flex-direction:column;gap:0.45rem;font-size:0.85rem;">
+                  <label style="display:flex;align-items:center;gap:0.45rem;cursor:pointer;">
+                    <input type="radio" id="simple-founder-role-founder" name="simple_founder_role" value="founder" <?= (empty($_POST['simple_founder_role']) || ($_POST['simple_founder_role'] ?? '') === 'founder' || ($_POST['founder_role'] ?? '') === 'founder') ? 'checked' : '' ?> style="accent-color:#114B3E;">
+                    <span><strong>Founder (Solo)</strong> &mdash; Show <em>"Founded by [my name], [school] '[year]"</em></span>
+                  </label>
+                  <label style="display:flex;align-items:center;gap:0.45rem;cursor:pointer;">
+                    <input type="radio" id="simple-founder-role-cofounder" name="simple_founder_role" value="co_founder" <?= (($_POST['simple_founder_role'] ?? '') === 'co_founder' || ($_POST['founder_role'] ?? '') === 'co_founder') ? 'checked' : '' ?> style="accent-color:#114B3E;">
+                    <span><strong>Co-Founder (Joint with others)</strong> &mdash; Show <em>"Co-Founded by [my name], [school] '[year]"</em></span>
+                  </label>
+                </div>
+                <p style="font-size:0.76rem;color:#6B7280;margin:0.45rem 0 0 0;line-height:1.4;">
+                  Partners who are not alumni do not need to be listed &mdash; only your alumni connection is shown. Other alumni co-founders can link themselves to this listing when they join.
+                </p>
+              </div>
+            </div>
+
             <label style="display:flex;align-items:flex-start;gap:0.5rem;font-size:0.88rem;cursor:pointer;">
               <input type="checkbox" id="l-assist" name="assist_requested" value="1" style="margin-top:0.2rem;accent-color:#114B3E;">
               <span>I would like the team to help me complete my listing</span>
@@ -1268,20 +1307,36 @@ $aghsHouses = Houses::AGHS_HOUSES;
         });
       }
 
-      // Founder checkbox sync with radio options
+      // Founder checkbox and solo vs co-founder role toggle (#386)
       const lShow = document.getElementById('l-show');
+      const founderChoiceWrap = document.getElementById('founder-role-choice-wrap');
+      const simpleFounderRadio = document.getElementById('simple-founder-role-founder');
+      const simpleCofounderRadio = document.getElementById('simple-founder-role-cofounder');
+
+      function syncFounderRoleSelection() {
+        if (!lShow) return;
+        if (founderChoiceWrap) {
+          founderChoiceWrap.style.display = lShow.checked ? 'block' : 'none';
+        }
+        const activeRole = lShow.checked
+          ? (simpleCofounderRadio && simpleCofounderRadio.checked ? 'co_founder' : 'founder')
+          : 'none';
+
+        const advRadio = document.querySelector(`input[name="founder_role"][value="${activeRole}"]`);
+        if (advRadio) {
+          advRadio.checked = true;
+          toggleFounderFields(activeRole);
+        }
+      }
+
       if (lShow) {
-        lShow.addEventListener('change', () => {
-          const founderRadio = document.querySelector('input[name="founder_role"][value="founder"]');
-          const noneRadio = document.querySelector('input[name="founder_role"][value="none"]');
-          if (lShow.checked && founderRadio) {
-            founderRadio.checked = true;
-            toggleFounderFields('founder');
-          } else if (!lShow.checked && noneRadio) {
-            noneRadio.checked = true;
-            toggleFounderFields('none');
-          }
-        });
+        lShow.addEventListener('change', syncFounderRoleSelection);
+      }
+      if (simpleFounderRadio) {
+        simpleFounderRadio.addEventListener('change', syncFounderRoleSelection);
+      }
+      if (simpleCofounderRadio) {
+        simpleCofounderRadio.addEventListener('change', syncFounderRoleSelection);
       }
 
       // Sync autofill area_town
