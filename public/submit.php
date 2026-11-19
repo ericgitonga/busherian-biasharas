@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+// Streamlined 8-field registration & advanced collapsible (#386)
 require_once dirname(__DIR__) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;

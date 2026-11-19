@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+// Updated retention policy: founder attribution vs immediate school number disposal (#386)
 require_once dirname(__DIR__) . '/src/bootstrap.php';
 bbiz_send_security_headers(false);
 if (!headers_sent()) {

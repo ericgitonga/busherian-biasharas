@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+// Updated alumni charter terms: founder attribution retention vs school number purge (#386)
 date_default_timezone_set('Africa/Nairobi');
 
 spl_autoload_register(static function (string $class): void {

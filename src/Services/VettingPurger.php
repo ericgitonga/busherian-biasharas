@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+// Vetting purge and identity validation with Unspecified house support (#386)
 namespace BusherianBiasharas\Services;
 
 use PDO;
