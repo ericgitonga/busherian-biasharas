@@ -457,6 +457,32 @@ $pageCanonicalPath = $requestedBiz
     <!-- Main Directory Column -->
     <div class="directory-main-col">
 
+      <!-- Mobile Search & Filter Controls (#405) -->
+      <div class="mobile-search-controls" id="mobile-search-controls">
+        <div class="mobile-search-capsule">
+          <div class="mobile-search-input-wrap">
+            <span class="mobile-search-icon">🔍</span>
+            <input type="text" id="mobile-search-q" data-testid="mobile-search-input" class="mobile-search-input" placeholder="Search biasharas, services, areas..." autocomplete="off">
+            <button type="button" id="btn-mobile-clear-search" class="mobile-search-clear" style="display:none;" aria-label="Clear search">✕</button>
+          </div>
+          <button type="button" id="btn-mobile-filters-trigger" class="btn-mobile-filters-trigger" onclick="openMobileFilterSheet()" aria-label="Open directory filters">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+            <span>Filters</span>
+            <span id="mobile-active-filter-badge" class="filter-count-badge" style="display:none;">0</span>
+          </button>
+        </div>
+
+        <div class="mobile-quick-rail" id="mobile-quick-rail" role="region" aria-label="Quick filters">
+          <button type="button" class="rail-pill active" data-rail-filter="all">All Verified</button>
+          <button type="button" class="rail-pill" data-rail-filter="open_now">🟢 Open Now</button>
+          <button type="button" class="rail-pill" data-rail-filter="has_perk">🎁 Perks</button>
+          <button type="button" class="rail-pill" data-rail-filter="b2b_ready">🏢 B2B Ready</button>
+          <button type="button" class="rail-pill" data-rail-filter="bookable">📅 Bookable</button>
+          <button type="button" class="rail-pill" data-rail-filter="AHS">🦅 AHS</button>
+          <button type="button" class="rail-pill" data-rail-filter="AGHS">🔦 AGHS</button>
+        </div>
+      </div>
+
       <!-- Desktop Search Controls (Search box, Advisor, Quick Pills) (#398) -->
       <div class="desktop-search-controls" id="desktop-search-controls">
         <!-- Keyword Search Input & Preprod Advisor Toggle -->
@@ -619,11 +645,6 @@ $pageCanonicalPath = $requestedBiz
 
     <!-- Hero Header -->
     <div class="detail-hero">
-      <div class="detail-banner" role="img" aria-label="Photo or logo slot">
-        <span id="detail-initials"><?= $requestedBiz ? htmlspecialchars(substr($requestedBiz['name'], 0, 2), ENT_QUOTES, 'UTF-8') : 'BB' ?></span>
-        <small>Cover photo or logo goes here</small>
-      </div>
-
       <div class="detail-hero-body">
         <div class="detail-meta-row">
           <span id="detail-meta-sector"><?= $requestedBiz ? htmlspecialchars($requestedBiz['sector_name'] . ' / ' . $requestedBiz['specialty_name'], ENT_QUOTES, 'UTF-8') : '' ?></span>
@@ -674,9 +695,61 @@ $pageCanonicalPath = $requestedBiz
       </div>
     </div>
 
+    <!-- Airbnb-Style Top Photographs Showcase (#405) -->
+    <?php
+    $reqPhotos = ($requestedBiz && !empty($requestedBiz['photos'])) ? $requestedBiz['photos'] : [];
+    $photosCount = count($reqPhotos);
+    $hasMultiplePhotos = $photosCount > 3;
+    ?>
+    <section class="detail-photos-showcase" id="detail-photos-showcase" aria-label="Business photographs">
+      <div class="photos-nav-controls" id="detail-photos-nav" style="<?= $hasMultiplePhotos ? 'display:flex;' : 'display:none;' ?>">
+        <button type="button" class="btn-gallery-nav btn-gallery-prev" id="btn-photos-scroll-left" aria-label="Scroll photos left" title="Scroll left">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <button type="button" class="btn-gallery-nav btn-gallery-next" id="btn-photos-scroll-right" aria-label="Scroll photos right" title="Scroll right">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+      </div>
+
+      <div class="photos-carousel-track airbnb-photos-grid photos-count-<?= $photosCount ?>" id="detail-photos-grid" tabindex="0" role="region" aria-label="Photos carousel">
+        <?php if ($photosCount > 0): ?>
+          <?php foreach ($reqPhotos as $idx => $photoUrl): ?>
+            <?php $isExtra = $idx >= 5; ?>
+            <div class="photo-slot<?= $idx === 0 ? ' photo-featured' : '' ?><?= $isExtra ? ' photo-overflow-hidden' : '' ?>" data-photo-index="<?= (int)$idx ?>" role="button" tabindex="0" aria-label="Enlarge photo <?= (int)($idx + 1) ?> of <?= $photosCount ?>">
+              <img src="<?= htmlspecialchars((string)$photoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars((string)$requestedBiz['name'], ENT_QUOTES, 'UTF-8') ?> photo <?= (int)($idx + 1) ?>" loading="lazy">
+              <div class="photo-expand-badge" aria-hidden="true" title="Click to enlarge">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        <?php else: ?>
+          <div class="photo-branded-banner" role="img" aria-label="Business crest banner">
+            <div class="banner-crest-motif">
+              <span id="detail-initials"><?= $requestedBiz ? htmlspecialchars(substr($requestedBiz['name'], 0, 2), ENT_QUOTES, 'UTF-8') : 'BB' ?></span>
+            </div>
+            <div class="banner-crest-meta">
+              <span class="banner-badge">Verified Busherian Biashara</span>
+              <span class="banner-hint">Photographs &amp; premises gallery coming soon</span>
+            </div>
+          </div>
+        <?php endif; ?>
+      </div>
+
+      <!-- Floating "Show all photos" Pill Button (#405) -->
+      <button type="button" class="btn-show-all-photos" id="btn-show-all-photos" style="<?= $photosCount > 0 ? 'display:inline-flex;' : 'display:none;' ?>" onclick="if(window.openAllDetailPhotos){window.openAllDetailPhotos();}">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+        <span>Show all <span id="detail-photos-count"><?= $photosCount ?></span> photos</span>
+      </button>
+
+      <!-- Mobile Photo Index Counter Badge (#405) -->
+      <div class="mobile-photo-counter" id="mobile-photo-counter" style="<?= $photosCount > 1 ? 'display:inline-flex;' : 'display:none;' ?>">
+        <span id="mobile-photo-index">1</span> / <span id="mobile-photo-total"><?= $photosCount ?></span>
+      </div>
+    </section>
+
     <!-- 2 Columns Grid (3fr / 2fr as in Kanyi prototype) -->
     <div class="detail-cols-grid">
-      <!-- Column 1: Services, Photos, Alumni Recommendations -->
+      <!-- Column 1: Services, Recommendations, About -->
       <div style="display:flex;flex-direction:column;gap:20px;">
         <section class="detail-panel">
           <h2>About &amp; Overview</h2>
@@ -695,39 +768,6 @@ $pageCanonicalPath = $requestedBiz
               <?php endif; ?>
             <?php endif; ?>
           </ul>
-        </section>
-
-        <section class="detail-panel photos-panel">
-          <div class="photos-panel-header">
-            <h2>Photos &amp; Premises</h2>
-            <?php
-            $hasMultiplePhotos = $requestedBiz && !empty($requestedBiz['photos']) && count($requestedBiz['photos']) > 3;
-            ?>
-            <div class="photos-nav-controls" id="detail-photos-nav" style="<?= $hasMultiplePhotos ? 'display:flex;' : 'display:none;' ?>">
-              <button type="button" class="btn-gallery-nav btn-gallery-prev" id="btn-photos-scroll-left" aria-label="Scroll photos left" title="Scroll left">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-              </button>
-              <button type="button" class="btn-gallery-nav btn-gallery-next" id="btn-photos-scroll-right" aria-label="Scroll photos right" title="Scroll right">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-              </button>
-            </div>
-          </div>
-          <div class="photos-carousel-track" id="detail-photos-grid" tabindex="0" role="region" aria-label="Photos carousel">
-            <?php if ($requestedBiz && !empty($requestedBiz['photos'])): ?>
-              <?php foreach ($requestedBiz['photos'] as $idx => $photoUrl): ?>
-                <div class="photo-slot" data-photo-index="<?= (int)$idx ?>" role="button" tabindex="0" aria-label="Enlarge photo <?= (int)($idx + 1) ?> of <?= count($requestedBiz['photos']) ?>">
-                  <img src="<?= htmlspecialchars((string)$photoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars((string)$requestedBiz['name'], ENT_QUOTES, 'UTF-8') ?> photo <?= (int)($idx + 1) ?>" loading="lazy">
-                  <div class="photo-expand-badge" aria-hidden="true" title="Click to enlarge">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                  </div>
-                </div>
-              <?php endforeach; ?>
-            <?php else: ?>
-              <div class="photo-ph-slot"><span>🏢</span><strong>Premises / Office</strong></div>
-              <div class="photo-ph-slot"><span>🏗️</span><strong>Work &amp; Projects</strong></div>
-              <div class="photo-ph-slot"><span>📐</span><strong>Team &amp; Craft</strong></div>
-            <?php endif; ?>
-          </div>
         </section>
 
         <section class="recs-card" id="detail-recs-panel">
@@ -1022,6 +1062,84 @@ $pageCanonicalPath = $requestedBiz
       </div>
     </div>
   </footer>
+
+  <!-- Streamlined Mobile Filter Bottom Sheet Modal (#405) -->
+  <div id="mobile-filter-sheet-backdrop" class="sheet-backdrop" onclick="closeMobileFilterSheet()"></div>
+  <div id="mobile-filter-sheet" class="mobile-filter-sheet" role="dialog" aria-modal="true" aria-label="Directory Filters">
+    <div class="sheet-handle-bar"><div class="sheet-handle"></div></div>
+    <div class="sheet-header">
+      <div class="sheet-title-group">
+        <h3 class="sheet-title">Filters</h3>
+        <span class="sheet-subtitle">Refine biasharas by industry, location or school</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button type="button" class="sheet-reset-btn" id="btn-sheet-reset" onclick="resetAllMobileFilters()">Reset All</button>
+        <button type="button" class="sheet-close-btn" onclick="closeMobileFilterSheet()" aria-label="Close filters">✕</button>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <!-- Section 1: Sort By -->
+      <div class="sheet-section">
+        <div class="sheet-section-title">SORT BY</div>
+        <div class="sheet-segmented-group" id="sheet-sort-group">
+          <button type="button" class="sheet-segment-btn active" data-sheet-sort="most_referenced">Referenced</button>
+          <button type="button" class="sheet-segment-btn" data-sheet-sort="trending">Trending</button>
+          <button type="button" class="sheet-segment-btn" data-sheet-sort="newest">Newest</button>
+          <button type="button" class="sheet-segment-btn" data-sheet-sort="nearest">Nearest</button>
+          <button type="button" class="sheet-segment-btn" data-sheet-sort="az">A–Z</button>
+        </div>
+      </div>
+
+      <!-- Section 2: Industry / Sector -->
+      <div class="sheet-section">
+        <div class="sheet-section-title">INDUSTRY / SECTOR</div>
+        <select id="sheet-filter-sector" class="sheet-select" aria-label="Filter by Sector">
+          <option value="">All Sectors (<?= $totalApprovedCount ?>)</option>
+          <?php foreach ($taxonomyTree as $sec): ?>
+            <?php $secCnt = $sectorCounts[(int)$sec['id']] ?? 0; ?>
+            <option value="<?= (int)$sec['id'] ?>"><?= htmlspecialchars((string)$sec['name'], ENT_QUOTES, 'UTF-8') ?> (<?= $secCnt ?>)</option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+
+      <!-- Section 3: Location -->
+      <div class="sheet-section">
+        <div class="sheet-section-title">LOCATION</div>
+        <div class="sheet-location-row" style="display:flex;gap:8px;">
+          <select id="sheet-filter-country" class="sheet-select" style="flex:1;" aria-label="Filter by Country">
+            <option value="">All Countries</option>
+            <option value="KE">Kenya</option>
+            <option value="UG">Uganda</option>
+            <option value="TZ">Tanzania</option>
+            <option value="RW">Rwanda</option>
+            <option value="GB">United Kingdom</option>
+            <option value="US">United States</option>
+            <option value="CA">Canada</option>
+            <option value="AE">UAE &amp; Gulf</option>
+            <option value="OTHER">Other Countries</option>
+          </select>
+          <select id="sheet-filter-city" class="sheet-select" style="flex:1;" aria-label="Filter by County, State, or Province">
+            <option value="">All Counties / Cities</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Section 4: Alumni School -->
+      <div class="sheet-section">
+        <div class="sheet-section-title">ALUMNI SCHOOL</div>
+        <div class="sheet-segmented-group" id="sheet-school-group">
+          <button type="button" class="sheet-segment-btn active" data-sheet-school="">All Schools</button>
+          <button type="button" class="sheet-segment-btn" data-sheet-school="AHS">🦅 AHS</button>
+          <button type="button" class="sheet-segment-btn" data-sheet-school="AGHS">🔦 AGHS</button>
+        </div>
+      </div>
+    </div>
+    <div class="sheet-footer">
+      <button type="button" class="btn btn-green sheet-apply-btn" id="btn-sheet-apply" onclick="closeMobileFilterSheet()">
+        Show Biasharas
+      </button>
+    </div>
+  </div>
 
   <script>
     window.INITIAL_SECTORS = <?= bbiz_json_for_html_script($taxonomyTree) ?>;

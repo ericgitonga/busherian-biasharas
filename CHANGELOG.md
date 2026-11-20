@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.38.0] - 2026-11-20
+### Added
+- **Airbnb-Style Top Photographs Showcase on Business Detail Page (Parent: #405, Child: #406)**:
+  - Repositioned the business photo gallery directly to the top of the detail page (`#view-biz-detail`), removing the buried photo section from Column 1.
+  - Implemented an adaptive CSS grid mirroring Airbnb's listing presentation: 5+ photos render as a signature mosaic (1 large dominant hero photo on the left spanning full height + a 2x2 grid on the right); 3-4 photos render as a prominent hero with stacked right tiles; 1-2 photos render as full-width hero banners; and listings with 0 photos display a dignified branded crest banner with alumni motifs and initials (retiring the placeholder text box).
+  - Added a floating glassmorphic pill button in the bottom right (`#btn-show-all-photos` displaying `Show all N photos`) that triggers the high-resolution lightbox modal (`openPhotoLightbox`), with smooth micro-zoom hover states on desktop and touch-friendly swipe carousel navigation on mobile (`#mobile-photo-counter` showing `1 / N`).
+- **Minimalist Mobile Filter Experience & Native Bottom Sheet (Parent: #405, Child: #407)**:
+  - Streamlined the mobile directory view by replacing the cramped 8-section vertical drawer with an uncluttered, modern 3-tier mobile architecture.
+  - **Tier 1 (Sticky Search Capsule)**: Added `#mobile-search-capsule` prominently at the top of the mobile feed featuring instant search autocomplete and a dedicated `Filters` button with an active filter count badge (`#mobile-active-filter-badge`).
+  - **Tier 2 (Single-Row Horizontal Quick Rail)**: Added a swipeable, single-line horizontal pill strip (`#mobile-quick-rail`) allowing mobile users to toggle `Open Now`, `Perks`, `B2B Ready`, `Bookable`, and School (`AHS` / `AGHS`) filters in 1 tap without opening any menus or wrapping into cluttered lines.
+  - **Tier 3 (Native Bottom Sheet Modal)**: Introduced a sleek bottom sheet (`#mobile-filter-sheet`) with a drag handle, clean segmented controls for sorting (`Referenced`, `Trending`, `Newest`, `Nearest`, `A–Z`) and school selection, cascading Country & County/City selects, and a sticky bottom primary action button (`Show N Biasharas`) that updates matching counts dynamically.
+
 ## [0.37.0] - 2026-11-20
 ### Fixed
 - **Intelligent Kenya Phone Number Normalization (#404)**: Upgraded `PhoneNormalizer::normalize` to automatically recognize and properly format all common local Kenyan phone input patterns for Kenyan listings:

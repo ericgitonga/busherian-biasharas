@@ -478,6 +478,8 @@
       }
       renderCards();
       renderInteractiveMap();
+      if (typeof updateSheetApplyButtonText === 'function') updateSheetApplyButtonText();
+      if (typeof updateMobileActiveFilterBadge === 'function') updateMobileActiveFilterBadge();
     } catch (err) {
       if (err && err.name === 'AbortError') {
         return;
@@ -508,6 +510,8 @@
         els.cardsGrid.removeAttribute('aria-busy');
       }
       renderCards();
+      if (typeof updateSheetApplyButtonText === 'function') updateSheetApplyButtonText();
+      if (typeof updateMobileActiveFilterBadge === 'function') updateMobileActiveFilterBadge();
     }
   }
 
@@ -1893,17 +1897,31 @@
 
     const photosGrid = document.getElementById('detail-photos-grid');
     const photosNav = document.getElementById('detail-photos-nav');
+    const btnShowAll = document.getElementById('btn-show-all-photos');
+    const photosCountEl = document.getElementById('detail-photos-count');
+    const mobileCounterEl = document.getElementById('mobile-photo-counter');
+    const mobileIndexEl = document.getElementById('mobile-photo-index');
+    const mobileTotalEl = document.getElementById('mobile-photo-total');
+
     if (photosGrid) {
       const photos = Array.isArray(biz.photos) ? biz.photos : [];
+      window._currentDetailPhotos = photos;
+      window._currentDetailBizName = biz.name || '';
+      photosGrid.className = 'photos-carousel-track airbnb-photos-grid photos-count-' + photos.length;
+
       if (photos.length > 0) {
-        photosGrid.innerHTML = photos.map((url, i) => `
-          <div class="photo-slot" data-photo-index="${i}" role="button" tabindex="0" aria-label="Enlarge photo ${i+1} of ${photos.length}">
-            <img src="${escapeHtml(url)}" alt="${escapeHtml(biz.name)} photo ${i+1}" loading="lazy">
-            <div class="photo-expand-badge" aria-hidden="true" title="Click to enlarge">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+        photosGrid.innerHTML = photos.map((url, i) => {
+          const isFeatured = i === 0 ? ' photo-featured' : '';
+          const isExtra = i >= 5 ? ' photo-overflow-hidden' : '';
+          return `
+            <div class="photo-slot${isFeatured}${isExtra}" data-photo-index="${i}" role="button" tabindex="0" aria-label="Enlarge photo ${i+1} of ${photos.length}">
+              <img src="${escapeHtml(url)}" alt="${escapeHtml(biz.name)} photo ${i+1}" loading="lazy">
+              <div class="photo-expand-badge" aria-hidden="true" title="Click to enlarge">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+              </div>
             </div>
-          </div>
-        `).join('');
+          `;
+        }).join('');
 
         // Attach click handlers to open Airbnb-style lightbox
         photosGrid.querySelectorAll('.photo-slot').forEach(slot => {
@@ -1920,6 +1938,29 @@
           };
         });
 
+        // Floating "Show all photos" button
+        if (btnShowAll) {
+          btnShowAll.style.display = 'inline-flex';
+          if (photosCountEl) photosCountEl.textContent = String(photos.length);
+          btnShowAll.onclick = () => openPhotoLightbox(photos, 0, biz.name);
+        }
+
+        // Mobile photo counter badge
+        if (mobileCounterEl) {
+          mobileCounterEl.style.display = photos.length > 1 ? 'inline-flex' : 'none';
+          if (mobileIndexEl) mobileIndexEl.textContent = '1';
+          if (mobileTotalEl) mobileTotalEl.textContent = String(photos.length);
+        }
+
+        // Mobile scroll tracking to update active photo index
+        photosGrid.onscroll = () => {
+          if (photos.length > 1 && mobileIndexEl && photosGrid.offsetWidth > 0) {
+            const idx = Math.round(photosGrid.scrollLeft / photosGrid.offsetWidth) + 1;
+            mobileIndexEl.textContent = String(Math.min(Math.max(idx, 1), photos.length));
+          }
+          updatePhotoNavButtons();
+        };
+
         // Show/hide navigation controls
         if (photosNav) {
           photosNav.style.display = photos.length > 3 ? 'flex' : 'none';
@@ -1927,10 +1968,18 @@
         updatePhotoNavButtons();
       } else {
         photosGrid.innerHTML = `
-          <div class="photo-ph-slot"><span>🏢</span><strong>Premises / Office</strong></div>
-          <div class="photo-ph-slot"><span>🏗️</span><strong>Work &amp; Projects</strong></div>
-          <div class="photo-ph-slot"><span>📐</span><strong>Team &amp; Craft</strong></div>
+          <div class="photo-branded-banner" role="img" aria-label="Business crest banner">
+            <div class="banner-crest-motif">
+              <span id="detail-initials">${escapeHtml((biz.name || 'BB').slice(0, 2).toUpperCase())}</span>
+            </div>
+            <div class="banner-crest-meta">
+              <span class="banner-badge">Verified Busherian Biashara</span>
+              <span class="banner-hint">Photographs &amp; premises gallery coming soon</span>
+            </div>
+          </div>
         `;
+        if (btnShowAll) btnShowAll.style.display = 'none';
+        if (mobileCounterEl) mobileCounterEl.style.display = 'none';
         if (photosNav) photosNav.style.display = 'none';
       }
     }
@@ -2276,6 +2325,17 @@
         };
       });
     }
+
+    const btnShowAllServer = document.getElementById('btn-show-all-photos');
+    if (btnShowAllServer) {
+      btnShowAllServer.onclick = () => {
+        const photos = state.activeBusiness && Array.isArray(state.activeBusiness.photos)
+          ? state.activeBusiness.photos
+          : Array.from(photosGrid ? photosGrid.querySelectorAll('.photo-slot img') : []).map(img => img.src);
+        const title = state.activeBusiness ? state.activeBusiness.name : (document.getElementById('detail-name')?.textContent || '');
+        openPhotoLightbox(photos, 0, title);
+      };
+    }
   }
 
   function openPhotoLightbox(photos, startIndex = 0, title = '') {
@@ -2378,6 +2438,346 @@
   window.openPhotoLightbox = openPhotoLightbox;
   window.closePhotoLightbox = closePhotoLightbox;
   window.stepPhotoLightbox = stepPhotoLightbox;
+
+  window.openAllDetailPhotos = function () {
+    if (window._currentDetailPhotos && window._currentDetailPhotos.length) {
+      openPhotoLightbox(window._currentDetailPhotos, 0, window._currentDetailBizName || '');
+    }
+  };
+
+  /* ==========================================================================
+     Mobile Minimalist Filters & Bottom Sheet Logic (#405)
+     ========================================================================== */
+  function updateMobileActiveFilterBadge() {
+    const badge = document.getElementById('mobile-active-filter-badge');
+    if (!badge) return;
+    let count = 0;
+    if (state.selectedSectorId) count++;
+    if (state.selectedCountry) count++;
+    if (state.selectedCity) count++;
+    if (state.selectedSchool) count++;
+    if (state.openNow) count++;
+    if (state.hasPerk) count++;
+    if (state.b2bReady) count++;
+    if (state.bookable) count++;
+    if (state.searchQuery) count++;
+
+    if (count > 0) {
+      badge.textContent = String(count);
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function updateSheetApplyButtonText() {
+    const applyBtn = document.getElementById('btn-sheet-apply');
+    if (!applyBtn) return;
+    const total = (state.pagination && state.pagination.total != null) ? state.pagination.total : state.businesses.length;
+    applyBtn.textContent = 'Show ' + total + ' Biashara' + (total === 1 ? '' : 's');
+  }
+
+  function openMobileFilterSheet() {
+    const sheet = document.getElementById('mobile-filter-sheet');
+    const backdrop = document.getElementById('mobile-filter-sheet-backdrop');
+    if (!sheet || !backdrop) return;
+
+    // Sync sheet controls with current state
+    const sortGroup = document.getElementById('sheet-sort-group');
+    if (sortGroup) {
+      sortGroup.querySelectorAll('.sheet-segment-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-sheet-sort') === (state.activeSort || 'most_referenced'));
+      });
+    }
+
+    const sectorSelect = document.getElementById('sheet-filter-sector');
+    if (sectorSelect) {
+      sectorSelect.value = state.selectedSectorId || '';
+    }
+
+    const countrySelect = document.getElementById('sheet-filter-country');
+    const citySelect = document.getElementById('sheet-filter-city');
+    if (countrySelect) {
+      countrySelect.value = state.selectedCountry || '';
+      syncSubdivisionsToSelect(citySelect, state.selectedCountry, state.selectedCity);
+    }
+
+    const schoolGroup = document.getElementById('sheet-school-group');
+    if (schoolGroup) {
+      schoolGroup.querySelectorAll('.sheet-segment-btn').forEach(btn => {
+        btn.classList.toggle('active', (btn.getAttribute('data-sheet-school') || '') === (state.selectedSchool || ''));
+      });
+    }
+
+    updateSheetApplyButtonText();
+    backdrop.classList.add('active');
+    sheet.classList.add('sheet-open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeMobileFilterSheet() {
+    const sheet = document.getElementById('mobile-filter-sheet');
+    const backdrop = document.getElementById('mobile-filter-sheet-backdrop');
+    if (sheet) sheet.classList.remove('sheet-open');
+    if (backdrop) backdrop.classList.remove('active');
+    document.body.style.overflow = '';
+    updateMobileActiveFilterBadge();
+  }
+
+  function resetAllMobileFilters() {
+    state.selectedSectorId = '';
+    state.selectedSpecialtyId = '';
+    state.selectedCountry = '';
+    state.selectedCity = '';
+    state.selectedSchool = '';
+    state.openNow = false;
+    state.hasPerk = false;
+    state.b2bReady = false;
+    state.bookable = false;
+    state.searchQuery = '';
+    state.activeSort = 'most_referenced';
+    state.explicitSort = '';
+
+    // Clear search inputs
+    const mobInput = document.getElementById('mobile-search-q');
+    if (mobInput) mobInput.value = '';
+    const deskInput = document.getElementById('search-q');
+    if (deskInput) deskInput.value = '';
+    const clearBtn = document.getElementById('btn-mobile-clear-search');
+    if (clearBtn) clearBtn.style.display = 'none';
+
+    // Clear rail pills
+    const rail = document.getElementById('mobile-quick-rail');
+    if (rail) {
+      rail.querySelectorAll('.rail-pill').forEach(pill => {
+        pill.classList.toggle('active', pill.getAttribute('data-rail-filter') === 'all');
+      });
+    }
+
+    // Reset desktop controls
+    if (els.sortSelect) els.sortSelect.value = 'most_referenced';
+    if (els.countrySelect) {
+      els.countrySelect.value = '';
+      els.countrySelect.classList.remove('active-filter');
+    }
+    if (els.citySelect) {
+      els.citySelect.value = '';
+      els.citySelect.classList.remove('active-filter');
+    }
+    document.querySelectorAll('#sidebar-sector-nav .sector-nav-item').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-sector-id') === '');
+    });
+    document.querySelectorAll('#sidebar-school-nav .school-nav-item').forEach(btn => {
+      btn.classList.toggle('active', (btn.getAttribute('data-school') || '') === '');
+    });
+    document.querySelectorAll('.quick-pills .pill').forEach(pill => {
+      pill.classList.toggle('active', pill.getAttribute('data-quick-filter') === 'all');
+    });
+
+    state.pagination.page = 1;
+    fetchBusinesses();
+    closeMobileFilterSheet();
+  }
+
+  function syncSubdivisionsToSelect(citySelect, countryCode, selectedCity) {
+    if (!citySelect) return;
+    const hierarchy = state.placeHierarchy || {};
+    const countryData = hierarchy[countryCode] || null;
+    const subdivisions = countryData && Array.isArray(countryData.subdivisions) ? countryData.subdivisions : [];
+
+    citySelect.innerHTML = '<option value="">All Counties / Cities</option>';
+    subdivisions.forEach(sub => {
+      const opt = document.createElement('option');
+      opt.value = sub;
+      opt.textContent = sub;
+      if (sub === selectedCity) opt.selected = true;
+      citySelect.appendChild(opt);
+    });
+  }
+
+  function initMobileMinimalFilters() {
+    window.openMobileFilterSheet = openMobileFilterSheet;
+    window.closeMobileFilterSheet = closeMobileFilterSheet;
+    window.resetAllMobileFilters = resetAllMobileFilters;
+
+    // 1. Mobile Search input
+    const mobSearchInput = document.getElementById('mobile-search-q');
+    const mobClearBtn = document.getElementById('btn-mobile-clear-search');
+    const deskSearchInput = document.getElementById('search-q');
+
+    if (mobSearchInput) {
+      let debounceTimer = null;
+      mobSearchInput.addEventListener('input', (e) => {
+        const val = e.target.value.trim();
+        if (mobClearBtn) mobClearBtn.style.display = e.target.value.length > 0 ? 'inline-block' : 'none';
+        if (deskSearchInput) deskSearchInput.value = e.target.value;
+
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          state.searchQuery = val;
+          state.pagination.page = 1;
+          fetchBusinesses();
+          updateMobileActiveFilterBadge();
+        }, 300);
+      });
+    }
+
+    if (mobClearBtn) {
+      mobClearBtn.addEventListener('click', () => {
+        if (mobSearchInput) mobSearchInput.value = '';
+        if (deskSearchInput) deskSearchInput.value = '';
+        mobClearBtn.style.display = 'none';
+        state.searchQuery = '';
+        state.pagination.page = 1;
+        fetchBusinesses();
+        updateMobileActiveFilterBadge();
+      });
+    }
+
+    // 2. Mobile Quick Rail Pills
+    const rail = document.getElementById('mobile-quick-rail');
+    if (rail) {
+      rail.addEventListener('click', (e) => {
+        const pill = e.target.closest('.rail-pill');
+        if (!pill) return;
+        const filterKey = pill.getAttribute('data-rail-filter');
+        if (!filterKey) return;
+
+        if (filterKey === 'all') {
+          state.openNow = false;
+          state.hasPerk = false;
+          state.b2bReady = false;
+          state.bookable = false;
+          state.selectedSchool = '';
+        } else if (filterKey === 'open_now') {
+          state.openNow = !state.openNow;
+        } else if (filterKey === 'has_perk') {
+          state.hasPerk = !state.hasPerk;
+        } else if (filterKey === 'b2b_ready') {
+          state.b2bReady = !state.b2bReady;
+        } else if (filterKey === 'bookable') {
+          state.bookable = !state.bookable;
+        } else if (filterKey === 'AHS' || filterKey === 'AGHS') {
+          state.selectedSchool = state.selectedSchool === filterKey ? '' : filterKey;
+        }
+
+        // Sync rail pill active states
+        const anyActive = state.openNow || state.hasPerk || state.b2bReady || state.bookable || !!state.selectedSchool;
+        rail.querySelectorAll('.rail-pill').forEach(p => {
+          const k = p.getAttribute('data-rail-filter');
+          if (k === 'all') p.classList.toggle('active', !anyActive);
+          else if (k === 'open_now') p.classList.toggle('active', state.openNow);
+          else if (k === 'has_perk') p.classList.toggle('active', state.hasPerk);
+          else if (k === 'b2b_ready') p.classList.toggle('active', state.b2bReady);
+          else if (k === 'bookable') p.classList.toggle('active', state.bookable);
+          else if (k === 'AHS' || k === 'AGHS') p.classList.toggle('active', state.selectedSchool === k);
+        });
+
+        // Sync desktop pills
+        document.querySelectorAll('.quick-pills .pill').forEach(p => {
+          const k = p.getAttribute('data-quick-filter');
+          if (k === 'all') p.classList.toggle('active', !anyActive);
+          else if (k === 'open_now') p.classList.toggle('active', state.openNow);
+          else if (k === 'has_perk') p.classList.toggle('active', state.hasPerk);
+          else if (k === 'b2b_ready') p.classList.toggle('active', state.b2bReady);
+          else if (k === 'bookable') p.classList.toggle('active', state.bookable);
+          else if (k === 'AHS' || k === 'AGHS') p.classList.toggle('active', state.selectedSchool === k);
+        });
+
+        state.pagination.page = 1;
+        fetchBusinesses();
+        updateMobileActiveFilterBadge();
+      });
+    }
+
+    // 3. Bottom Sheet Controls
+    const sortGroup = document.getElementById('sheet-sort-group');
+    if (sortGroup) {
+      sortGroup.addEventListener('click', (e) => {
+        const btn = e.target.closest('.sheet-segment-btn');
+        if (!btn) return;
+        const sortVal = btn.getAttribute('data-sheet-sort');
+        if (!sortVal) return;
+
+        sortGroup.querySelectorAll('.sheet-segment-btn').forEach(b => b.classList.toggle('active', b === btn));
+        state.activeSort = sortVal;
+        state.explicitSort = sortVal;
+        if (els.sortSelect) els.sortSelect.value = sortVal;
+
+        state.pagination.page = 1;
+        fetchBusinesses().then(updateSheetApplyButtonText);
+      });
+    }
+
+    const sheetSector = document.getElementById('sheet-filter-sector');
+    if (sheetSector) {
+      sheetSector.addEventListener('change', (e) => {
+        const secId = e.target.value;
+        state.selectedSectorId = secId;
+        state.selectedSpecialtyId = '';
+
+        document.querySelectorAll('#sidebar-sector-nav .sector-nav-item').forEach(b => {
+          b.classList.toggle('active', b.getAttribute('data-sector-id') === secId);
+        });
+
+        state.pagination.page = 1;
+        fetchBusinesses().then(updateSheetApplyButtonText);
+      });
+    }
+
+    const sheetCountry = document.getElementById('sheet-filter-country');
+    const sheetCity = document.getElementById('sheet-filter-city');
+    if (sheetCountry && sheetCity) {
+      sheetCountry.addEventListener('change', (e) => {
+        const cCode = e.target.value;
+        state.selectedCountry = cCode;
+        state.selectedCity = '';
+        syncSubdivisionsToSelect(sheetCity, cCode, '');
+
+        if (els.countrySelect) {
+          els.countrySelect.value = cCode;
+          els.countrySelect.classList.toggle('active-filter', !!cCode);
+          if (window.filterByCountry) window.filterByCountry(cCode);
+        }
+
+        state.pagination.page = 1;
+        fetchBusinesses().then(updateSheetApplyButtonText);
+      });
+
+      sheetCity.addEventListener('change', (e) => {
+        const cityName = e.target.value;
+        state.selectedCity = cityName;
+        if (els.citySelect) {
+          els.citySelect.value = cityName;
+          els.citySelect.classList.toggle('active-filter', !!cityName);
+        }
+
+        state.pagination.page = 1;
+        fetchBusinesses().then(updateSheetApplyButtonText);
+      });
+    }
+
+    const sheetSchool = document.getElementById('sheet-school-group');
+    if (sheetSchool) {
+      sheetSchool.addEventListener('click', (e) => {
+        const btn = e.target.closest('.sheet-segment-btn');
+        if (!btn) return;
+        const schoolVal = btn.getAttribute('data-sheet-school') || '';
+
+        sheetSchool.querySelectorAll('.sheet-segment-btn').forEach(b => b.classList.toggle('active', b === btn));
+        state.selectedSchool = schoolVal;
+
+        document.querySelectorAll('#sidebar-school-nav .school-nav-item').forEach(b => {
+          b.classList.toggle('active', (b.getAttribute('data-school') || '') === schoolVal);
+        });
+
+        state.pagination.page = 1;
+        fetchBusinesses().then(updateSheetApplyButtonText);
+      });
+    }
+
+    updateMobileActiveFilterBadge();
+  }
 
   function showDirectoryView() {
     const detailShell = document.getElementById('view-directory-shell');
@@ -4156,6 +4556,7 @@
     }
 
     initPhotoGalleryNav();
+    initMobileMinimalFilters();
 
     const initMode = (initParams.get('mode') || '').trim().toLowerCase();
     const initAdvisor = initParams.get('advisor');

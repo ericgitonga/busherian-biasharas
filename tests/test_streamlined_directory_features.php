@@ -223,4 +223,18 @@ testAssert(str_contains($jsSrc, 'openPhotoLightbox'), 'directory.js defines open
 testAssert(str_contains($jsSrc, 'closePhotoLightbox'), 'directory.js defines closePhotoLightbox');
 testAssert(str_contains($jsSrc, 'updatePhotoNavButtons'), 'directory.js defines updatePhotoNavButtons');
 
+// 13. Check Airbnb-Style Detail Top Showcase & Minimal Mobile Filters (#405)
+testAssert(str_contains($indexSrc, 'id="detail-photos-showcase"'), 'index.php has #detail-photos-showcase at the top of detail view');
+testAssert(str_contains($indexSrc, 'id="btn-show-all-photos"'), 'index.php contains #btn-show-all-photos floating button');
+testAssert(str_contains($indexSrc, 'id="mobile-search-controls"'), 'index.php contains #mobile-search-controls for streamlined mobile search');
+testAssert(str_contains($indexSrc, 'id="mobile-quick-rail"'), 'index.php contains #mobile-quick-rail horizontal pill strip');
+testAssert(str_contains($indexSrc, 'id="mobile-filter-sheet"'), 'index.php contains #mobile-filter-sheet bottom sheet modal');
+testAssert(str_contains($cssSrc, '.detail-photos-showcase'), 'app.css defines .detail-photos-showcase');
+testAssert(str_contains($cssSrc, '.airbnb-photos-grid'), 'app.css defines .airbnb-photos-grid');
+testAssert(str_contains($cssSrc, '.mobile-filter-sheet'), 'app.css defines .mobile-filter-sheet');
+testAssert(str_contains($cssSrc, '.mobile-search-capsule'), 'app.css defines .mobile-search-capsule');
+testAssert(str_contains($jsSrc, 'openAllDetailPhotos'), 'directory.js defines openAllDetailPhotos');
+testAssert(str_contains($jsSrc, 'openMobileFilterSheet'), 'directory.js defines openMobileFilterSheet');
+testAssert(str_contains($jsSrc, 'closeMobileFilterSheet'), 'directory.js defines closeMobileFilterSheet');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
