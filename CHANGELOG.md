@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.38.1] - 2026-11-20
+### Added
+- **Naishola Gardens High-Resolution Photo Test Case (#405)**:
+  - Processed and attached 5 scenic photographs to Naishola Gardens (`naishola-gardens`) to serve as a live verification test case for the Airbnb-style top gallery showcase on preview.
+  - Converted original high-resolution scenery captures into optimized WebP assets (`/uploads/businesses/naishola_1.webp` through `naishola_5.webp`) served via the 5-photo responsive mosaic.
+  - Added idempotent database migration `naishola_sample_photos_v1` in `Database::migrateAndSeed()` (schema version `2026-11-v36-naishola-sample-photos`) to ensure preview environments automatically link the photo set on deployment.
+
 ## [0.38.0] - 2026-11-20
 ### Added
 - **Airbnb-Style Top Photographs Showcase on Business Detail Page (#405)**:

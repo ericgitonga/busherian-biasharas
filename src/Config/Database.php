@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v35-kenya-phone-normalization';
+    public const SCHEMA_INIT_VERSION = '2026-11-v36-naishola-sample-photos';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -555,6 +555,22 @@ final class Database
                 self::setSetting($pdo, 'kenya_phone_normalization_v1', 'done');
             } catch (\Throwable $migErr) {
                 error_log('[Database::ensureInitialized] kenya_phone_normalization_v1 failed: ' . $migErr->getMessage());
+            }
+        }
+        if (self::getSetting($pdo, 'naishola_sample_photos_v1') !== 'done') {
+            try {
+                $naisholaPhotos = json_encode([
+                    '/uploads/businesses/naishola_1.webp',
+                    '/uploads/businesses/naishola_2.webp',
+                    '/uploads/businesses/naishola_3.webp',
+                    '/uploads/businesses/naishola_4.webp',
+                    '/uploads/businesses/naishola_5.webp',
+                ], JSON_UNESCAPED_SLASHES);
+                $upd = $pdo->prepare("UPDATE businesses SET photos_json = :photos WHERE slug = 'naishola-gardens' OR name LIKE '%Naishola%'");
+                $upd->execute([':photos' => $naisholaPhotos]);
+                self::setSetting($pdo, 'naishola_sample_photos_v1', 'done');
+            } catch (\Throwable $photoErr) {
+                error_log('[Database::ensureInitialized] naishola_sample_photos_v1 failed: ' . $photoErr->getMessage());
             }
         }
 
