@@ -69,15 +69,24 @@ final class PhotoUploader
     public static function resolveSafeUploadFilePath(string $urlPath, bool $mustExist = false): ?string
     {
         $trimmed = trim($urlPath);
-        if (!preg_match('~^/uploads/businesses/([A-Za-z0-9._-]+)$~', $trimmed, $m)) {
+        $baseDir = null;
+        $filename = '';
+
+        if (preg_match('~^/assets/photos/([A-Za-z0-9._-]+)$~', $trimmed, $m)) {
+            $filename = $m[1];
+            $assetsDir = self::resolvePublicWebRoot() . '/assets/photos';
+            if (!is_dir($assetsDir)) {
+                @mkdir($assetsDir, 0775, true);
+            }
+            $baseDir = realpath($assetsDir);
+        } elseif (preg_match('~^/uploads/businesses/([A-Za-z0-9._-]+)$~', $trimmed, $m)) {
+            $filename = $m[1];
+            $baseDir = realpath(self::uploadDir());
+        } else {
             return null;
         }
-        $filename = $m[1];
-        if ($filename === '' || $filename[0] === '.' || str_contains($filename, '..')) {
-            return null;
-        }
-        $baseDir = realpath(self::uploadDir());
-        if ($baseDir === false) {
+
+        if ($filename === '' || $filename[0] === '.' || str_contains($filename, '..') || $baseDir === false) {
             return null;
         }
         $candidate = $baseDir . DIRECTORY_SEPARATOR . $filename;
@@ -313,11 +322,20 @@ final class PhotoUploader
         return null;
     }
 
+    public static function isMutableUploadPath(?string $safePath): bool
+    {
+        if ($safePath === null) {
+            return false;
+        }
+        $upDir = realpath(self::uploadDir());
+        return $upDir !== false && str_starts_with($safePath, $upDir . DIRECTORY_SEPARATOR);
+    }
+
     public static function deleteBusinessPhotoFiles(?string $photosJson): void
     {
         foreach (self::decodePhotosJson($photosJson) as $relUrl) {
             $safePath = self::resolveSafeUploadFilePath($relUrl, true);
-            if ($safePath !== null) {
+            if (self::isMutableUploadPath($safePath)) {
                 @unlink($safePath);
             }
         }
@@ -332,7 +350,7 @@ final class PhotoUploader
                 continue;
             }
             $safePath = self::resolveSafeUploadFilePath($url, true);
-            if ($safePath !== null && @unlink($safePath)) {
+            if (self::isMutableUploadPath($safePath) && @unlink($safePath)) {
                 $deleted++;
             }
         }
@@ -364,6 +382,10 @@ final class PhotoUploader
         foreach ($urls as $url) {
             $srcPath = self::resolveSafeUploadFilePath($url, true);
             if ($srcPath === null) {
+                continue;
+            }
+            if (!self::isMutableUploadPath($srcPath)) {
+                // Static assets are repository-managed and should not be unlinked or quarantined
                 continue;
             }
             $destPath = $qDir . '/' . basename($srcPath);
@@ -452,7 +474,7 @@ final class PhotoUploader
         $deleted = 0;
         foreach (self::decodePhotosJson($photosJson) as $url) {
             $safePath = self::resolveSafeUploadFilePath($url, true);
-            if ($safePath !== null && @unlink($safePath)) {
+            if (self::isMutableUploadPath($safePath) && @unlink($safePath)) {
                 $deleted++;
             }
         }

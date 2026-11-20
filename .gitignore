@@ -30,7 +30,6 @@ storage/quarantined_media/
 public/assets/uploads/logos/*
 !public/assets/uploads/logos/.gitkeep
 public/uploads/businesses/*
-!public/uploads/businesses/naishola_*.webp
 
 # OS
 .DS_Store

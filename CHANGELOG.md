@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.38.2] - 2026-11-20
+### Fixed
+- **FTPS Deploy Compatibility for Sample Showcase Photos (#405)**:
+  - Relocated Naishola Gardens test photos from `public/uploads/businesses/` to version-controlled `public/assets/photos/naishola_{1..5}.webp`, resolving the FTPS deployment security rejection on `public/uploads/`.
+  - Updated `PhotoUploader::resolveSafeUploadFilePath` to recognize `/assets/photos/` alongside `/uploads/businesses/`, while guarding repository static assets from accidental unlink or quarantine mutations.
+  - Added idempotent database migration `naishola_sample_photos_v2` (`2026-11-v37-naishola-sample-photos-assets`) to ensure preview environments automatically link the photo set on deployment.
+
 ## [0.38.1] - 2026-11-20
 ### Added
 - **Naishola Gardens High-Resolution Photo Test Case (#405)**:
