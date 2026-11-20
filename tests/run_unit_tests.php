@@ -5957,6 +5957,26 @@ assertTrue(
 $pdo->prepare("DELETE FROM rate_limits WHERE action_type = 'owner_otp_send' AND ip_hmac = :ip")
     ->execute([':ip' => AntiSpamGate::pseudonymizeIp($otpTestIp)]);
 
+// 64: 60-Second Client-Side Countdown Timer on OTP Verification Screen (#410)
+$freshLoginSrc = (string)file_get_contents(dirname(__DIR__) . '/public/owner/login.php');
+$freshClaimSrc = (string)file_get_contents(dirname(__DIR__) . '/public/owner/claim.php');
+assertTrue(
+    str_contains($freshLoginSrc, 'data-testid="otp-countdown-timer"') &&
+    str_contains($freshLoginSrc, 'id="otp-timer-seconds"') &&
+    str_contains($freshLoginSrc, '60</span>s remaining') &&
+    str_contains($freshLoginSrc, 'var remaining = 60;') &&
+    !str_contains($freshLoginSrc, '<code>'),
+    '64a (#410): public/owner/login.php contains 60-second OTP countdown timer and zero <code> tags'
+);
+assertTrue(
+    str_contains($freshClaimSrc, 'data-testid="otp-countdown-timer"') &&
+    str_contains($freshClaimSrc, 'id="claim-otp-timer-seconds"') &&
+    str_contains($freshClaimSrc, '60</span>s remaining') &&
+    str_contains($freshClaimSrc, 'var remaining = 60;') &&
+    !str_contains($freshClaimSrc, '<code>'),
+    '64b (#410): public/owner/claim.php contains 60-second OTP countdown timer and zero <code> tags'
+);
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');

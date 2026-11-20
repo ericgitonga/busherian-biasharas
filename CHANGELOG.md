@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.38.3] - 2026-11-20
+### Added
+- **60-Second Client-Side Countdown Timer on OTP Verification Screen (#410)**:
+  - Added a responsive 60-second client-side countdown timer badge (`#otp-timer-badge` / `#claim-otp-timer-badge`) on the verification code input screens in `public/owner/login.php` and `public/owner/claim.php`.
+  - Dynamically guides business owners entering their 6-digit email code (`⏱️ Code entry window: 60s remaining`), pacing input and eliminating uncertainty around code validity.
+  - Automatically transitions at 0 seconds to helpful next steps (`⏱️ 60s elapsed. Code didn’t arrive or expired? You can request a fresh code below.`) and highlights the resend action (`🔄 Resend 6-digit code (Ready)`), keeping client pacing aligned with the server's 60-second anti-spam resend cooldown.
+  - Added unit regression assertions in `tests/run_unit_tests.php` (Test 64) verifying badge elements, 60s interval countdown, and zero `<code>` tags.
+
 ## [0.38.2] - 2026-11-20
 ### Fixed
 - **FTPS Deploy Compatibility for Sample Showcase Photos (#405)**:
@@ -22,11 +30,11 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
 ## [0.38.0] - 2026-11-20
 ### Added
-- **Airbnb-Style Top Photographs Showcase on Business Detail Page (#405)**:
+- **Airbnb-Style Top Photographs Showcase on Business Detail Page (Parent: #405, Child: #406)**:
   - Repositioned the business photo gallery directly to the top of the detail page (`#view-biz-detail`), removing the buried photo section from Column 1.
   - Implemented an adaptive CSS grid mirroring Airbnb's listing presentation: 5+ photos render as a signature mosaic (1 large dominant hero photo on the left spanning full height + a 2x2 grid on the right); 3-4 photos render as a prominent hero with stacked right tiles; 1-2 photos render as full-width hero banners; and listings with 0 photos display a dignified branded crest banner with alumni motifs and initials (retiring the placeholder text box).
   - Added a floating glassmorphic pill button in the bottom right (`#btn-show-all-photos` displaying `Show all N photos`) that triggers the high-resolution lightbox modal (`openPhotoLightbox`), with smooth micro-zoom hover states on desktop and touch-friendly swipe carousel navigation on mobile (`#mobile-photo-counter` showing `1 / N`).
-- **Minimalist Mobile Filter Experience & Native Bottom Sheet (#405)**:
+- **Minimalist Mobile Filter Experience & Native Bottom Sheet (Parent: #405, Child: #407)**:
   - Streamlined the mobile directory view by replacing the cramped 8-section vertical drawer with an uncluttered, modern 3-tier mobile architecture.
   - **Tier 1 (Sticky Search Capsule)**: Added `#mobile-search-capsule` prominently at the top of the mobile feed featuring instant search autocomplete and a dedicated `Filters` button with an active filter count badge (`#mobile-active-filter-badge`).
   - **Tier 2 (Single-Row Horizontal Quick Rail)**: Added a swipeable, single-line horizontal pill strip (`#mobile-quick-rail`) allowing mobile users to toggle `Open Now`, `Perks`, `B2B Ready`, `Bookable`, and School (`AHS` / `AGHS`) filters in 1 tap without opening any menus or wrapping into cluttered lines.
