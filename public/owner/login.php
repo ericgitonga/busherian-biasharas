@@ -366,9 +366,12 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
     <section style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:1.6rem;box-shadow:0 4px 14px rgba(0,0,0,0.05);">
       <?php if ($viewStep === 'verify_otp'): ?>
         <h2 style="margin:0 0 0.35rem 0;color:#114B3E;font-size:1.2rem;">Enter 6-Digit Code &amp; Set Your Password</h2>
-        <p style="margin:0 0 1.15rem 0;font-size:0.86rem;color:#4B5563;">
+        <p style="margin:0 0 0.85rem 0;font-size:0.86rem;color:#4B5563;">
           Check your inbox (and Spam/Junk folder) for the 6-digit code sent to <strong><?= htmlspecialchars($stickyEmail, ENT_QUOTES, 'UTF-8') ?></strong>. Entering it right here keeps you signed in inside your current browser.
         </p>
+        <div id="otp-timer-badge" data-testid="otp-countdown-timer" style="display:inline-flex;align-items:center;gap:0.45rem;background:#FEF3C7;border:1px solid #F59E0B;color:#92400E;padding:0.35rem 0.8rem;border-radius:20px;font-size:0.82rem;font-weight:700;margin-bottom:1.15rem;">
+          ⏱️ Code entry window: <span id="otp-timer-seconds" data-testid="otp-timer-seconds">60</span>s remaining
+        </div>
         <form method="POST" action="/owner/login.php" data-testid="owner-otp-verify-form">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="form_step" value="verify_otp">
@@ -395,7 +398,7 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
           </button>
         </form>
         <div style="margin-top:0.95rem;text-align:center;font-size:0.83rem;">
-          <a href="/owner/login.php?mode=reset&amp;email=<?= urlencode($stickyEmail) ?><?= htmlspecialchars($bizParamSuffix, ENT_QUOTES, 'UTF-8') ?>" style="color:#7B1113;font-weight:700;">Resend 6-digit code</a>
+          <a href="/owner/login.php?mode=reset&amp;email=<?= urlencode($stickyEmail) ?><?= htmlspecialchars($bizParamSuffix, ENT_QUOTES, 'UTF-8') ?>" id="otp-resend-link" data-testid="otp-resend-link" style="color:#7B1113;font-weight:700;">Resend 6-digit code</a>
           &nbsp;·&nbsp;
           <a href="/owner/login.php?mode=login<?= htmlspecialchars($bizParamSuffix, ENT_QUOTES, 'UTF-8') ?>" style="color:#4B5563;">Back to Email &amp; Password Sign In</a>
         </div>
@@ -501,15 +504,39 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
   <script>
     (function () {
       var tok = document.getElementById('owner_reset_js_interaction_token');
-      if (!tok) return;
-      var arm = function () {
-        if (!tok.value) {
-          tok.value = 'human_verified_' + Date.now();
-        }
-      };
-      ['focusin', 'keydown', 'pointerdown', 'touchstart'].forEach(function (ev) {
-        document.addEventListener(ev, arm, { once: true, passive: true });
-      });
+      if (tok) {
+        var arm = function () {
+          if (!tok.value) {
+            tok.value = 'human_verified_' + Date.now();
+          }
+        };
+        ['focusin', 'keydown', 'pointerdown', 'touchstart'].forEach(function (ev) {
+          document.addEventListener(ev, arm, { once: true, passive: true });
+        });
+      }
+
+      var timerBadge = document.getElementById('otp-timer-badge');
+      var secondsEl = document.getElementById('otp-timer-seconds');
+      var resendLink = document.getElementById('otp-resend-link');
+      if (timerBadge && secondsEl) {
+        var remaining = 60;
+        var interval = setInterval(function () {
+          remaining--;
+          if (remaining <= 0) {
+            clearInterval(interval);
+            secondsEl.textContent = '0';
+            timerBadge.style.background = '#EFF6FF';
+            timerBadge.style.borderColor = '#93C5FD';
+            timerBadge.style.color = '#1E40AF';
+            timerBadge.textContent = '⏱️ 60s elapsed. Code didn’t arrive or expired? You can request a fresh code below.';
+            if (resendLink) {
+              resendLink.textContent = '🔄 Resend 6-digit code (Ready)';
+            }
+          } else {
+            secondsEl.textContent = String(remaining);
+          }
+        }, 1000);
+      }
     })();
   </script>
 </body>

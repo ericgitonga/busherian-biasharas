@@ -343,6 +343,9 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
           </button>
         </form>
       <?php elseif ($viewMode === 'verify_otp'): ?>
+        <div id="claim-otp-timer-badge" data-testid="otp-countdown-timer" style="display:inline-flex;align-items:center;gap:0.45rem;background:#FEF3C7;border:1px solid #F59E0B;color:#92400E;padding:0.35rem 0.8rem;border-radius:20px;font-size:0.82rem;font-weight:700;margin-bottom:1.15rem;">
+          ⏱️ Code entry window: <span id="claim-otp-timer-seconds" data-testid="otp-timer-seconds">60</span>s remaining
+        </div>
         <form method="POST" action="/owner/claim.php">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="claim_step" value="verify_otp">
@@ -396,6 +399,9 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
             ✓ Verify Code, Save Password &amp; Edit <?= htmlspecialchars((string)$biz['name'], ENT_QUOTES, 'UTF-8') ?>
           </button>
         </form>
+        <div style="margin-top:0.95rem;text-align:center;font-size:0.83rem;">
+          <a href="/owner/claim.php?<?= htmlspecialchars(http_build_query(array_filter(['biz_id' => $bizId, 'exp' => $exp, 'sig' => $sig, 'em' => $invitedEmail])), ENT_QUOTES, 'UTF-8') ?>" id="claim-otp-resend-link" data-testid="otp-resend-link" style="color:#7B1113;font-weight:700;">Request a fresh code</a>
+        </div>
       <?php else: ?>
         <?php if ($googleReady): ?>
           <a href="/owner/login.php?action=google" class="btn btn-outline" style="width:100%;justify-content:center;padding:0.7rem 1rem;font-weight:700;font-size:0.9rem;border:2px solid #D1D5DB;display:flex;align-items:center;gap:0.55rem;box-sizing:border-box;margin-bottom:1rem;">
@@ -473,15 +479,39 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
   <script>
     (function () {
       var tok = document.getElementById('claim_js_interaction_token');
-      if (!tok) return;
-      var arm = function () {
-        if (!tok.value) {
-          tok.value = 'human_verified_' + Date.now();
-        }
-      };
-      ['focusin', 'keydown', 'pointerdown', 'touchstart'].forEach(function (ev) {
-        document.addEventListener(ev, arm, { once: true, passive: true });
-      });
+      if (tok) {
+        var arm = function () {
+          if (!tok.value) {
+            tok.value = 'human_verified_' + Date.now();
+          }
+        };
+        ['focusin', 'keydown', 'pointerdown', 'touchstart'].forEach(function (ev) {
+          document.addEventListener(ev, arm, { once: true, passive: true });
+        });
+      }
+
+      var timerBadge = document.getElementById('claim-otp-timer-badge');
+      var secondsEl = document.getElementById('claim-otp-timer-seconds');
+      var resendLink = document.getElementById('claim-otp-resend-link');
+      if (timerBadge && secondsEl) {
+        var remaining = 60;
+        var interval = setInterval(function () {
+          remaining--;
+          if (remaining <= 0) {
+            clearInterval(interval);
+            secondsEl.textContent = '0';
+            timerBadge.style.background = '#EFF6FF';
+            timerBadge.style.borderColor = '#93C5FD';
+            timerBadge.style.color = '#1E40AF';
+            timerBadge.textContent = '⏱️ 60s elapsed. Code didn’t arrive or expired? You can request a fresh code below.';
+            if (resendLink) {
+              resendLink.textContent = '🔄 Request a fresh code (Ready)';
+            }
+          } else {
+            secondsEl.textContent = String(remaining);
+          }
+        }, 1000);
+      }
     })();
   </script>
 </body>

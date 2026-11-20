@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.38.1] - 2026-11-20
+### Added
+- **60-Second Client-Side Countdown Timer on OTP Verification Screen (#410)**:
+  - Added a responsive 60-second client-side countdown timer badge (`#otp-timer-badge` / `#claim-otp-timer-badge`) on the verification code input screens in `public/owner/login.php` and `public/owner/claim.php`.
+  - Dynamically guides business owners entering their 6-digit email code (`⏱️ Code entry window: 60s remaining`), pacing input and eliminating uncertainty around code validity.
+  - Automatically transitions at 0 seconds to helpful next steps (`⏱️ 60s elapsed. Code didn’t arrive or expired? You can request a fresh code below.`) and highlights the resend action (`🔄 Resend 6-digit code (Ready)`), keeping client pacing aligned with the server's 60-second anti-spam resend cooldown.
+  - Added unit regression assertions in `tests/run_unit_tests.php` (Test 64) verifying badge elements, 60s interval countdown, and zero `<code>` tags.
+
 ## [0.38.0] - 2026-11-20
 ### Added
 - **Airbnb-Style Top Photographs Showcase on Business Detail Page (Parent: #405, Child: #406)**:
