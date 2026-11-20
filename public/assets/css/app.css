@@ -2564,6 +2564,191 @@ a {
   background: rgba(17, 75, 62, 0.9);
 }
 
+/* ==========================================================================
+   Airbnb-Style Top Photographs Showcase (#405)
+   ========================================================================== */
+.detail-photos-showcase {
+  position: relative;
+  margin: 14px 0 24px 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #FDFBF7;
+  border: 1px solid #E5DEC9;
+  box-shadow: 0 2px 10px rgba(17, 75, 62, 0.05);
+}
+
+/* On desktop: switch track from flex to Airbnb CSS grid */
+@media (min-width: 769px) {
+  .detail-photos-showcase .photos-carousel-track.airbnb-photos-grid {
+    display: grid;
+    gap: 8px;
+    height: 420px;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  /* 5+ Photos Mosaic: 1 Large Left (50%) + 2x2 Grid Right (50%) */
+  .detail-photos-showcase .airbnb-photos-grid.photos-count-5,
+  .detail-photos-showcase .airbnb-photos-grid.photos-mosaic-5 {
+    grid-template-columns: 2fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+  .detail-photos-showcase .airbnb-photos-grid .photo-slot.photo-featured {
+    grid-column: 1 / 2;
+    grid-row: 1 / 3;
+    height: 100%;
+    aspect-ratio: auto;
+    border-radius: 0;
+    border: none;
+  }
+  .detail-photos-showcase .airbnb-photos-grid .photo-slot {
+    flex: none;
+    min-width: 0;
+    height: 100%;
+    aspect-ratio: auto;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    position: relative;
+  }
+  .detail-photos-showcase .airbnb-photos-grid .photo-slot img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1), filter 0.25s ease;
+  }
+  .detail-photos-showcase .airbnb-photos-grid .photo-slot:hover img {
+    transform: scale(1.025);
+    filter: brightness(0.92);
+  }
+  .detail-photos-showcase .airbnb-photos-grid .photo-slot.photo-overflow-hidden {
+    display: none !important;
+  }
+
+  /* 4 Photos Split */
+  .detail-photos-showcase .airbnb-photos-grid.photos-count-4 {
+    grid-template-columns: 2fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+  }
+  .detail-photos-showcase .airbnb-photos-grid.photos-count-4 .photo-slot.photo-featured {
+    grid-column: 1 / 2;
+    grid-row: 1 / 4;
+  }
+
+  /* 3 Photos Split */
+  .detail-photos-showcase .airbnb-photos-grid.photos-count-3 {
+    grid-template-columns: 2fr 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+  .detail-photos-showcase .airbnb-photos-grid.photos-count-3 .photo-slot.photo-featured {
+    grid-column: 1 / 2;
+    grid-row: 1 / 3;
+  }
+
+  /* 2 Photos Split */
+  .detail-photos-showcase .airbnb-photos-grid.photos-count-2 {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr;
+  }
+
+  /* 1 Photo Hero */
+  .detail-photos-showcase .airbnb-photos-grid.photos-count-1 {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    height: 380px;
+  }
+
+  .detail-photos-showcase #detail-photos-nav {
+    display: none !important;
+  }
+}
+
+/* 0 Photos Dignified Branded Pattern */
+.photo-branded-banner {
+  height: 200px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  background: linear-gradient(135deg, #114B3E 0%, #18201B 100%);
+  color: #FFFFFF;
+  padding: 24px;
+}
+.banner-crest-motif {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: rgba(252, 211, 77, 0.16);
+  border: 2px solid #FCD34D;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 800;
+  color: #FCD34D;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.banner-crest-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.banner-badge {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #FDF8F3;
+  letter-spacing: 0.02em;
+}
+.banner-hint {
+  font-size: 12px;
+  color: #A3B8AD;
+}
+
+/* Floating "Show all photos" Pill Button (#405) */
+.btn-show-all-photos {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  background: #FFFFFF;
+  color: #18201B;
+  border: 1.5px solid #18201B;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 5;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-show-all-photos:hover {
+  background: #FDFBF7;
+  transform: scale(1.025);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24);
+}
+
+/* Mobile Photo Index Counter Badge (#405) */
+.mobile-photo-counter {
+  display: none;
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  background: rgba(24, 32, 27, 0.82);
+  backdrop-filter: blur(4px);
+  color: #FFFFFF;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  z-index: 5;
+}
+
 @media (max-width: 640px) {
   .photos-carousel-track .photo-slot {
     flex: 0 0 78%;
@@ -3148,6 +3333,327 @@ a {
   #pane-map .map-canvas {
     height: 380px !important;
   }
+
+  /* Mobile Search Controls & Airbnb Gallery on Mobile (#405) */
+  .mobile-search-controls {
+    display: flex !important;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+    width: 100%;
+  }
+
+  .detail-photos-showcase {
+    margin: 10px -14px 18px -14px !important;
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+  }
+  .detail-photos-showcase .photos-carousel-track.airbnb-photos-grid {
+    display: flex !important;
+    gap: 0 !important;
+    height: 280px !important;
+    overflow-x: auto !important;
+    scroll-snap-type: x mandatory !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .detail-photos-showcase .airbnb-photos-grid .photo-slot {
+    flex: 0 0 100% !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    height: 280px !important;
+    scroll-snap-align: start !important;
+    border-radius: 0 !important;
+  }
+  .detail-photos-showcase .airbnb-photos-grid .photo-slot.photo-overflow-hidden {
+    display: block !important;
+  }
+  .btn-show-all-photos {
+    display: none !important;
+  }
+  .mobile-photo-counter {
+    display: inline-flex !important;
+  }
+}
+
+/* ==========================================================================
+   Mobile Minimalist Search Capsule, Pill Rail & Bottom Sheet (#405)
+   ========================================================================== */
+.mobile-search-controls {
+  display: none;
+}
+
+.mobile-search-capsule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.mobile-search-input-wrap {
+  flex: 1;
+  background: #FFFFFF;
+  border: 1.5px solid #E5DEC9;
+  border-radius: 999px;
+  padding: 0 14px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 1px 3px rgba(17, 75, 62, 0.05);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.mobile-search-input-wrap:focus-within {
+  border-color: #114B3E;
+  box-shadow: 0 0 0 3px rgba(17, 75, 62, 0.1);
+}
+.mobile-search-icon {
+  color: #7E8D84;
+  margin-right: 8px;
+  font-size: 14px;
+}
+.mobile-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13.5px;
+  color: #18201B;
+  min-width: 0;
+}
+.mobile-search-clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6B7280;
+  font-size: 13px;
+  padding: 2px 4px;
+}
+.btn-mobile-filters-trigger {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #FFFFFF;
+  border: 1.5px solid #114B3E;
+  color: #114B3E;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(17, 75, 62, 0.06);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.btn-mobile-filters-trigger:active {
+  transform: scale(0.97);
+  background: #E8F2EE;
+}
+.filter-count-badge {
+  background: #114B3E;
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+/* Horizontal Scrollable Rail */
+.mobile-quick-rail {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 2px 6px 2px;
+}
+.mobile-quick-rail::-webkit-scrollbar {
+  display: none;
+}
+.rail-pill {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid #E5DEC9;
+  background: #FFFFFF;
+  color: #57645C;
+  border-radius: 999px;
+  padding: 6px 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.rail-pill:hover,
+.rail-pill:active {
+  background: #FBF8F3;
+  color: #18201B;
+}
+.rail-pill.active {
+  background: #114B3E;
+  border-color: #114B3E;
+  color: #FFFFFF;
+  font-weight: 700;
+}
+
+/* Mobile Filter Bottom Sheet Modal */
+.sheet-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 75, 62, 0.45);
+  backdrop-filter: blur(2px);
+  z-index: 1055;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.sheet-backdrop.active {
+  display: block;
+  opacity: 1;
+  pointer-events: auto;
+}
+.mobile-filter-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 86vh;
+  max-height: 86dvh;
+  background: #FFFFFF;
+  border-radius: 20px 20px 0 0;
+  z-index: 1060;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  transform: translateY(105%);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mobile-filter-sheet.sheet-open {
+  transform: translateY(0);
+}
+.sheet-handle-bar {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 4px 0;
+}
+.sheet-handle {
+  width: 40px;
+  height: 4.5px;
+  background: #D1D5DB;
+  border-radius: 999px;
+}
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 18px 12px 18px;
+  border-bottom: 1px solid #EFE9DC;
+}
+.sheet-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sheet-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #114B3E;
+  margin: 0;
+}
+.sheet-subtitle {
+  font-size: 11.5px;
+  color: #7E8D84;
+}
+.sheet-reset-btn {
+  background: none;
+  border: none;
+  color: #7B1113;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.sheet-close-btn {
+  background: #F3F4F6;
+  border: none;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #374151;
+  cursor: pointer;
+}
+.sheet-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+.sheet-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sheet-section-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #57645C;
+}
+.sheet-segmented-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sheet-segment-btn {
+  flex: 1 1 auto;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 11px;
+  border-radius: 8px;
+  border: 1px solid #E5DEC9;
+  background: #FBF8F3;
+  color: #374151;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+.sheet-segment-btn.active {
+  background: #114B3E;
+  border-color: #114B3E;
+  color: #FFFFFF;
+  font-weight: 700;
+}
+.sheet-select {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1.5px solid #E5DEC9;
+  background: #FFFFFF;
+  font-size: 13px;
+  color: #18201B;
+  outline: none;
+  cursor: pointer;
+}
+.sheet-select:focus {
+  border-color: #114B3E;
+}
+.sheet-footer {
+  padding: 12px 18px;
+  border-top: 1px solid #EFE9DC;
+  background: #FFFFFF;
+}
+.sheet-apply-btn {
+  width: 100%;
+  padding: 11px;
+  font-size: 14px;
+  font-weight: 800;
+  border-radius: 10px;
 }
 
 /* Recommendations Card & Confirmation Footer (#Mockup) */
