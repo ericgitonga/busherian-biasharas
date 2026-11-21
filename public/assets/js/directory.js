@@ -694,6 +694,30 @@
         ? `<div class="card-adjacency-reason" data-testid="card-adjacency-reason" style="background:#F0FDF4;border-left-color:#059669;color:#065F46;">🎯 <strong>Match Context:</strong> ${escapeHtml(biz.tailored_reason || opts.tailoredReason)}</div>`
         : '');
 
+    // Photographs on cards
+    const photos = Array.isArray(biz.photos) ? biz.photos.filter(p => typeof p === 'string' && p.trim() !== '') : [];
+    const cardPhotosHtml = photos.length > 0 ? `
+      <div class="card-photo-hero" data-testid="biz-card-photo-hero" data-biz-id="${biz.id}" data-biz-name="${escapeHtml(biz.name)}" data-card-photos='${escapeHtml(JSON.stringify(photos))}' data-active-index="0">
+        <div class="card-photo-stage" role="button" tabindex="0" aria-label="View ${escapeHtml(biz.name)} details and photos" onclick="openBusinessModal(${biz.id})">
+          <img class="card-hero-img" src="${escapeHtml(photos[0])}" alt="${escapeHtml(biz.name)} photo 1" loading="lazy">
+          ${photos.length > 1 ? `
+            <button type="button" class="card-photo-arrow card-photo-prev" aria-label="Previous photo" onclick="event.stopPropagation(); changeCardPhoto(this, -1)">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </button>
+            <button type="button" class="card-photo-arrow card-photo-next" aria-label="Next photo" onclick="event.stopPropagation(); changeCardPhoto(this, 1)">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <span class="card-photo-count-badge">📷 <span class="card-photo-active-num">1</span> / ${photos.length}</span>
+            <div class="card-photo-dots">
+              ${photos.map((_, i) => `<span class="card-photo-dot${i === 0 ? ' active' : ''}" data-idx="${i}" onclick="event.stopPropagation(); gotoCardPhoto(this, ${i})"></span>`).join('')}
+            </div>
+          ` : `
+            <span class="card-photo-count-badge">📷 1 photo</span>
+          `}
+        </div>
+      </div>
+    ` : '';
+
     return `
       <article class="${cardClasses}" data-testid="biz-card" data-biz-id="${biz.id}" data-biz-slug="${escapeHtml(biz.slug)}" data-open-biz-source="${openSource}">
         <!-- Top Header Bar: 10. School badge, 12. Open/Closed status, 11. Share button -->
@@ -712,6 +736,8 @@
             <span>Share</span>
           </button>
         </div>
+
+        ${cardPhotosHtml}
 
         <!-- 1. Company Name -->
         <h2 class="company-name" data-testid="biz-card-title" onclick="openBusinessModal(${biz.id})">${escapeHtml(biz.name)}</h2>
@@ -767,6 +793,111 @@
       </article>
     `;
   }
+
+  window.changeCardPhoto = function(btnOrEl, step) {
+    if (!btnOrEl) return;
+    const hero = btnOrEl.closest('.card-photo-hero');
+    if (!hero) return;
+    const bizId = Number(hero.getAttribute('data-biz-id'));
+    let photos = [];
+    if (Array.isArray(state.businesses)) {
+      const b = state.businesses.find(item => item.id === bizId);
+      if (b && Array.isArray(b.photos) && b.photos.length) {
+        photos = b.photos;
+      }
+    }
+    if (!photos.length) {
+      try {
+        photos = JSON.parse(hero.getAttribute('data-card-photos') || '[]');
+      } catch (_) {}
+    }
+    if (!photos.length) return;
+    const cur = parseInt(hero.getAttribute('data-active-index') || '0', 10);
+    const next = (cur + step + photos.length) % photos.length;
+    hero.setAttribute('data-active-index', String(next));
+    const img = hero.querySelector('.card-hero-img');
+    if (img) {
+      img.src = photos[next];
+      img.alt = `${hero.getAttribute('data-biz-name') || 'Business'} photo ${next + 1}`;
+    }
+    const numEl = hero.querySelector('.card-photo-active-num');
+    if (numEl) numEl.textContent = String(next + 1);
+    const dots = hero.querySelectorAll('.card-photo-dot');
+    dots.forEach((dot, idx) => {
+      dot.classList.toggle('active', idx === next);
+    });
+  };
+
+  window.gotoCardPhoto = function(dotEl, targetIdx) {
+    if (!dotEl) return;
+    const hero = dotEl.closest('.card-photo-hero');
+    if (!hero) return;
+    const bizId = Number(hero.getAttribute('data-biz-id'));
+    let photos = [];
+    if (Array.isArray(state.businesses)) {
+      const b = state.businesses.find(item => item.id === bizId);
+      if (b && Array.isArray(b.photos) && b.photos.length) {
+        photos = b.photos;
+      }
+    }
+    if (!photos.length) {
+      try {
+        photos = JSON.parse(hero.getAttribute('data-card-photos') || '[]');
+      } catch (_) {}
+    }
+    if (!photos.length || targetIdx < 0 || targetIdx >= photos.length) return;
+    hero.setAttribute('data-active-index', String(targetIdx));
+    const img = hero.querySelector('.card-hero-img');
+    if (img) {
+      img.src = photos[targetIdx];
+      img.alt = `${hero.getAttribute('data-biz-name') || 'Business'} photo ${targetIdx + 1}`;
+    }
+    const numEl = hero.querySelector('.card-photo-active-num');
+    if (numEl) numEl.textContent = String(targetIdx + 1);
+    const dots = hero.querySelectorAll('.card-photo-dot');
+    dots.forEach((dot, idx) => {
+      dot.classList.toggle('active', idx === targetIdx);
+    });
+  };
+
+  // Touch swipe support for card photo hero carousels
+  let _cardTouchStartX = 0;
+  let _cardTouchStartY = 0;
+  let _cardTouchHero = null;
+
+  document.addEventListener('touchstart', (e) => {
+    const hero = e.target.closest('.card-photo-hero');
+    if (hero) {
+      _cardTouchHero = hero;
+      if (e.touches && e.touches[0]) {
+        _cardTouchStartX = e.touches[0].clientX;
+        _cardTouchStartY = e.touches[0].clientY;
+      }
+    } else {
+      _cardTouchHero = null;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (!_cardTouchHero) return;
+    const hero = _cardTouchHero;
+    _cardTouchHero = null;
+    if (e.target.closest('.card-photo-arrow') || e.target.closest('.card-photo-dot')) {
+      return;
+    }
+    if (!e.changedTouches || !e.changedTouches[0]) return;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const diffX = endX - _cardTouchStartX;
+    const diffY = endY - _cardTouchStartY;
+    if (Math.abs(diffX) > 35 && Math.abs(diffX) > Math.abs(diffY)) {
+      if (diffX < 0) {
+        window.changeCardPhoto(hero, 1);
+      } else {
+        window.changeCardPhoto(hero, -1);
+      }
+    }
+  }, { passive: true });
 
   function renderCards() {
     if (!els.cardsGrid) return;
