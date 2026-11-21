@@ -258,4 +258,7 @@ testAssert(str_contains($cssSrc, '.cards-group'), 'app.css defines .cards-group 
 testAssert(str_contains($cssSrc, '#cards-grid:has(.cards-group)'), 'app.css defines #cards-grid:has(.cards-group) vertical flex isolation');
 testAssert(str_contains($cssSrc, '.cards-photo-group + .cards-text-group'), 'app.css defines spacing between photo and text card groups');
 
+// 17. Check Open Now/Closed Badges Removed from Cards (#421)
+testAssert(!str_contains($jsSrc, 'open-status-btn'), 'directory.js removes visual Open Now/Closed status badge from cards while preserving filter functionality');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

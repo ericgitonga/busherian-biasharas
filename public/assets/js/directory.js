@@ -724,10 +724,6 @@
         <div class="card-header-bar">
           <div class="header-badges">
             <span class="school-badge ${schoolCls}">${escapeHtml(schoolBadgeText)}</span>
-            <button type="button" class="open-status-btn ${hours.state === 'OPEN_NOW' ? 'open' : 'closed'}">
-              <span>${hours.state === 'OPEN_NOW' ? '🟢' : '🔴'}</span>
-              <span>${escapeHtml(hours.badge_text)}</span>
-            </button>
             ${needBadge}
             ${(biz.is_bookable || biz.booking_enabled || biz.booking_url) ? `<span class="badge-bookable" data-testid="biz-card-bookable-badge">📅 Book Appointment</span>` : ''}
           </div>
@@ -2009,9 +2005,8 @@
       }
     }
 
-    const hours = biz.hours_status || { state: 'CLOSED', badge_text: 'Closed' };
     const hoursChip = document.getElementById('detail-hours-chip');
-    if (hoursChip) hoursChip.textContent = `🟢 ${hours.badge_text}`;
+    if (hoursChip) hoursChip.style.display = 'none';
 
     const schoolChip = document.getElementById('detail-school-chip');
     if (schoolChip) schoolChip.textContent = `🎓 Verified Alum · ${biz.school_badge || 'AHS'}`;
@@ -3044,10 +3039,6 @@
           const locText = [b.area_neighborhood, b.city_county].filter(Boolean).join(', ');
 
           const hours = b.hours_status || { state: 'CLOSED', badge_text: 'Closed' };
-          const isOpen = hours.state === 'OPEN_NOW' || hours.state === 'CLOSING_SOON';
-          const statusBadgeHtml = isOpen
-            ? `<span class="badge-status open" style="font-size:11px;padding:2px 8px;border-radius:999px;background:#ECFDF5;color:#065F46;border:1px solid #34D399;font-weight:700;">🟢 Open</span>`
-            : `<span class="badge-status closed" style="font-size:11px;padding:2px 8px;border-radius:999px;background:#F3F4F6;color:#6B7280;border:1px solid #D1D5DB;font-weight:600;">Closed</span>`;
 
           let founderHtml = '';
           if (b.founder_role && (b.founder_role === 'founder' || b.founder_role === 'co_founder') && b.founder_name) {
@@ -3075,7 +3066,6 @@
                     </a>
                     <div class="biz-list-badges">
                       <span class="school-badge ${schoolCls}">${escapeHtml(schoolBadge)}</span>
-                      ${statusBadgeHtml}
                     </div>
                   </div>
 
@@ -3399,7 +3389,6 @@
       <div class="modal-header">
         <div>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem;">
-            <span class="status-dot status-${escapeHtml(hours.state)}">● ${escapeHtml(hours.badge_text)}</span>
             ${(safeBookingHref || isBuiltInBookable) ? '<span class="badge-bookable">📅 Direct Booking Available</span>' : ''}
             ${biz.b2b_ready ? '<span class="badge-distance">🏢 B2B & LPO Ready</span>' : ''}
             ${biz.regulator_name ? `<span class="badge-distance">🛡️ ${escapeHtml(biz.regulator_name)}${biz.regulator_license ? ': ' + escapeHtml(biz.regulator_license) : ''}</span>` : ''}
