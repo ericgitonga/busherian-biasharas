@@ -2221,12 +2221,17 @@ def test_playwright_ch1_chunk5_installable_pwa():
         assert cache_audit["leakedOwnerHints"] is False, "CRITICAL: owner_email_hints found in Service Worker Cache Storage!"
         assert not any("/owner/" in u or "/submit.php" in u or "/takedown.php" in u for u in cache_audit["urls"])
 
-        # 3. Verify smart '📲 Install App' button: strictly hidden on web/desktop, visible on mobile
+        # 3. Verify smart '📲 Install App' button: strictly hidden on web/desktop, housed in mobile drawer (#418)
         install_btn = page.get_by_test_id("btn-install-app")
-        assert not install_btn.is_visible(), "Install App button should not appear on web"
+        assert not install_btn.is_visible(), "Install App button should not appear in desktop header"
         page.set_viewport_size({"width": 390, "height": 844})
-        install_btn.wait_for(state="visible", timeout=5000)
-        install_btn.click()
+        assert not install_btn.is_visible(), "Install App button should not appear in mobile sticky header"
+
+        # Open mobile drawer to access Install App
+        page.get_by_test_id("btn-mobile-menu").click()
+        drawer_install_btn = page.get_by_test_id("btn-install-app-drawer")
+        drawer_install_btn.wait_for(state="visible", timeout=5000)
+        drawer_install_btn.click()
 
         pwa_modal = page.get_by_test_id("pwa-install-modal")
         pwa_modal.wait_for(state="visible", timeout=5000)
@@ -2235,7 +2240,7 @@ def test_playwright_ch1_chunk5_installable_pwa():
         page.get_by_test_id("btn-close-pwa-modal").click()
         pwa_modal.wait_for(state="hidden", timeout=5000)
 
-        # Dispatch synthetic beforeinstallprompt and confirm clicking #btn-install-app calls prompt() and hides CTA
+        # Dispatch synthetic beforeinstallprompt and confirm clicking drawer install button calls prompt() and hides CTA
         page.evaluate(
             """() => {
                 window.__pwaPromptCalled = 0;
@@ -2245,11 +2250,12 @@ def test_playwright_ch1_chunk5_installable_pwa():
                 window.dispatchEvent(ev);
             }"""
         )
-        install_btn.click()
+        drawer_install_btn.click()
         page.wait_for_function(
-            "() => window.__pwaPromptCalled === 1 && document.getElementById('btn-install-app').hidden === true",
+            "() => window.__pwaPromptCalled === 1 && document.getElementById('btn-install-app-drawer').hidden === true",
             timeout=5000,
         )
+        page.evaluate("toggleMobileDrawer(false)")
         page.set_viewport_size({"width": 1280, "height": 800})
 
         # 4. Verify PWA shortcut deep-link (?source=pwa&filter=bookable) activates the Book Appointment pill

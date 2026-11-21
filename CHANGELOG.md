@@ -6,47 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
-## [0.39.5] - 2026-11-21
-### Fixed
-- **Sticky Mobile Header & Relocate Install App to Hamburger Drawer**:
-  - Replaced `overflow-x: hidden` with modern `overflow-x: clip` across `html`, `body`, and `.directory-layout-wrapper`, ensuring `position: sticky` and `position: -webkit-sticky` on `.site-header` function reliably across iOS Safari and Android Chrome without being trapped by overflow ancestors.
-  - Set `.site-header` `z-index: 1000` with top pinning, keeping `+ List Your Biashara` (`.btn-list-biashara`) and the `☰` hamburger button (`.btn-hamburger`) permanently visible as users scroll through the directory feed.
-  - Relocated `📲 Install App` from the mobile top header into the hamburger menu drawer (`#btn-install-app-drawer`), uncluttering the mobile header bar so the brand title, listing button, and hamburger toggle fit on a single line.
-  - Added unit test assertions in `tests/test_streamlined_directory_features.php`.
-  - Bumped Service Worker cache identifier to `bbiz-pwa-v0.39.5` in `public/sw.js`.
-
-## [0.39.4] - 2026-11-21
-### Fixed
-- **Mobile Viewport Full-Width Alignment (Body Width Aligned with Header & Footer)**:
-  - Eliminated horizontal viewport blowout on mobile devices by setting `overflow-x: hidden` and `max-width: 100vw` across `html`, `body`, and `.directory-layout-wrapper`.
-  - Configured `.directory-layout-wrapper` with `align-items: stretch !important` and `box-sizing: border-box !important` in the mobile media query (`@media (max-width: 900px)`), preventing flex-start child content expansion.
-  - Updated `.business-grid` on mobile to `grid-template-columns: 100% !important`, ensuring directory listing cards span the exact full width of the mobile content area without horizontal scrolling.
-  - Added `flex-wrap: wrap` and consistent spacing to `.card-header-bar`, `.header-badges`, and `.card-secondary-row`, ensuring school badges, operating status pills, bookable badges, and action links gracefully reflow on narrow phone displays without expanding the card boundary.
-  - Constrained `.mobile-search-controls`, `.mobile-search-capsule`, and `.mobile-quick-rail` to `width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box`, isolating rail horizontal scrolling strictly within the pill container.
-  - Bumped Service Worker cache identifier to `bbiz-pwa-v0.39.4` in `public/sw.js`.
-  - Added unit regression tests in `tests/test_streamlined_directory_features.php` (Test 15).
-
-## [0.39.3] - 2026-11-21
+## [0.40.0] - 2026-11-21
 ### Added
-- **Listing Photographs Showcase & Multi-Photo Carousel on Directory Cards (Preview Subdomain Evaluation)**:
+- **Directory Listing Card Photographs Showcase & Interactive Carousel (#415, #416)**:
   - Added visual photo hero showcase (`.card-photo-hero`) to directory listing cards in `public/assets/js/directory.js` and `public/assets/css/app.css` for businesses with uploaded photographs.
-  - Positioned photo hero with a clean 16:9 aspect ratio and 12px rounded framing directly beneath the top header bar (`.card-header-bar`), ensuring school badges, operating status pills, and share buttons remain consistently aligned across all cards in the grid.
-  - Implemented interactive client-side carousel navigation on cards with multiple photos:
-    - Floating round navigation chevrons (`‹` and `›`) on desktop hover and touch interfaces.
-    - Glassmorphic photo counter pill (e.g. `📷 1 / 5`) in the bottom-right corner updating dynamically on navigation.
-    - Centered pagination dot indicators allowing direct jump to any photo thumbnail.
-    - Native touch swipe support (`touchstart` / `touchend`) for intuitive mobile photo browsing.
-    - Seamless delegation: clicking the photo body opens the canonical business detail view / modal, while clicking navigation controls steps through images without triggering card navigation.
-  - Preserved compact, dignified presentation for listings without photographs: zero blank boxes or broken layout shifts.
-  - Attached sample scenic photo sets to The Last Village Lodge (3 photos) and Tumaini Gardens Resort (2 photos) on preview alongside Naishola Gardens (5 photos) to demonstrate multiple photo count variations.
-  - Bumped Service Worker cache identifier to `bbiz-pwa-v0.39.3` in `public/sw.js`.
+  - Rendered photo hero in clean 16:9 aspect ratio with 12px rounded framing positioned immediately beneath the card header bar (`.card-header-bar`), keeping school affiliation badges, operating status pills, and share triggers evenly aligned across grid rows.
+  - Implemented client-side multi-photo carousel navigation with floating desktop chevron navigation buttons (`‹` and `›`), glassmorphic photo counter badge (`📷 1 / N`), and centered dot pagination indicators for direct photo jumps.
+  - Added native mobile touch swipe (`touchstart` / `touchend`) gesture support for fluid mobile carousel navigation without triggering card navigation.
+  - Preserved compact, dignified card layout for listings without photographs with zero empty boxes or layout shift.
   - Added unit test coverage in `tests/test_streamlined_directory_features.php` (Test 14).
 
-## [0.39.2] - 2026-11-21
-### Changed
-- **Sync Preview Subdomain with Main (v0.39.1)**:
-  - Synchronized `preview` branch with `main` to deliver the 10-photo maximum capacity expansion (#411) and asset cache-busting query strings (#413) to `preview.busherianbiasharas.com`.
-  - Preserved preview Naishola sample photo fixtures in `public/assets/photos` and non-destructive mutable upload guards in `PhotoUploader.php`.
+### Fixed
+- **Mobile Viewport Full-Width Layout Alignment (#415, #417)**:
+  - Eliminated mobile horizontal body blowout where `.business-grid`'s rigid `minmax(320px, 1fr)` and wide unwrapped header badge rows caused the main content body to exceed screen width, forcing horizontal scrolling to view cards.
+  - Overrode `.business-grid` on mobile screens to `grid-template-columns: 100% !important`, setting `.directory-layout-wrapper` to `align-items: stretch !important` so card widths match the header and footer width exactly.
+  - Added `flex-wrap: wrap` to `.card-header-bar`, `.header-badges`, and `.card-secondary-row` so school badges, open status pills, appointment badges, and action links gracefully reflow on narrow phone displays.
+  - Constrained mobile search capsules and quick category rails to 100% width with boundary isolation.
+  - Added unit regression test assertions in `tests/test_streamlined_directory_features.php` (Test 15).
+- **Sticky Mobile Header & Relocated Install App to Drawer (#415, #418)**:
+  - Replaced `overflow-x: hidden` with modern `overflow-x: clip` across `html`, `body`, and `.directory-layout-wrapper`, ensuring `position: sticky` and `position: -webkit-sticky` on `.site-header` function reliably across mobile browser rendering engines without being trapped by ancestor clipping.
+  - Pinned `.site-header` with `top: 0 !important; z-index: 1000 !important;` on mobile, keeping `+ List Your Biashara` (`.btn-list-biashara`) and the `☰` hamburger menu toggle permanently accessible during long directory feeds.
+  - Relocated `📲 Install App` from the top header into the hamburger menu drawer (`#btn-install-app-drawer`) on mobile devices, ensuring the header title, CTA, and menu trigger fit on a single line.
 
 ## [0.39.1] - 2026-11-21
 ### Fixed
@@ -65,27 +45,13 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
   - Enhanced Airbnb showcase CSS (`app.css`) and detail page handler (`directory.js`) to support 5+ photo counts smoothly, preserving the 5-photo mosaic layout with overflow photos accessible in the high-resolution lightbox.
   - Added unit regression tests in `tests/run_unit_tests.php` (Test 18 & Test 65) verifying 10-photo GD processing and upfront validation exception on 11 photos.
 
-## [0.38.3] - 2026-11-20
+## [0.38.1] - 2026-11-20
 ### Added
 - **60-Second Client-Side Countdown Timer on OTP Verification Screen (#410)**:
   - Added a responsive 60-second client-side countdown timer badge (`#otp-timer-badge` / `#claim-otp-timer-badge`) on the verification code input screens in `public/owner/login.php` and `public/owner/claim.php`.
   - Dynamically guides business owners entering their 6-digit email code (`⏱️ Code entry window: 60s remaining`), pacing input and eliminating uncertainty around code validity.
   - Automatically transitions at 0 seconds to helpful next steps (`⏱️ 60s elapsed. Code didn’t arrive or expired? You can request a fresh code below.`) and highlights the resend action (`🔄 Resend 6-digit code (Ready)`), keeping client pacing aligned with the server's 60-second anti-spam resend cooldown.
   - Added unit regression assertions in `tests/run_unit_tests.php` (Test 64) verifying badge elements, 60s interval countdown, and zero `<code>` tags.
-
-## [0.38.2] - 2026-11-20
-### Fixed
-- **FTPS Deploy Compatibility for Sample Showcase Photos (#405)**:
-  - Relocated Naishola Gardens test photos from `public/uploads/businesses/` to version-controlled `public/assets/photos/naishola_{1..5}.webp`, resolving the FTPS deployment security rejection on `public/uploads/`.
-  - Updated `PhotoUploader::resolveSafeUploadFilePath` to recognize `/assets/photos/` alongside `/uploads/businesses/`, while guarding repository static assets from accidental unlink or quarantine mutations.
-  - Added idempotent database migration `naishola_sample_photos_v2` (`2026-11-v37-naishola-sample-photos-assets`) to ensure preview environments automatically link the photo set on deployment.
-
-## [0.38.1] - 2026-11-20
-### Added
-- **Naishola Gardens High-Resolution Photo Test Case (#405)**:
-  - Processed and attached 5 scenic photographs to Naishola Gardens (`naishola-gardens`) to serve as a live verification test case for the Airbnb-style top gallery showcase on preview.
-  - Converted original high-resolution scenery captures into optimized WebP assets (`/uploads/businesses/naishola_1.webp` through `naishola_5.webp`) served via the 5-photo responsive mosaic.
-  - Added idempotent database migration `naishola_sample_photos_v1` in `Database::migrateAndSeed()` (schema version `2026-11-v36-naishola-sample-photos`) to ensure preview environments automatically link the photo set on deployment.
 
 ## [0.38.0] - 2026-11-20
 ### Added

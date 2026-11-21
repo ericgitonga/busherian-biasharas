@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v38-preview-card-photos';
+    public const SCHEMA_INIT_VERSION = '2026-11-v39-card-photos-and-mobile-layout';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -573,7 +573,7 @@ final class Database
                 error_log('[Database::ensureInitialized] naishola_sample_photos_v2 failed: ' . $photoErr->getMessage());
             }
         }
-        if (self::getSetting($pdo, 'preview_card_sample_photos_v1') !== 'done') {
+        if (self::isPreview() && self::getSetting($pdo, 'preview_card_sample_photos_v1') !== 'done') {
             try {
                 $lodgePhotos = json_encode([
                     '/assets/photos/naishola_2.webp',
