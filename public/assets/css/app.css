@@ -2022,6 +2022,24 @@ a {
   gap: 20px;
 }
 
+/* Card Photo & Text Grouping Layout (#420) */
+#cards-grid:has(.cards-group),
+.cards-grid-grouped {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 20px !important;
+  width: 100% !important;
+}
+
+.cards-group {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.cards-photo-group + .cards-text-group {
+  margin-top: 4px;
+}
+
 .biz-card {
   background: #FFFFFF;
   border: 1px solid #E5DEC9;
@@ -3478,6 +3496,21 @@ a {
     min-width: 0 !important;
     box-sizing: border-box !important;
     gap: 16px !important;
+  }
+  #cards-grid:has(.cards-group),
+  .cards-grid-grouped {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 16px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .cards-group {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .cards-photo-group + .cards-text-group {
+    margin-top: 0 !important;
   }
   .biz-card {
     width: 100% !important;

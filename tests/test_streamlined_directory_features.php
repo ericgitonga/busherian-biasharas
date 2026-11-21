@@ -250,4 +250,12 @@ testAssert(str_contains($cssSrc, 'overflow-x: hidden'), 'app.css defines overflo
 testAssert(str_contains($cssSrc, 'grid-template-columns: 100% !important'), 'app.css defines 100% width grid columns for business-grid on mobile');
 testAssert(str_contains($cssSrc, 'align-items: stretch !important'), 'app.css defines align-items: stretch for directory-layout-wrapper on mobile');
 
+// 16. Check Directory Card Alignment by Photo Presence (#420)
+testAssert(str_contains($jsSrc, 'data-testid="cards-photo-group"'), 'directory.js defines cards-photo-group for listings with photos');
+testAssert(str_contains($jsSrc, 'data-testid="cards-text-group"'), 'directory.js defines cards-text-group for listings without photos');
+testAssert(str_contains($jsSrc, 'cards-grid-grouped'), 'directory.js manages cards-grid-grouped class on container');
+testAssert(str_contains($cssSrc, '.cards-group'), 'app.css defines .cards-group spanning full grid width');
+testAssert(str_contains($cssSrc, '#cards-grid:has(.cards-group)'), 'app.css defines #cards-grid:has(.cards-group) vertical flex isolation');
+testAssert(str_contains($cssSrc, '.cards-photo-group + .cards-text-group'), 'app.css defines spacing between photo and text card groups');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
