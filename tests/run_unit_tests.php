@@ -391,11 +391,11 @@ assertTrue(
     'HoursEngine::evaluateStatus reports OPEN_NOW on Sunday when Sunday hours are configured'
 );
 
-// 18. Verify Tickets #90, #91, #92, #93, #171 & #176: PhotoUploader GD re-encoding, EXIF stripping, upfront PhotoUploadValidationException caps & corrupt file rejection
+// 18. Verify Tickets #90, #91, #92, #93, #171, #176 & #411: PhotoUploader GD re-encoding, EXIF stripping, upfront PhotoUploadValidationException caps (max 10) & corrupt file rejection
 $testDataUrls = [];
-for ($i = 0; $i < 6; $i++) {
+for ($i = 0; $i < 11; $i++) {
     $im = imagecreatetruecolor(40, 30);
-    $col = imagecolorallocate($im, 20 * $i, 100, 150);
+    $col = imagecolorallocate($im, 10 * $i, 100, 150);
     imagefilledrectangle($im, 0, 0, 40, 30, $col);
     ob_start();
     imagejpeg($im, null, 85);
@@ -403,29 +403,29 @@ for ($i = 0; $i < 6; $i++) {
     imagedestroy($im);
     $testDataUrls[] = 'data:image/jpeg;base64,' . base64_encode($jpegBytes);
 }
-$threwOnSixPhotos = false;
+$threwOnElevenPhotos = false;
 try {
     PhotoUploader::processBusinessPhotos(null, [], null, json_encode($testDataUrls));
 } catch (PhotoUploadValidationException $e) {
-    $threwOnSixPhotos = true;
+    $threwOnElevenPhotos = true;
 }
-$savedPhotosJson = PhotoUploader::processBusinessPhotos(null, [], null, json_encode(array_slice($testDataUrls, 0, 5)));
+$savedPhotosJson = PhotoUploader::processBusinessPhotos(null, [], null, json_encode(array_slice($testDataUrls, 0, 10)));
 $decodedPhotos = PhotoUploader::decodePhotosJson($savedPhotosJson);
 $firstSavedDiskPath = $unitTempUploadsRoot . ($decodedPhotos[0] ?? '');
 $savedImgInfo = is_file($firstSavedDiskPath) ? @getimagesize($firstSavedDiskPath) : false;
 assertTrue(
-    $threwOnSixPhotos === true &&
-    count($decodedPhotos) === 5 &&
+    $threwOnElevenPhotos === true &&
+    count($decodedPhotos) === 10 &&
     str_starts_with($decodedPhotos[0], '/uploads/businesses/bbiz_') &&
     is_array($savedImgInfo) &&
     (int)$savedImgInfo[0] === 40 &&
     (int)$savedImgInfo[1] === 30,
-    'PhotoUploader::processBusinessPhotos sanitizes up to 5 images via GD and throws PhotoUploadValidationException upfront when >5 photos are submitted (#176)'
+    'PhotoUploader::processBusinessPhotos sanitizes up to 10 images via GD and throws PhotoUploadValidationException upfront when >10 photos are submitted (#176, #411)'
 );
 $afterRemoveJson = PhotoUploader::processBusinessPhotos($savedPhotosJson, [$decodedPhotos[0]], null, null);
 $afterRemoveList = PhotoUploader::decodePhotosJson($afterRemoveJson);
 assertTrue(
-    count($afterRemoveList) === 4 && !in_array($decodedPhotos[0], $afterRemoveList, true),
+    count($afterRemoveList) === 9 && !in_array($decodedPhotos[0], $afterRemoveList, true),
     'PhotoUploader::processBusinessPhotos removes checked photos accurately'
 );
 
@@ -5975,6 +5975,40 @@ assertTrue(
     str_contains($freshClaimSrc, 'var remaining = 60;') &&
     !str_contains($freshClaimSrc, '<code>'),
     '64b (#410): public/owner/claim.php contains 60-second OTP countdown timer and zero <code> tags'
+);
+
+// 65: Maximum 10 Business Photos Limit (#411)
+$freshJsEnhance = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/form-enhancements.js');
+$freshBootstrap = (string)file_get_contents(dirname(__DIR__) . '/src/bootstrap.php');
+$freshCharter = (string)file_get_contents(dirname(__DIR__) . '/public/charter.php');
+assertTrue(
+    PhotoUploader::MAX_PHOTOS === 10,
+    '65a (#411): PhotoUploader::MAX_PHOTOS constant is updated to 10'
+);
+assertTrue(
+    str_contains($freshJsEnhance, 'const MAX_PHOTOS = 10;') &&
+    str_contains($freshBootstrap, 'Up to 10 photos') &&
+    str_contains($freshCharter, 'up to 10 photos'),
+    '65b (#411): Form enhancements, bootstrap markup, and charter FAQs disclose 10 photos limit'
+);
+
+
+// 66: Cache-busting version query strings on form-enhancements.js and static assets (#413)
+$ownerEditSrc = (string)file_get_contents(dirname(__DIR__) . '/public/owner/edit-business.php');
+$adminEditSrc = (string)file_get_contents(dirname(__DIR__) . '/public/admin/edit-business.php');
+$submitSrc = (string)file_get_contents(dirname(__DIR__) . '/public/submit.php');
+$swSrc = (string)file_get_contents(dirname(__DIR__) . '/public/sw.js');
+assertTrue(
+    function_exists('bbiz_app_version') &&
+    bbiz_app_version() === trim((string)file_get_contents(dirname(__DIR__) . '/VERSION')),
+    '66a (#413): bbiz_app_version returns current app version string'
+);
+assertTrue(
+    str_contains($ownerEditSrc, 'form-enhancements.js?v=') &&
+    str_contains($adminEditSrc, 'form-enhancements.js?v=') &&
+    str_contains($submitSrc, 'form-enhancements.js?v=') &&
+    str_contains($swSrc, 'bbiz-pwa-v' . bbiz_app_version()),
+    '66b (#413): form-enhancements.js script tags carry version cache buster and sw.js cache version is aligned'
 );
 
 // Cleanup 55 fixtures

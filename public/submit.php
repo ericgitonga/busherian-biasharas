@@ -570,7 +570,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
   <title>List Your Biashara — Busherian Biasharas (AHS &amp; AGHS Alumni Directory)</title>
   <meta name="description" content="Register your verified AHS or AGHS alumni business on the Busherian Biasharas directory.">
 <?= bbiz_head_meta_tags('List Your Biashara — Busherian Biasharas (AHS & AGHS Alumni Directory)', 'Register your verified AHS or AGHS alumni business on the Busherian Biasharas directory.', '/submit.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
 
@@ -1451,7 +1451,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
       ? bbiz_json_for_html_script(array_diff_key($_POST, array_flip(['csrf_token', 'form_ts', 'form_nonce', 'form_sig', 'js_interaction_token', 'website', 'owner_password', 'owner_password_confirm', 'house_name', 'house_custom', 'year_left', 'school_number', 'business_photos_data_json', 'booking_fields_present', 'age_attestation_18', 'dpa_consent_directory'])))
       : 'null' ?>;
   </script>
-  <script src="/assets/js/form-enhancements.js"></script>
-  <script src="/assets/js/consent-metrics.js"></script>
+  <script src="/assets/js/form-enhancements.js?v=<?= urlencode(bbiz_app_version()) ?>"></script>
+  <script src="/assets/js/consent-metrics.js?v=<?= urlencode(bbiz_app_version()) ?>"></script>
 </body>
 </html>

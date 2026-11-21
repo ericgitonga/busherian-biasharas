@@ -46,7 +46,7 @@ $tokens = AntiSpamGate::generateFormTokens();
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Confirm Sign Out — Busherian Biasharas</title>
 <?= bbiz_head_meta_tags('Confirm Sign Out — Busherian Biasharas', 'Confirm signing out of your Busherian Biasharas Owner Account.', '/owner/logout.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
   <header class="site-header">

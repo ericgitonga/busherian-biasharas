@@ -260,7 +260,7 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claim &amp; Manage <?= htmlspecialchars((string)$biz['name'], ENT_QUOTES, 'UTF-8') ?> — Busherian Biasharas</title>
 <?= bbiz_head_meta_tags('Claim Your Business — Busherian Biasharas', 'Activate your persistent Owner Account and manage your Busherian Biasharas listing.', '/owner/claim.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
   <header class="site-header">

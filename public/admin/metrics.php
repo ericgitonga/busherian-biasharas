@@ -110,7 +110,7 @@ $dailyRows = $dailyStmt->fetchAll();
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Usage Metrics &amp; Analytics — Busherian Biasharas Admin</title>
 <?= bbiz_head_meta_tags('Usage Metrics & Analytics — Busherian Biasharas Admin', 'Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS).', '/admin/metrics.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
   <header class="site-header">

@@ -39,7 +39,7 @@ $sendJsonOrHtmlError = static function (int $statusCode, string $code, string $m
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Admin Review Link Notice — Busherian Biasharas</title>
-      <link rel="stylesheet" href="/assets/css/app.css">
+      <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
     </head>
     <body style="padding:2rem;">
       <div data-testid="review-action-error" style="max-width:600px;margin:2rem auto;background:#FEF2F2;border:2px solid #DC2626;border-radius:14px;padding:1.75rem;">
@@ -110,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Confirm Admin <?= htmlspecialchars(ucfirst($action), ENT_QUOTES, 'UTF-8') ?> — Busherian Biasharas</title>
-      <link rel="stylesheet" href="/assets/css/app.css">
+      <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
     </head>
     <body style="padding:2rem;">
       <div style="max-width:600px;margin:2rem auto;background:#fff;border:2px solid #114B3E;border-radius:14px;padding:1.75rem;">
@@ -189,7 +189,7 @@ if ($wantsJson) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Review Completed — Busherian Biasharas</title>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body style="padding:2rem;">
   <div data-testid="review-action-completed" style="max-width:600px;margin:2rem auto;background:#fff;border:2px solid #114B3E;border-radius:14px;padding:1.75rem;">

@@ -98,7 +98,7 @@ $vettingRow = $vetStmt->fetch() ?: null;
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Edit Business #<?= (int)($biz['business_number'] ?? $biz['id']) ?> (<?= htmlspecialchars((string)($biz['business_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>) — Admin Console</title>
 <?= bbiz_head_meta_tags('Edit Business — Busherian Biasharas Admin', 'Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS).', '/admin/edit-business.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
   <header class="site-header">
@@ -537,6 +537,6 @@ $vettingRow = $vetStmt->fetch() ?: null;
       }
     })();
   </script>
-  <script src="/assets/js/form-enhancements.js"></script>
+  <script src="/assets/js/form-enhancements.js?v=<?= urlencode(bbiz_app_version()) ?>"></script>
 </body>
 </html>

@@ -136,6 +136,18 @@ if (!function_exists('bbiz_send_security_headers')) {
     }
 }
 
+if (!function_exists('bbiz_app_version')) {
+    function bbiz_app_version(): string
+    {
+        static $ver = null;
+        if ($ver === null) {
+            $verPath = dirname(__DIR__) . '/VERSION';
+            $ver = trim((string)@file_get_contents($verPath) ?: '0.39.1');
+        }
+        return $ver;
+    }
+}
+
 if (!function_exists('bbiz_head_meta_tags')) {
     function bbiz_head_meta_tags(
         string $title = 'Busherian Biasharas — Verified Alumni Business Directory (AHS & AGHS)',
@@ -314,14 +326,14 @@ WRAP;
           </div>
         </div>
 
-        <!-- BUSINESS PHOTOS UPLOAD (OPTIONAL: 3 TO 5 RECOMMENDED, MAX 5) -->
+        <!-- BUSINESS PHOTOS UPLOAD (OPTIONAL: 3 TO 10 RECOMMENDED, MAX 10) -->
         <div style="margin-top:1rem;background:#F0FDF4;border:1px solid #A7F3D0;border-radius:12px;padding:1rem;">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.35rem;">
             <label for="business_photos" style="font-weight:800;font-size:0.88rem;color:#065F46;">
-              📸 Business Photos (Optional — 3 to 5 Photos Recommended, Max 5)
+              📸 Business Photos (Optional — 3 to 10 Photos Recommended, Max 10)
             </label>
             <span id="photo-count-badge" style="font-size:0.76rem;font-weight:700;background:#D1FAE5;color:#065F46;padding:0.2rem 0.6rem;border-radius:999px;">
-              Up to 5 photos • Automatically resized &amp; location privacy protected
+              Up to 10 photos • Automatically resized &amp; location privacy protected
             </span>
           </div>
           <p style="margin:0 0 0.65rem 0;font-size:0.8rem;color:#047857;">
@@ -776,7 +788,7 @@ if (!function_exists('bbiz_render_community_charter_clauses')) {
           <section class="charter-clause-card" data-testid="charter-clause-1">
             <div class="charter-clause-badge">1. Free-Forever Core Listing Guarantee</div>
             <p class="charter-clause-body">
-              Standard listings for verified <strong>AHS &amp; AGHS</strong> alumni businesses are <strong>100% free forever</strong> &mdash; including up to 5 photos, Primary + Secondary specialties, live map pin &amp; turn-by-turn directions, and direct Call, WhatsApp, Email, and Website buttons.
+              Standard listings for verified <strong>AHS &amp; AGHS</strong> alumni businesses are <strong>100% free forever</strong> &mdash; including up to 10 photos, Primary + Secondary specialties, live map pin &amp; turn-by-turn directions, and direct Call, WhatsApp, Email, and Website buttons.
             </p>
           </section>
 

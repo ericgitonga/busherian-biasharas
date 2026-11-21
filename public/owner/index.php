@@ -130,7 +130,7 @@ $tokens = AntiSpamGate::generateFormTokens();
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Businesses — Busherian Biasharas Owner Portal</title>
 <?= bbiz_head_meta_tags('My Businesses — Busherian Biasharas Owner Portal', 'Manage and update your verified Busherian Biashara listings.', '/owner/index.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
   <header class="site-header">

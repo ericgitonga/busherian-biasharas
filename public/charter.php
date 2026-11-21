@@ -13,7 +13,7 @@ if (!headers_sent()) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Community Charter &amp; Free-Forever Guarantee — Busherian Biasharas</title>
 <?= bbiz_head_meta_tags('Community Charter & Free-Forever Guarantee — Busherian Biasharas', 'How Busherian Biasharas keeps core AHS & AGHS alumni listings, direct bookings, and B2B inquiries 100% free forever while sustaining secure hosting and verification.', '/charter.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
   <header class="site-header">
@@ -51,7 +51,7 @@ if (!headers_sent()) {
       <div style="display:grid;gap:0.9rem;">
         <div style="background:#FAF8F5;border:1px solid #E5E7EB;border-radius:10px;padding:0.95rem 1.1rem;">
           <strong style="color:#111827;display:block;margin-bottom:0.25rem;">Will my free listing ever be placed behind a paywall later?</strong>
-          <span style="font-size:0.88rem;color:#374151;">No. Standard verified alumni listings &mdash; including your Primary + Secondary specialties, up to 5 photos, live map pin, road directions, and direct Call / WhatsApp / Email / Website / Booking links &mdash; remain 100% free forever.</span>
+          <span style="font-size:0.88rem;color:#374151;">No. Standard verified alumni listings &mdash; including your Primary + Secondary specialties, up to 10 photos, live map pin, road directions, and direct Call / WhatsApp / Email / Website / Booking links &mdash; remain 100% free forever.</span>
         </div>
         <div style="background:#FAF8F5;border:1px solid #E5E7EB;border-radius:10px;padding:0.95rem 1.1rem;">
           <strong style="color:#111827;display:block;margin-bottom:0.25rem;">Do you charge a fee or commission when someone books an appointment or exports my firm on a B2B shortlist?</strong>
@@ -70,6 +70,6 @@ if (!headers_sent()) {
       </div>
     </article>
   </main>
-  <script src="/assets/js/consent-metrics.js"></script>
+  <script src="/assets/js/consent-metrics.js?v=<?= urlencode(bbiz_app_version()) ?>"></script>
 </body>
 </html>

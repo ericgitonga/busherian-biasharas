@@ -210,7 +210,7 @@ try {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Business Management &amp; Vetting Triage — Busherian Biasharas</title>
 <?= bbiz_head_meta_tags('Admin Console — Busherian Biasharas', 'Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS).', '/admin/index.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
 <?php if (\BusherianBiasharas\Services\PreprodSandbox::isPreprod()): ?>

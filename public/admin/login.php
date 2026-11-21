@@ -52,7 +52,7 @@ $tokens = AntiSpamGate::generateFormTokens();
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Authentication Required — Busherian Biasharas</title>
 <?= bbiz_head_meta_tags('Admin Sign In — Busherian Biasharas', 'Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS).', '/admin/login.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
   <header class="site-header">
