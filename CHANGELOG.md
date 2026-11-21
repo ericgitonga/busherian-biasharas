@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.39.3] - 2026-11-21
+### Added
+- **Listing Photographs Showcase & Multi-Photo Carousel on Directory Cards (Preview Subdomain Evaluation)**:
+  - Added visual photo hero showcase (`.card-photo-hero`) to directory listing cards in `public/assets/js/directory.js` and `public/assets/css/app.css` for businesses with uploaded photographs.
+  - Positioned photo hero with a clean 16:9 aspect ratio and 12px rounded framing directly beneath the top header bar (`.card-header-bar`), ensuring school badges, operating status pills, and share buttons remain consistently aligned across all cards in the grid.
+  - Implemented interactive client-side carousel navigation on cards with multiple photos:
+    - Floating round navigation chevrons (`‹` and `›`) on desktop hover and touch interfaces.
+    - Glassmorphic photo counter pill (e.g. `📷 1 / 5`) in the bottom-right corner updating dynamically on navigation.
+    - Centered pagination dot indicators allowing direct jump to any photo thumbnail.
+    - Native touch swipe support (`touchstart` / `touchend`) for intuitive mobile photo browsing.
+    - Seamless delegation: clicking the photo body opens the canonical business detail view / modal, while clicking navigation controls steps through images without triggering card navigation.
+  - Preserved compact, dignified presentation for listings without photographs: zero blank boxes or broken layout shifts.
+  - Attached sample scenic photo sets to The Last Village Lodge (3 photos) and Tumaini Gardens Resort (2 photos) on preview alongside Naishola Gardens (5 photos) to demonstrate multiple photo count variations.
+  - Bumped Service Worker cache identifier to `bbiz-pwa-v0.39.3` in `public/sw.js`.
+  - Added unit test coverage in `tests/test_streamlined_directory_features.php` (Test 14).
+
 ## [0.39.2] - 2026-11-21
 ### Changed
 - **Sync Preview Subdomain with Main (v0.39.1)**:

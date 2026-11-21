@@ -237,4 +237,12 @@ testAssert(str_contains($jsSrc, 'openAllDetailPhotos'), 'directory.js defines op
 testAssert(str_contains($jsSrc, 'openMobileFilterSheet'), 'directory.js defines openMobileFilterSheet');
 testAssert(str_contains($jsSrc, 'closeMobileFilterSheet'), 'directory.js defines closeMobileFilterSheet');
 
+// 14. Check Business Card Photographs Showcase & Interactive Carousel
+testAssert(str_contains($jsSrc, 'data-testid="biz-card-photo-hero"'), 'directory.js renders data-testid="biz-card-photo-hero" on cards with photos');
+testAssert(str_contains($jsSrc, 'changeCardPhoto'), 'directory.js defines changeCardPhoto for multi-photo card navigation');
+testAssert(str_contains($jsSrc, 'gotoCardPhoto'), 'directory.js defines gotoCardPhoto for direct dot navigation');
+testAssert(str_contains($cssSrc, '.card-photo-hero'), 'app.css defines .card-photo-hero styling');
+testAssert(str_contains($cssSrc, '.card-photo-arrow'), 'app.css defines .card-photo-arrow chevron buttons');
+testAssert(str_contains($cssSrc, '.card-photo-dots'), 'app.css defines .card-photo-dots pagination indicators');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

@@ -2106,6 +2106,130 @@ a {
   border-color: #114B3E;
 }
 
+/* Business Card Photo Hero Showcase & Multi-Photo Carousel */
+.card-photo-hero {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 14px;
+  background: #F3EFE6;
+  border: 1px solid rgba(17, 75, 62, 0.08);
+  user-select: none;
+}
+
+.card-photo-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.card-hero-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.biz-card:hover .card-hero-img {
+  transform: scale(1.025);
+}
+
+/* Card Photo Carousel Navigation Chevrons */
+.card-photo-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #114B3E;
+  padding: 0;
+  transition: all 0.15s ease;
+  z-index: 3;
+  opacity: 0.88;
+}
+
+.card-photo-arrow:hover {
+  background: #FFFFFF;
+  color: #7B1113;
+  transform: translateY(-50%) scale(1.1);
+  opacity: 1;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
+}
+
+.card-photo-arrow.prev {
+  left: 8px;
+}
+
+.card-photo-arrow.next {
+  right: 8px;
+}
+
+/* Card Photo Count Badge */
+.card-photo-count-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(17, 24, 39, 0.76);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* Card Photo Pagination Dots */
+.card-photo-dots {
+  position: absolute;
+  bottom: 9px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  z-index: 2;
+  padding: 3px 7px;
+  background: rgba(17, 24, 39, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border-radius: 999px;
+}
+
+.card-photo-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.card-photo-dot.active {
+  background: #FFFFFF;
+  transform: scale(1.4);
+}
+
 /* 1. Company Name */
 .company-name {
   font-size: 18px;

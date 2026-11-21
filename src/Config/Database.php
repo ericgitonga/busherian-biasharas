@@ -573,6 +573,28 @@ final class Database
                 error_log('[Database::ensureInitialized] naishola_sample_photos_v2 failed: ' . $photoErr->getMessage());
             }
         }
+        if (self::getSetting($pdo, 'preview_card_sample_photos_v1') !== 'done') {
+            try {
+                $lodgePhotos = json_encode([
+                    '/assets/photos/naishola_2.webp',
+                    '/assets/photos/naishola_3.webp',
+                    '/assets/photos/naishola_4.webp',
+                ], JSON_UNESCAPED_SLASHES);
+                $upd = $pdo->prepare("UPDATE businesses SET photos_json = :photos WHERE slug = 'the-last-village-lodge' OR name LIKE '%Last Village%'");
+                $upd->execute([':photos' => $lodgePhotos]);
+
+                $tumainiPhotos = json_encode([
+                    '/assets/photos/naishola_4.webp',
+                    '/assets/photos/naishola_5.webp',
+                ], JSON_UNESCAPED_SLASHES);
+                $upd2 = $pdo->prepare("UPDATE businesses SET photos_json = :photos WHERE slug = 'tumaini-gardens-resort-isinya' OR name LIKE '%Tumaini%'");
+                $upd2->execute([':photos' => $tumainiPhotos]);
+
+                self::setSetting($pdo, 'preview_card_sample_photos_v1', 'done');
+            } catch (\Throwable $photoErr) {
+                error_log('[Database::ensureInitialized] preview_card_sample_photos_v1 failed: ' . $photoErr->getMessage());
+            }
+        }
 
 
         // One-time idempotent backfill of missing latitude/longitude (#138, #141, #183)
