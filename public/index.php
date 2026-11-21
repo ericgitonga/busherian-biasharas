@@ -434,7 +434,7 @@ $pageCanonicalPath = $requestedBiz
           <button type="button" id="btn-drawer-shortlist" class="btn btn-outline-light" style="border:1px solid #E5DEC9;background:#FBF8F3;color:#18201B;justify-content:flex-start;font-size:13px;padding:8px 12px;" onclick="if(document.getElementById('btn-export-shortlist')){document.getElementById('btn-export-shortlist').click();}">
             🏢 B2B Shortlist (<span class="drawer-shortlist-count">0</span>/5)
           </button>
-          <button type="button" id="btn-install-app-drawer" data-testid="btn-install-app-drawer" class="btn btn-outline-light" style="border:1px solid #E5DEC9;background:#FBF8F3;color:#18201B;justify-content:flex-start;font-size:13px;padding:8px 12px;" hidden onclick="if(document.getElementById('btn-install-app')){document.getElementById('btn-install-app').click();}">
+          <button type="button" id="btn-install-app-drawer" data-testid="btn-install-app-drawer" class="btn btn-outline-light" style="border:1px solid #E5DEC9;background:#FBF8F3;color:#18201B;justify-content:flex-start;font-size:13px;padding:8px 12px;" hidden >
             📲 Install App
           </button>
           <a href="/privacy.php" class="btn btn-outline-light" style="border:1px solid #E5DEC9;background:#FBF8F3;color:#18201B;justify-content:flex-start;font-size:13px;padding:8px 12px;">

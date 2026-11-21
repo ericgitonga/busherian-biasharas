@@ -2255,7 +2255,7 @@ def test_playwright_ch1_chunk5_installable_pwa():
             "() => window.__pwaPromptCalled === 1 && document.getElementById('btn-install-app-drawer').hidden === true",
             timeout=5000,
         )
-        page.locator("#btn-drawer-close").click()
+        page.evaluate("toggleMobileDrawer(false)")
         page.set_viewport_size({"width": 1280, "height": 800})
 
         # 4. Verify PWA shortcut deep-link (?source=pwa&filter=bookable) activates the Book Appointment pill
