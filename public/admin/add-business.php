@@ -140,7 +140,7 @@ $tokens = AntiSpamGate::generateFormTokens();
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Direct Add Business — Admin Console</title>
 <?= bbiz_head_meta_tags('Direct Add Business — Busherian Biasharas Admin', 'Busherian Biasharas — Verified Alumni Business Directory of the Alliances (AHS & AGHS).', '/admin/add-business.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
   <header class="site-header">
@@ -511,6 +511,6 @@ $tokens = AntiSpamGate::generateFormTokens();
       }
     })();
   </script>
-  <script src="/assets/js/form-enhancements.js"></script>
+  <script src="/assets/js/form-enhancements.js?v=<?= urlencode(bbiz_app_version()) ?>"></script>
 </body>
 </html>

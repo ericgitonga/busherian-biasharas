@@ -5992,6 +5992,25 @@ assertTrue(
     '65b (#411): Form enhancements, bootstrap markup, and charter FAQs disclose 10 photos limit'
 );
 
+
+// 66: Cache-busting version query strings on form-enhancements.js and static assets (#413)
+$ownerEditSrc = (string)file_get_contents(dirname(__DIR__) . '/public/owner/edit-business.php');
+$adminEditSrc = (string)file_get_contents(dirname(__DIR__) . '/public/admin/edit-business.php');
+$submitSrc = (string)file_get_contents(dirname(__DIR__) . '/public/submit.php');
+$swSrc = (string)file_get_contents(dirname(__DIR__) . '/public/sw.js');
+assertTrue(
+    function_exists('bbiz_app_version') &&
+    bbiz_app_version() === trim((string)file_get_contents(dirname(__DIR__) . '/VERSION')),
+    '66a (#413): bbiz_app_version returns current app version string'
+);
+assertTrue(
+    str_contains($ownerEditSrc, 'form-enhancements.js?v=') &&
+    str_contains($adminEditSrc, 'form-enhancements.js?v=') &&
+    str_contains($submitSrc, 'form-enhancements.js?v=') &&
+    str_contains($swSrc, 'bbiz-pwa-v' . bbiz_app_version()),
+    '66b (#413): form-enhancements.js script tags carry version cache buster and sw.js cache version is aligned'
+);
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');

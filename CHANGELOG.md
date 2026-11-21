@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.39.1] - 2026-11-21
+### Fixed
+- **Cache-Busting Query Strings on `form-enhancements.js` & Static Assets (#413)**:
+  - Added dynamic `?v=<?= urlencode(bbiz_app_version()) ?>` version query strings to `form-enhancements.js`, `consent-metrics.js`, and `app.css` across all owner, admin, and public submission pages (`owner/edit-business.php`, `admin/edit-business.php`, `admin/add-business.php`, `submit.php`, etc.).
+  - Added global `bbiz_app_version()` helper function in `src/bootstrap.php` to centrally resolve application version from `VERSION`.
+  - Bumped Service Worker cache identifier to `bbiz-pwa-v0.39.1` in `public/sw.js` and added explicit `public, max-age=3600, must-revalidate` caching directive in `public/.htaccess` so returning clients immediately load updated 10-photo upload logic without browser cache stalls.
+  - Added automated unit regression tests in `tests/run_unit_tests.php` (Test 66).
+
 ## [0.39.0] - 2026-11-21
 ### Added
 - **Expanded Listing Photos Capacity to 10 Photos (#411)**:

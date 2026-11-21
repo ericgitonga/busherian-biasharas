@@ -136,6 +136,18 @@ if (!function_exists('bbiz_send_security_headers')) {
     }
 }
 
+if (!function_exists('bbiz_app_version')) {
+    function bbiz_app_version(): string
+    {
+        static $ver = null;
+        if ($ver === null) {
+            $verPath = dirname(__DIR__) . '/VERSION';
+            $ver = trim((string)@file_get_contents($verPath) ?: '0.39.1');
+        }
+        return $ver;
+    }
+}
+
 if (!function_exists('bbiz_head_meta_tags')) {
     function bbiz_head_meta_tags(
         string $title = 'Busherian Biasharas — Verified Alumni Business Directory (AHS & AGHS)',

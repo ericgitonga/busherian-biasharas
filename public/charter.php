@@ -13,7 +13,7 @@ if (!headers_sent()) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Community Charter &amp; Free-Forever Guarantee — Busherian Biasharas</title>
 <?= bbiz_head_meta_tags('Community Charter & Free-Forever Guarantee — Busherian Biasharas', 'How Busherian Biasharas keeps core AHS & AGHS alumni listings, direct bookings, and B2B inquiries 100% free forever while sustaining secure hosting and verification.', '/charter.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
   <header class="site-header">
@@ -70,6 +70,6 @@ if (!headers_sent()) {
       </div>
     </article>
   </main>
-  <script src="/assets/js/consent-metrics.js"></script>
+  <script src="/assets/js/consent-metrics.js?v=<?= urlencode(bbiz_app_version()) ?>"></script>
 </body>
 </html>

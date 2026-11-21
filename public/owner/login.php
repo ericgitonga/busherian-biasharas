@@ -301,7 +301,7 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Business Owner Sign In — Busherian Biasharas</title>
 <?= bbiz_head_meta_tags('Business Owner Sign In — Busherian Biasharas', 'Sign in with your email and password to manage your Busherian Biashara listing.', '/owner/login.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
   <header class="site-header">
