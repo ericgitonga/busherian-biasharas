@@ -28,6 +28,12 @@
   box-sizing: border-box;
 }
 
+html {
+  overflow-x: clip;
+  width: 100%;
+  max-width: 100vw;
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif;
@@ -35,6 +41,9 @@ body {
   color: var(--ink-900);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+  width: 100%;
+  max-width: 100vw;
 }
 
 a {
@@ -47,10 +56,12 @@ a {
   background: linear-gradient(135deg, var(--bush-green-dark) 0%, var(--bush-green) 35%, var(--bush-crimson) 75%, var(--bush-crimson-dark) 100%);
   color: #FFFFFF;
   border-bottom: 3px solid var(--bush-gold);
+  position: -webkit-sticky;
   position: sticky;
   top: 0;
-  z-index: 40;
+  z-index: 1000;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  width: 100%;
 }
 
 .header-inner {
@@ -2034,12 +2045,15 @@ a {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .header-badges {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 /* 10. School badge */
@@ -2104,6 +2118,130 @@ a {
   background: #E8F2EE;
   color: #114B3E;
   border-color: #114B3E;
+}
+
+/* Business Card Photo Hero Showcase & Multi-Photo Carousel */
+.card-photo-hero {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 14px;
+  background: #F3EFE6;
+  border: 1px solid rgba(17, 75, 62, 0.08);
+  user-select: none;
+}
+
+.card-photo-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.card-hero-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.biz-card:hover .card-hero-img {
+  transform: scale(1.025);
+}
+
+/* Card Photo Carousel Navigation Chevrons */
+.card-photo-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #114B3E;
+  padding: 0;
+  transition: all 0.15s ease;
+  z-index: 3;
+  opacity: 0.88;
+}
+
+.card-photo-arrow:hover {
+  background: #FFFFFF;
+  color: #7B1113;
+  transform: translateY(-50%) scale(1.1);
+  opacity: 1;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
+}
+
+.card-photo-arrow.prev {
+  left: 8px;
+}
+
+.card-photo-arrow.next {
+  right: 8px;
+}
+
+/* Card Photo Count Badge */
+.card-photo-count-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(17, 24, 39, 0.76);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* Card Photo Pagination Dots */
+.card-photo-dots {
+  position: absolute;
+  bottom: 9px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  z-index: 2;
+  padding: 3px 7px;
+  background: rgba(17, 24, 39, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border-radius: 999px;
+}
+
+.card-photo-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.card-photo-dot.active {
+  background: #FFFFFF;
+  transform: scale(1.4);
 }
 
 /* 1. Company Name */
@@ -2237,6 +2375,8 @@ a {
   align-items: center;
   justify-content: space-between;
   padding-top: 6px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .link-secondary {
@@ -3216,34 +3356,73 @@ a {
 }
 
 @media (max-width: 900px) {
-  /* Header adjustments for mobile: show only Logo, Title, Tagline, List Biashara, Hamburger (#398) */
+  /* Header adjustments for mobile: sticky header, logo, tagline, List Biashara, Hamburger (#398) */
   .header-desktop-action {
     display: none !important;
   }
   .header-mobile-only {
     display: inline-flex !important;
   }
+  .site-header {
+    position: -webkit-sticky !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1000 !important;
+    width: 100% !important;
+  }
   .site-header .header-inner {
-    padding: 0.75rem 1rem;
-    gap: 0.6rem;
+    padding: 0.65rem 0.95rem !important;
+    gap: 0.5rem !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+  }
+  .brand-group {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    overflow: hidden !important;
+  }
+  .brand-text {
+    min-width: 0 !important;
+    overflow: hidden !important;
   }
   .brand-title {
-    font-size: 1.25rem;
+    font-size: 1.15rem !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
   }
   .brand-subtitle {
-    font-size: 0.72rem;
+    font-size: 0.68rem !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  .header-actions {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.45rem !important;
+    flex: 0 0 auto !important;
+    flex-wrap: nowrap !important;
+  }
+  /* Move install app from header to hamburger drawer (#405) */
+  .site-header .btn-install-pwa,
+  #btn-install-app {
+    display: none !important;
   }
   .btn-list-biashara {
-    padding: 0.48rem 0.85rem;
-    font-size: 0.82rem;
-    white-space: nowrap;
+    padding: 0.45rem 0.8rem !important;
+    font-size: 0.8rem !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
   }
   .btn-hamburger {
-    padding: 0.45rem 0.7rem;
-    font-size: 1.15rem;
-    line-height: 1;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.15);
+    padding: 0.45rem 0.65rem !important;
+    font-size: 1.15rem !important;
+    line-height: 1 !important;
+    border-radius: 8px !important;
+    background: rgba(255, 255, 255, 0.15) !important;
+    flex-shrink: 0 !important;
   }
 
   /* Body adjustments: hide desktop search controls, top filters toggle, right controls */
@@ -3279,7 +3458,69 @@ a {
 
   .directory-layout-wrapper {
     flex-direction: column;
-    padding: 12px 14px;
+    align-items: stretch !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 12px 14px !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+  .directory-main-col {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+  .business-grid {
+    grid-template-columns: 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    gap: 16px !important;
+  }
+  .biz-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    padding: 14px 16px !important;
+  }
+  .card-photo-hero {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .mobile-search-controls {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+  .mobile-search-capsule {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+  .mobile-quick-rail {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+  .biz-detail-view {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 12px 14px !important;
+    overflow-x: hidden !important;
+  }
+  .foot-site {
+    padding: 32px 16px 28px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+    max-width: 100% !important;
   }
   .detail-cols-grid {
     grid-template-columns: 1fr;

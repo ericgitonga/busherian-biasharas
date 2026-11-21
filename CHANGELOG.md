@@ -6,6 +6,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.0] - 2026-11-21
+### Added
+- **Directory Listing Card Photographs Showcase & Interactive Carousel (#415, #416)**:
+  - Added visual photo hero showcase (`.card-photo-hero`) to directory listing cards in `public/assets/js/directory.js` and `public/assets/css/app.css` for businesses with uploaded photographs.
+  - Rendered photo hero in clean 16:9 aspect ratio with 12px rounded framing positioned immediately beneath the card header bar (`.card-header-bar`), keeping school affiliation badges, operating status pills, and share triggers evenly aligned across grid rows.
+  - Implemented client-side multi-photo carousel navigation with floating desktop chevron navigation buttons (`‹` and `›`), glassmorphic photo counter badge (`📷 1 / N`), and centered dot pagination indicators for direct photo jumps.
+  - Added native mobile touch swipe (`touchstart` / `touchend`) gesture support for fluid mobile carousel navigation without triggering card navigation.
+  - Preserved compact, dignified card layout for listings without photographs with zero empty boxes or layout shift.
+  - Added unit test coverage in `tests/test_streamlined_directory_features.php` (Test 14).
+
+### Fixed
+- **Mobile Viewport Full-Width Layout Alignment (#415, #417)**:
+  - Eliminated mobile horizontal body blowout where `.business-grid`'s rigid `minmax(320px, 1fr)` and wide unwrapped header badge rows caused the main content body to exceed screen width, forcing horizontal scrolling to view cards.
+  - Overrode `.business-grid` on mobile screens to `grid-template-columns: 100% !important`, setting `.directory-layout-wrapper` to `align-items: stretch !important` so card widths match the header and footer width exactly.
+  - Added `flex-wrap: wrap` to `.card-header-bar`, `.header-badges`, and `.card-secondary-row` so school badges, open status pills, appointment badges, and action links gracefully reflow on narrow phone displays.
+  - Constrained mobile search capsules and quick category rails to 100% width with boundary isolation.
+  - Added unit regression test assertions in `tests/test_streamlined_directory_features.php` (Test 15).
+- **Sticky Mobile Header & Relocated Install App to Drawer (#415, #418)**:
+  - Replaced `overflow-x: hidden` with modern `overflow-x: clip` across `html`, `body`, and `.directory-layout-wrapper`, ensuring `position: sticky` and `position: -webkit-sticky` on `.site-header` function reliably across mobile browser rendering engines without being trapped by ancestor clipping.
+  - Pinned `.site-header` with `top: 0 !important; z-index: 1000 !important;` on mobile, keeping `+ List Your Biashara` (`.btn-list-biashara`) and the `☰` hamburger menu toggle permanently accessible during long directory feeds.
+  - Relocated `📲 Install App` from the top header into the hamburger menu drawer (`#btn-install-app-drawer`) on mobile devices, ensuring the header title, CTA, and menu trigger fit on a single line.
+
 ## [0.39.1] - 2026-11-21
 ### Fixed
 - **Cache-Busting Query Strings on `form-enhancements.js` & Static Assets (#413)**:

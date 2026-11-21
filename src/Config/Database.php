@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v35-kenya-phone-normalization';
+    public const SCHEMA_INIT_VERSION = '2026-11-v39-card-photos-and-mobile-layout';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -555,6 +555,44 @@ final class Database
                 self::setSetting($pdo, 'kenya_phone_normalization_v1', 'done');
             } catch (\Throwable $migErr) {
                 error_log('[Database::ensureInitialized] kenya_phone_normalization_v1 failed: ' . $migErr->getMessage());
+            }
+        }
+        if (self::getSetting($pdo, 'naishola_sample_photos_v2') !== 'done') {
+            try {
+                $naisholaPhotos = json_encode([
+                    '/assets/photos/naishola_1.webp',
+                    '/assets/photos/naishola_2.webp',
+                    '/assets/photos/naishola_3.webp',
+                    '/assets/photos/naishola_4.webp',
+                    '/assets/photos/naishola_5.webp',
+                ], JSON_UNESCAPED_SLASHES);
+                $upd = $pdo->prepare("UPDATE businesses SET photos_json = :photos WHERE slug = 'naishola-gardens' OR name LIKE '%Naishola%'");
+                $upd->execute([':photos' => $naisholaPhotos]);
+                self::setSetting($pdo, 'naishola_sample_photos_v2', 'done');
+            } catch (\Throwable $photoErr) {
+                error_log('[Database::ensureInitialized] naishola_sample_photos_v2 failed: ' . $photoErr->getMessage());
+            }
+        }
+        if (self::isPreview() && self::getSetting($pdo, 'preview_card_sample_photos_v1') !== 'done') {
+            try {
+                $lodgePhotos = json_encode([
+                    '/assets/photos/naishola_2.webp',
+                    '/assets/photos/naishola_3.webp',
+                    '/assets/photos/naishola_4.webp',
+                ], JSON_UNESCAPED_SLASHES);
+                $upd = $pdo->prepare("UPDATE businesses SET photos_json = :photos WHERE slug = 'the-last-village-lodge' OR name LIKE '%Last Village%'");
+                $upd->execute([':photos' => $lodgePhotos]);
+
+                $tumainiPhotos = json_encode([
+                    '/assets/photos/naishola_4.webp',
+                    '/assets/photos/naishola_5.webp',
+                ], JSON_UNESCAPED_SLASHES);
+                $upd2 = $pdo->prepare("UPDATE businesses SET photos_json = :photos WHERE slug = 'tumaini-gardens-resort-isinya' OR name LIKE '%Tumaini%'");
+                $upd2->execute([':photos' => $tumainiPhotos]);
+
+                self::setSetting($pdo, 'preview_card_sample_photos_v1', 'done');
+            } catch (\Throwable $photoErr) {
+                error_log('[Database::ensureInitialized] preview_card_sample_photos_v1 failed: ' . $photoErr->getMessage());
             }
         }
 
