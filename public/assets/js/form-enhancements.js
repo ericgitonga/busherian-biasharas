@@ -835,7 +835,7 @@
 
   if (!fileInput || !hiddenJsonInput || !previewWrap) return;
 
-  const MAX_PHOTOS = 5;
+  const MAX_PHOTOS = 10;
   const MAX_DIM = 1200;
   let queuedDataUrls = [];
 
@@ -859,7 +859,7 @@
 
     const total = keptExisting + queuedDataUrls.length;
     if (badgeEl) {
-      badgeEl.textContent = `${total} / ${MAX_PHOTOS} photos selected (3–5 recommended)`;
+      badgeEl.textContent = `${total} / ${MAX_PHOTOS} photos selected (3–10 recommended)`;
     }
 
     previewWrap.innerHTML = '';

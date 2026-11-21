@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.39.0] - 2026-11-21
+### Added
+- **Expanded Listing Photos Capacity to 10 Photos (#411)**:
+  - Raised maximum photo upload allowance from 5 to 10 photos across `PhotoUploader::MAX_PHOTOS` and `form-enhancements.js`, allowing businesses to showcase more products, storefronts, and work in action.
+  - Scaled aggregate upload request ceiling from 20 MB to 40 MB (`PhotoUploader::MAX_TOTAL_UPLOAD_BYTES`) to comfortably accommodate 10 client-side optimized images.
+  - Updated photo upload field labels, badges, and founder charter FAQs to reflect the new 10-photo maximum.
+  - Enhanced Airbnb showcase CSS (`app.css`) and detail page handler (`directory.js`) to support 5+ photo counts smoothly, preserving the 5-photo mosaic layout with overflow photos accessible in the high-resolution lightbox.
+  - Added unit regression tests in `tests/run_unit_tests.php` (Test 18 & Test 65) verifying 10-photo GD processing and upfront validation exception on 11 photos.
+
 ## [0.38.1] - 2026-11-20
 ### Added
 - **60-Second Client-Side Countdown Timer on OTP Verification Screen (#410)**:
