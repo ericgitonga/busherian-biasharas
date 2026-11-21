@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.39.5] - 2026-11-21
+### Fixed
+- **Sticky Mobile Header & Relocate Install App to Hamburger Drawer**:
+  - Replaced `overflow-x: hidden` with modern `overflow-x: clip` across `html`, `body`, and `.directory-layout-wrapper`, ensuring `position: sticky` and `position: -webkit-sticky` on `.site-header` function reliably across iOS Safari and Android Chrome without being trapped by overflow ancestors.
+  - Set `.site-header` `z-index: 1000` with top pinning, keeping `+ List Your Biashara` (`.btn-list-biashara`) and the `☰` hamburger button (`.btn-hamburger`) permanently visible as users scroll through the directory feed.
+  - Relocated `📲 Install App` from the mobile top header into the hamburger menu drawer (`#btn-install-app-drawer`), uncluttering the mobile header bar so the brand title, listing button, and hamburger toggle fit on a single line.
+  - Added unit test assertions in `tests/test_streamlined_directory_features.php`.
+  - Bumped Service Worker cache identifier to `bbiz-pwa-v0.39.5` in `public/sw.js`.
+
 ## [0.39.4] - 2026-11-21
 ### Fixed
 - **Mobile Viewport Full-Width Alignment (Body Width Aligned with Header & Footer)**:
