@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.39.4] - 2026-11-21
+### Fixed
+- **Mobile Viewport Full-Width Alignment (Body Width Aligned with Header & Footer)**:
+  - Eliminated horizontal viewport blowout on mobile devices by setting `overflow-x: hidden` and `max-width: 100vw` across `html`, `body`, and `.directory-layout-wrapper`.
+  - Configured `.directory-layout-wrapper` with `align-items: stretch !important` and `box-sizing: border-box !important` in the mobile media query (`@media (max-width: 900px)`), preventing flex-start child content expansion.
+  - Updated `.business-grid` on mobile to `grid-template-columns: 100% !important`, ensuring directory listing cards span the exact full width of the mobile content area without horizontal scrolling.
+  - Added `flex-wrap: wrap` and consistent spacing to `.card-header-bar`, `.header-badges`, and `.card-secondary-row`, ensuring school badges, operating status pills, bookable badges, and action links gracefully reflow on narrow phone displays without expanding the card boundary.
+  - Constrained `.mobile-search-controls`, `.mobile-search-capsule`, and `.mobile-quick-rail` to `width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box`, isolating rail horizontal scrolling strictly within the pill container.
+  - Bumped Service Worker cache identifier to `bbiz-pwa-v0.39.4` in `public/sw.js`.
+  - Added unit regression tests in `tests/test_streamlined_directory_features.php` (Test 15).
+
 ## [0.39.3] - 2026-11-21
 ### Added
 - **Listing Photographs Showcase & Multi-Photo Carousel on Directory Cards (Preview Subdomain Evaluation)**:

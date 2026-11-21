@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const CACHE_VERSION = 'bbiz-pwa-v0.39.3';
+const CACHE_VERSION = 'bbiz-pwa-v0.39.4';
 const CACHE_PREFIX = 'bbiz-pwa-';
 
 function getBasePath() {
