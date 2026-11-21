@@ -20,7 +20,7 @@ if (!PreprodSandbox::isPreprod()) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sandbox Controls Restricted — Busherian Biasharas</title>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body style="background:#F9FAFB;padding:2rem;font-family:system-ui,-apple-system,sans-serif;">
   <div style="max-width:600px;margin:3rem auto;background:#fff;border:1px solid #D1D5DB;border-radius:12px;padding:2rem;box-shadow:0 4px 12px rgba(0,0,0,0.06);">
@@ -111,7 +111,7 @@ $sqlitePath = Database::env('DB_SQLITE_PATH', 'storage/preprod.sqlite');
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow, noarchive">
   <title>Pre-Prod Sandbox &amp; Test Harness — Busherian Biasharas</title>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
   <header class="site-header">

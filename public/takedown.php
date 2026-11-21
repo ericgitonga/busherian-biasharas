@@ -210,7 +210,7 @@ $businesses = $pdo->query("SELECT id, business_number, name, city_county FROM bu
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Report or Remove a Listing — Busherian Biasharas</title>
 <?= bbiz_head_meta_tags('Report or Remove a Listing — Busherian Biasharas', 'Request a correction, pause, or removal for a Busherian Biasharas directory listing.', '/takedown.php') ?>
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="stylesheet" href="/assets/css/app.css?v=<?= urlencode(bbiz_app_version()) ?>">
 </head>
 <body>
   <header class="site-header">
@@ -329,6 +329,6 @@ $businesses = $pdo->query("SELECT id, business_number, name, city_county FROM bu
       });
     })();
   </script>
-  <script src="/assets/js/consent-metrics.js"></script>
+  <script src="/assets/js/consent-metrics.js?v=<?= urlencode(bbiz_app_version()) ?>"></script>
 </body>
 </html>
