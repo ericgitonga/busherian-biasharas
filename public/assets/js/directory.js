@@ -1907,7 +1907,8 @@
       const photos = Array.isArray(biz.photos) ? biz.photos : [];
       window._currentDetailPhotos = photos;
       window._currentDetailBizName = biz.name || '';
-      photosGrid.className = 'photos-carousel-track airbnb-photos-grid photos-count-' + photos.length;
+      const mosaicClass = photos.length >= 5 ? ' photos-mosaic-5' : '';
+      photosGrid.className = 'photos-carousel-track airbnb-photos-grid photos-count-' + photos.length + mosaicClass;
 
       if (photos.length > 0) {
         photosGrid.innerHTML = photos.map((url, i) => {

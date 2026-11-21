@@ -2589,6 +2589,11 @@ a {
 
   /* 5+ Photos Mosaic: 1 Large Left (50%) + 2x2 Grid Right (50%) */
   .detail-photos-showcase .airbnb-photos-grid.photos-count-5,
+  .detail-photos-showcase .airbnb-photos-grid.photos-count-6,
+  .detail-photos-showcase .airbnb-photos-grid.photos-count-7,
+  .detail-photos-showcase .airbnb-photos-grid.photos-count-8,
+  .detail-photos-showcase .airbnb-photos-grid.photos-count-9,
+  .detail-photos-showcase .airbnb-photos-grid.photos-count-10,
   .detail-photos-showcase .airbnb-photos-grid.photos-mosaic-5 {
     grid-template-columns: 2fr 1fr 1fr;
     grid-template-rows: 1fr 1fr;

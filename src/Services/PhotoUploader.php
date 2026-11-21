@@ -7,10 +7,10 @@ use PDO;
 
 final class PhotoUploader
 {
-    public const MAX_PHOTOS = 5;
+    public const MAX_PHOTOS = 10;
     public const MAX_DIMENSION = 1200;
     public const MAX_FILE_BYTES = 8388608; // 8 MB per raw input file (#176)
-    public const MAX_TOTAL_UPLOAD_BYTES = 20971520; // 20 MB aggregate per request (#176)
+    public const MAX_TOTAL_UPLOAD_BYTES = 41943040; // 40 MB aggregate per request (#176, #411)
     public const MAX_SOURCE_EDGE = 4096; // Max width or height BEFORE GD allocation (#176)
     public const MAX_SOURCE_PIXELS = 16000000; // 16 MP max total pixels BEFORE GD allocation (#176)
 
