@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.2] - 2026-11-22
+### Changed
+- **Removed Visual Open Now/Closed Badges Across Cards & Feeds (#421)**:
+  - Removed `.open-status-btn` from directory listing card headers in `public/assets/js/directory.js` and hid the selector in `public/assets/css/app.css` to eliminate visual badge clutter.
+  - Removed `.badge-status` from list view items and modal header pills for a clean, dignified presentation.
+  - Fully preserved underlying Open Now business logic and filtering (`HoursEngine::evaluateStatus`, `state.openNow`, `#chk-open-now`, `#sheet-open-now`, and `/api/businesses.php?open_now=1`), ensuring users can continue to filter by currently open businesses.
+  - Preserved complete weekly operating hours schedules in profile views and detail modals.
+  - Added unit regression test coverage in `tests/test_streamlined_directory_features.php` (Test 17).
+  - Bumped PWA cache to `bbiz-pwa-v0.40.2` in `public/sw.js` and updated `VERSION` to `0.40.2`.
+
+## [0.40.1] - 2026-11-22
+### Fixed
+- **Directory Card Alignment by Photo Presence to Eliminate Grid Stretch Blowout (#420)**:
+  - Partitioned directory listings into dedicated photo showcase group (`.cards-photo-group`) and compact text group (`.cards-text-group`) in `public/assets/js/directory.js` and `public/assets/css/app.css`.
+  - Grouped all listings with photographs into their own `.business-grid` showcase, ensuring 16:9 photo hero cards align next to each other with uniform row heights.
+  - Grouped all listings without photographs into their own `.business-grid` section, ensuring compact text cards align next to each other with zero height blowout or empty white space caused by neighboring photo heroes.
+  - Extended photo and text group alignment to AI Biashara Advisor concierge mode (`directMatches` and `ecosystemMatches`).
+  - Added unit regression test coverage in `tests/test_streamlined_directory_features.php` (Test 16).
+  - Bumped PWA cache to `bbiz-pwa-v0.40.1` in `public/sw.js` and updated `VERSION` to `0.40.1`.
+
 ## [0.40.0] - 2026-11-21
 ### Added
 - **Directory Listing Card Photographs Showcase & Interactive Carousel (#415, #416)**:
