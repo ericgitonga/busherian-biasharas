@@ -560,6 +560,8 @@ def collect_items_from_args(args: argparse.Namespace) -> list[tuple[pathlib.Path
             rel = raw_line.strip()
             if not rel:
                 continue
+            if getattr(args, "mode", "") == "prod" and rel.startswith("public/assets/photos/"):
+                continue
             lp = pathlib.Path(rel)
             if lp.is_file():
                 items.append((lp, rel))

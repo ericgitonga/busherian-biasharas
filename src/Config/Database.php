@@ -557,7 +557,7 @@ final class Database
                 error_log('[Database::ensureInitialized] kenya_phone_normalization_v1 failed: ' . $migErr->getMessage());
             }
         }
-        if (self::getSetting($pdo, 'naishola_sample_photos_v2') !== 'done') {
+        if (self::isPreview() && self::getSetting($pdo, 'naishola_sample_photos_v2') !== 'done') {
             try {
                 $naisholaPhotos = json_encode([
                     '/assets/photos/naishola_1.webp',

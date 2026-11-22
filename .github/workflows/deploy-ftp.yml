@@ -54,6 +54,7 @@ jobs:
           else
             git ls-files public src bin VERSION > /tmp/changed_files.txt
           fi
+          grep -v '^public/assets/photos/' /tmp/changed_files.txt > /tmp/changed_files_filtered.txt && mv /tmp/changed_files_filtered.txt /tmp/changed_files.txt || true
 
           while IFS= read -r file; do
             if [ -n "$file" ] && [ -f "$file" ] && [[ "$file" == *.php ]]; then

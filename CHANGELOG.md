@@ -8,6 +8,10 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
 ## [0.40.2] - 2026-11-22
 ### Changed
+- **Preview Sample Photographs Isolation (Never Push to Production) (#422)**:
+  - Guarded sample photo updates in `src/Config/Database.php` with `Database::isPreview()` so sample photo updates never execute against production.
+  - Reset seeded business records in `src/Services/CategoryMatcher.php` to clean `'photos_json' => '[]'`.
+  - Filtered `public/assets/photos/` from production deployment manifests in `.github/workflows/deploy-ftp.yml` and `.github/scripts/ftps_deploy.py` so test assets never deploy to live production.
 - **Removed Visual Open Now/Closed Badges Across Cards & Feeds (#421)**:
   - Removed `.open-status-btn` from directory listing card headers in `public/assets/js/directory.js` and hid the selector in `public/assets/css/app.css` to eliminate visual badge clutter.
   - Removed `.badge-status` from list view items and modal header pills for a clean, dignified presentation.
