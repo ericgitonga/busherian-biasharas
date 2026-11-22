@@ -666,7 +666,7 @@ $pageCanonicalPath = $requestedBiz
         </div>
 
         <div class="detail-chips-row">
-          <span class="detail-chip status-on" id="detail-hours-chip">🟢 Open Now</span>
+          <span class="detail-chip status-on" id="detail-hours-chip" style="display:none;"></span>
           <span class="detail-chip school" id="detail-school-chip">🎓 Verified Alum · <?= $requestedBiz ? htmlspecialchars((string)$requestedBiz['school_badge'], ENT_QUOTES, 'UTF-8') : 'AHS' ?></span>
           <span class="detail-chip perk" id="detail-perk-chip" style="<?= ($requestedBiz && !empty($requestedBiz['alumni_perk'])) ? '' : 'display:none;' ?>">
             🎁 <?= $requestedBiz ? htmlspecialchars((string)$requestedBiz['alumni_perk'], ENT_QUOTES, 'UTF-8') : '' ?>

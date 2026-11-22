@@ -724,10 +724,6 @@
         <div class="card-header-bar">
           <div class="header-badges">
             <span class="school-badge ${schoolCls}">${escapeHtml(schoolBadgeText)}</span>
-            <button type="button" class="open-status-btn ${hours.state === 'OPEN_NOW' ? 'open' : 'closed'}">
-              <span>${hours.state === 'OPEN_NOW' ? '🟢' : '🔴'}</span>
-              <span>${escapeHtml(hours.badge_text)}</span>
-            </button>
             ${needBadge}
             ${(biz.is_bookable || biz.booking_enabled || biz.booking_url) ? `<span class="badge-bookable" data-testid="biz-card-bookable-badge">📅 Book Appointment</span>` : ''}
           </div>
@@ -906,6 +902,7 @@
       if (els.resultsCount) {
         els.resultsCount.textContent = 'Unable to update directory listings';
       }
+      els.cardsGrid.classList.remove('cards-grid-grouped');
       els.cardsGrid.innerHTML = `
         <div data-testid="directory-fetch-error" role="alert" style="grid-column:1/-1;background:#FEF2F2;padding:1.5rem;border-radius:12px;text-align:center;border:2px solid #DC2626;">
           <h3 style="margin:0 0 0.45rem 0;color:#991B1B;">Could not load directory listings</h3>
@@ -937,6 +934,7 @@
     }
 
     if (totalItems === 0 || pagedBusinesses.length === 0) {
+      els.cardsGrid.classList.remove('cards-grid-grouped');
       els.cardsGrid.innerHTML = `
         <div style="grid-column:1/-1;background:#fff;padding:2rem;border-radius:12px;text-align:center;border:1px dashed #D1D5DB;">
           <h3 style="margin:0 0 0.5rem 0;color:#7B1113;">No matching businesses found</h3>
@@ -947,7 +945,36 @@
       return;
     }
 
-    els.cardsGrid.innerHTML = pagedBusinesses.map(biz => renderSingleBusinessCard(biz)).join('');
+    const photoBusinesses = [];
+    const textBusinesses = [];
+
+    for (const biz of pagedBusinesses) {
+      const hasPhotos = Array.isArray(biz.photos) && biz.photos.some(p => typeof p === 'string' && p.trim() !== '');
+      if (hasPhotos) {
+        photoBusinesses.push(biz);
+      } else {
+        textBusinesses.push(biz);
+      }
+    }
+
+    let groupsHtml = '';
+    if (photoBusinesses.length > 0) {
+      groupsHtml += `
+        <div class="cards-group cards-photo-group business-grid" data-testid="cards-photo-group">
+          ${photoBusinesses.map(biz => renderSingleBusinessCard(biz)).join('')}
+        </div>
+      `;
+    }
+    if (textBusinesses.length > 0) {
+      groupsHtml += `
+        <div class="cards-group cards-text-group business-grid" data-testid="cards-text-group">
+          ${textBusinesses.map(biz => renderSingleBusinessCard(biz)).join('')}
+        </div>
+      `;
+    }
+
+    els.cardsGrid.classList.add('cards-grid-grouped');
+    els.cardsGrid.innerHTML = groupsHtml;
 
     renderPaginationControls(totalItems, state.currentPage, totalPages, startIdx, endIdx);
   }
@@ -1096,6 +1123,37 @@
       </div>
     `;
 
+    // Helper to render grouped concierge cards (#420)
+    function renderConciergeCardsGrouped(matches, isEcosystem) {
+      const photoMatches = [];
+      const textMatches = [];
+      for (const b of matches) {
+        const hasPhotos = Array.isArray(b.photos) && b.photos.some(p => typeof p === 'string' && p.trim() !== '');
+        if (hasPhotos) {
+          photoMatches.push(b);
+        } else {
+          textMatches.push(b);
+        }
+      }
+      let out = '';
+      const tierPrefix = isEcosystem ? 'ecosystem' : 'direct';
+      if (photoMatches.length > 0) {
+        out += `
+          <div class="cards-group cards-photo-group business-grid" data-testid="concierge-${tierPrefix}-photo-group">
+            ${photoMatches.map(b => renderSingleBusinessCard(b, { isConcierge: true, isEcosystem })).join('')}
+          </div>
+        `;
+      }
+      if (textMatches.length > 0) {
+        out += `
+          <div class="cards-group cards-text-group business-grid" data-testid="concierge-${tierPrefix}-text-group">
+            ${textMatches.map(b => renderSingleBusinessCard(b, { isConcierge: true, isEcosystem })).join('')}
+          </div>
+        `;
+      }
+      return out;
+    }
+
     // 2. Direct Matches
     if (directMatches.length > 0) {
       html += `
@@ -1106,7 +1164,7 @@
           <p style="margin:0 0 0.6rem 0;font-size:0.8rem;color:#6B7280;">Verified alumni biasharas matching your immediate search specialty.</p>
         </div>
       `;
-      html += directMatches.map(b => renderSingleBusinessCard(b, { isConcierge: true, isEcosystem: false })).join('');
+      html += renderConciergeCardsGrouped(directMatches, false);
     }
 
     // 3. Smart Ecosystem Suggestions
@@ -1119,7 +1177,7 @@
           <p style="margin:0 0 0.6rem 0;font-size:0.8rem;color:#6B7280;">Complementary partners (upstream prerequisites, downstream execution, companion services) across your business journey.</p>
         </div>
       `;
-      html += ecosystemMatches.map(b => renderSingleBusinessCard(b, { isConcierge: true, isEcosystem: true })).join('');
+      html += renderConciergeCardsGrouped(ecosystemMatches, true);
     }
 
     if (directMatches.length === 0 && ecosystemMatches.length === 0) {
@@ -1947,9 +2005,8 @@
       }
     }
 
-    const hours = biz.hours_status || { state: 'CLOSED', badge_text: 'Closed' };
     const hoursChip = document.getElementById('detail-hours-chip');
-    if (hoursChip) hoursChip.textContent = `🟢 ${hours.badge_text}`;
+    if (hoursChip) hoursChip.style.display = 'none';
 
     const schoolChip = document.getElementById('detail-school-chip');
     if (schoolChip) schoolChip.textContent = `🎓 Verified Alum · ${biz.school_badge || 'AHS'}`;
@@ -2982,10 +3039,6 @@
           const locText = [b.area_neighborhood, b.city_county].filter(Boolean).join(', ');
 
           const hours = b.hours_status || { state: 'CLOSED', badge_text: 'Closed' };
-          const isOpen = hours.state === 'OPEN_NOW' || hours.state === 'CLOSING_SOON';
-          const statusBadgeHtml = isOpen
-            ? `<span class="badge-status open" style="font-size:11px;padding:2px 8px;border-radius:999px;background:#ECFDF5;color:#065F46;border:1px solid #34D399;font-weight:700;">🟢 Open</span>`
-            : `<span class="badge-status closed" style="font-size:11px;padding:2px 8px;border-radius:999px;background:#F3F4F6;color:#6B7280;border:1px solid #D1D5DB;font-weight:600;">Closed</span>`;
 
           let founderHtml = '';
           if (b.founder_role && (b.founder_role === 'founder' || b.founder_role === 'co_founder') && b.founder_name) {
@@ -3013,7 +3066,6 @@
                     </a>
                     <div class="biz-list-badges">
                       <span class="school-badge ${schoolCls}">${escapeHtml(schoolBadge)}</span>
-                      ${statusBadgeHtml}
                     </div>
                   </div>
 
@@ -3337,7 +3389,6 @@
       <div class="modal-header">
         <div>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem;">
-            <span class="status-dot status-${escapeHtml(hours.state)}">● ${escapeHtml(hours.badge_text)}</span>
             ${(safeBookingHref || isBuiltInBookable) ? '<span class="badge-bookable">📅 Direct Booking Available</span>' : ''}
             ${biz.b2b_ready ? '<span class="badge-distance">🏢 B2B & LPO Ready</span>' : ''}
             ${biz.regulator_name ? `<span class="badge-distance">🛡️ ${escapeHtml(biz.regulator_name)}${biz.regulator_license ? ': ' + escapeHtml(biz.regulator_license) : ''}</span>` : ''}
