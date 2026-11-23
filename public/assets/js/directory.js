@@ -714,6 +714,19 @@
     }
   });
 
+  function formatFounderAttributionText(biz, escapeFn) {
+    if (!biz || !biz.founder_role || (biz.founder_role !== 'founder' && biz.founder_role !== 'co_founder') || !biz.founder_name) {
+      return '';
+    }
+    const esc = typeof escapeFn === 'function' ? escapeFn : (s => s);
+    const prefix = biz.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ';
+    const metaParts = [];
+    if (biz.founder_school) metaParts.push(esc(biz.founder_school));
+    if (biz.founder_year) metaParts.push(`'${esc(String(biz.founder_year).replace(/^'+/, ''))}`);
+    const metaStr = metaParts.length ? ` (${metaParts.join(' ')})` : '';
+    return `${esc(prefix)}${esc(biz.founder_name)}${metaStr}`;
+  }
+
   function renderSingleBusinessCard(biz, opts = {}) {
     const isEcosystem = opts.isEcosystem || biz.match_tier === 'ecosystem';
     const isConcierge = opts.isConcierge || !!opts.isEcosystem || biz.match_tier === 'direct';
@@ -736,15 +749,14 @@
     const schoolBadgeText = biz.school_badge === 'BOTH' ? 'AHS & AGHS' : (biz.school_badge || 'AHS');
     const schoolCls = (biz.school_badge || 'AHS').toLowerCase();
 
-    // 5. Founded by / Co-Founded by (#383, #384)
+    // 5. Founded by / Co-Founded by (#383, #384, #457)
     let founderHtml = '';
-    if (biz.founder_role && (biz.founder_role === 'founder' || biz.founder_role === 'co_founder') && biz.founder_name) {
-      const rolePrefix = biz.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ';
-      const schoolPart = biz.founder_school ? ` (${escapeHtml(biz.founder_school)}${biz.founder_year ? ` '${escapeHtml(biz.founder_year)}` : ''})` : '';
+    const formattedFounderText = formatFounderAttributionText(biz, escapeHtml);
+    if (formattedFounderText) {
       founderHtml = `
         <div class="founder-attribution" data-testid="founder-attribution">
           <span>👤</span>
-          <span>${escapeHtml(rolePrefix)}${escapeHtml(biz.founder_name)}${schoolPart}</span>
+          <span>${formattedFounderText}</span>
         </div>
       `;
     }
@@ -2092,10 +2104,9 @@
     const founderBox = document.getElementById('detail-founder');
     const founderText = document.getElementById('detail-founder-text');
     if (founderBox && founderText) {
-      if (biz.founder_role && (biz.founder_role === 'founder' || biz.founder_role === 'co_founder') && biz.founder_name) {
-        const prefix = biz.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ';
-        const schoolPart = biz.founder_school ? ` (${biz.founder_school}${biz.founder_year ? ` '${biz.founder_year}` : ''})` : '';
-        founderText.textContent = `${prefix}${biz.founder_name}${schoolPart}`;
+      const rawFounderText = formatFounderAttributionText(biz, null);
+      if (rawFounderText) {
+        founderText.textContent = rawFounderText;
         founderBox.style.display = 'flex';
       } else {
         founderBox.style.display = 'none';
@@ -3195,13 +3206,12 @@
           const hours = b.hours_status || { state: 'CLOSED', badge_text: 'Closed' };
 
           let founderHtml = '';
-          if (b.founder_role && (b.founder_role === 'founder' || b.founder_role === 'co_founder') && b.founder_name) {
-            const rolePrefix = b.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ';
-            const schoolPart = b.founder_school ? ` (${escapeHtml(b.founder_school)}${b.founder_year ? ` '${escapeHtml(b.founder_year)}` : ''})` : '';
+          const listFounderText = formatFounderAttributionText(b, escapeHtml);
+          if (listFounderText) {
             founderHtml = `
               <div class="biz-list-founder">
                 <span>👤</span>
-                <span>${escapeHtml(rolePrefix)}${escapeHtml(b.founder_name)}${schoolPart}</span>
+                <span>${listFounderText}</span>
               </div>
             `;
           }
@@ -3290,7 +3300,7 @@
               <div style="border:1px solid #E5DEC9;border-radius:10px;padding:16px;background:#FBF8F3;">
                 <div style="font-weight:800;font-size:16px;color:#114B3E;cursor:pointer;" onclick="openBizDetail('${escapeHtml(b.slug)}')">${escapeHtml(b.name)}</div>
                 <div style="font-size:12.5px;color:#7B1113;font-weight:700;margin-top:2px;">${escapeHtml(b.specialty_name || '')} · ${escapeHtml(b.city_county || '')}</div>
-                ${b.founder_role && b.founder_role !== 'none' && b.founder_name ? `<div style="font-size:12px;color:#57645C;margin:4px 0;">👤 ${escapeHtml(b.founder_role === 'co_founder' ? 'Co-Founded by ' : 'Founded by ')}${escapeHtml(b.founder_name)}</div>` : ''}
+                ${formatFounderAttributionText(b, escapeHtml) ? `<div style="font-size:12px;color:#57645C;margin:4px 0;">👤 ${formatFounderAttributionText(b, escapeHtml)}</div>` : ''}
                 <div style="display:flex;gap:6px;margin-top:12px;align-items:center;">
                   ${hasWa ? `<a href="https://wa.me/${waClean}" target="_blank" rel="noopener" class="btn-action-primary btn-action-whatsapp" style="font-size:12px;height:32px;padding:0 12px;">💬 WhatsApp</a>` : `<button type="button" class="btn-action-primary btn-action-whatsapp btn-action-disabled" disabled style="font-size:12px;height:32px;padding:0 12px;" title="No WhatsApp line provided">💬 WhatsApp</button>`}
                   ${normPhone ? `<a href="tel:${escapeHtml(normPhone)}" class="btn-action-primary btn-action-call" style="font-size:12px;height:32px;padding:0 12px;">📞 Call</a>` : ''}

@@ -688,7 +688,18 @@ $pageCanonicalPath = $requestedBiz
           <span>👤</span>
           <span id="detail-founder-text">
             <?php if ($requestedBiz && in_array($requestedBiz['founder_role'], ['founder', 'co_founder'], true)): ?>
-              <?= ($requestedBiz['founder_role'] === 'co_founder' ? 'Co-Founded by ' : 'Founded by ') . htmlspecialchars((string)$requestedBiz['founder_name'], ENT_QUOTES, 'UTF-8') . ($requestedBiz['founder_school'] ? (' (' . htmlspecialchars((string)$requestedBiz['founder_school'], ENT_QUOTES, 'UTF-8') . ($requestedBiz['founder_year'] ? (' \'' . htmlspecialchars((string)$requestedBiz['founder_year'], ENT_QUOTES, 'UTF-8')) : '') . ')') : '') ?>
+              <?php
+                $fPrefix = ($requestedBiz['founder_role'] === 'co_founder') ? 'Co-Founded by ' : 'Founded by ';
+                $fMeta = [];
+                if (!empty($requestedBiz['founder_school'])) {
+                    $fMeta[] = htmlspecialchars((string)$requestedBiz['founder_school'], ENT_QUOTES, 'UTF-8');
+                }
+                if (!empty($requestedBiz['founder_year'])) {
+                    $fMeta[] = "'" . ltrim(htmlspecialchars((string)$requestedBiz['founder_year'], ENT_QUOTES, 'UTF-8'), "'");
+                }
+                $fMetaStr = !empty($fMeta) ? ' (' . implode(' ', $fMeta) . ')' : '';
+              ?>
+              <?= htmlspecialchars($fPrefix, ENT_QUOTES, 'UTF-8') . htmlspecialchars((string)$requestedBiz['founder_name'], ENT_QUOTES, 'UTF-8') . $fMetaStr ?>
             <?php endif; ?>
           </span>
         </div>

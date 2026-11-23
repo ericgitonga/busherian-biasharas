@@ -1412,8 +1412,13 @@ final class VettingPurger
             }
             if ($adminFounderRole !== 'none') {
                 $adminFounderName = trim((string)($data['founder_name'] ?? '')) ?: null;
-                $adminFounderSchool = in_array($data['founder_school'] ?? '', ['AHS', 'AGHS'], true) ? $data['founder_school'] : null;
-                $adminFounderYear = trim((string)($data['founder_year'] ?? '')) ?: null;
+                if ($adminFounderName === null && !empty($data['name'])) {
+                    $adminFounderName = trim((string)$data['name']) ?: null;
+                }
+                $rawSchool = trim((string)($data['founder_school'] ?? ''));
+                $adminFounderSchool = in_array($rawSchool, ['AHS', 'AGHS'], true) ? $rawSchool : null;
+                $rawYear = trim((string)($data['founder_year'] ?? ''));
+                $adminFounderYear = $rawYear !== '' ? ltrim($rawYear, "'") : null;
             } else {
                 $adminFounderName = null;
                 $adminFounderSchool = null;
@@ -1969,8 +1974,21 @@ final class VettingPurger
             if ($ownerFounderName === '') {
                 $ownerFounderName = trim((string)($data['name'] ?? ($oldBiz['name'] ?? '')));
             }
-            $ownerFounderSchool = in_array($data['founder_school'] ?? '', ['AHS', 'AGHS'], true) ? $data['founder_school'] : ($oldBiz['founder_school'] ?? null);
-            $ownerFounderYear = trim((string)($data['founder_year'] ?? ($oldBiz['founder_year'] ?? ''))) ?: null;
+            if ($ownerFounderName === '') {
+                throw new InvalidArgumentException('Founder name is compulsory when founder attribution is enabled.');
+            }
+            if (array_key_exists('founder_school', $data)) {
+                $rawSchool = trim((string)$data['founder_school']);
+                $ownerFounderSchool = in_array($rawSchool, ['AHS', 'AGHS'], true) ? $rawSchool : null;
+            } else {
+                $ownerFounderSchool = $oldBiz['founder_school'] ?? null;
+            }
+            if (array_key_exists('founder_year', $data)) {
+                $rawYear = trim((string)$data['founder_year']);
+                $ownerFounderYear = $rawYear !== '' ? ltrim($rawYear, "'") : null;
+            } else {
+                $ownerFounderYear = $oldBiz['founder_year'] ?? null;
+            }
         } else {
             $ownerFounderName = null;
             $ownerFounderSchool = null;
