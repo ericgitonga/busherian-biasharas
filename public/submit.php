@@ -345,6 +345,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
                     $createdSubmitPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
 
+                    $logoPath = PhotoUploader::processBusinessLogo(
+                        null,
+                        false,
+                        $_FILES['business_logo'] ?? null,
+                        isset($_POST['business_logo_data_url']) ? (string)$_POST['business_logo_data_url'] : null,
+                        0
+                    );
+
                     $slugBase = CategoryMatcher::slugify($bizName);
                     $slug = $slugBase . '-' . substr(bin2hex(random_bytes(3)), 0, 6);
                     $bizUid = VettingPurger::generateUniqueBusinessUid($pdo);
@@ -355,6 +363,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $insBiz = $pdo->prepare("
                         INSERT INTO businesses (
                             business_id, business_number, name, slug, tagline, description, school_badge,
+                            logo_path,
                             founder_role, founder_name, founder_school, founder_year,
                             sector_id, specialty_id, secondary_sector_id, secondary_specialty_id, service_mode, alumni_perk,
                             b2b_ready, accepts_lpo, regulator_name, regulator_license,
@@ -368,6 +377,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             status, consent_recorded_at, privacy_notice_version, age_attested_at, listing_provenance
                         ) VALUES (
                             :business_id, :business_number, :name, :slug, :tagline, :description, :school_badge,
+                            :logo_path,
                             :founder_role, :founder_name, :founder_school, :founder_year,
                             :sector_id, :specialty_id, :secondary_sector_id, :secondary_specialty_id, :service_mode, :alumni_perk,
                             :b2b_ready, :accepts_lpo, :regulator_name, :regulator_license,
@@ -390,6 +400,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':tagline' => $tagline,
                         ':description' => $description,
                         ':school_badge' => $schoolCode,
+                        ':logo_path' => $logoPath,
                         ':founder_role' => $founderRole,
                         ':founder_name' => $founderName,
                         ':founder_school' => $founderSchool,
@@ -511,6 +522,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (empty($txCommitted) && !empty($createdSubmitPhotoUrls)) {
                         PhotoUploader::deleteRemovedPhotoUrls($createdSubmitPhotoUrls, []);
                     }
+                    if (empty($txCommitted) && !empty($logoPath)) {
+                        PhotoUploader::deleteRemovedLogoFile($logoPath);
+                    }
                     Mailer::clearPendingOutbox();
                     $errors[] = $e->getMessage();
                 } catch (\Throwable $e) {
@@ -519,6 +533,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     if (empty($txCommitted) && !empty($createdSubmitPhotoUrls)) {
                         PhotoUploader::deleteRemovedPhotoUrls($createdSubmitPhotoUrls, []);
+                    }
+                    if (empty($txCommitted) && !empty($logoPath)) {
+                        PhotoUploader::deleteRemovedLogoFile($logoPath);
                     }
                     Mailer::clearPendingOutbox();
                     error_log('[submit.php] Submission save failed: ' . $e->getMessage());

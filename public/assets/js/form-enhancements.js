@@ -1305,6 +1305,57 @@
     bookingUrlInput.addEventListener('paste', () => setTimeout(syncCheckFromUrl, 30));
   }
 
+  function bindLogoUploadPreview() {
+    const logoInput = document.getElementById('business_logo');
+    const previewEl = document.getElementById('business-logo-preview');
+    const removeCheck = document.getElementById('remove_logo');
+    const existingCard = document.getElementById('existing-logo-card');
+
+    if (removeCheck && existingCard) {
+      removeCheck.addEventListener('change', () => {
+        existingCard.style.opacity = removeCheck.checked ? '0.4' : '1.0';
+        existingCard.style.filter = removeCheck.checked ? 'grayscale(80%)' : 'none';
+      });
+    }
+
+    if (!logoInput || !previewEl) return;
+
+    logoInput.addEventListener('change', () => {
+      const file = logoInput.files && logoInput.files[0];
+      if (!file) {
+        previewEl.innerHTML = '';
+        return;
+      }
+      if (!file.type.match(/^image\/(png|jpeg|webp)$/)) {
+        previewEl.innerHTML = '<span style="font-size:0.78rem;color:#DC2626;">Please choose a PNG, WebP, or JPEG image.</span>';
+        return;
+      }
+      if (file.size > 8 * 1024 * 1024) {
+        previewEl.innerHTML = '<span style="font-size:0.78rem;color:#DC2626;">Logo file exceeds 8 MB size limit.</span>';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const src = e.target.result;
+        previewEl.innerHTML = `
+          <div style="display:inline-flex;align-items:center;gap:0.75rem;background:#fff;border:1px solid #CBD5E1;border-radius:8px;padding:0.4rem 0.75rem;">
+            <div style="width:48px;height:36px;display:flex;align-items:center;justify-content:center;background:#F1F5F9;border-radius:4px;overflow:hidden;">
+              <img src="${src}" alt="Logo Preview" style="max-width:44px;max-height:32px;object-fit:contain;">
+            </div>
+            <span style="font-size:0.78rem;color:#0F766E;font-weight:600;">New logo ready to upload</span>
+          </div>
+        `;
+        if (removeCheck) removeCheck.checked = false;
+        if (existingCard) {
+          existingCard.style.opacity = '1.0';
+          existingCard.style.filter = 'none';
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
   bindMapsPinAutoFill();
   bindBookingConfigAutoToggle();
+  bindLogoUploadPreview();
 })();

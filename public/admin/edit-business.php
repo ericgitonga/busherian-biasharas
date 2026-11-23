@@ -385,7 +385,7 @@ $vettingRow = $vetStmt->fetch() ?: null;
         </label>
       </div>
 
-      <?= bbiz_render_hours_and_photos_fields((string)($biz['operating_hours_json'] ?? ''), isset($biz['photos_json']) ? (string)$biz['photos_json'] : null) ?>
+      <?= bbiz_render_hours_and_photos_fields((string)($biz['operating_hours_json'] ?? ''), isset($biz['photos_json']) ? (string)$biz['photos_json'] : null, (string)($biz['logo_path'] ?? '')) ?>
 
       <div style="margin-top:1.35rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
         <button type="submit" class="btn btn-green" style="padding:0.7rem 1.5rem;">💾 Save Changes</button>
