@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v40-business-logos';
+    public const SCHEMA_INIT_VERSION = '2026-11-v40-business-logos-v2';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -604,7 +604,7 @@ final class Database
                 error_log('[Database::ensureInitialized] akili_logo_v1 failed: ' . $logoErr->getMessage());
             }
         }
-        if (self::getSetting($pdo, 'business_logos_v1') !== 'done') {
+        if (self::getSetting($pdo, 'business_logos_v2') !== 'done') {
             try {
                 $logosMap = [
                     ['/assets/img/logos/branfoot_logo.png', 'Branfoot Enterprises Limited', 'branfoot-enterprises'],
@@ -616,17 +616,19 @@ final class Database
                     ['/assets/img/logos/tag_creative_logo.png', 'TAG Creative', 'tag-creative%'],
                     ['/assets/img/logos/ujuzi_software_logo.jpg', '%Ujuzi Software Solutions%', 'ujuzi-software-solutions%'],
                 ];
-                $upd = $pdo->prepare("UPDATE businesses SET logo_path = :logo WHERE (name = :name OR name LIKE :name OR slug = :slug OR slug LIKE :slug) AND (logo_path IS NULL OR logo_path = '')");
+                $upd = $pdo->prepare("UPDATE businesses SET logo_path = :logo WHERE (name = :name_exact OR name LIKE :name_like OR slug = :slug_exact OR slug LIKE :slug_like) AND (logo_path IS NULL OR logo_path = '')");
                 foreach ($logosMap as [$logoPath, $nameMatch, $slugMatch]) {
                     $upd->execute([
                         ':logo' => $logoPath,
-                        ':name' => $nameMatch,
-                        ':slug' => $slugMatch,
+                        ':name_exact' => $nameMatch,
+                        ':name_like' => $nameMatch,
+                        ':slug_exact' => $slugMatch,
+                        ':slug_like' => $slugMatch,
                     ]);
                 }
-                self::setSetting($pdo, 'business_logos_v1', 'done');
+                self::setSetting($pdo, 'business_logos_v2', 'done');
             } catch (\Throwable $logoErr) {
-                error_log('[Database::ensureInitialized] business_logos_v1 failed: ' . $logoErr->getMessage());
+                error_log('[Database::ensureInitialized] business_logos_v2 failed: ' . $logoErr->getMessage());
             }
         }
 
