@@ -547,10 +547,10 @@ try {
 
     <!-- SECTION 2: MANAGE EXISTING / PUBLISHED BUSINESSES (EDIT, UNPUBLISH, DELETE) -->
     <?php
-      $allowedPerPage = [10, 25, 50, 100];
+      $allowedPerPage = [25, 50, 100];
       $perPage = isset($_GET['per_page']) && in_array((int)$_GET['per_page'], $allowedPerPage, true)
           ? (int)$_GET['per_page']
-          : 10;
+          : 25;
       $totalMatchingBusinesses = count($allBusinesses);
       $totalPages = max(1, (int)ceil($totalMatchingBusinesses / $perPage));
       $currentPage = isset($_GET['page']) ? max(1, min($totalPages, (int)$_GET['page'])) : 1;

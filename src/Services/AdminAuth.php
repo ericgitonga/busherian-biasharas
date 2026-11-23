@@ -8,15 +8,59 @@ use PDO;
 
 final class AdminAuth
 {
+    public const REMEMBER_ME_COOKIE = 'bbiz_admin_remember';
+    public const REMEMBER_ME_TTL_SECONDS = 2592000; // 30 days (30 * 86400)
+
+    private static function isHttpsRequest(): bool
+    {
+        return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    }
+
+    public static function clearRememberMeCookie(): void
+    {
+        if (!headers_sent()) {
+            setcookie(self::REMEMBER_ME_COOKIE, '', [
+                'expires' => time() - 3600,
+                'path' => '/',
+                'secure' => self::isHttpsRequest(),
+                'httponly' => true,
+                'samesite' => 'Strict',
+            ]);
+        }
+        unset($_COOKIE[self::REMEMBER_ME_COOKIE]);
+    }
+
+    private static function setRememberMeCookie(PDO $pdo): void
+    {
+        $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
+        $selector = bin2hex(random_bytes(12));
+        $exp = time() + self::REMEMBER_ME_TTL_SECONDS;
+        $ver = self::getServerAuthVersion($pdo);
+        $fp = self::currentCredentialFingerprint();
+        $sig = hash_hmac('sha256', "admin_rem_v1|{$selector}|{$exp}|{$ver}|{$fp}", $secret);
+        $cookieVal = "{$selector}.{$exp}.{$sig}";
+
+        if (!headers_sent()) {
+            setcookie(self::REMEMBER_ME_COOKIE, $cookieVal, [
+                'expires' => $exp,
+                'path' => '/',
+                'secure' => self::isHttpsRequest(),
+                'httponly' => true,
+                'samesite' => 'Strict',
+            ]);
+        }
+        $_COOKIE[self::REMEMBER_ME_COOKIE] = $cookieVal;
+    }
+
     public static function startSecureSession(): void
     {
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
             @ini_set('session.use_strict_mode', '1');
             @ini_set('session.use_only_cookies', '1');
-            $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+            $isHttps = self::isHttpsRequest();
             session_set_cookie_params([
-                'lifetime' => 7200,
+                'lifetime' => self::REMEMBER_ME_TTL_SECONDS,
                 'path' => '/',
                 'secure' => $isHttps,
                 'httponly' => true,
@@ -45,27 +89,36 @@ final class AdminAuth
     {
         $next = self::getServerAuthVersion($pdo) + 1;
         Database::setSetting($pdo, 'admin_auth_version', (string)$next);
+        self::clearRememberMeCookie();
         return $next;
     }
 
-    public static function establishAdminSession(?PDO $pdo = null): void
+    public static function establishAdminSession(?PDO $pdo = null, bool $rememberMe = false): void
     {
         self::startSecureSession();
         if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
             @session_regenerate_id(true);
         }
         $conn = $pdo ?? Database::getConnection();
+        $ttl = $rememberMe ? self::REMEMBER_ME_TTL_SECONDS : 7200;
         $_SESSION['bbiz_admin_auth'] = true;
-        $_SESSION['bbiz_admin_exp'] = time() + 7200;
+        $_SESSION['bbiz_admin_exp'] = time() + $ttl;
         $_SESSION['bbiz_admin_ver'] = self::getServerAuthVersion($conn);
         $_SESSION['bbiz_admin_cred_fp'] = self::currentCredentialFingerprint();
+        $_SESSION['bbiz_admin_remember'] = $rememberMe;
+
+        if ($rememberMe) {
+            self::setRememberMeCookie($conn);
+        } else {
+            self::clearRememberMeCookie();
+        }
     }
 
     public static function isAuthenticated(?PDO $pdo = null): bool
     {
         self::startSecureSession();
 
-        // Check session authentication flag + expiry (2 hours max) + credential fingerprint + server revocation version (#225)
+        // 1. Check session authentication flag + expiry + credential fingerprint + server revocation version (#225)
         if (!empty($_SESSION['bbiz_admin_auth']) && !empty($_SESSION['bbiz_admin_exp'])) {
             $expValid = ((int)$_SESSION['bbiz_admin_exp'] >= time());
             $sessFp = (string)($_SESSION['bbiz_admin_cred_fp'] ?? '');
@@ -85,11 +138,38 @@ final class AdminAuth
                 $_SESSION['bbiz_admin_auth'],
                 $_SESSION['bbiz_admin_exp'],
                 $_SESSION['bbiz_admin_ver'],
-                $_SESSION['bbiz_admin_cred_fp']
+                $_SESSION['bbiz_admin_cred_fp'],
+                $_SESSION['bbiz_admin_remember']
             );
         }
 
-        // Support stateless X-Admin-Token ONLY when explicitly enabled in production (or non-prod testing),
+        // 2. Validate persistent 30-day remember-me cookie (#424)
+        $remCookie = trim((string)($_COOKIE[self::REMEMBER_ME_COOKIE] ?? ''));
+        if ($remCookie !== '') {
+            $parts = explode('.', $remCookie, 3);
+            if (count($parts) === 3) {
+                [$sel, $expStr, $sig] = $parts;
+                $exp = ctype_digit($expStr) ? (int)$expStr : 0;
+                if ($exp >= time() && preg_match('/^[a-f0-9]{24}$/', $sel)) {
+                    try {
+                        $conn = $pdo ?? Database::getConnection();
+                        $ver = self::getServerAuthVersion($conn);
+                        $fp = self::currentCredentialFingerprint();
+                        $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
+                        $expectedSig = hash_hmac('sha256', "admin_rem_v1|{$sel}|{$exp}|{$ver}|{$fp}", $secret);
+                        if (hash_equals($expectedSig, $sig)) {
+                            self::establishAdminSession($conn, true);
+                            return true;
+                        }
+                    } catch (\Throwable $e) {
+                        // ignore and fall through
+                    }
+                }
+            }
+            self::clearRememberMeCookie();
+        }
+
+        // 3. Support stateless X-Admin-Token ONLY when explicitly enabled in production (or non-prod testing),
         // strictly separated from password_verify() and protected by the same per-IP auth rate limiter (#236 H-01).
         $headerToken = trim((string)($_SERVER['HTTP_X_ADMIN_TOKEN'] ?? ''));
         if ($headerToken !== '' && self::isHeaderTokenEnabled()) {
@@ -171,7 +251,7 @@ final class AdminAuth
         return false;
     }
 
-    public static function login(PDO $pdo, string $submittedPasswordOrToken, string $clientIp): array
+    public static function login(PDO $pdo, string $submittedPasswordOrToken, string $clientIp, bool $rememberMe = false): array
     {
         $rate = AntiSpamGate::checkAuthAttemptAllowed(
             $pdo,
@@ -191,13 +271,14 @@ final class AdminAuth
             return ['ok' => false, 'error' => 'Invalid admin access credentials.'];
         }
 
-        self::establishAdminSession($pdo);
+        self::establishAdminSession($pdo, $rememberMe);
         return ['ok' => true, 'error' => ''];
     }
 
     public static function logout(): void
     {
         self::startSecureSession();
+        self::clearRememberMeCookie();
         $_SESSION = [];
         if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
             @session_destroy();

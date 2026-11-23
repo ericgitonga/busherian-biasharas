@@ -270,11 +270,25 @@ testAssert(str_contains($adminIndexSrc, 'data-testid="sort-<?= $col ?>-asc"') &&
 testAssert(str_contains($adminIndexSrc, "\$renderSortHeader('name'") && str_contains($adminIndexSrc, "\$renderSortHeader('number'"), 'admin/index.php renders sort controls for Business Name and other columns');
 testAssert(str_contains($adminIndexSrc, '$renderSortHeader = static function'), 'admin/index.php implements renderSortHeader component');
 
-// 19. Check Website Button on Detail Page (#426)
+// 19. Check Website Button on Detail Page (#422)
 testAssert(str_contains($indexSrc, 'id="detail-website-btn"') && str_contains($indexSrc, 'data-testid="detail-website-btn"'), 'index.php renders #detail-website-btn in detail CTA bar');
 testAssert(str_contains($indexSrc, 'id="detail-website-row"') && str_contains($indexSrc, 'data-testid="detail-website-row"'), 'index.php renders #detail-website-row in contact details');
 testAssert(str_contains($jsSrc, "document.getElementById('detail-website-btn')"), 'directory.js populates detail website CTA button');
 testAssert(str_contains($jsSrc, "document.getElementById('detail-website-row')"), 'directory.js populates detail website contact row');
 testAssert(str_contains($cssSrc, '.detail-cta-bar') && str_contains($cssSrc, 'flex-wrap: wrap'), 'app.css enables flex-wrap on .detail-cta-bar');
+
+// 20. Check Admin 30-Day Remember-Me & Default 25-item Pagination (#424, #425)
+$adminLoginSrc = (string)file_get_contents(dirname(__DIR__) . '/public/admin/login.php');
+testAssert(str_contains($adminLoginSrc, 'data-testid="admin-remember-me-checkbox"'), 'admin/login.php renders remember-me checkbox (#424)');
+testAssert(str_contains($adminLoginSrc, 'Remember me on this machine for 30 days'), 'admin/login.php discloses 30-day remember-me option (#424)');
+testAssert(str_contains($adminLoginSrc, '$rememberMe = !empty($_POST[\'remember_me\']);'), 'admin/login.php passes remember_me to AdminAuth::login (#424)');
+
+$adminAuthSrc = (string)file_get_contents(dirname(__DIR__) . '/src/Services/AdminAuth.php');
+testAssert(str_contains($adminAuthSrc, 'REMEMBER_ME_COOKIE') && str_contains($adminAuthSrc, 'REMEMBER_ME_TTL_SECONDS'), 'AdminAuth defines REMEMBER_ME constants (#424)');
+testAssert(str_contains($adminAuthSrc, 'clearRememberMeCookie'), 'AdminAuth implements clearRememberMeCookie (#424)');
+
+$adminIndexSrc = (string)file_get_contents(dirname(__DIR__) . '/public/admin/index.php');
+testAssert(str_contains($adminIndexSrc, '$allowedPerPage = [25, 50, 100];'), 'admin/index.php restricts allowedPerPage to [25, 50, 100] (#425)');
+testAssert(str_contains($adminIndexSrc, ': 25;'), 'admin/index.php defaults to 25 items per page (#425)');
 
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
