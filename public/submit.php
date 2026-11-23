@@ -234,28 +234,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $emailPublic  = strtolower(trim((string)($_POST['email_public'] ?? '')));
             $websiteUrl   = trim((string)($_POST['website_url'] ?? ''));
 
-            // Founder / Co-Founder Attribution (Solo vs Joint with others #386)
+            // Founder / Co-Founder Attribution (Solo vs Joint with others #386, DPA Consent #435)
             $showFounderPublicly = !empty($_POST['show_founder_publicly']);
+            $toggleAdvanced      = !empty($_POST['toggle_advanced_details']);
             $simpleFounderRole   = in_array($_POST['simple_founder_role'] ?? '', ['founder', 'co_founder'], true) ? $_POST['simple_founder_role'] : 'founder';
             $rawFounderRole      = in_array($_POST['founder_role'] ?? '', ['founder', 'co_founder', 'none'], true) ? $_POST['founder_role'] : '';
 
+            // Strictly opt-in: Founder attribution is only enabled when show_founder_publicly is checked
+            // OR (if advanced details toggled) an explicit non-none role is selected.
             if ($showFounderPublicly) {
                 $founderRole = ($rawFounderRole !== '' && $rawFounderRole !== 'none') ? $rawFounderRole : $simpleFounderRole;
+            } elseif ($toggleAdvanced && ($rawFounderRole === 'founder' || $rawFounderRole === 'co_founder')) {
+                $founderRole = $rawFounderRole;
             } else {
-                $founderRole = ($rawFounderRole === 'founder' || $rawFounderRole === 'co_founder') ? $rawFounderRole : 'none';
+                $founderRole = 'none';
             }
 
-            $founderName = $founderRole !== 'none' ? trim((string)($_POST['founder_name'] ?? '')) : null;
-            if ($founderRole !== 'none' && ($founderName === null || $founderName === '')) {
-                $founderName = $submitterName;
-            }
-            $founderSchool = $founderRole !== 'none' ? (in_array($_POST['founder_school'] ?? '', ['AHS', 'AGHS'], true) ? $_POST['founder_school'] : null) : null;
-            if ($founderRole !== 'none' && $founderSchool === null) {
-                $founderSchool = $schoolCode;
-            }
-            $founderYear = $founderRole !== 'none' ? trim((string)($_POST['founder_year'] ?? '')) : null;
-            if ($founderRole !== 'none' && ($founderYear === null || $founderYear === '')) {
-                $founderYear = (string)$yearLeft;
+            if ($founderRole !== 'none') {
+                $founderName = trim((string)($_POST['founder_name'] ?? ''));
+                if ($founderName === '') {
+                    $founderName = $submitterName;
+                }
+                $founderSchool = in_array($_POST['founder_school'] ?? '', ['AHS', 'AGHS'], true) ? $_POST['founder_school'] : $schoolCode;
+                $founderYear = trim((string)($_POST['founder_year'] ?? ''));
+                if ($founderYear === '') {
+                    $founderYear = (string)$yearLeft;
+                }
+            } else {
+                $founderName = null;
+                $founderSchool = null;
+                $founderYear = null;
             }
 
             if ($phonePrimary === '' && $whatsappNum === '') {
@@ -840,6 +848,9 @@ $aghsHouses = Houses::AGHS_HOUSES;
                     <input type="radio" id="simple-founder-role-cofounder" name="simple_founder_role" value="co_founder" <?= (($_POST['simple_founder_role'] ?? '') === 'co_founder' || ($_POST['founder_role'] ?? '') === 'co_founder') ? 'checked' : '' ?> style="accent-color:#114B3E;">
                     <span><strong>Co-Founder (Joint with others)</strong> &mdash; Show <em>"Co-Founded by [my name], [school] '[year]"</em></span>
                   </label>
+                </div>
+                <div style="margin-top:0.5rem;padding:0.45rem 0.65rem;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;font-size:0.77rem;color:#166534;line-height:1.4;">
+                  🛡️ <strong>Kenya DPA 2019 Voluntary Publication Notice:</strong> Founder attribution is 100% voluntary. By checking this box, you provide explicit consent to publicly display your personal name, school, and completion year on this directory listing. You can modify or revoke this attribution anytime from your Owner Portal.
                 </div>
                 <p style="font-size:0.76rem;color:#6B7280;margin:0.45rem 0 0 0;line-height:1.4;">
                   Partners who are not alumni do not need to be listed &mdash; only your alumni connection is shown. Other alumni co-founders can link themselves to this listing when they join.

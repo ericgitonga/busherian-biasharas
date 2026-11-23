@@ -850,7 +850,7 @@ if (!function_exists('bbiz_render_community_charter_clauses')) {
           <section class="charter-clause-card" data-testid="charter-clause-4">
             <div class="charter-clause-badge">4. Verification &amp; Privacy Non-Negotiables</div>
             <p class="charter-clause-body">
-              No non-alumni business can ever buy an alumni listing. School vetting details are used strictly to verify alumni affiliation, with School Number permanently deleted immediately upon verification, while Name and Year of Departure are retained to show the world only if the alum voluntarily chooses founder attribution. The directory runs <strong>zero third-party ad-tech trackers</strong>.
+              No non-alumni business can ever buy an alumni listing. School vetting details are used strictly to verify alumni affiliation, with School Number permanently deleted immediately upon verification. Founder personal attribution is 100% voluntary and opt-in under Kenya DPA 2019, keeping founder personal names confidential by default and revocable at any time via the Owner Portal. The directory runs <strong>zero third-party ad-tech trackers</strong>.
             </p>
           </section>
         </div>
