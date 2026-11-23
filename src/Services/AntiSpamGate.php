@@ -14,6 +14,8 @@ final class AntiSpamGate
     public const CENTRAL_DISPATCH_MAIL_LIMIT_1H = 15;
     public const OTP_RECIPIENT_COOLDOWN_SECONDS = 60;
     public const OTP_RECIPIENT_LIMIT_1H = 4;
+    public const OTP_IP_LIMIT_15M = 5;
+    public const OTP_IP_LIMIT_24H = 15;
 
     private const BLOCKED_DOMAINS = [
         'telegra.ph',
@@ -467,30 +469,58 @@ final class AntiSpamGate
                 return ['allowed' => false, 'reason' => 'global_outbound_mail_circuit_breaker_1h'];
             }
 
-            if ($isOtpOrAuth && $rcptHmac !== '') {
-                $stmt60s = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :rh AND action_type = 'otp_recipient_cooldown' AND created_at >= :since");
-                $stmt60s->execute([':rh' => $rcptHmac, ':since' => $now - self::OTP_RECIPIENT_COOLDOWN_SECONDS]);
-                if ((int)$stmt60s->fetchColumn() >= 1) {
+            if ($isOtpOrAuth) {
+                // Per-IP OTP rate limits (BB-SEC-01): at most 5 per 15 minutes, 15 per 24 hours
+                $isTesting = (Database::env('APP_ENV') === 'testing');
+                $ipOtpCap15m = $isTesting ? 500 : self::OTP_IP_LIMIT_15M;
+                $ipOtpCap24h = $isTesting ? 2000 : self::OTP_IP_LIMIT_24H;
+
+                $stmtIp15 = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ip AND action_type = 'otp_ip_dispatch' AND created_at >= :since");
+                $stmtIp15->execute([':ip' => $ipHmac, ':since' => $now - 900]);
+                if ((int)$stmtIp15->fetchColumn() >= $ipOtpCap15m) {
                     if ($ownTx) {
                         $pdo->commit();
                     }
-                    return ['allowed' => false, 'reason' => 'otp_recipient_cooldown_60s'];
+                    return ['allowed' => false, 'reason' => 'otp_ip_limit_15m'];
                 }
 
-                $stmtRcpt1h = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :rh AND action_type = 'otp_recipient_cooldown' AND created_at >= :since");
-                $stmtRcpt1h->execute([':rh' => $rcptHmac, ':since' => $now - 3600]);
-                if ((int)$stmtRcpt1h->fetchColumn() >= self::OTP_RECIPIENT_LIMIT_1H) {
+                $stmtIp24 = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :ip AND action_type = 'otp_ip_dispatch' AND created_at >= :since");
+                $stmtIp24->execute([':ip' => $ipHmac, ':since' => $now - 86400]);
+                if ((int)$stmtIp24->fetchColumn() >= $ipOtpCap24h) {
                     if ($ownTx) {
                         $pdo->commit();
                     }
-                    return ['allowed' => false, 'reason' => 'otp_recipient_limit_1h'];
+                    return ['allowed' => false, 'reason' => 'otp_ip_limit_24h'];
+                }
+
+                if ($rcptHmac !== '') {
+                    $stmt60s = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :rh AND action_type = 'otp_recipient_cooldown' AND created_at >= :since");
+                    $stmt60s->execute([':rh' => $rcptHmac, ':since' => $now - self::OTP_RECIPIENT_COOLDOWN_SECONDS]);
+                    if ((int)$stmt60s->fetchColumn() >= 1) {
+                        if ($ownTx) {
+                            $pdo->commit();
+                        }
+                        return ['allowed' => false, 'reason' => 'otp_recipient_cooldown_60s'];
+                    }
+
+                    $stmtRcpt1h = $pdo->prepare("SELECT COUNT(*) FROM rate_limits WHERE ip_hmac = :rh AND action_type = 'otp_recipient_cooldown' AND created_at >= :since");
+                    $stmtRcpt1h->execute([':rh' => $rcptHmac, ':since' => $now - 3600]);
+                    if ((int)$stmtRcpt1h->fetchColumn() >= self::OTP_RECIPIENT_LIMIT_1H) {
+                        if ($ownTx) {
+                            $pdo->commit();
+                        }
+                        return ['allowed' => false, 'reason' => 'otp_recipient_limit_1h'];
+                    }
                 }
             }
 
             $ins = $pdo->prepare("INSERT INTO rate_limits (ip_hmac, action_type, created_at) VALUES (:h, :act, :now)");
             $ins->execute([':h' => $ipHmac, ':act' => 'global_outbound_mail', ':now' => $now]);
-            if ($isOtpOrAuth && $rcptHmac !== '') {
-                $ins->execute([':h' => $rcptHmac, ':act' => 'otp_recipient_cooldown', ':now' => $now]);
+            if ($isOtpOrAuth) {
+                $ins->execute([':h' => $ipHmac, ':act' => 'otp_ip_dispatch', ':now' => $now]);
+                if ($rcptHmac !== '') {
+                    $ins->execute([':h' => $rcptHmac, ':act' => 'otp_recipient_cooldown', ':now' => $now]);
+                }
             }
 
             if ($ownTx) {
