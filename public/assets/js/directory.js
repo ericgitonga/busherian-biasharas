@@ -692,12 +692,13 @@
     const cardClasses = isEcosystem ? 'biz-card biz-card-ecosystem' : 'biz-card';
     const openSource = isConcierge ? 'concierge' : 'directory';
 
+    const isPhoneObfuscated = Boolean(biz.phone_obfuscated);
     const normWa = formatKenyaPhone(biz.whatsapp_number, biz.country);
     const normPhone = formatKenyaPhone(biz.phone_primary, biz.country);
     const hasWa = Boolean(normWa && normWa.replace(/[^0-9]/g, '').length >= 7);
     const waNumber = hasWa ? normWa.replace(/[^0-9]/g, '') : '';
-    const waUrl = hasWa ? `https://wa.me/${waNumber}?text=Hello%20${encodeURIComponent(biz.name)}` : '#';
-    const callUrl = normPhone ? `tel:${normPhone}` : '#';
+    const waUrl = (!isPhoneObfuscated && hasWa) ? `https://wa.me/${waNumber}?text=Hello%20${encodeURIComponent(biz.name)}` : '#';
+    const callUrl = (!isPhoneObfuscated && normPhone) ? `tel:${normPhone}` : '#';
     const safeCardGmaps = sanitizeHttpUrl(biz.google_maps_url);
     const routeUrl = safeCardGmaps || (hasCoords ? `https://www.google.com/maps/search/?api=1&query=${biz.latitude},${biz.longitude}` : `https://maps.google.com/?q=${encodeURIComponent([biz.name, biz.street_road, biz.area_neighborhood, biz.city_county].filter(Boolean).join(' '))}`);
 
@@ -815,7 +816,7 @@
         <!-- 7. Action buttons (WhatsApp / Call) & 8. Details & 9. Route -->
         <div class="card-action-buttons">
           ${hasWa ? `
-            <a href="${escapeHtml(waUrl)}" class="btn-action-primary btn-action-whatsapp" target="_blank" rel="noopener" onclick="event.stopPropagation();">
+            <a href="${escapeHtml(waUrl)}" class="btn-action-primary btn-action-whatsapp" target="_blank" rel="noopener" onclick="onCardContactClick(event, ${biz.id}, 'whatsapp')">
               <span>💬</span>
               <span>WhatsApp</span>
             </a>
@@ -825,7 +826,7 @@
               <span>WhatsApp</span>
             </button>
           `}
-          <a href="${escapeHtml(callUrl)}" class="btn-action-primary btn-action-call" onclick="event.stopPropagation();">
+          <a href="${escapeHtml(callUrl)}" class="btn-action-primary btn-action-call" onclick="onCardContactClick(event, ${biz.id}, 'call')">
             <span>📞</span>
             <span>Call</span>
           </a>
@@ -840,6 +841,40 @@
       </article>
     `;
   }
+
+  window.onCardContactClick = async function(event, bizId, channel) {
+    let b = (Array.isArray(state.businesses) ? state.businesses.find(item => item.id === bizId) : null) || {};
+    if (!b.phone_obfuscated) {
+      event.stopPropagation();
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      const res = await fetch(`/api/businesses.php?id=${bizId}&reveal=1`, { credentials: 'same-origin' });
+      if (res.ok) {
+        const data = await res.json();
+        const fullBiz = (data.businesses && data.businesses[0]) ? data.businesses[0] : null;
+        if (fullBiz) {
+          b.phone_primary = fullBiz.phone_primary;
+          b.whatsapp_number = fullBiz.whatsapp_number;
+          b.latitude = fullBiz.latitude;
+          b.longitude = fullBiz.longitude;
+          b.phone_obfuscated = false;
+          b.coords_fuzzed = false;
+
+          const normPhone = formatKenyaPhone(b.phone_primary, b.country);
+          const normWa = formatKenyaPhone(b.whatsapp_number || b.phone_primary, b.country);
+          if (channel === 'call' && normPhone) {
+            window.location.href = `tel:${normPhone}`;
+          } else if (channel === 'whatsapp' && normWa) {
+            const waClean = normWa.replace(/[^0-9]/g, '');
+            window.open(`https://wa.me/${waClean}?text=Hello%20${encodeURIComponent(b.name || '')}`, '_blank', 'noopener');
+          }
+        }
+      }
+    } catch (_) {}
+  };
 
   window.changeCardPhoto = function(btnOrEl, step) {
     if (!btnOrEl) return;
@@ -1942,13 +1977,19 @@
     if (!biz && window.REQUESTED_BIZ && (window.REQUESTED_BIZ.slug === slugOrId || Number(window.REQUESTED_BIZ.id) === Number(slugOrId))) {
       biz = window.REQUESTED_BIZ;
     }
-    if (!biz) {
+    if (!biz || biz.phone_obfuscated) {
       const qParam = /^\d+$/.test(String(slugOrId)) ? ('id=' + encodeURIComponent(String(slugOrId))) : ('slug=' + encodeURIComponent(String(slugOrId)));
-      fetch('/api/businesses.php?' + qParam)
+      fetch('/api/businesses.php?' + qParam + '&reveal=1')
         .then(res => res.json())
         .then(data => {
           if (data && Array.isArray(data.businesses) && data.businesses.length > 0) {
             extraLoadedBusinesses.set(Number(data.businesses[0].id), data.businesses[0]);
+            if (Array.isArray(state.businesses)) {
+              const idx = state.businesses.findIndex(b => Number(b.id) === Number(data.businesses[0].id));
+              if (idx !== -1) {
+                state.businesses[idx] = data.businesses[0];
+              }
+            }
             populateBizDetail(data.businesses[0]);
           }
         })
@@ -3327,7 +3368,7 @@
       return;
     }
     try {
-      const res = await fetch('/api/businesses.php?id=' + encodeURIComponent(String(numericId)));
+      const res = await fetch('/api/businesses.php?id=' + encodeURIComponent(String(numericId)) + '&reveal=1');
       if (!res.ok) return;
       const data = await res.json();
       if (data && data.status === 'ok' && Array.isArray(data.businesses) && data.businesses.length > 0) {

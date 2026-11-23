@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.12] - 2026-11-23
+
+### Security & Data Protection
+- **Add Rate Limiting and Click-to-Reveal Obfuscation for Unauthenticated Directory API (#436)**:
+  - Enforced per-IP rate limiting (120 req / 15m) on `public/api/businesses.php` using `AntiSpamGate::checkAuthAttemptAllowed`.
+  - Added `PhoneNormalizer::maskPhoneNumber` to obfuscate raw phone and WhatsApp numbers (`+254 7XX XXXX85`) on unauthenticated bulk directory queries.
+  - Fuzzed geographic coordinates to 3 decimal places (~110m neighbourhood resolution) on unauthenticated bulk directory responses to prevent residential harvesting.
+  - Enabled exact coordinates and unmasked E.164 phone numbers for single listing views (`?id=...` or `?slug=...`), authenticated sessions, or explicit user reveal interaction (`?reveal=1`).
+  - Added click-to-reveal handler `onCardContactClick` in `public/assets/js/directory.js` to hydrate dialable numbers dynamically on human interaction.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.12`.
+
 ## [0.40.11] - 2026-11-23
 
 ### Security & Data Protection
