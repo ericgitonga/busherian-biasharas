@@ -299,6 +299,6 @@ testAssert(str_contains($cssSrc, '.card-banner-logo') && str_contains($cssSrc, '
 testAssert(str_contains($cssSrc, '.detail-banner-logo'), 'app.css defines .detail-banner-logo (#427)');
 $apiBizSrc = (string)file_get_contents(dirname(__DIR__) . '/public/api/businesses.php');
 testAssert(str_contains($apiBizSrc, "'logo_path' => !empty(\$row['logo_path'])"), 'public/api/businesses.php includes logo_path in item payload (#427)');
-testAssert(file_exists(dirname(__DIR__) . '/public/assets/photos/akili_ai_logo.png'), 'Akili AI logo exists on disk in public/assets/photos/ (#427)');
+testAssert(file_exists(dirname(__DIR__) . '/public/assets/img/logos/akili_ai_logo.png'), 'Akili AI logo exists on disk in public/assets/img/logos/ (#427)');
 
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
