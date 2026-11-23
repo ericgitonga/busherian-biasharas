@@ -3969,6 +3969,12 @@ a {
 .sheet-select:focus {
   border-color: #114B3E;
 }
+.sheet-select.active-filter {
+  border-color: #114B3E;
+  background: #E8F5E9;
+  color: #114B3E;
+  font-weight: 700;
+}
 .sheet-footer {
   padding: 12px 18px;
   border-top: 1px solid #EFE9DC;

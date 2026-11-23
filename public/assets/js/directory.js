@@ -2813,6 +2813,7 @@
     const citySelect = document.getElementById('sheet-filter-city');
     if (countrySelect) {
       countrySelect.value = state.selectedCountry || '';
+      countrySelect.classList.toggle('active-filter', Boolean(state.selectedCountry));
       syncSubdivisionsToSelect(citySelect, state.selectedCountry, state.selectedCity);
     }
 
@@ -2878,6 +2879,17 @@
       els.citySelect.value = '';
       els.citySelect.classList.remove('active-filter');
     }
+    const sheetCountry = document.getElementById('sheet-filter-country');
+    const sheetCity = document.getElementById('sheet-filter-city');
+    if (sheetCountry) {
+      sheetCountry.value = '';
+      sheetCountry.classList.remove('active-filter');
+    }
+    if (sheetCity) {
+      sheetCity.value = '';
+      sheetCity.classList.remove('active-filter');
+      syncSubdivisionsToSelect(sheetCity, '', '');
+    }
     document.querySelectorAll('#sidebar-sector-nav .sector-nav-item').forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-sector-id') === '');
     });
@@ -2893,13 +2905,22 @@
     closeMobileFilterSheet();
   }
 
-  function syncSubdivisionsToSelect(citySelect, countryCode, selectedCity) {
+  function syncSubdivisionsToSelect(citySelect, countryName, selectedCity) {
     if (!citySelect) return;
-    const hierarchy = state.placeHierarchy || {};
-    const countryData = hierarchy[countryCode] || null;
-    const subdivisions = countryData && Array.isArray(countryData.subdivisions) ? countryData.subdivisions : [];
+    const hierarchy = state.placeHierarchy || window.PLACE_HIERARCHY || {};
+    let subdivisions = [];
+    if (countryName && Array.isArray(hierarchy[countryName])) {
+      subdivisions = hierarchy[countryName];
+    } else if (!countryName && Array.isArray(hierarchy['Kenya'])) {
+      subdivisions = hierarchy['Kenya'];
+    }
 
-    citySelect.innerHTML = '<option value="">All Counties / Cities</option>';
+    const unitLabels = window.PLACE_UNIT_LABELS || {};
+    const unitPlural = (countryName && unitLabels[countryName])
+      ? pluralizeUnitLabel(unitLabels[countryName])
+      : 'Counties / Cities';
+
+    citySelect.innerHTML = `<option value="">📍 All ${escapeHtml(unitPlural)}</option>`;
     subdivisions.forEach(sub => {
       const opt = document.createElement('option');
       opt.value = sub;
@@ -2907,6 +2928,7 @@
       if (sub === selectedCity) opt.selected = true;
       citySelect.appendChild(opt);
     });
+    citySelect.classList.toggle('active-filter', Boolean(selectedCity));
   }
 
   function initMobileMinimalFilters() {
@@ -3046,11 +3068,17 @@
         const cCode = e.target.value;
         state.selectedCountry = cCode;
         state.selectedCity = '';
+        sheetCountry.classList.toggle('active-filter', Boolean(cCode));
         syncSubdivisionsToSelect(sheetCity, cCode, '');
 
         if (els.countrySelect) {
           els.countrySelect.value = cCode;
           els.countrySelect.classList.toggle('active-filter', !!cCode);
+          if (els.citySelect) {
+            populateCitiesDropdown(cCode);
+            els.citySelect.value = '';
+            els.citySelect.classList.remove('active-filter');
+          }
           if (window.filterByCountry) window.filterByCountry(cCode);
         }
 
@@ -3061,6 +3089,7 @@
       sheetCity.addEventListener('change', (e) => {
         const cityName = e.target.value;
         state.selectedCity = cityName;
+        sheetCity.classList.toggle('active-filter', Boolean(cityName));
         if (els.citySelect) {
           els.citySelect.value = cityName;
           els.citySelect.classList.toggle('active-filter', !!cityName);
