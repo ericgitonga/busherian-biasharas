@@ -732,11 +732,12 @@
         ? `<div class="card-adjacency-reason" data-testid="card-adjacency-reason" style="background:#F0FDF4;border-left-color:#059669;color:#065F46;">🎯 <strong>Match Context:</strong> ${escapeHtml(biz.tailored_reason || opts.tailoredReason)}</div>`
         : '');
 
-    // Photographs on cards or Blank School Initials Banner in lieu of photos (#423)
+    // Photographs on cards or Blank School Initials/Logo Banner in lieu of photos (#423, #427)
     const photos = Array.isArray(biz.photos) ? biz.photos.filter(p => typeof p === 'string' && p.trim() !== '') : [];
     const schoolRaw = (biz.school_badge || 'AHS').toUpperCase();
     const bannerSchoolCls = schoolRaw === 'AGHS' ? 'banner-aghs' : (schoolRaw === 'BOTH' ? 'banner-both' : 'banner-ahs');
     const initials = getBusinessInitials(biz.name);
+    const hasLogo = typeof biz.logo_path === 'string' && biz.logo_path.trim() !== '';
 
     const cardHeroHtml = photos.length > 0 ? `
       <div class="card-photo-hero" data-testid="biz-card-photo-hero" data-biz-id="${biz.id}" data-biz-name="${escapeHtml(biz.name)}" data-card-photos='${escapeHtml(JSON.stringify(photos))}' data-active-index="0">
@@ -760,7 +761,11 @@
       </div>
     ` : `
       <div class="card-photo-hero card-initials-banner ${bannerSchoolCls}" data-testid="biz-card-initials-banner" role="button" tabindex="0" aria-label="View ${escapeHtml(biz.name)} details" onclick="openBusinessModal(${biz.id})">
-        <span class="card-initials-text" data-testid="biz-card-initials-text">${escapeHtml(initials)}</span>
+        ${hasLogo ? `
+          <img class="card-banner-logo" data-testid="biz-card-banner-logo" src="${escapeHtml(biz.logo_path)}" alt="${escapeHtml(biz.name)} logo" loading="lazy">
+        ` : `
+          <span class="card-initials-text" data-testid="biz-card-initials-text">${escapeHtml(initials)}</span>
+        `}
       </div>
     `;
 
@@ -2166,10 +2171,15 @@
         }
         updatePhotoNavButtons();
       } else {
+        const hasLogo = typeof biz.logo_path === 'string' && biz.logo_path.trim() !== '';
         photosGrid.innerHTML = `
           <div class="photo-branded-banner" role="img" aria-label="Business crest banner">
             <div class="banner-crest-motif">
-              <span id="detail-initials">${escapeHtml((biz.name || 'BB').slice(0, 2).toUpperCase())}</span>
+              ${hasLogo ? `
+                <img src="${escapeHtml(biz.logo_path)}" alt="${escapeHtml(biz.name)} logo" class="detail-banner-logo" data-testid="detail-banner-logo">
+              ` : `
+                <span id="detail-initials">${escapeHtml((biz.name || 'BB').slice(0, 2).toUpperCase())}</span>
+              `}
             </div>
             <div class="banner-crest-meta">
               <span class="banner-badge">Verified Busherian Biashara</span>

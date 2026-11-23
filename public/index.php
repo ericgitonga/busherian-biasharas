@@ -65,6 +65,7 @@ $stmt = $pdo->prepare("
         CASE WHEN (b.email_public IS NOT NULL AND b.email_public != '') OR (b.owner_email IS NOT NULL AND b.owner_email != '') THEN 1 ELSE 0 END AS has_booking_email,
         b.social_instagram, b.social_linkedin, b.social_x,
         b.social_facebook, b.social_tiktok, b.social_youtube,
+        b.logo_path,
         b.verified_at, b.created_at, b.engagement_score, b.reference_count_90d
     FROM businesses b
     INNER JOIN categories sec ON sec.id = b.sector_id
@@ -114,6 +115,7 @@ foreach ($rows as $r) {
         'tagline' => $r['tagline'],
         'description' => $r['description'],
         'school_badge' => $r['school_badge'],
+        'logo_path' => !empty($r['logo_path']) ? (string)$r['logo_path'] : null,
         'founder_role' => $r['founder_role'] ?? 'none',
         'founder_name' => $r['founder_name'] ?? null,
         'founder_school' => $r['founder_school'] ?? null,
@@ -211,7 +213,8 @@ if ($requestedBizSlug !== null) {
             b.phone_primary, b.whatsapp_number, b.email_public, b.website_url,
             b.booking_enabled, b.booking_url,
             b.social_instagram, b.social_linkedin, b.social_x,
-            b.social_facebook, b.social_tiktok, b.social_youtube
+            b.social_facebook, b.social_tiktok, b.social_youtube,
+            b.logo_path
         FROM businesses b
         INNER JOIN categories sec ON sec.id = b.sector_id
         INNER JOIN categories spec ON spec.id = b.specialty_id
@@ -738,7 +741,11 @@ $pageCanonicalPath = $requestedBiz
         <?php else: ?>
           <div class="photo-branded-banner" role="img" aria-label="Business crest banner">
             <div class="banner-crest-motif">
-              <span id="detail-initials"><?= $requestedBiz ? htmlspecialchars(substr($requestedBiz['name'], 0, 2), ENT_QUOTES, 'UTF-8') : 'BB' ?></span>
+              <?php if (!empty($requestedBiz['logo_path'])): ?>
+                <img src="<?= htmlspecialchars((string)$requestedBiz['logo_path'], ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars((string)$requestedBiz['name'], ENT_QUOTES, 'UTF-8') ?> logo" class="detail-banner-logo" data-testid="detail-banner-logo">
+              <?php else: ?>
+                <span id="detail-initials"><?= $requestedBiz ? htmlspecialchars(substr($requestedBiz['name'], 0, 2), ENT_QUOTES, 'UTF-8') : 'BB' ?></span>
+              <?php endif; ?>
             </div>
             <div class="banner-crest-meta">
               <span class="banner-badge">Verified Busherian Biashara</span>

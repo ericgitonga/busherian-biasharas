@@ -2197,6 +2197,25 @@ a {
   user-select: none;
 }
 
+.card-banner-logo {
+  max-width: 82%;
+  max-height: 65%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+.detail-banner-logo {
+  max-width: 82%;
+  max-height: 80px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+}
+
 /* Card Photo Carousel Navigation Chevrons */
 .card-photo-arrow {
   position: absolute;
