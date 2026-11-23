@@ -354,3 +354,18 @@ CREATE TABLE IF NOT EXISTS business_recommendations (
     INDEX idx_recs_token (visitor_token),
     CONSTRAINT fk_rec_business FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 18. Administrator 30-Day Persistent Remember-Me Tokens (#424, #441)
+CREATE TABLE IF NOT EXISTS admin_remember_tokens (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    selector VARCHAR(32) NOT NULL UNIQUE,
+    validator_hash CHAR(64) NOT NULL,
+    user_agent_hash CHAR(64) NULL,
+    auth_version INT UNSIGNED NOT NULL DEFAULT 1,
+    expires_at INT UNSIGNED NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_admin_rem_sel (selector),
+    INDEX idx_admin_rem_exp (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

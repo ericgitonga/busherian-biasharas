@@ -33,13 +33,26 @@ final class AdminAuth
 
     private static function setRememberMeCookie(PDO $pdo): void
     {
-        $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
-        $selector = bin2hex(random_bytes(12));
+        $selector = bin2hex(random_bytes(16));
+        $validator = bin2hex(random_bytes(32));
+        $validatorHash = hash('sha256', $validator);
+        $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+        $uaHash = $ua !== '' ? hash('sha256', $ua) : null;
         $exp = time() + self::REMEMBER_ME_TTL_SECONDS;
         $ver = self::getServerAuthVersion($pdo);
-        $fp = self::currentCredentialFingerprint();
-        $sig = hash_hmac('sha256', "admin_rem_v1|{$selector}|{$exp}|{$ver}|{$fp}", $secret);
-        $cookieVal = "{$selector}.{$exp}.{$sig}";
+
+        try {
+            $pdo->exec("DELETE FROM admin_remember_tokens WHERE expires_at < " . time());
+            $stmt = $pdo->prepare("
+                INSERT INTO admin_remember_tokens (selector, validator_hash, user_agent_hash, auth_version, expires_at)
+                VALUES (?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([$selector, $validatorHash, $uaHash, $ver, $exp]);
+        } catch (\Throwable $e) {
+            // fall through
+        }
+
+        $cookieVal = "{$selector}.{$exp}.{$validator}";
 
         if (!headers_sent()) {
             setcookie(self::REMEMBER_ME_COOKIE, $cookieVal, [
@@ -51,6 +64,9 @@ final class AdminAuth
             ]);
         }
         $_COOKIE[self::REMEMBER_ME_COOKIE] = $cookieVal;
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            $_SESSION['bbiz_admin_remember_sel'] = $selector;
+        }
     }
 
     public static function startSecureSession(): void
@@ -89,6 +105,11 @@ final class AdminAuth
     {
         $next = self::getServerAuthVersion($pdo) + 1;
         Database::setSetting($pdo, 'admin_auth_version', (string)$next);
+        try {
+            $pdo->exec("DELETE FROM admin_remember_tokens");
+        } catch (\Throwable $e) {
+            // ignore
+        }
         self::clearRememberMeCookie();
         return $next;
     }
@@ -110,6 +131,21 @@ final class AdminAuth
         if ($rememberMe) {
             self::setRememberMeCookie($conn);
         } else {
+            $sel = (string)($_SESSION['bbiz_admin_remember_sel'] ?? '');
+            if ($sel === '' && !empty($_COOKIE[self::REMEMBER_ME_COOKIE])) {
+                $parts = explode('.', (string)$_COOKIE[self::REMEMBER_ME_COOKIE], 3);
+                if (!empty($parts[0])) {
+                    $sel = $parts[0];
+                }
+            }
+            if ($sel !== '') {
+                try {
+                    $del = $conn->prepare("DELETE FROM admin_remember_tokens WHERE selector = ?");
+                    $del->execute([$sel]);
+                } catch (\Throwable $e) {
+                }
+            }
+            unset($_SESSION['bbiz_admin_remember_sel']);
             self::clearRememberMeCookie();
         }
     }
@@ -143,23 +179,75 @@ final class AdminAuth
             );
         }
 
-        // 2. Validate persistent 30-day remember-me cookie (#424)
+        // 2. Validate persistent 30-day remember-me cookie (#424, #441)
         $remCookie = trim((string)($_COOKIE[self::REMEMBER_ME_COOKIE] ?? ''));
         if ($remCookie !== '') {
             $parts = explode('.', $remCookie, 3);
             if (count($parts) === 3) {
-                [$sel, $expStr, $sig] = $parts;
+                [$sel, $expStr, $validator] = $parts;
                 $exp = ctype_digit($expStr) ? (int)$expStr : 0;
-                if ($exp >= time() && preg_match('/^[a-f0-9]{24}$/', $sel)) {
+                if ($exp >= time() && preg_match('/^[a-f0-9]{24,64}$/', $sel) && strlen($validator) >= 16) {
                     try {
                         $conn = $pdo ?? Database::getConnection();
-                        $ver = self::getServerAuthVersion($conn);
-                        $fp = self::currentCredentialFingerprint();
-                        $secret = Database::env('APP_HMAC_SECRET', 'dev_fallback_secret_key_32_bytes_min_len');
-                        $expectedSig = hash_hmac('sha256', "admin_rem_v1|{$sel}|{$exp}|{$ver}|{$fp}", $secret);
-                        if (hash_equals($expectedSig, $sig)) {
-                            self::establishAdminSession($conn, true);
-                            return true;
+                        $stmt = $conn->prepare("
+                            SELECT id, selector, validator_hash, user_agent_hash, auth_version, expires_at
+                            FROM admin_remember_tokens
+                            WHERE selector = ?
+                            LIMIT 1
+                        ");
+                        $stmt->execute([$sel]);
+                        $tok = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                        if ($tok && (int)$tok['expires_at'] >= time()) {
+                            $serverVer = self::getServerAuthVersion($conn);
+                            if ((int)$tok['auth_version'] === $serverVer) {
+                                if (hash_equals((string)$tok['validator_hash'], hash('sha256', $validator))) {
+                                    $uaValid = true;
+                                    if (!empty($tok['user_agent_hash']) && !empty($_SERVER['HTTP_USER_AGENT'])) {
+                                        $uaValid = hash_equals((string)$tok['user_agent_hash'], hash('sha256', (string)$_SERVER['HTTP_USER_AGENT']));
+                                    }
+                                    if ($uaValid) {
+                                        // Rotate validator upon each successful session renewal (#441)
+                                        $newValidator = bin2hex(random_bytes(32));
+                                        $newValidatorHash = hash('sha256', $newValidator);
+                                        $newExp = time() + self::REMEMBER_ME_TTL_SECONDS;
+
+                                        $upStmt = $conn->prepare("
+                                            UPDATE admin_remember_tokens
+                                            SET validator_hash = ?, expires_at = ?, last_used_at = CURRENT_TIMESTAMP
+                                            WHERE id = ?
+                                        ");
+                                        $upStmt->execute([$newValidatorHash, $newExp, $tok['id']]);
+
+                                        $newCookieVal = "{$sel}.{$newExp}.{$newValidator}";
+                                        if (!headers_sent()) {
+                                            setcookie(self::REMEMBER_ME_COOKIE, $newCookieVal, [
+                                                'expires' => $newExp,
+                                                'path' => '/',
+                                                'secure' => self::isHttpsRequest(),
+                                                'httponly' => true,
+                                                'samesite' => 'Strict',
+                                            ]);
+                                        }
+                                        $_COOKIE[self::REMEMBER_ME_COOKIE] = $newCookieVal;
+
+                                        self::startSecureSession();
+                                        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+                                            @session_regenerate_id(true);
+                                        }
+                                        $_SESSION['bbiz_admin_auth'] = true;
+                                        $_SESSION['bbiz_admin_exp'] = time() + self::REMEMBER_ME_TTL_SECONDS;
+                                        $_SESSION['bbiz_admin_ver'] = $serverVer;
+                                        $_SESSION['bbiz_admin_cred_fp'] = self::currentCredentialFingerprint();
+                                        $_SESSION['bbiz_admin_remember'] = true;
+                                        $_SESSION['bbiz_admin_remember_sel'] = $sel;
+                                        return true;
+                                    }
+                                }
+                            } else {
+                                $delStmt = $conn->prepare("DELETE FROM admin_remember_tokens WHERE id = ?");
+                                $delStmt->execute([$tok['id']]);
+                            }
                         }
                     } catch (\Throwable $e) {
                         // ignore and fall through
@@ -275,9 +363,27 @@ final class AdminAuth
         return ['ok' => true, 'error' => ''];
     }
 
-    public static function logout(): void
+    public static function logout(?PDO $pdo = null): void
     {
         self::startSecureSession();
+
+        $selector = (string)($_SESSION['bbiz_admin_remember_sel'] ?? '');
+        if ($selector === '' && !empty($_COOKIE[self::REMEMBER_ME_COOKIE])) {
+            $parts = explode('.', (string)$_COOKIE[self::REMEMBER_ME_COOKIE], 3);
+            if (!empty($parts[0]) && preg_match('/^[a-f0-9]{24,64}$/', $parts[0])) {
+                $selector = $parts[0];
+            }
+        }
+        if ($selector !== '') {
+            try {
+                $conn = $pdo ?? Database::getConnection();
+                $delStmt = $conn->prepare("DELETE FROM admin_remember_tokens WHERE selector = ?");
+                $delStmt->execute([$selector]);
+            } catch (\Throwable $e) {
+                // ignore
+            }
+        }
+
         self::clearRememberMeCookie();
         $_SESSION = [];
         if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
