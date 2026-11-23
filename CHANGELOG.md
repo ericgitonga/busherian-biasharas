@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.10] - 2026-11-23
+
+### Added
+- **Populate Business Card Banners with Official Company Logos (#431)**:
+  - Added official company logos in `public/assets/img/logos/` for Branfoot Enterprises Limited, Bustani Bistro, Harriet's Botanicals, Impel Web Studio, Nifty Payroll, SasaSignal, TAG Creative, and Ujuzi Software Solutions Ltd.
+  - Added `business_logos_v1` database migration in `Database.php` and bumped `SCHEMA_INIT_VERSION` to `2026-11-v40-business-logos` to populate `logo_path` across businesses.
+  - Preserved existing user-uploaded logos and fallback school initials badges where logos are unset.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.10`.
+
 ## [0.40.9] - 2026-11-23
 
 ### Added

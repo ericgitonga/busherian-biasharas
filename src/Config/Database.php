@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v40-banner-logo';
+    public const SCHEMA_INIT_VERSION = '2026-11-v40-business-logos';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -597,11 +597,36 @@ final class Database
         }
         if (self::getSetting($pdo, 'akili_logo_v1') !== 'done') {
             try {
-                $upd = $pdo->prepare("UPDATE businesses SET logo_path = :logo WHERE slug = 'akili-ai' OR name LIKE '%Akili AI%'");
+                $upd = $pdo->prepare("UPDATE businesses SET logo_path = :logo WHERE (slug = 'akili-ai' OR name LIKE '%Akili AI%') AND (logo_path IS NULL OR logo_path = '')");
                 $upd->execute([':logo' => '/assets/img/logos/akili_ai_logo.png']);
                 self::setSetting($pdo, 'akili_logo_v1', 'done');
             } catch (\Throwable $logoErr) {
                 error_log('[Database::ensureInitialized] akili_logo_v1 failed: ' . $logoErr->getMessage());
+            }
+        }
+        if (self::getSetting($pdo, 'business_logos_v1') !== 'done') {
+            try {
+                $logosMap = [
+                    ['/assets/img/logos/branfoot_logo.png', 'Branfoot Enterprises Limited', 'branfoot-enterprises'],
+                    ['/assets/img/logos/bustani_bistro_logo.png', 'Bustani Bistro', 'bustani-bistro'],
+                    ['/assets/img/logos/harriets_botanicals_logo.png', "Harriet's Botanicals", 'harriets-botanicals'],
+                    ['/assets/img/logos/impel_web_studio_logo.png', 'Impel Web Studio', 'impel-web-studio%'],
+                    ['/assets/img/logos/nifty_payroll_logo.png', 'Nifty Payroll', 'nifty-payroll%'],
+                    ['/assets/img/logos/sasa_signal_logo.png', 'SasaSignal', 'sasasignal'],
+                    ['/assets/img/logos/tag_creative_logo.png', 'TAG Creative', 'tag-creative%'],
+                    ['/assets/img/logos/ujuzi_software_logo.jpg', '%Ujuzi Software Solutions%', 'ujuzi-software-solutions%'],
+                ];
+                $upd = $pdo->prepare("UPDATE businesses SET logo_path = :logo WHERE (name = :name OR name LIKE :name OR slug = :slug OR slug LIKE :slug) AND (logo_path IS NULL OR logo_path = '')");
+                foreach ($logosMap as [$logoPath, $nameMatch, $slugMatch]) {
+                    $upd->execute([
+                        ':logo' => $logoPath,
+                        ':name' => $nameMatch,
+                        ':slug' => $slugMatch,
+                    ]);
+                }
+                self::setSetting($pdo, 'business_logos_v1', 'done');
+            } catch (\Throwable $logoErr) {
+                error_log('[Database::ensureInitialized] business_logos_v1 failed: ' . $logoErr->getMessage());
             }
         }
 

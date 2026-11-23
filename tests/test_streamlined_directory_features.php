@@ -291,7 +291,7 @@ $adminIndexSrc = (string)file_get_contents(dirname(__DIR__) . '/public/admin/ind
 testAssert(str_contains($adminIndexSrc, '$allowedPerPage = [25, 50, 100];'), 'admin/index.php restricts allowedPerPage to [25, 50, 100] (#425)');
 testAssert(str_contains($adminIndexSrc, ': 25;'), 'admin/index.php defaults to 25 items per page (#425)');
 
-// 21. Check Company Logo in Banner in Lieu of Abbreviation (#427)
+// 21. Check Company Logo in Banner in Lieu of Abbreviation (#427, #431)
 testAssert(str_contains($jsSrc, 'data-testid="biz-card-banner-logo"'), 'directory.js renders company logo in banner when logo_path is present (#427)');
 testAssert(str_contains($jsSrc, 'data-testid="detail-banner-logo"'), 'directory.js renders company logo in detail showcase when logo_path is present (#427)');
 testAssert(str_contains($indexSrc, 'data-testid="detail-banner-logo"'), 'index.php SSR renders company logo in detail showcase when logo_path is present (#427)');
@@ -299,7 +299,20 @@ testAssert(str_contains($cssSrc, '.card-banner-logo') && str_contains($cssSrc, '
 testAssert(str_contains($cssSrc, '.detail-banner-logo'), 'app.css defines .detail-banner-logo (#427)');
 $apiBizSrc = (string)file_get_contents(dirname(__DIR__) . '/public/api/businesses.php');
 testAssert(str_contains($apiBizSrc, "'logo_path' => !empty(\$row['logo_path'])"), 'public/api/businesses.php includes logo_path in item payload (#427)');
-testAssert(file_exists(dirname(__DIR__) . '/public/assets/img/logos/akili_ai_logo.png'), 'Akili AI logo exists on disk in public/assets/img/logos/ (#427)');
+$expectedLogos = [
+    'akili_ai_logo.png',
+    'branfoot_logo.png',
+    'bustani_bistro_logo.png',
+    'harriets_botanicals_logo.png',
+    'impel_web_studio_logo.png',
+    'nifty_payroll_logo.png',
+    'sasa_signal_logo.png',
+    'tag_creative_logo.png',
+    'ujuzi_software_logo.jpg',
+];
+foreach ($expectedLogos as $expectedLogo) {
+    testAssert(file_exists(dirname(__DIR__) . '/public/assets/img/logos/' . $expectedLogo), "Logo {$expectedLogo} exists on disk in public/assets/img/logos/ (#431)");
+}
 
 // 22. Check User & Admin Editable Company Logo (#429)
 $ownerEditSrc = (string)file_get_contents(dirname(__DIR__) . '/public/owner/edit-business.php');
