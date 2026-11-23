@@ -48,9 +48,12 @@ jobs:
           : > /tmp/deleted_files.txt
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "${SYNC_ALL:-false}" = "true" ]; then
             git ls-files public src bin VERSION > /tmp/changed_files.txt
-          elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+          elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE_SHA" 2>/dev/null; then
             git diff -M --name-only --diff-filter=ACMRT "$BEFORE_SHA" "$AFTER_SHA" -- public src bin VERSION > /tmp/changed_files.txt
             git diff -M --name-status "$BEFORE_SHA" "$AFTER_SHA" -- public src bin | python3 .github/scripts/ftps_deploy.py --mode preview --extract-retired-from-stdin > /tmp/deleted_files.txt || true
+          elif git rev-parse --verify origin/main >/dev/null 2>&1; then
+            git diff -M --name-only --diff-filter=ACMRT origin/main "$AFTER_SHA" -- public src bin VERSION > /tmp/changed_files.txt
+            git diff -M --name-status origin/main "$AFTER_SHA" -- public src bin | python3 .github/scripts/ftps_deploy.py --mode preview --extract-retired-from-stdin > /tmp/deleted_files.txt || true
           else
             git ls-files public src bin VERSION > /tmp/changed_files.txt
           fi
