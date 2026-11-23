@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flashErr = 'Invalid security token (CSRF). Please try again.';
     } elseif ($adminAction === 'revoke_all_admin_sessions') {
         AdminAuth::revokeAllAdminSessions($pdo);
-        AdminAuth::logout();
+        AdminAuth::logout($pdo);
         header('Location: /admin/login.php?revoked_all=1');
         exit;
     } elseif ($adminAction === 'save_google_sso') {

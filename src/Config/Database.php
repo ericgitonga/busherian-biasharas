@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v40-business-logos-v2';
+    public const SCHEMA_INIT_VERSION = '2026-11-v40-admin-remember-tokens';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -239,6 +239,7 @@ final class Database
             'business_owner_links',
             'owner_sessions',
             'owner_auth_tokens',
+            'admin_remember_tokens',
             'takedown_requests',
             'moderation_audit_log',
             'business_sequences',
@@ -498,6 +499,18 @@ final class Database
                     meta_label TEXT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS admin_remember_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    selector TEXT NOT NULL UNIQUE,
+                    validator_hash TEXT NOT NULL,
+                    user_agent_hash TEXT NULL,
+                    auth_version INTEGER NOT NULL DEFAULT 1,
+                    expires_at INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_used_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS idx_admin_rem_sel ON admin_remember_tokens (selector);
+                CREATE INDEX IF NOT EXISTS idx_admin_rem_exp ON admin_remember_tokens (expires_at);
             ");
         }
 
@@ -868,6 +881,20 @@ final class Database
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_pending_media_created (created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS admin_remember_tokens (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    selector VARCHAR(32) NOT NULL UNIQUE,
+                    validator_hash CHAR(64) NOT NULL,
+                    user_agent_hash CHAR(64) NULL,
+                    auth_version INT UNSIGNED NOT NULL DEFAULT 1,
+                    expires_at INT UNSIGNED NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_used_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_admin_rem_sel (selector),
+                    INDEX idx_admin_rem_exp (expires_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
         }

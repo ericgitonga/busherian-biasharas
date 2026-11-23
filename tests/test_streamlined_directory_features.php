@@ -286,6 +286,9 @@ testAssert(str_contains($adminLoginSrc, '$rememberMe = !empty($_POST[\'remember_
 $adminAuthSrc = (string)file_get_contents(dirname(__DIR__) . '/src/Services/AdminAuth.php');
 testAssert(str_contains($adminAuthSrc, 'REMEMBER_ME_COOKIE') && str_contains($adminAuthSrc, 'REMEMBER_ME_TTL_SECONDS'), 'AdminAuth defines REMEMBER_ME constants (#424)');
 testAssert(str_contains($adminAuthSrc, 'clearRememberMeCookie'), 'AdminAuth implements clearRememberMeCookie (#424)');
+testAssert(str_contains($adminAuthSrc, 'admin_remember_tokens'), 'AdminAuth queries admin_remember_tokens table (#441)');
+testAssert(str_contains($adminAuthSrc, 'DELETE FROM admin_remember_tokens WHERE selector ='), 'AdminAuth revokes remember token on logout (#441)');
+testAssert(str_contains($adminAuthSrc, 'UPDATE admin_remember_tokens') && str_contains($adminAuthSrc, 'validator_hash ='), 'AdminAuth rotates validator upon renewal (#441)');
 
 $adminIndexSrc = (string)file_get_contents(dirname(__DIR__) . '/public/admin/index.php');
 testAssert(str_contains($adminIndexSrc, '$allowedPerPage = [25, 50, 100];'), 'admin/index.php restricts allowedPerPage to [25, 50, 100] (#425)');

@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logou
         http_response_code(403);
         $loginError = 'Invalid or expired security token (CSRF) for sign-out.';
     } else {
-        AdminAuth::logout();
+        AdminAuth::logout($pdo);
         header('Location: /admin/login.php?logged_out=1');
         exit;
     }

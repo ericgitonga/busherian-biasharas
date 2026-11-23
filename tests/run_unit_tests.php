@@ -3370,6 +3370,55 @@ assertTrue(
     'AdminAuth persistent 30-day Remember Me cookie restores session across restarts, rejects tampered signatures, and invalidates on revocation & logout (#424)'
 );
 
+// 44a-3. (#441): Admin server-side remember-me token revocation on logout & rotation on renewal
+AdminAuth::logout($pdo);
+AdminAuth::establishAdminSession($pdo, true);
+$cookie441 = $_COOKIE[AdminAuth::REMEMBER_ME_COOKIE] ?? '';
+$parts441 = explode('.', (string)$cookie441);
+$sel441 = $parts441[0] ?? '';
+$val441 = $parts441[2] ?? '';
+
+// 1. Token record persisted in DB
+$chkTok = $pdo->prepare("SELECT * FROM admin_remember_tokens WHERE selector = ?");
+$chkTok->execute([$sel441]);
+$tokRow441 = $chkTok->fetch(PDO::FETCH_ASSOC);
+$chkTok->closeCursor(); unset($chkTok);
+$tokPersisted441 = !empty($tokRow441) && hash_equals($tokRow441['validator_hash'], hash('sha256', $val441));
+
+// 2. Token rotation on session renewal
+$_SESSION = [];
+$renewed441 = AdminAuth::isAuthenticated($pdo);
+$newCookie441 = $_COOKIE[AdminAuth::REMEMBER_ME_COOKIE] ?? '';
+$newParts441 = explode('.', (string)$newCookie441);
+$newVal441 = $newParts441[2] ?? '';
+$chkRot = $pdo->prepare("SELECT * FROM admin_remember_tokens WHERE selector = ?");
+$chkRot->execute([$sel441]);
+$rotRow441 = $chkRot->fetch(PDO::FETCH_ASSOC);
+$chkRot->closeCursor(); unset($chkRot);
+$tokenRotated441 = $renewed441 && ($newVal441 !== $val441) && !empty($rotRow441) && hash_equals($rotRow441['validator_hash'], hash('sha256', $newVal441));
+
+// 3. Stolen/copied cookie rejected immediately after server logout
+AdminAuth::logout($pdo);
+$chkRev = $pdo->prepare("SELECT COUNT(*) FROM admin_remember_tokens WHERE selector = ?");
+$chkRev->execute([$sel441]);
+$tokenRevokedInDb441 = ((int)$chkRev->fetchColumn() === 0);
+$chkRev->closeCursor(); unset($chkRev);
+
+// Attacker presents previously copied cookie
+$_COOKIE[AdminAuth::REMEMBER_ME_COOKIE] = $newCookie441;
+$_SESSION = [];
+$copiedCookieRejected441 = (AdminAuth::isAuthenticated($pdo) === false);
+$cookiePurgedOnFailedAuth441 = empty($_COOKIE[AdminAuth::REMEMBER_ME_COOKIE]);
+
+assertTrue(
+    $tokPersisted441 &&
+    $tokenRotated441 &&
+    $tokenRevokedInDb441 &&
+    $copiedCookieRejected441 &&
+    $cookiePurgedOnFailedAuth441,
+    'AdminAuth securely persists remember-me device tokens, rotates validator on renewal, and revokes server-side on logout so copied cookies fail (#441)'
+);
+
 // 44b. H-02 (#237): email_public alone never grants owner auto-quarantine authority; confirmOwnerTakedownByToken re-verifies ownership
 $biz237 = VettingPurger::createBusinessDirectly($pdo, [
     'name' => 'R3 High02 Authority Guard Ltd',

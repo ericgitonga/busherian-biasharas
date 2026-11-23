@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.16] - 2026-11-23
+
+### Security & Hardening
+- **Add Server-Side Session Revocation on Admin Logout for 30-Day Remember-Me Credentials (#441, Parent #438)**:
+  - Created persistent `admin_remember_tokens` schema with hashed validator (`validator_hash`), user agent hash, server auth version, and absolute expiry across SQLite and MySQL.
+  - Implemented server-side token revocation on admin logout and global session invalidation (`AdminAuth::logout`, `AdminAuth::revokeAllAdminSessions`), guaranteeing that copied or previously stolen remember-me cookies fail closed immediately.
+  - Added cryptographic validator token rotation upon every successful session renewal to prevent replay of old cookie tokens.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.16`.
+
 ## [0.40.15] - 2026-11-23
 
 ### Security & Hardening
