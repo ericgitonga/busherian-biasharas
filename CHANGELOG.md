@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.11] - 2026-11-23
+
+### Security & Data Protection
+- **Align Privacy Notice and Submission Contract for Optional Founder Attribution (#435)**:
+  - Enforced strictly opt-in founder attribution in `public/submit.php`, setting `founder_role = 'none'` and clearing personal identifiers (`founder_name`, `founder_school`, `founder_year`) when publication consent is omitted or unselected.
+  - Added explicit voluntary publication notice and consent disclosure under Kenya DPA 2019 ss. 28 & 29 on the submission form.
+  - Updated `public/privacy.php` and `public/charter.php` (`src/bootstrap.php`) to clearly distinguish between public business entity data and optional founder personal data.
+  - Added self-service founder attribution management, editing, and instant revocation to `public/owner/edit-business.php` and `public/admin/edit-business.php`.
+  - Updated `VettingPurger::updateBusinessByOwner` and `VettingPurger::updateBusiness` to support persisting and revoking founder attribution fields.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.11`.
+
 ## [0.40.10] - 2026-11-23
 
 ### Added

@@ -293,6 +293,45 @@ $tokens = AntiSpamGate::generateFormTokens();
         </label>
       </div>
 
+      <!-- Founder / Co-Founder Attribution (Voluntary Alumni Heritage Display #435) -->
+      <div style="margin-top:1.1rem;padding:1rem;background:#FBF8F3;border:1px solid #E5DEC9;border-radius:10px;">
+        <label style="display:flex;align-items:flex-start;gap:0.5rem;font-size:0.88rem;cursor:pointer;font-weight:700;color:#114B3E;">
+          <input type="checkbox" id="owner_show_founder_publicly" name="show_founder_publicly" value="1" <?= in_array($biz['founder_role'] ?? '', ['founder', 'co_founder'], true) ? 'checked' : '' ?> style="margin-top:0.2rem;accent-color:#114B3E;" onchange="document.getElementById('owner-founder-fields').style.display = this.checked ? 'block' : 'none';">
+          <span>Show founder attribution publicly on this listing</span>
+        </label>
+        <p style="font-size:0.77rem;color:#6B7280;margin:0.3rem 0 0.6rem 1.6rem;line-height:1.4;">
+          Optional under Kenya DPA 2019 ss. 28 &amp; 29. Unchecking this immediately hides your personal name and graduation year from public directory cards.
+        </p>
+
+        <div id="owner-founder-fields" style="<?= in_array($biz['founder_role'] ?? '', ['founder', 'co_founder'], true) ? '' : 'display:none;' ?>margin-top:0.75rem;padding-top:0.75rem;border-top:1px dashed #D4AF37;">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.85rem;">
+            <div>
+              <label style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Founding Role</label>
+              <select name="founder_role" class="select-control">
+                <option value="founder" <?= ($biz['founder_role'] ?? '') === 'founder' ? 'selected' : '' ?>>Founder (Solo)</option>
+                <option value="co_founder" <?= ($biz['founder_role'] ?? '') === 'co_founder' ? 'selected' : '' ?>>Co-Founder (Joint)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Founder Personal Name</label>
+              <input type="text" name="founder_name" class="input-control" value="<?= htmlspecialchars((string)($biz['founder_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. Stephen Kanyi Gitonga">
+            </div>
+            <div>
+              <label style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Alumni School</label>
+              <select name="founder_school" class="select-control">
+                <option value="">Select school...</option>
+                <option value="AHS" <?= ($biz['founder_school'] ?? '') === 'AHS' ? 'selected' : '' ?>>Alliance High School (AHS)</option>
+                <option value="AGHS" <?= ($biz['founder_school'] ?? '') === 'AGHS' ? 'selected' : '' ?>>Alliance Girls High School (AGHS)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Completion Year</label>
+              <input type="text" name="founder_year" class="input-control" value="<?= htmlspecialchars((string)($biz['founder_year'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. 1998">
+            </div>
+          </div>
+        </div>
+      </div>
+
       <?= bbiz_render_hours_and_photos_fields((string)($biz['operating_hours_json'] ?? ''), isset($biz['photos_json']) ? (string)$biz['photos_json'] : null, (string)($biz['logo_path'] ?? '')) ?>
 
       <div style="margin-top:1.1rem;background:#F9FAFB;border:1px solid #D1D5DB;border-radius:10px;padding:0.85rem 1rem;">

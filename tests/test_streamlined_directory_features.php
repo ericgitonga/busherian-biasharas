@@ -353,4 +353,62 @@ $removedLogoUrl = \BusherianBiasharas\Services\PhotoUploader::processBusinessLog
 testAssert($removedLogoUrl === null, 'PhotoUploader::processBusinessLogo with removeLogo returns null and deletes file (#429)');
 testAssert(\BusherianBiasharas\Services\PhotoUploader::resolveSafeUploadFilePath($logoUrl, true) === null, 'Removed logo file no longer exists on disk (#429)');
 
+// 19. Check BB-DPA-01 Founder Attribution Consent Contract & Revocation (#435)
+$privacySrc = (string)file_get_contents(dirname(__DIR__) . '/public/privacy.php');
+testAssert(str_contains($submitSrc, 'Kenya DPA 2019 Voluntary Publication Notice'), 'submit.php has voluntary publication notice (#435)');
+testAssert(str_contains($privacySrc, 'Business Entity Profile Data vs. Founder Personal Data'), 'privacy.php delineates entity profile vs founder personal data (#435)');
+testAssert(str_contains($privacySrc, 'Strictly Opt-In Public Founder Attribution'), 'privacy.php documents strictly opt-in founder attribution (#435)');
+testAssert(str_contains($bootstrapSrc, 'Founder personal attribution is 100% voluntary and opt-in under Kenya DPA 2019'), 'bootstrap.php Community Charter clause 4 states founder attribution is opt-in and revocable (#435)');
+
+testAssert(str_contains($ownerEditSrc, 'name="show_founder_publicly"'), 'owner/edit-business.php provides founder attribution toggle (#435)');
+testAssert(str_contains($ownerEditSrc, 'name="founder_role"') && str_contains($ownerEditSrc, 'name="founder_name"'), 'owner/edit-business.php provides founder role and name fields (#435)');
+
+$adminEditSrc = (string)file_get_contents(dirname(__DIR__) . '/public/admin/edit-business.php');
+testAssert(str_contains($adminEditSrc, 'name="show_founder_publicly"'), 'admin/edit-business.php provides founder attribution toggle (#435)');
+testAssert(str_contains($adminEditSrc, 'name="founder_role"') && str_contains($adminEditSrc, 'name="founder_name"'), 'admin/edit-business.php provides founder role and name fields (#435)');
+
+// Functional test: VettingPurger::updateBusinessByOwner enables and then revokes founder attribution
+$testBizId = (int)$pdo->query("SELECT id FROM businesses ORDER BY id ASC LIMIT 1")->fetchColumn();
+if ($testBizId > 0) {
+    $ownerRow = \BusherianBiasharas\Services\OwnerAuth::upsertOwner($pdo, 'test-owner-435@example.com', 'Test Founder');
+    $linkStmt = $pdo->prepare("REPLACE INTO business_owner_links (business_id, owner_id) VALUES (:bid, :oid)");
+    $linkStmt->execute([':bid' => $testBizId, ':oid' => (int)$ownerRow['id']]);
+
+    // 1. Update with founder attribution enabled
+    \BusherianBiasharas\Services\VettingPurger::updateBusinessByOwner($pdo, $testBizId, $ownerRow, [
+        'name' => 'Attribution Test Business',
+        'sector_id' => 1,
+        'specialty_id' => 2,
+        'owner_adult_attestation_18' => 1,
+        'show_founder_publicly' => 1,
+        'founder_role' => 'co_founder',
+        'founder_name' => 'Wangari Maathai',
+        'founder_school' => 'AGHS',
+        'founder_year' => '1959',
+    ]);
+    $chkStmt = $pdo->prepare("SELECT founder_role, founder_name, founder_school, founder_year FROM businesses WHERE id = :id");
+    $chkStmt->execute([':id' => $testBizId]);
+    $updatedFounderRow = $chkStmt->fetch();
+    testAssert($updatedFounderRow['founder_role'] === 'co_founder', 'updateBusinessByOwner saves founder_role co_founder (#435)');
+    testAssert($updatedFounderRow['founder_name'] === 'Wangari Maathai', 'updateBusinessByOwner saves founder_name (#435)');
+    testAssert($updatedFounderRow['founder_school'] === 'AGHS', 'updateBusinessByOwner saves founder_school (#435)');
+    testAssert($updatedFounderRow['founder_year'] === '1959', 'updateBusinessByOwner saves founder_year (#435)');
+
+    // 2. Revoke founder attribution (show_founder_publicly omitted/unchecked)
+    \BusherianBiasharas\Services\VettingPurger::updateBusinessByOwner($pdo, $testBizId, $ownerRow, [
+        'name' => 'Attribution Test Business',
+        'sector_id' => 1,
+        'specialty_id' => 2,
+        'owner_adult_attestation_18' => 1,
+        'show_founder_publicly' => 0,
+        'founder_role' => 'none',
+    ]);
+    $chkStmt->execute([':id' => $testBizId]);
+    $revokedFounderRow = $chkStmt->fetch();
+    testAssert($revokedFounderRow['founder_role'] === 'none', 'updateBusinessByOwner revokes founder_role to none (#435)');
+    testAssert($revokedFounderRow['founder_name'] === null, 'updateBusinessByOwner clears founder_name on revocation (#435)');
+    testAssert($revokedFounderRow['founder_school'] === null, 'updateBusinessByOwner clears founder_school on revocation (#435)');
+    testAssert($revokedFounderRow['founder_year'] === null, 'updateBusinessByOwner clears founder_year on revocation (#435)');
+}
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

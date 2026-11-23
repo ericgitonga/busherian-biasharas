@@ -1333,7 +1333,7 @@ final class VettingPurger
      */
     public static function updateBusiness(PDO $pdo, int $businessId, array $data): void
     {
-        $existingRowStmt = $pdo->prepare("SELECT operating_hours_json, photos_json, latitude, longitude, plus_code, google_maps_url, booking_enabled, booking_url, phone_primary, whatsapp_number, email_public, owner_email FROM businesses WHERE id = :id LIMIT 1");
+        $existingRowStmt = $pdo->prepare("SELECT operating_hours_json, photos_json, latitude, longitude, plus_code, google_maps_url, booking_enabled, booking_url, phone_primary, whatsapp_number, email_public, owner_email, founder_role, founder_name, founder_school, founder_year FROM businesses WHERE id = :id LIMIT 1");
         $existingRowStmt->execute([':id' => $businessId]);
         $existingRow = (array)($existingRowStmt->fetch() ?: []);
 
@@ -1361,7 +1361,7 @@ final class VettingPurger
         $newlyWrittenPhotoUrls = [];
         try {
         self::acquireBusinessLifecycleLock($pdo, $businessId);
-        $lockedExistingStmt = $pdo->prepare("SELECT status, photos_json, logo_path FROM businesses WHERE id = :id LIMIT 1");
+        $lockedExistingStmt = $pdo->prepare("SELECT status, photos_json, logo_path, founder_role, founder_name, founder_school, founder_year FROM businesses WHERE id = :id LIMIT 1");
         $lockedExistingStmt->execute([':id' => $businessId]);
         $lockedExisting = (array)($lockedExistingStmt->fetch() ?: $existingRow);
         $previousPhotoUrls = PhotoUploader::decodePhotosJson(isset($lockedExisting['photos_json']) ? (string)$lockedExisting['photos_json'] : null);
@@ -1381,12 +1381,44 @@ final class VettingPurger
         );
         $keptPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
         $newlyWrittenPhotoUrls = array_values(array_diff($keptPhotoUrls, $previousPhotoUrls));
+
+        $hasFounderInput = array_key_exists('founder_role', $data) || array_key_exists('show_founder_publicly', $data);
+        if ($hasFounderInput) {
+            $adminShowFounder = !empty($data['show_founder_publicly']);
+            $adminRawRole = in_array($data['founder_role'] ?? '', ['founder', 'co_founder', 'none'], true) ? $data['founder_role'] : '';
+            if ($adminShowFounder) {
+                $adminFounderRole = ($adminRawRole !== '' && $adminRawRole !== 'none') ? $adminRawRole : 'founder';
+            } elseif ($adminRawRole === 'founder' || $adminRawRole === 'co_founder') {
+                $adminFounderRole = $adminRawRole;
+            } else {
+                $adminFounderRole = 'none';
+            }
+            if ($adminFounderRole !== 'none') {
+                $adminFounderName = trim((string)($data['founder_name'] ?? '')) ?: null;
+                $adminFounderSchool = in_array($data['founder_school'] ?? '', ['AHS', 'AGHS'], true) ? $data['founder_school'] : null;
+                $adminFounderYear = trim((string)($data['founder_year'] ?? '')) ?: null;
+            } else {
+                $adminFounderName = null;
+                $adminFounderSchool = null;
+                $adminFounderYear = null;
+            }
+        } else {
+            $adminFounderRole = $lockedExisting['founder_role'] ?? 'none';
+            $adminFounderName = $lockedExisting['founder_name'] ?? null;
+            $adminFounderSchool = $lockedExisting['founder_school'] ?? null;
+            $adminFounderYear = $lockedExisting['founder_year'] ?? null;
+        }
+
         $stmt = $pdo->prepare("
             UPDATE businesses SET
                 name = :name,
                 tagline = :tagline,
                 description = :description,
                 school_badge = :school_badge,
+                founder_role = :founder_role,
+                founder_name = :founder_name,
+                founder_school = :founder_school,
+                founder_year = :founder_year,
                 logo_path = :logo_path,
                 sector_id = :sector_id,
                 specialty_id = :specialty_id,
@@ -1435,6 +1467,10 @@ final class VettingPurger
             ':tagline' => trim((string)$data['tagline']),
             ':description' => trim((string)$data['description']),
             ':school_badge' => in_array($data['school_badge'] ?? '', ['AHS', 'AGHS', 'BOTH'], true) ? $data['school_badge'] : 'BOTH',
+            ':founder_role' => $adminFounderRole,
+            ':founder_name' => $adminFounderName,
+            ':founder_school' => $adminFounderSchool,
+            ':founder_year' => $adminFounderYear,
             ':logo_path' => $logoPath,
             ':sector_id' => (int)$data['sector_id'],
             ':specialty_id' => (int)$data['specialty_id'],
@@ -1859,7 +1895,7 @@ final class VettingPurger
         $lockedOwnerStatus = strtolower(trim((string)($oldBiz['status'] ?? 'approved')));
         try {
         self::acquireBusinessLifecycleLock($pdo, $businessId);
-        $lockedOwnerStmt = $pdo->prepare("SELECT status, photos_json, logo_path FROM businesses WHERE id = :id LIMIT 1");
+        $lockedOwnerStmt = $pdo->prepare("SELECT status, photos_json, logo_path, founder_role, founder_name, founder_school, founder_year FROM businesses WHERE id = :id LIMIT 1");
         $lockedOwnerStmt->execute([':id' => $businessId]);
         $lockedOwnerRow = $lockedOwnerStmt->fetch();
         if (!$lockedOwnerRow) {
@@ -1884,11 +1920,39 @@ final class VettingPurger
         );
         $keptPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
         $newlyWrittenPhotoUrls = array_values(array_diff($keptPhotoUrls, $previousPhotoUrls));
+
+        $showFounderOwner = !empty($data['show_founder_publicly']);
+        $rawOwnerFounderRole = in_array($data['founder_role'] ?? '', ['founder', 'co_founder', 'none'], true) ? $data['founder_role'] : '';
+        if ($showFounderOwner) {
+            $ownerFounderRole = ($rawOwnerFounderRole !== '' && $rawOwnerFounderRole !== 'none') ? $rawOwnerFounderRole : 'founder';
+        } elseif ($rawOwnerFounderRole === 'founder' || $rawOwnerFounderRole === 'co_founder') {
+            $ownerFounderRole = $rawOwnerFounderRole;
+        } else {
+            $ownerFounderRole = 'none';
+        }
+
+        if ($ownerFounderRole !== 'none') {
+            $ownerFounderName = trim((string)($data['founder_name'] ?? ($oldBiz['founder_name'] ?? '')));
+            if ($ownerFounderName === '') {
+                $ownerFounderName = trim((string)($data['name'] ?? ($oldBiz['name'] ?? '')));
+            }
+            $ownerFounderSchool = in_array($data['founder_school'] ?? '', ['AHS', 'AGHS'], true) ? $data['founder_school'] : ($oldBiz['founder_school'] ?? null);
+            $ownerFounderYear = trim((string)($data['founder_year'] ?? ($oldBiz['founder_year'] ?? ''))) ?: null;
+        } else {
+            $ownerFounderName = null;
+            $ownerFounderSchool = null;
+            $ownerFounderYear = null;
+        }
+
         $stmt = $pdo->prepare("
             UPDATE businesses SET
                 name = :name,
                 tagline = :tagline,
                 description = :description,
+                founder_role = :founder_role,
+                founder_name = :founder_name,
+                founder_school = :founder_school,
+                founder_year = :founder_year,
                 logo_path = :logo_path,
                 sector_id = :sector_id,
                 specialty_id = :specialty_id,
@@ -1940,6 +2004,10 @@ final class VettingPurger
             ':name' => $newName,
             ':tagline' => trim((string)($data['tagline'] ?? $oldBiz['tagline'])),
             ':description' => trim((string)($data['description'] ?? $oldBiz['description'])),
+            ':founder_role' => $ownerFounderRole,
+            ':founder_name' => $ownerFounderName,
+            ':founder_school' => $ownerFounderSchool,
+            ':founder_year' => $ownerFounderYear,
             ':logo_path' => $logoPath,
             ':sector_id' => $newSectorId,
             ':specialty_id' => $newSpecId,
