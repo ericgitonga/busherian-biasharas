@@ -457,7 +457,7 @@ if (!empty($firstSingleBiz['phone_primary'])) {
 
 // 21. Check BB-DPA-03 PWA Cache Eviction, Tombstone Sync & Status Headers (#437)
 $swContent = (string)file_get_contents(dirname(__DIR__) . '/public/sw.js');
-testAssert(str_contains($swContent, "const CACHE_VERSION = 'bbiz-pwa-v0.40.13'"), 'sw.js has CACHE_VERSION v0.40.13 (#437)');
+testAssert(str_contains($swContent, "const CACHE_VERSION = 'bbiz-pwa-v" . bbiz_app_version() . "'"), 'sw.js CACHE_VERSION is aligned with bbiz_app_version (#437)');
 testAssert(str_contains($swContent, 'MAX_CACHE_AGE_MS'), 'sw.js defines MAX_CACHE_AGE_MS for 24h freshness (#437)');
 testAssert(str_contains($swContent, 'putInCacheWithTtl'), 'sw.js defines putInCacheWithTtl helper (#437)');
 testAssert(str_contains($swContent, 'evictTombstonesFromCache'), 'sw.js defines evictTombstonesFromCache helper (#437)');
@@ -497,5 +497,35 @@ testAssert(is_array($tombstones) && in_array($quarantinedBizId, $tombstones, tru
 
 // Clean up test quarantined business
 $pdo->prepare("DELETE FROM businesses WHERE id = :id")->execute([':id' => $quarantinedBizId]);
+
+// 22. Check BB-SEC-01 OTP Dispatch and Authenticated SMTP Hardening (#439)
+testAssert(\BusherianBiasharas\Services\AntiSpamGate::OTP_IP_LIMIT_15M === 5, 'AntiSpamGate::OTP_IP_LIMIT_15M is 5 (#439)');
+testAssert(\BusherianBiasharas\Services\AntiSpamGate::OTP_IP_LIMIT_24H === 15, 'AntiSpamGate::OTP_IP_LIMIT_24H is 15 (#439)');
+
+$testOtpHmacIp = \BusherianBiasharas\Services\AntiSpamGate::pseudonymizeIp('198.51.100.77');
+$nowTs = time();
+// Seed 5 OTP attempts for 198.51.100.77
+for ($i = 0; $i < 5; $i++) {
+    $pdo->prepare("INSERT INTO rate_limits (ip_hmac, action_type, created_at) VALUES (:h, 'otp_ip_dispatch', :ts)")
+        ->execute([':h' => $testOtpHmacIp, ':ts' => $nowTs - ($i * 10)]);
+}
+// Set non-testing env temporarily to verify rate limit trigger
+putenv('APP_ENV=production');
+$quotaCheck = \BusherianBiasharas\Services\AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, '198.51.100.77', 'victim@example.com', true);
+testAssert($quotaCheck['allowed'] === false, 'checkAndRecordOutboundMailQuota blocks 6th OTP attempt from same IP (#439)');
+testAssert($quotaCheck['reason'] === 'otp_ip_limit_15m', 'checkAndRecordOutboundMailQuota returns otp_ip_limit_15m (#439)');
+
+// Verify Mailer::isPhpMailFallbackEnabled returns false in production
+testAssert(\BusherianBiasharas\Services\Mailer::isPhpMailFallbackEnabled() === false, 'Mailer::isPhpMailFallbackEnabled returns false in production (#439)');
+testAssert(\BusherianBiasharas\Services\Mailer::isSmtpSecurityAllowed('none', 'production') === false, 'Mailer::isSmtpSecurityAllowed blocks unencrypted SMTP in production (#439)');
+testAssert(\BusherianBiasharas\Services\Mailer::isSmtpSecurityAllowed('tls', 'production') === true, 'Mailer::isSmtpSecurityAllowed permits TLS in production (#439)');
+testAssert(\BusherianBiasharas\Services\Mailer::isSmtpSecurityAllowed('ssl', 'production') === true, 'Mailer::isSmtpSecurityAllowed permits SSL in production (#439)');
+
+// Clean up test rate limit rows and restore testing env
+$pdo->prepare("DELETE FROM rate_limits WHERE ip_hmac = :h")->execute([':h' => $testOtpHmacIp]);
+putenv('APP_ENV=testing');
+
+$swContent439 = (string)file_get_contents(dirname(__DIR__) . '/public/sw.js');
+testAssert(str_contains($swContent439, "const CACHE_VERSION = 'bbiz-pwa-v0.40.14'"), 'sw.js has CACHE_VERSION v0.40.14 (#439)');
 
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

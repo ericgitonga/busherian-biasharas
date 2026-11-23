@@ -251,12 +251,17 @@ final class Mailer
      */
     public static function isPhpMailFallbackEnabled(): bool
     {
+        $appEnv = strtolower(trim(Database::env('APP_ENV', 'production')));
+        if ($appEnv === 'production') {
+            // Security Invariant (BB-SEC-01): Unauthenticated local PHP mail fallback is strictly forbidden in production
+            return false;
+        }
         $allowLegacy = strtolower(trim(Database::env('ALLOW_PHP_MAIL_FALLBACK', 'no')));
         if (in_array($allowLegacy, ['yes', 'true', '1'], true)) {
             return true;
         }
         $disableFallback = strtolower(trim(Database::env('SMTP_DISABLE_MAIL_FALLBACK', 'yes')));
-        return $disableFallback === 'no' && strtolower(trim(Database::env('APP_ENV', 'production'))) !== 'production';
+        return $disableFallback === 'no';
     }
 
     /**
@@ -426,7 +431,7 @@ final class Mailer
         if ($smtpHost !== '') {
             $ok = self::sendViaAuthenticatedSmtp($recipient, $cleanSubject, $bodyHtml, $fromEmail, $fromName, $cleanReply);
         }
-        if (!$ok && (self::isPhpMailFallbackEnabled() || str_contains($rawSubject, 'Verification Code') || str_contains($rawSubject, '6-Digit')) && function_exists('mail')) {
+        if (!$ok && self::isPhpMailFallbackEnabled() && function_exists('mail')) {
             $msgId = '<' . bin2hex(random_bytes(12)) . '@busherianbiasharas.com>';
             $headers = [
                 'MIME-Version: 1.0',
@@ -567,14 +572,18 @@ final class Mailer
             error_log('[Mailer::sendViaAuthenticatedSmtp] Refusing unencrypted or invalid SMTP transport configuration in ' . $appEnv);
             return false;
         }
+        $isProd = ($appEnv === 'production');
         if (($user !== '' && $pass === '') || ($user === '' && $pass !== '')) {
             error_log('[Mailer::sendViaAuthenticatedSmtp] Refusing partially configured SMTP credentials; username and password must both be set.');
+            return false;
+        }
+        if ($isProd && ($user === '' || $pass === '')) {
+            error_log('[Mailer::sendViaAuthenticatedSmtp] Refusing unauthenticated SMTP in production; credentials required (BB-SEC-01).');
             return false;
         }
 
         $deadline = microtime(true) + (float)self::SMTP_TOTAL_DEADLINE_SECONDS;
         // In production, TLS peer and hostname verification must never be disabled (M-07)
-        $isProd = ($appEnv === 'production');
         $verifyPeer = $isProd ? true : (strtolower(trim(Database::env('SMTP_VERIFY_TLS_PEER', 'yes'))) !== 'no');
         $sslCtx = stream_context_create([
             'ssl' => [

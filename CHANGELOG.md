@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.14] - 2026-11-23
+
+### Security & Hardening
+- **Route All OTP and Transactional Email Generation Through AntiSpamGate and Authenticated SMTP (#439, Parent #438)**:
+  - Added strict per-IP OTP rate limits (`OTP_IP_LIMIT_15M = 5`, `OTP_IP_LIMIT_24H = 15`) in `AntiSpamGate::checkAndRecordOutboundMailQuota` to prevent automated brute-force or bulk OTP dispatch to multiple accounts from a single IP.
+  - Eliminated subject-based bypass for local unauthenticated PHP `mail()` fallback in `Mailer::dispatchOutboxRow`, enforcing that transactional OTP and auth emails fail closed if SMTP delivery fails.
+  - Hardened `Mailer::sendViaAuthenticatedSmtp` in production to reject unauthenticated credentials (`SMTP_USER` / `SMTP_PASS` empty) and enforce mandatory TLS certificate peer and hostname verification.
+  - Hardened `Mailer::isPhpMailFallbackEnabled` to return `false` unconditionally in production environments.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.14`.
+
 ## [0.40.13] - 2026-11-23
 
 ### Security & Data Protection
