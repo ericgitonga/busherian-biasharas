@@ -2170,13 +2170,11 @@ a {
 
 .card-initials-banner.banner-ahs {
   background: #2E3192;
-  background: linear-gradient(135deg, #2E3192 0%, #1c1f73 100%);
   color: #FFFFFF;
 }
 
 .card-initials-banner.banner-aghs {
   background: #1E5E2A;
-  background: linear-gradient(135deg, #1E5E2A 0%, #13421d 100%);
   color: #FFFFFF;
 }
 
@@ -2193,7 +2191,6 @@ a {
   color: #FFFFFF;
   line-height: 1;
   text-transform: uppercase;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
   user-select: none;
 }
 

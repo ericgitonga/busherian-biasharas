@@ -263,4 +263,11 @@ testAssert(str_contains($cssSrc, '.card-initials-text'), 'app.css defines .card-
 // 17. Check Open Now/Closed Badges Removed from Cards (#421)
 testAssert(!str_contains($jsSrc, 'open-status-btn'), 'directory.js removes visual Open Now/Closed status badge from cards while preserving filter functionality');
 
+// 18. Check Admin Table Column Header Sort Arrows (#424)
+$adminIndexSrc = (string)file_get_contents(dirname(__DIR__) . '/public/admin/index.php');
+testAssert(str_contains($adminIndexSrc, '$allowedSortCols = ['), 'admin/index.php whitelists sortable columns');
+testAssert(str_contains($adminIndexSrc, 'data-testid="sort-<?= $col ?>-asc"') && str_contains($adminIndexSrc, 'data-testid="sort-<?= $col ?>-desc"'), 'admin/index.php renders top and bottom sort arrows');
+testAssert(str_contains($adminIndexSrc, "\$renderSortHeader('name'") && str_contains($adminIndexSrc, "\$renderSortHeader('number'"), 'admin/index.php renders sort controls for Business Name and other columns');
+testAssert(str_contains($adminIndexSrc, '$renderSortHeader = static function'), 'admin/index.php implements renderSortHeader component');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
