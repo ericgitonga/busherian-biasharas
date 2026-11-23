@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v40-admin-remember-tokens';
+    public const SCHEMA_INIT_VERSION = '2026-11-v40-owner-age-attestation';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -1311,6 +1311,7 @@ final class Database
             $ownerCols = $pdo->query("PRAGMA table_info(business_owners)")->fetchAll();
             $hasPwHash = false;
             $hasAuthVer = false;
+            $hasAgeAttested = false;
             foreach ($ownerCols as $oc) {
                 if (($oc['name'] ?? '') === 'password_hash') {
                     $hasPwHash = true;
@@ -1318,12 +1319,18 @@ final class Database
                 if (($oc['name'] ?? '') === 'auth_version') {
                     $hasAuthVer = true;
                 }
+                if (($oc['name'] ?? '') === 'age_attested_at') {
+                    $hasAgeAttested = true;
+                }
             }
             if (!$hasPwHash) {
                 $pdo->exec("ALTER TABLE business_owners ADD COLUMN password_hash TEXT NULL");
             }
             if (!$hasAuthVer) {
                 $pdo->exec("ALTER TABLE business_owners ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 1");
+            }
+            if (!$hasAgeAttested) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN age_attested_at TEXT NULL");
             }
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS owner_sessions (
@@ -1378,6 +1385,7 @@ final class Database
             $ownerColsMysql = $pdo->query("SHOW COLUMNS FROM business_owners")->fetchAll();
             $hasPwHashMysql = false;
             $hasAuthVerMysql = false;
+            $hasAgeAttestedMysql = false;
             foreach ($ownerColsMysql as $ocm) {
                 if (($ocm['Field'] ?? '') === 'password_hash') {
                     $hasPwHashMysql = true;
@@ -1385,12 +1393,18 @@ final class Database
                 if (($ocm['Field'] ?? '') === 'auth_version') {
                     $hasAuthVerMysql = true;
                 }
+                if (($ocm['Field'] ?? '') === 'age_attested_at') {
+                    $hasAgeAttestedMysql = true;
+                }
             }
             if (!$hasPwHashMysql) {
                 $pdo->exec("ALTER TABLE business_owners ADD COLUMN password_hash VARCHAR(255) NULL AFTER google_sub");
             }
             if (!$hasAuthVerMysql) {
                 $pdo->exec("ALTER TABLE business_owners ADD COLUMN auth_version INT UNSIGNED NOT NULL DEFAULT 1 AFTER password_hash");
+            }
+            if (!$hasAgeAttestedMysql) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN age_attested_at TIMESTAMP NULL AFTER auth_version");
             }
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS owner_sessions (

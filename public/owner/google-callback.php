@@ -14,8 +14,12 @@ OwnerAuth::startSecureSession();
 $pdo = Database::getConnection();
 $onboardingError = '';
 
-$completeOwnerSignIn = static function (PDO $pdo, array $profile): never {
+$completeOwnerSignIn = static function (PDO $pdo, array $profile, bool $attestedNow = false): never {
     $owner = OwnerAuth::upsertOwner($pdo, (string)$profile['email'], (string)($profile['name'] ?? ''), null, (string)($profile['sub'] ?? ''));
+    if ($attestedNow || empty($owner['age_attested_at'])) {
+        OwnerAuth::recordAgeAttestation($pdo, (int)$owner['id']);
+        $owner['age_attested_at'] = date('Y-m-d H:i:s');
+    }
     OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$owner['id'], (string)$profile['email']);
     $pendingSessionClaim = OwnerAuth::getVerifiedClaimFromSession($pdo);
     OwnerAuth::establishOwnerSession($owner, true, $pdo);
@@ -54,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $onboardingError = 'You must confirm that you are 18 years or older and acknowledge the Privacy Notice before creating an Owner Account.';
     } else {
         unset($_SESSION['bbiz_pending_google_onboarding']);
-        $completeOwnerSignIn($pdo, $pending);
+        $completeOwnerSignIn($pdo, $pending, true);
     }
 } else {
     $state = trim((string)($_GET['state'] ?? ''));
@@ -73,16 +77,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // Check whether an Owner Account already exists before persisting any personal data (#246 M-06)
-    $existingOwner = OwnerAuth::findOwnerByEmail($pdo, (string)$profile['email']);
-    if ($existingOwner === null && !empty($profile['sub'])) {
+    // Check whether an Owner Account already exists: prioritize stable google_sub first, then email (#455 M-08)
+    $existingOwner = null;
+    if (!empty($profile['sub'])) {
         $subStmt = $pdo->prepare("SELECT * FROM business_owners WHERE google_sub = :sub LIMIT 1");
         $subStmt->execute([':sub' => (string)$profile['sub']]);
         $existingOwner = $subStmt->fetch() ?: null;
     }
+    if ($existingOwner === null) {
+        $existingOwner = OwnerAuth::findOwnerByEmail($pdo, (string)$profile['email']);
+    }
 
     if ($existingOwner !== null) {
-        $completeOwnerSignIn($pdo, $profile);
+        $completeOwnerSignIn($pdo, $profile, false);
     }
 
     // First-time Google account onboarding: hold in ephemeral session until 18+ & Privacy Notice attestation is confirmed

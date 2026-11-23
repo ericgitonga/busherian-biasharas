@@ -240,12 +240,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $simpleFounderRole   = in_array($_POST['simple_founder_role'] ?? '', ['founder', 'co_founder'], true) ? $_POST['simple_founder_role'] : 'founder';
             $rawFounderRole      = in_array($_POST['founder_role'] ?? '', ['founder', 'co_founder', 'none'], true) ? $_POST['founder_role'] : '';
 
-            // Strictly opt-in: Founder attribution is only enabled when show_founder_publicly is checked
-            // OR (if advanced details toggled) an explicit non-none role is selected.
+            // Strictly affirmative opt-in (Kenya DPA 2019 s. 25, 29, 32 #435, #453):
+            // Founder attribution is ONLY enabled when show_founder_publicly is affirmatively checked.
             if ($showFounderPublicly) {
                 $founderRole = ($rawFounderRole !== '' && $rawFounderRole !== 'none') ? $rawFounderRole : $simpleFounderRole;
-            } elseif ($toggleAdvanced && ($rawFounderRole === 'founder' || $rawFounderRole === 'co_founder')) {
-                $founderRole = $rawFounderRole;
             } else {
                 $founderRole = 'none';
             }
