@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.8] - 2026-11-23
+
+### Added
+- **Company Logo in Card & Profile Banners in Place of Abbreviation (#427)**:
+  - When a business has an official logo (`b.logo_path`), the directory listing card renders the company logo inside the school-tinted hero banner (`.card-banner-logo`, `data-testid="biz-card-banner-logo"`) instead of falling back to text initials.
+  - Detail view profile showcase renders the company logo inside `.photo-branded-banner` when no premise gallery photos are present.
+  - Hydrated `logo_path` in `public/api/businesses.php` directory API payload and `public/index.php` SSR payload.
+  - Configured Akili AI (`akili-ai`) sample logo showcase for preview testing on `preview.busherianbiasharas.com`.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.8`.
+
 ## [0.40.7] - 2026-11-23
 
 ### Added

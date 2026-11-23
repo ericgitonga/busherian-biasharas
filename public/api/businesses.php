@@ -370,6 +370,7 @@ try {
             'tagline' => $row['tagline'],
             'description' => $row['description'],
             'school_badge' => $row['school_badge'],
+            'logo_path' => !empty($row['logo_path']) ? (string)$row['logo_path'] : null,
             'founder_role' => $row['founder_role'] ?? 'none',
             'founder_name' => $row['founder_name'] ?? null,
             'founder_school' => $row['founder_school'] ?? null,

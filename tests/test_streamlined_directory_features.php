@@ -291,4 +291,14 @@ $adminIndexSrc = (string)file_get_contents(dirname(__DIR__) . '/public/admin/ind
 testAssert(str_contains($adminIndexSrc, '$allowedPerPage = [25, 50, 100];'), 'admin/index.php restricts allowedPerPage to [25, 50, 100] (#425)');
 testAssert(str_contains($adminIndexSrc, ': 25;'), 'admin/index.php defaults to 25 items per page (#425)');
 
+// 21. Check Company Logo in Banner in Lieu of Abbreviation (#427)
+testAssert(str_contains($jsSrc, 'data-testid="biz-card-banner-logo"'), 'directory.js renders company logo in banner when logo_path is present (#427)');
+testAssert(str_contains($jsSrc, 'data-testid="detail-banner-logo"'), 'directory.js renders company logo in detail showcase when logo_path is present (#427)');
+testAssert(str_contains($indexSrc, 'data-testid="detail-banner-logo"'), 'index.php SSR renders company logo in detail showcase when logo_path is present (#427)');
+testAssert(str_contains($cssSrc, '.card-banner-logo') && str_contains($cssSrc, 'object-fit: contain'), 'app.css defines .card-banner-logo with contain fitting (#427)');
+testAssert(str_contains($cssSrc, '.detail-banner-logo'), 'app.css defines .detail-banner-logo (#427)');
+$apiBizSrc = (string)file_get_contents(dirname(__DIR__) . '/public/api/businesses.php');
+testAssert(str_contains($apiBizSrc, "'logo_path' => !empty(\$row['logo_path'])"), 'public/api/businesses.php includes logo_path in item payload (#427)');
+testAssert(file_exists(dirname(__DIR__) . '/public/assets/photos/akili_ai_logo.png'), 'Akili AI logo exists on disk in public/assets/photos/ (#427)');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

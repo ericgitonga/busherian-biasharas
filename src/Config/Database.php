@@ -595,6 +595,15 @@ final class Database
                 error_log('[Database::ensureInitialized] preview_card_sample_photos_v1 failed: ' . $photoErr->getMessage());
             }
         }
+        if (self::isPreview() && self::getSetting($pdo, 'preview_akili_logo_v1') !== 'done') {
+            try {
+                $upd = $pdo->prepare("UPDATE businesses SET logo_path = :logo WHERE slug = 'akili-ai' OR name LIKE '%Akili AI%'");
+                $upd->execute([':logo' => '/assets/photos/akili_ai_logo.png']);
+                self::setSetting($pdo, 'preview_akili_logo_v1', 'done');
+            } catch (\Throwable $logoErr) {
+                error_log('[Database::ensureInitialized] preview_akili_logo_v1 failed: ' . $logoErr->getMessage());
+            }
+        }
 
 
         // One-time idempotent backfill of missing latitude/longitude (#138, #141, #183)
