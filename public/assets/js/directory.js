@@ -339,6 +339,34 @@
 
   let offlineCatalogCache = Array.isArray(initialBusinesses) ? initialBusinesses.slice() : [];
 
+  function evictListingFromClientCache(bizId) {
+    if (!bizId) return;
+    const numId = Number(bizId);
+    offlineCatalogCache = offlineCatalogCache.filter(b => Number(b.id) !== numId);
+    state.businesses = state.businesses.filter(b => Number(b.id) !== numId);
+    extraLoadedBusinesses.delete(numId);
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'PURGE_LISTING',
+        id: numId,
+      });
+    }
+  }
+
+  function evictTombstonesFromClient(tombstones) {
+    if (!Array.isArray(tombstones) || tombstones.length === 0) return;
+    const tombSet = new Set(tombstones.map(Number));
+    offlineCatalogCache = offlineCatalogCache.filter(b => !tombSet.has(Number(b.id)));
+    state.businesses = state.businesses.filter(b => !tombSet.has(Number(b.id)));
+    tombstones.forEach(id => extraLoadedBusinesses.delete(Number(id)));
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'EVICT_TOMBSTONES',
+        tombstones: tombstones,
+      });
+    }
+  }
+
   function setOfflineBannerVisible(visible) {
     const banner = document.getElementById('pwa-offline-banner');
     if (!banner) return;
@@ -463,6 +491,9 @@
 
       state.isLoading = false;
       state.fetchError = '';
+      if (Array.isArray(data.tombstones) && data.tombstones.length > 0) {
+        evictTombstonesFromClient(data.tombstones);
+      }
       if (isOfflineSnapshot) {
         const rawPool = Array.isArray(data.businesses) ? data.businesses : [];
         if (rawPool.length > offlineCatalogCache.length) {
@@ -1980,7 +2011,17 @@
     if (!biz || biz.phone_obfuscated) {
       const qParam = /^\d+$/.test(String(slugOrId)) ? ('id=' + encodeURIComponent(String(slugOrId))) : ('slug=' + encodeURIComponent(String(slugOrId)));
       fetch('/api/businesses.php?' + qParam + '&reveal=1')
-        .then(res => res.json())
+        .then(res => {
+          if (res.status === 410 || res.status === 404) {
+            return res.json().then(errData => {
+              throw { status: res.status, data: errData };
+            }).catch(e => {
+              if (e && e.status) throw e;
+              throw { status: res.status };
+            });
+          }
+          return res.json();
+        })
         .then(data => {
           if (data && Array.isArray(data.businesses) && data.businesses.length > 0) {
             extraLoadedBusinesses.set(Number(data.businesses[0].id), data.businesses[0]);
@@ -1991,9 +2032,21 @@
               }
             }
             populateBizDetail(data.businesses[0]);
+          } else {
+            throw { status: 404 };
           }
         })
-        .catch(() => {});
+        .catch(err => {
+          if (err && (err.status === 410 || err.status === 404)) {
+            const evictedId = biz && biz.id ? biz.id : (/^\d+$/.test(String(slugOrId)) ? Number(slugOrId) : null);
+            if (evictedId) {
+              evictListingFromClientCache(evictedId);
+            }
+            showDirectoryView();
+            renderCards();
+            alert((err.data && err.data.message) || 'This listing has been withdrawn or unpublished under Kenya DPA 2019.');
+          }
+        });
       return;
     }
     populateBizDetail(biz);

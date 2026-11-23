@@ -486,11 +486,78 @@ try {
         $results[] = $item;
     }
 
-    if (!$isAuthenticatedViewer && !headers_sent()) {
-        header('X-BBiz-Public-Cacheable: 1');
+    // Kenya DPA 2019 s. 40: Handle specific single-listing requests when listing was quarantined, rejected, or deleted
+    if (($filterBizId !== null || $filterSlug !== '') && count($results) === 0) {
+        $checkStmt = $pdo->prepare($filterBizId !== null
+            ? "SELECT id, status, updated_at FROM businesses WHERE id = :target_id LIMIT 1"
+            : "SELECT id, status, updated_at FROM businesses WHERE slug = :target_slug LIMIT 1"
+        );
+        $checkStmt->execute($filterBizId !== null ? [':target_id' => $filterBizId] : [':target_slug' => $filterSlug]);
+        $existingRow = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($existingRow && in_array($existingRow['status'] ?? '', ['quarantined_dpa', 'rejected'], true)) {
+            http_response_code(410); // 410 Gone (Kenya DPA 2019 s. 40 Takedown/Quarantine)
+            if (!headers_sent()) {
+                header('X-BBiz-Listing-Status: quarantined');
+                header('X-BBiz-Tombstone: 1');
+                header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+                header('Pragma: no-cache');
+            }
+            echo json_encode([
+                'status' => 'error',
+                'code' => 'quarantined',
+                'tombstone' => true,
+                'business_id' => (int)$existingRow['id'],
+                'message' => 'This business listing is currently unavailable (withdrawn or quarantined under Kenya DPA 2019).'
+            ], JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+
+        http_response_code(404);
+        if (!headers_sent()) {
+            header('X-BBiz-Listing-Status: not_found');
+            header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+            header('Pragma: no-cache');
+        }
+        echo json_encode([
+            'status' => 'error',
+            'code' => 'not_found',
+            'message' => 'Listing not found.'
+        ], JSON_UNESCAPED_SLASHES);
+        exit;
     }
 
-    echo json_encode([
+    $tombstoneIds = [];
+    if ($filterBizId === null && $filterSlug === '') {
+        try {
+            $tombstonesStmt = $pdo->query("
+                SELECT DISTINCT business_id FROM (
+                    SELECT id AS business_id FROM businesses WHERE status IN ('quarantined_dpa', 'rejected')
+                    UNION
+                    SELECT business_id FROM moderation_audit_log WHERE action IN ('quarantine', 'delete')
+                ) t LIMIT 100
+            ");
+            $tombstoneIds = array_map('intval', $tombstonesStmt ? $tombstonesStmt->fetchAll(PDO::FETCH_COLUMN) : []);
+        } catch (\Throwable $e) {
+            $tombstoneIds = [];
+        }
+    }
+
+    if (!headers_sent()) {
+        if ($isAuthenticatedViewer) {
+            header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0');
+            header('Pragma: no-cache');
+        } else {
+            header('Cache-Control: public, max-age=180, stale-while-revalidate=300, must-revalidate');
+            header('X-BBiz-Public-Cacheable: 1');
+            header('X-BBiz-Directory-Version: ' . bbiz_app_version());
+            if ($tombstoneIds !== []) {
+                header('X-BBiz-Tombstones: ' . implode(',', $tombstoneIds));
+            }
+        }
+    }
+
+    $payload = [
         'status' => 'ok',
         'sort' => $activeSort,
         'count' => count($results),
@@ -503,7 +570,12 @@ try {
             'sort' => $activeSort,
         ],
         'businesses' => $results,
-    ], JSON_UNESCAPED_SLASHES);
+    ];
+    if ($tombstoneIds !== []) {
+        $payload['tombstones'] = $tombstoneIds;
+    }
+
+    echo json_encode($payload, JSON_UNESCAPED_SLASHES);
 } catch (\Throwable $e) {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Failed to query businesses.']);

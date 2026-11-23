@@ -11,8 +11,40 @@
  */
 'use strict';
 
-const CACHE_VERSION = 'bbiz-pwa-v0.40.12';
+const CACHE_VERSION = 'bbiz-pwa-v0.40.13';
 const CACHE_PREFIX = 'bbiz-pwa-';
+const MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours (Kenya DPA 2019 s. 40 freshness limit)
+
+async function putInCacheWithTtl(cache, req, res) {
+  try {
+    const headers = new Headers(res.headers);
+    headers.set('X-BBiz-Cached-At', String(Date.now()));
+    const blob = await res.blob();
+    const timedRes = new Response(blob, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: headers,
+    });
+    await cache.put(req, timedRes);
+  } catch (_) {}
+}
+
+async function evictTombstonesFromCache(cache, ids) {
+  if (!ids || ids.length === 0) return;
+  const idSet = new Set(ids.map(String));
+  try {
+    const reqs = await cache.keys();
+    for (const r of reqs) {
+      try {
+        const u = new URL(r.url);
+        const queryId = u.searchParams.get('id');
+        if (queryId && idSet.has(queryId)) {
+          await cache.delete(r);
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
 
 function getBasePath() {
   try {
@@ -152,17 +184,47 @@ self.addEventListener('fetch', (event) => {
     const cache = await caches.open(CACHE_VERSION);
     try {
       const netRes = await fetch(req);
-      if (netRes && netRes.status === 200) {
-        const canStore = isStatic || netRes.headers.get('X-BBiz-Public-Cacheable') === '1';
-        if (canStore) {
-          cache.put(req, netRes.clone()).catch(() => {});
+      if (netRes) {
+        if (netRes.status === 404 || netRes.status === 410) {
+          // Kenya DPA 2019 s. 40: Immediately evict withdrawn, rejected, or quarantined resources
+          await cache.delete(req);
+          const keys = await caches.keys();
+          await Promise.all(
+            keys
+              .filter((k) => k.startsWith(CACHE_PREFIX))
+              .map((k) => caches.open(k).then((c) => c.delete(req)))
+          );
+          return netRes;
+        }
+
+        if (netRes.status === 200) {
+          const canStore = isStatic || netRes.headers.get('X-BBiz-Public-Cacheable') === '1';
+          if (canStore) {
+            // Background check for tombstones if directory JSON
+            if (relPath === '/api/businesses.php') {
+              const tombHeader = netRes.headers.get('X-BBiz-Tombstones');
+              if (tombHeader) {
+                const ids = tombHeader.split(',').map((s) => s.trim()).filter(Boolean);
+                if (ids.length > 0) {
+                  evictTombstonesFromCache(cache, ids).catch(() => {});
+                }
+              }
+            }
+            await putInCacheWithTtl(cache, req, netRes.clone());
+          }
         }
       }
       return netRes;
     } catch (networkErr) {
       const exactCached = await cache.match(req);
       if (exactCached) {
-        return exactCached;
+        const cachedAt = exactCached.headers.get('X-BBiz-Cached-At');
+        if (cachedAt && (Date.now() - parseInt(cachedAt, 10) > MAX_CACHE_AGE_MS)) {
+          // Expired cache entry: evict under Kenya DPA s. 40 freshness limit
+          cache.delete(req).catch(() => {});
+        } else {
+          return exactCached;
+        }
       }
 
       if (relPath === '' || relPath === '/' || relPath === '/index.php') {
@@ -175,6 +237,12 @@ self.addEventListener('fetch', (event) => {
       if (relPath === '/api/businesses.php') {
         const snapshotRes = await cache.match((base || '') + '/api/businesses.php?page=1&per_page=100');
         if (snapshotRes) {
+          const cachedAt = snapshotRes.headers.get('X-BBiz-Cached-At');
+          if (cachedAt && (Date.now() - parseInt(cachedAt, 10) > MAX_CACHE_AGE_MS)) {
+            // Expired snapshot
+            cache.delete((base || '') + '/api/businesses.php?page=1&per_page=100').catch(() => {});
+            throw networkErr;
+          }
           const bodyText = await snapshotRes.text();
           const headers = new Headers(snapshotRes.headers);
           headers.set('Content-Type', 'application/json; charset=UTF-8');
@@ -190,4 +258,44 @@ self.addEventListener('fetch', (event) => {
       throw networkErr;
     }
   })());
+});
+
+self.addEventListener('message', (event) => {
+  const data = event.data;
+  if (!data || typeof data !== 'object') return;
+
+  if (data.type === 'EVICT_TOMBSTONES' && Array.isArray(data.tombstones)) {
+    event.waitUntil((async () => {
+      const cache = await caches.open(CACHE_VERSION);
+      await evictTombstonesFromCache(cache, data.tombstones);
+    })());
+  } else if (data.type === 'PURGE_LISTING' && data.id) {
+    event.waitUntil((async () => {
+      const cache = await caches.open(CACHE_VERSION);
+      await evictTombstonesFromCache(cache, [data.id]);
+    })());
+  }
+});
+
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'bbiz-sync-tombstones') {
+    event.waitUntil((async () => {
+      const base = getBasePath();
+      try {
+        const res = await fetch((base || '') + '/api/businesses.php?page=1&per_page=100', {
+          credentials: 'omit',
+          cache: 'no-cache',
+        });
+        if (res && res.status === 200) {
+          const cache = await caches.open(CACHE_VERSION);
+          const tombHeader = res.headers.get('X-BBiz-Tombstones');
+          if (tombHeader) {
+            const ids = tombHeader.split(',').map((s) => s.trim()).filter(Boolean);
+            await evictTombstonesFromCache(cache, ids);
+          }
+          await putInCacheWithTtl(cache, (base || '') + '/api/businesses.php?page=1&per_page=100', res);
+        }
+      } catch (_) {}
+    })());
+  }
 });
