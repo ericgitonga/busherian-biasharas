@@ -612,4 +612,41 @@ testAssert(str_contains($dirJs401, 'function syncSubdivisionsToSelect') && str_c
 testAssert(str_contains($dirJs401, 'sheetCountry.classList.toggle(\'active-filter\''), 'directory.js syncs active-filter class to sheetCountry select (#401)');
 testAssert(str_contains($css401, '.sheet-select.active-filter'), 'app.css defines .sheet-select.active-filter styling (#401)');
 
+// 26. Check Residual Audit Remediations (#451, #452, #453, #454, #455)
+// Child 1 (#452): SSR Index initial listing contact masking & coordinate fuzzing
+$indexSrc452 = (string)file_get_contents(dirname(__DIR__) . '/public/index.php');
+testAssert(str_contains($indexSrc452, 'PhoneNormalizer::maskPhoneNumber($rawPhone)') && str_contains($indexSrc452, 'PhoneNormalizer::maskPhoneNumber($rawWa)'), 'public/index.php masks phone numbers for bulk initial listings (#452)');
+testAssert(str_contains($indexSrc452, 'round($rawLat, 3)') && str_contains($indexSrc452, '\'coords_fuzzed\' => $coordsFuzzed'), 'public/index.php fuzzes coordinates and emits coords_fuzzed flag (#452)');
+
+// Child 2 (#453): Affirmative opt-in required for founder attribution in submit.php
+$submitSrc453 = (string)file_get_contents(dirname(__DIR__) . '/public/submit.php');
+testAssert(str_contains($submitSrc453, 'if ($showFounderPublicly) {') && str_contains($submitSrc453, '$founderRole = \'none\';'), 'submit.php strictly forces founderRole to none when show_founder_publicly is false (#453)');
+
+// Child 3 (#454): Token-bucket rate limiter and abuse filter in recommend.php
+$recSrc454 = (string)file_get_contents(dirname(__DIR__) . '/public/api/recommend.php');
+testAssert(str_contains($recSrc454, 'AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, \'recommend_toggle\''), 'recommend.php applies AntiSpamGate rate limiting (#454)');
+testAssert(str_contains($recSrc454, 'AntiSpamGate::containsSpamUrl($name)'), 'recommend.php checks recommender name for spam URLs (#454)');
+
+// Child 4 (#455): Google SSO stable identity lookup & age attestation
+$googleSrc455 = (string)file_get_contents(dirname(__DIR__) . '/public/owner/google-callback.php');
+testAssert(str_contains($googleSrc455, 'SELECT * FROM business_owners WHERE google_sub = :sub') && str_contains($googleSrc455, 'OwnerAuth::recordAgeAttestation'), 'google-callback.php prioritizes google_sub and records age attestation (#455)');
+
+$ownerColsCheck = $pdo->query("PRAGMA table_info(business_owners)")->fetchAll();
+$hasAgeAttestedCol = false;
+foreach ($ownerColsCheck as $oc) {
+    if (($oc['name'] ?? '') === 'age_attested_at') {
+        $hasAgeAttestedCol = true;
+    }
+}
+testAssert($hasAgeAttestedCol, 'business_owners schema has age_attested_at column (#455)');
+
+$testOwnerId = 999455;
+$pdo->prepare("INSERT OR REPLACE INTO business_owners (id, email, full_name, created_at, last_login_at) VALUES (?, 'audit455@example.com', 'Audit Test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)")->execute([$testOwnerId]);
+\BusherianBiasharas\Services\OwnerAuth::recordAgeAttestation($pdo, $testOwnerId);
+$attestCheck = $pdo->prepare("SELECT age_attested_at FROM business_owners WHERE id = ?");
+$attestCheck->execute([$testOwnerId]);
+$attestVal = $attestCheck->fetchColumn();
+testAssert(!empty($attestVal), 'OwnerAuth::recordAgeAttestation sets age_attested_at timestamp (#455)');
+$pdo->prepare("DELETE FROM business_owners WHERE id = ?")->execute([$testOwnerId]);
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

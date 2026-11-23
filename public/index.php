@@ -10,6 +10,7 @@ use BusherianBiasharas\Services\AdminAuth;
 use BusherianBiasharas\Services\HoursEngine;
 use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\OwnerAuth;
+use BusherianBiasharas\Services\PhoneNormalizer;
 use BusherianBiasharas\Services\PhotoUploader;
 
 bbiz_send_security_headers(false);
@@ -104,6 +105,28 @@ foreach ($rows as $r) {
     $cleanBookingUrl = !empty($r['booking_url']) ? trim((string)$r['booking_url']) : null;
     $isBookable = ((bool)($r['booking_enabled'] ?? false)) || ($cleanBookingUrl !== null && $cleanBookingUrl !== '');
 
+    $rawPhone = (string)($r['phone_primary'] ?? '');
+    $rawWa = (string)($r['whatsapp_number'] ?? '');
+    $rawLat = $r['latitude'] !== null ? (float)$r['latitude'] : null;
+    $rawLng = $r['longitude'] !== null ? (float)$r['longitude'] : null;
+
+    $isSingleDetailRequest = ($requestedBiz !== null && (int)$requestedBiz['id'] === $bizId);
+    if ($isSingleDetailRequest) {
+        $phonePrimary = $rawPhone;
+        $whatsappNumber = $rawWa;
+        $latitude = $rawLat;
+        $longitude = $rawLng;
+        $phoneObfuscated = false;
+        $coordsFuzzed = false;
+    } else {
+        $phonePrimary = PhoneNormalizer::maskPhoneNumber($rawPhone);
+        $whatsappNumber = PhoneNormalizer::maskPhoneNumber($rawWa);
+        $latitude = $rawLat !== null ? round($rawLat, 3) : null;
+        $longitude = $rawLng !== null ? round($rawLng, 3) : null;
+        $phoneObfuscated = true;
+        $coordsFuzzed = true;
+    }
+
     $bizItem = [
         'id' => $bizId,
         'can_edit' => $canEdit,
@@ -144,15 +167,17 @@ foreach ($rows as $r) {
         'timezone' => LocationEngine::getTimezoneForCountry($r['country'] ?? null, $r['city_county'] ?? null),
         'landmark_directions' => $r['landmark_directions'],
         'plus_code' => $r['plus_code'],
-        'latitude' => $r['latitude'] !== null ? (float)$r['latitude'] : null,
-        'longitude' => $r['longitude'] !== null ? (float)$r['longitude'] : null,
+        'latitude' => $latitude,
+        'longitude' => $longitude,
+        'phone_primary' => $phonePrimary,
+        'whatsapp_number' => $whatsappNumber,
+        'phone_obfuscated' => $phoneObfuscated,
+        'coords_fuzzed' => $coordsFuzzed,
         'google_maps_url' => $r['google_maps_url'],
         'distance_km' => null,
         'hours_status' => HoursEngine::evaluateStatus((string)$r['operating_hours_json'], null, LocationEngine::getTimezoneForCountry($r['country'] ?? null, $r['city_county'] ?? null)),
         'momentum_badge' => EngagementRanker::resolveMomentumBadge($r, $initialMomentumCtx),
         'photos' => PhotoUploader::decodePhotosJson(isset($r['photos_json']) ? (string)$r['photos_json'] : null),
-        'phone_primary' => $r['phone_primary'],
-        'whatsapp_number' => $r['whatsapp_number'],
         'email_public' => $r['email_public'],
         'website_url' => $r['website_url'],
         'booking_enabled' => $isBookable,

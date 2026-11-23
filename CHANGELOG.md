@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.19] - 2026-11-23
+
+### Security & Hardening
+- **Kenya DPA 2019 & Adversarial Security Residual Remediations (#451, #452, #453, #454, #455)**:
+  - **Mask Contacts & Fuzz Coordinates in SSR Listing Payload (#452, Residual H-01)**: Serialized contacts with `PhoneNormalizer::maskPhoneNumber` and bounded coordinates to 3 decimal places (~110m) for bulk listings in `public/index.php`, keeping parity with `/api/businesses.php` bulk directory responses.
+  - **Strict Affirmative Opt-in for Founder Attribution (#453, Audit H-04)**: Enforced in `public/submit.php` that founder attribution is enabled ONLY when `show_founder_publicly` is affirmatively checked, preventing attribution bypass when advanced details are toggled.
+  - **Token-Bucket Rate Limiter & Name Screening on Recommendations (#454, Audit H-05)**: Applied `AntiSpamGate::checkAndRecordRateLimit` (15 req/60s, 45/120s) returning HTTP 429 and screened recommender names for spam URLs in `public/api/recommend.php`.
+  - **Prioritize Stable Google Sub & Record Age Attestation (#455, Audit M-08)**: Updated `public/owner/google-callback.php` to check `google_sub` prior to email fallback, added `age_attested_at` schema column to `business_owners`, and recorded timestamp upon adult confirmation.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.19`.
+
 ## [0.40.18] - 2026-11-23
 
 ### Fixed & Enhanced

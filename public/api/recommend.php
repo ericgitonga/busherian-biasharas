@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__, 2) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
+use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\EngagementRanker;
 
 bbiz_send_security_headers(true);
@@ -54,6 +55,19 @@ try {
     }
 
     // POST: Toggle recommendation on/off
+    $clientIp = bbiz_client_ip();
+    $rateLimit = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'recommend_toggle', 15, 60, 45, 120);
+    if (!$rateLimit['allowed']) {
+        http_response_code(429);
+        header('Retry-After: ' . (int)$rateLimit['retry_after']);
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Too many recommendation attempts. Please try again in ' . (int)$rateLimit['retry_after'] . ' seconds.',
+            'retry_after' => (int)$rateLimit['retry_after']
+        ]);
+        exit;
+    }
+
     $raw = file_get_contents('php://input') ?: '';
     $data = json_decode($raw, true) ?: $_POST;
 
@@ -113,6 +127,11 @@ try {
     if (mb_strlen($name) < 2 || mb_strlen($name) > 60) {
         http_response_code(422);
         echo json_encode(['status' => 'error', 'message' => 'Please provide a valid name (2-60 characters).']);
+        exit;
+    }
+    if (AntiSpamGate::containsSpamUrl($name) || preg_match('/https?:\/\/|www\./i', $name)) {
+        http_response_code(422);
+        echo json_encode(['status' => 'error', 'message' => 'Recommender name cannot contain web addresses or links.']);
         exit;
     }
 

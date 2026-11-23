@@ -138,6 +138,11 @@ final class OwnerAuth
         $stmt = $pdo->prepare("SELECT * FROM business_owners WHERE LOWER(email) = :em LIMIT 1");
         $stmt->execute([':em' => $normEmail]);
         $existing = $stmt->fetch();
+        if (!$existing && !empty($googleSub)) {
+            $stmtSub = $pdo->prepare("SELECT * FROM business_owners WHERE google_sub = :sub LIMIT 1");
+            $stmtSub->execute([':sub' => trim((string)$googleSub)]);
+            $existing = $stmtSub->fetch() ?: null;
+        }
 
         if ($existing) {
             $ownerId = (int)$existing['id'];
@@ -1367,6 +1372,18 @@ final class OwnerAuth
         $stmt->execute([':em' => $norm]);
         $row = $stmt->fetch();
         return $row ? (array)$row : null;
+    }
+
+    /**
+     * Record adult-only (18+) age attestation timestamp under Kenya DPA 2019 (#455 M-08).
+     */
+    public static function recordAgeAttestation(PDO $pdo, int $ownerId): void
+    {
+        if ($ownerId <= 0) {
+            return;
+        }
+        $stmt = $pdo->prepare("UPDATE business_owners SET age_attested_at = CURRENT_TIMESTAMP WHERE id = :id");
+        $stmt->execute([':id' => $ownerId]);
     }
 
     /**
