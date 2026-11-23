@@ -602,4 +602,14 @@ testAssert(str_contains($delPj, 'test_lifecycle_logo_442.png'), 'enqueueDurableM
 \BusherianBiasharas\Services\VettingPurger::drainDurableMediaDeletions($pdo, $testLogoBizId);
 testAssert(!file_exists($dummyLogoPath), 'drainDurableMediaDeletions purges logo from disk (#442)');
 
+// 25. Check Cascading Country -> Subdivisions Filter on Mobile Sheet (#401)
+$indexSrc401 = (string)file_get_contents(dirname(__DIR__) . '/public/index.php');
+$dirJs401 = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+$css401 = (string)file_get_contents(dirname(__DIR__) . '/public/assets/css/app.css');
+
+testAssert(str_contains($indexSrc401, 'id="sheet-filter-country"') && str_contains($indexSrc401, 'foreach (array_keys($placeHierarchy) as $cName)'), 'public/index.php populates sheet-filter-country dynamically from placeHierarchy (#401)');
+testAssert(str_contains($dirJs401, 'function syncSubdivisionsToSelect') && str_contains($dirJs401, 'hierarchy[countryName]'), 'directory.js syncSubdivisionsToSelect consumes placeHierarchy dynamically (#401)');
+testAssert(str_contains($dirJs401, 'sheetCountry.classList.toggle(\'active-filter\''), 'directory.js syncs active-filter class to sheetCountry select (#401)');
+testAssert(str_contains($css401, '.sheet-select.active-filter'), 'app.css defines .sheet-select.active-filter styling (#401)');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

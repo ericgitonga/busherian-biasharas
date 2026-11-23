@@ -1133,16 +1133,13 @@ $pageCanonicalPath = $requestedBiz
         <div class="sheet-section-title">LOCATION</div>
         <div class="sheet-location-row" style="display:flex;gap:8px;">
           <select id="sheet-filter-country" class="sheet-select" style="flex:1;" aria-label="Filter by Country">
-            <option value="">All Countries</option>
-            <option value="KE">Kenya</option>
-            <option value="UG">Uganda</option>
-            <option value="TZ">Tanzania</option>
-            <option value="RW">Rwanda</option>
-            <option value="GB">United Kingdom</option>
-            <option value="US">United States</option>
-            <option value="CA">Canada</option>
-            <option value="AE">UAE &amp; Gulf</option>
-            <option value="OTHER">Other Countries</option>
+            <option value="">🌍 All Countries</option>
+            <option value="Kenya">Kenya</option>
+            <option disabled>──────────</option>
+            <?php foreach (array_keys($placeHierarchy) as $cName): ?>
+              <?php if ($cName === 'Kenya') continue; ?>
+              <option value="<?= htmlspecialchars((string)$cName, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string)$cName, ENT_QUOTES, 'UTF-8') ?></option>
+            <?php endforeach; ?>
           </select>
           <select id="sheet-filter-city" class="sheet-select" style="flex:1;" aria-label="Filter by County, State, or Province">
             <option value="">All Counties / Cities</option>

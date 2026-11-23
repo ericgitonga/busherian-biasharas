@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.18] - 2026-11-23
+
+### Fixed & Enhanced
+- **Cascading Country to Subdivisions (States/Counties/Provinces/Districts) Filter on Mobile Drawer (#401)**:
+  - Fixed mobile drawer subdivision selector by consuming dynamic country place hierarchy directly from `PLACE_HIERARCHY`.
+  - Replaced hardcoded mobile country select options with dynamic country list prioritizing Kenya and listing all 196+ jurisdictions alphabetically with dynamic subdivision unit headers.
+  - Synchronized country and subdivision filter state, active-filter styles (`.sheet-select.active-filter`), and desktop-to-mobile reset handlers across both views.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.18`.
+
 ## [0.40.17] - 2026-11-23
 
 ### Security & Hardening
