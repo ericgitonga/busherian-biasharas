@@ -301,4 +301,43 @@ $apiBizSrc = (string)file_get_contents(dirname(__DIR__) . '/public/api/businesse
 testAssert(str_contains($apiBizSrc, "'logo_path' => !empty(\$row['logo_path'])"), 'public/api/businesses.php includes logo_path in item payload (#427)');
 testAssert(file_exists(dirname(__DIR__) . '/public/assets/img/logos/akili_ai_logo.png'), 'Akili AI logo exists on disk in public/assets/img/logos/ (#427)');
 
+// 22. Check User & Admin Editable Company Logo (#429)
+$ownerEditSrc = (string)file_get_contents(dirname(__DIR__) . '/public/owner/edit-business.php');
+$bootstrapSrc = (string)file_get_contents(dirname(__DIR__) . '/src/bootstrap.php');
+$formEnhanceSrc = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/form-enhancements.js');
+
+testAssert(str_contains($bootstrapSrc, 'data-testid="business-logo-input"'), 'bootstrap.php renders business-logo-input field (#429)');
+testAssert(str_contains($bootstrapSrc, 'data-testid="remove-logo-checkbox"'), 'bootstrap.php renders remove-logo-checkbox when logo exists (#429)');
+testAssert(str_contains($ownerEditSrc, 'bbiz_render_hours_and_photos_fields') && str_contains($ownerEditSrc, 'logo_path'), 'owner/edit-business.php passes logo_path to form helper (#429)');
+testAssert(str_contains($formEnhanceSrc, 'bindLogoUploadPreview'), 'form-enhancements.js binds live logo upload preview (#429)');
+
+// Unit test PhotoUploader::processBusinessLogo
+$im = imagecreatetruecolor(30, 30);
+imagealphablending($im, false);
+imagesavealpha($im, true);
+$trans = imagecolorallocatealpha($im, 0, 0, 0, 127);
+imagefill($im, 0, 0, $trans);
+ob_start();
+imagepng($im);
+$testTransparentPng = ob_get_clean();
+imagedestroy($im);
+$tmpPngPath = sys_get_temp_dir() . '/test_logo_' . bin2hex(random_bytes(4)) . '.png';
+file_put_contents($tmpPngPath, $testTransparentPng);
+
+$uploadedFileArr = [
+    'name' => 'logo.png',
+    'type' => 'image/png',
+    'tmp_name' => $tmpPngPath,
+    'error' => UPLOAD_ERR_OK,
+    'size' => strlen($testTransparentPng),
+];
+
+$logoUrl = \BusherianBiasharas\Services\PhotoUploader::processBusinessLogo(null, false, $uploadedFileArr);
+testAssert($logoUrl !== null && str_starts_with($logoUrl, '/uploads/logos/'), 'PhotoUploader::processBusinessLogo creates logo in /uploads/logos/ (#429)');
+testAssert(\BusherianBiasharas\Services\PhotoUploader::resolveSafeUploadFilePath($logoUrl, true) !== null, 'Uploaded logo file exists safely on disk (#429)');
+
+$removedLogoUrl = \BusherianBiasharas\Services\PhotoUploader::processBusinessLogo($logoUrl, true, null);
+testAssert($removedLogoUrl === null, 'PhotoUploader::processBusinessLogo with removeLogo returns null and deletes file (#429)');
+testAssert(\BusherianBiasharas\Services\PhotoUploader::resolveSafeUploadFilePath($logoUrl, true) === null, 'Removed logo file no longer exists on disk (#429)');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

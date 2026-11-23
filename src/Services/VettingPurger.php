@@ -1253,10 +1253,11 @@ final class VettingPurger
         string $actorIdentifier = 'admin_console',
         ?string $clientIp = null
     ): bool {
-        $photoStmt = $pdo->prepare("SELECT status, photos_json FROM businesses WHERE id = :id LIMIT 1");
+        $photoStmt = $pdo->prepare("SELECT status, photos_json, logo_path FROM businesses WHERE id = :id LIMIT 1");
         $photoStmt->execute([':id' => $businessId]);
         $bizRow = $photoStmt->fetch();
         $photosJson = is_array($bizRow) && is_string($bizRow['photos_json'] ?? null) ? $bizRow['photos_json'] : null;
+        $logoPath = is_array($bizRow) && is_string($bizRow['logo_path'] ?? null) ? $bizRow['logo_path'] : null;
         $prevStatus = is_array($bizRow) ? (string)($bizRow['status'] ?? '') : null;
 
         $ownTx = !$pdo->inTransaction();
@@ -1265,12 +1266,16 @@ final class VettingPurger
         }
         try {
             self::acquireBusinessLifecycleLock($pdo, $businessId);
-            $lockedPhotoStmt = $pdo->prepare("SELECT status, photos_json FROM businesses WHERE id = :id LIMIT 1");
+            $lockedPhotoStmt = $pdo->prepare("SELECT status, photos_json, logo_path FROM businesses WHERE id = :id LIMIT 1");
             $lockedPhotoStmt->execute([':id' => $businessId]);
             $lockedBizRow = $lockedPhotoStmt->fetch();
             if (is_array($lockedBizRow)) {
                 $photosJson = is_string($lockedBizRow['photos_json'] ?? null) ? $lockedBizRow['photos_json'] : $photosJson;
+                $logoPath = is_string($lockedBizRow['logo_path'] ?? null) ? $lockedBizRow['logo_path'] : $logoPath;
                 $prevStatus = (string)($lockedBizRow['status'] ?? $prevStatus);
+            }
+            if ($logoPath !== null) {
+                PhotoUploader::deleteRemovedLogoFile($logoPath);
             }
             self::enqueueDurableMediaDeletion($pdo, $businessId, $photosJson);
             $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")->execute([':id' => $businessId]);
@@ -1356,7 +1361,7 @@ final class VettingPurger
         $newlyWrittenPhotoUrls = [];
         try {
         self::acquireBusinessLifecycleLock($pdo, $businessId);
-        $lockedExistingStmt = $pdo->prepare("SELECT status, photos_json FROM businesses WHERE id = :id LIMIT 1");
+        $lockedExistingStmt = $pdo->prepare("SELECT status, photos_json, logo_path FROM businesses WHERE id = :id LIMIT 1");
         $lockedExistingStmt->execute([':id' => $businessId]);
         $lockedExisting = (array)($lockedExistingStmt->fetch() ?: $existingRow);
         $previousPhotoUrls = PhotoUploader::decodePhotosJson(isset($lockedExisting['photos_json']) ? (string)$lockedExisting['photos_json'] : null);
@@ -1367,6 +1372,13 @@ final class VettingPurger
             isset($data['business_photos_data_json']) ? (string)$data['business_photos_data_json'] : null,
             $businessId
         );
+        $logoPath = PhotoUploader::processBusinessLogo(
+            isset($lockedExisting['logo_path']) ? (string)$lockedExisting['logo_path'] : null,
+            !empty($data['remove_logo']),
+            $_FILES['business_logo'] ?? null,
+            isset($data['business_logo_data_url']) ? (string)$data['business_logo_data_url'] : null,
+            $businessId
+        );
         $keptPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
         $newlyWrittenPhotoUrls = array_values(array_diff($keptPhotoUrls, $previousPhotoUrls));
         $stmt = $pdo->prepare("
@@ -1375,6 +1387,7 @@ final class VettingPurger
                 tagline = :tagline,
                 description = :description,
                 school_badge = :school_badge,
+                logo_path = :logo_path,
                 sector_id = :sector_id,
                 specialty_id = :specialty_id,
                 secondary_sector_id = :secondary_sector_id,
@@ -1422,6 +1435,7 @@ final class VettingPurger
             ':tagline' => trim((string)$data['tagline']),
             ':description' => trim((string)$data['description']),
             ':school_badge' => in_array($data['school_badge'] ?? '', ['AHS', 'AGHS', 'BOTH'], true) ? $data['school_badge'] : 'BOTH',
+            ':logo_path' => $logoPath,
             ':sector_id' => (int)$data['sector_id'],
             ':specialty_id' => (int)$data['specialty_id'],
             ':secondary_sector_id' => $secondaryPair['secondary_sector_id'],
@@ -1631,6 +1645,13 @@ final class VettingPurger
             $_FILES['business_photos'] ?? null,
             isset($data['business_photos_data_json']) ? (string)$data['business_photos_data_json'] : null
         );
+        $logoPath = PhotoUploader::processBusinessLogo(
+            null,
+            false,
+            $_FILES['business_logo'] ?? null,
+            isset($data['business_logo_data_url']) ? (string)$data['business_logo_data_url'] : null,
+            0
+        );
 
         $status = in_array($data['status'] ?? 'approved', ['approved', 'quarantined_dpa', 'pending', 'rejected'], true)
             ? (string)($data['status'] ?? 'approved')
@@ -1639,6 +1660,7 @@ final class VettingPurger
         $stmt = $pdo->prepare("
             INSERT INTO businesses (
                 business_id, business_number, name, slug, tagline, description, school_badge,
+                logo_path,
                 sector_id, specialty_id, secondary_sector_id, secondary_specialty_id, service_mode, alumni_perk,
                 b2b_ready, accepts_lpo, regulator_name, regulator_license,
                 branch_name, building_name, floor_suite, street_road,
@@ -1651,6 +1673,7 @@ final class VettingPurger
                 verified_at, last_confirmed_at
             ) VALUES (
                 :business_id, :business_number, :name, :slug, :tagline, :description, :school_badge,
+                :logo_path,
                 :sector_id, :specialty_id, :secondary_sector_id, :secondary_specialty_id, :service_mode, :alumni_perk,
                 :b2b_ready, :accepts_lpo, :regulator_name, :regulator_license,
                 :branch_name, :building_name, :floor_suite, :street_road,
@@ -1672,6 +1695,7 @@ final class VettingPurger
             ':tagline' => mb_substr($tagline, 0, 180),
             ':description' => $description,
             ':school_badge' => in_array($data['school_badge'] ?? '', ['AHS', 'AGHS', 'BOTH'], true) ? $data['school_badge'] : 'AHS',
+            ':logo_path' => $logoPath,
             ':sector_id' => $sectorId,
             ':specialty_id' => $specialtyId,
             ':secondary_sector_id' => $secondaryPair['secondary_sector_id'],
@@ -1835,7 +1859,7 @@ final class VettingPurger
         $lockedOwnerStatus = strtolower(trim((string)($oldBiz['status'] ?? 'approved')));
         try {
         self::acquireBusinessLifecycleLock($pdo, $businessId);
-        $lockedOwnerStmt = $pdo->prepare("SELECT status, photos_json FROM businesses WHERE id = :id LIMIT 1");
+        $lockedOwnerStmt = $pdo->prepare("SELECT status, photos_json, logo_path FROM businesses WHERE id = :id LIMIT 1");
         $lockedOwnerStmt->execute([':id' => $businessId]);
         $lockedOwnerRow = $lockedOwnerStmt->fetch();
         if (!$lockedOwnerRow) {
@@ -1851,6 +1875,13 @@ final class VettingPurger
             isset($data['business_photos_data_json']) ? (string)$data['business_photos_data_json'] : null,
             $businessId
         );
+        $logoPath = PhotoUploader::processBusinessLogo(
+            isset($lockedOwnerRow['logo_path']) ? (string)$lockedOwnerRow['logo_path'] : null,
+            !empty($data['remove_logo']),
+            $_FILES['business_logo'] ?? null,
+            isset($data['business_logo_data_url']) ? (string)$data['business_logo_data_url'] : null,
+            $businessId
+        );
         $keptPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
         $newlyWrittenPhotoUrls = array_values(array_diff($keptPhotoUrls, $previousPhotoUrls));
         $stmt = $pdo->prepare("
@@ -1858,6 +1889,7 @@ final class VettingPurger
                 name = :name,
                 tagline = :tagline,
                 description = :description,
+                logo_path = :logo_path,
                 sector_id = :sector_id,
                 specialty_id = :specialty_id,
                 secondary_sector_id = :secondary_sector_id,
@@ -1908,6 +1940,7 @@ final class VettingPurger
             ':name' => $newName,
             ':tagline' => trim((string)($data['tagline'] ?? $oldBiz['tagline'])),
             ':description' => trim((string)($data['description'] ?? $oldBiz['description'])),
+            ':logo_path' => $logoPath,
             ':sector_id' => $newSectorId,
             ':specialty_id' => $newSpecId,
             ':secondary_sector_id' => $ownerSecondaryPair['secondary_sector_id'],

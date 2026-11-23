@@ -293,7 +293,7 @@ $tokens = AntiSpamGate::generateFormTokens();
         </label>
       </div>
 
-      <?= bbiz_render_hours_and_photos_fields((string)($biz['operating_hours_json'] ?? ''), isset($biz['photos_json']) ? (string)$biz['photos_json'] : null) ?>
+      <?= bbiz_render_hours_and_photos_fields((string)($biz['operating_hours_json'] ?? ''), isset($biz['photos_json']) ? (string)$biz['photos_json'] : null, (string)($biz['logo_path'] ?? '')) ?>
 
       <div style="margin-top:1.1rem;background:#F9FAFB;border:1px solid #D1D5DB;border-radius:10px;padding:0.85rem 1rem;">
         <label style="display:flex;align-items:flex-start;gap:0.55rem;font-size:0.84rem;line-height:1.45;cursor:pointer;">

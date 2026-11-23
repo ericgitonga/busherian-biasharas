@@ -46,6 +46,15 @@ final class PhotoUploader
         return $dir;
     }
 
+    public static function logoUploadDir(): string
+    {
+        $dir = self::resolvePublicWebRoot() . '/uploads/logos';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        return $dir;
+    }
+
     public static function quarantineDirRoot(): string
     {
         $override = \BusherianBiasharas\Config\Database::env('BBIZ_QUARANTINE_MEDIA_DIR', '');
@@ -79,6 +88,16 @@ final class PhotoUploader
                 @mkdir($assetsDir, 0775, true);
             }
             $baseDir = realpath($assetsDir);
+        } elseif (preg_match('~^/assets/img/logos/([A-Za-z0-9._-]+)$~', $trimmed, $m)) {
+            $filename = $m[1];
+            $assetsDir = self::resolvePublicWebRoot() . '/assets/img/logos';
+            if (!is_dir($assetsDir)) {
+                @mkdir($assetsDir, 0775, true);
+            }
+            $baseDir = realpath($assetsDir);
+        } elseif (preg_match('~^/uploads/logos/([A-Za-z0-9._-]+)$~', $trimmed, $m)) {
+            $filename = $m[1];
+            $baseDir = realpath(self::logoUploadDir());
         } elseif (preg_match('~^/uploads/businesses/([A-Za-z0-9._-]+)$~', $trimmed, $m)) {
             $filename = $m[1];
             $baseDir = realpath(self::uploadDir());
@@ -328,7 +347,141 @@ final class PhotoUploader
             return false;
         }
         $upDir = realpath(self::uploadDir());
-        return $upDir !== false && str_starts_with($safePath, $upDir . DIRECTORY_SEPARATOR);
+        $logoDir = realpath(self::logoUploadDir());
+        return ($upDir !== false && str_starts_with($safePath, $upDir . DIRECTORY_SEPARATOR))
+            || ($logoDir !== false && str_starts_with($safePath, $logoDir . DIRECTORY_SEPARATOR));
+    }
+
+    public static function deleteRemovedLogoFile(?string $urlPath): bool
+    {
+        if ($urlPath === null || trim($urlPath) === '') {
+            return false;
+        }
+        $safePath = self::resolveSafeUploadFilePath($urlPath, true);
+        if (self::isMutableUploadPath($safePath) && @unlink($safePath)) {
+            return true;
+        }
+        return false;
+    }
+
+    public static function processBusinessLogo(
+        ?string $existingLogoPath,
+        bool $removeLogo = false,
+        ?array $uploadedFile = null,
+        ?string $clientDataUrl = null,
+        int $stageBusinessId = 0
+    ): ?string {
+        if ($removeLogo) {
+            if ($existingLogoPath !== null) {
+                self::deleteRemovedLogoFile($existingLogoPath);
+            }
+            return null;
+        }
+
+        $rawBytes = null;
+        if ($clientDataUrl !== null && trim($clientDataUrl) !== '') {
+            if (preg_match('#^data:image/(jpeg|png|webp);base64,([A-Za-z0-9+/=\s]+)$#', $clientDataUrl, $m)) {
+                $rawBytes = base64_decode($m[2], true);
+                if (!is_string($rawBytes) || $rawBytes === '') {
+                    throw new PhotoUploadValidationException('Invalid base64 logo image data.');
+                }
+            } else {
+                throw new PhotoUploadValidationException('Unsupported inline logo format (use PNG, WebP, or JPEG).');
+            }
+        } elseif (is_array($uploadedFile) && isset($uploadedFile['tmp_name'])) {
+            $err = (int)($uploadedFile['error'] ?? UPLOAD_ERR_NO_FILE);
+            $tmpPath = (string)($uploadedFile['tmp_name'] ?? '');
+            $nm = trim((string)($uploadedFile['name'] ?? ''));
+            if ($err !== UPLOAD_ERR_NO_FILE && $nm !== '' && $tmpPath !== '') {
+                if ($err === UPLOAD_ERR_INI_SIZE || $err === UPLOAD_ERR_FORM_SIZE) {
+                    throw new PhotoUploadValidationException('Uploaded logo exceeds the 8 MB file size limit.');
+                }
+                if ($err !== UPLOAD_ERR_OK) {
+                    throw new PhotoUploadValidationException('Logo upload failed with upload error code ' . $err . '.');
+                }
+                if (!is_uploaded_file($tmpPath) && !is_file($tmpPath)) {
+                    throw new PhotoUploadValidationException('Invalid uploaded logo file.');
+                }
+                $size = (int)(@filesize($tmpPath) ?: ($uploadedFile['size'] ?? 0));
+                if ($size > self::MAX_FILE_BYTES) {
+                    throw new PhotoUploadValidationException('Logo image must be 8 MB or smaller.');
+                }
+                $rawBytes = @file_get_contents($tmpPath);
+            }
+        }
+
+        if ($rawBytes === null || $rawBytes === '') {
+            return $existingLogoPath;
+        }
+
+        if (strlen($rawBytes) > self::MAX_FILE_BYTES) {
+            throw new PhotoUploadValidationException('Logo image must be 8 MB or smaller.');
+        }
+
+        $info = @getimagesizefromstring($rawBytes);
+        if (!is_array($info) || empty($info['mime']) || !in_array($info['mime'], self::ALLOWED_MIMES, true)) {
+            throw new PhotoUploadValidationException('Invalid logo file format. Please upload a PNG, WebP, or JPEG image.');
+        }
+
+        $width = (int)($info[0] ?? 0);
+        $height = (int)($info[1] ?? 0);
+        if ($width < 10 || $height < 10) {
+            throw new PhotoUploadValidationException('Logo image dimensions are too small (minimum 10x10 pixels).');
+        }
+
+        if ($width > self::MAX_SOURCE_EDGE || $height > self::MAX_SOURCE_EDGE || ($width * $height) > self::MAX_SOURCE_PIXELS) {
+            throw new PhotoUploadValidationException(
+                "Logo dimensions ({$width}x{$height}) exceed the maximum allowed " . self::MAX_SOURCE_EDGE . "px edge / 16 MP security limit."
+            );
+        }
+
+        $targetDir = self::logoUploadDir();
+        if (!is_dir($targetDir) && !@mkdir($targetDir, 0775, true) && !is_dir($targetDir)) {
+            throw new \RuntimeException('Failed to initialize logo upload directory.');
+        }
+
+        $fileId = 'logo_' . ($stageBusinessId > 0 ? ($stageBusinessId . '_') : '') . gmdate('Ymd_His') . '_' . bin2hex(random_bytes(4));
+
+        if (function_exists('imagecreatefromstring')) {
+            $srcImg = @imagecreatefromstring($rawBytes);
+            if ($srcImg === false) {
+                throw new PhotoUploadValidationException('Could not process the uploaded logo image.');
+            }
+
+            $maxLogoEdge = 1600;
+            $newW = $width;
+            $newH = $height;
+            if ($width > $maxLogoEdge || $height > $maxLogoEdge) {
+                $ratio = min($maxLogoEdge / $width, $maxLogoEdge / $height);
+                $newW = max(1, (int)round($width * $ratio));
+                $newH = max(1, (int)round($height * $ratio));
+            }
+
+            $dstImg = imagecreatetruecolor($newW, $newH);
+            imagealphablending($dstImg, false);
+            imagesavealpha($dstImg, true);
+            $transparent = imagecolorallocatealpha($dstImg, 0, 0, 0, 127);
+            imagefilledrectangle($dstImg, 0, 0, $newW, $newH, $transparent);
+            imagealphablending($dstImg, true);
+            imagecopyresampled($dstImg, $srcImg, 0, 0, 0, 0, $newW, $newH, $width, $height);
+
+            $filename = $fileId . '.png';
+            $fullPath = $targetDir . '/' . $filename;
+            $ok = @imagepng($dstImg, $fullPath, 6);
+
+            imagedestroy($srcImg);
+            imagedestroy($dstImg);
+
+            if ($ok && is_file($fullPath)) {
+                @chmod($fullPath, 0644);
+                if ($existingLogoPath !== null) {
+                    self::deleteRemovedLogoFile($existingLogoPath);
+                }
+                return '/uploads/logos/' . $filename;
+            }
+        }
+
+        throw new PhotoUploadValidationException('Server could not process logo image.');
     }
 
     public static function deleteBusinessPhotoFiles(?string $photosJson): void

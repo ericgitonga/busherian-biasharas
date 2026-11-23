@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.9] - 2026-11-23
+
+### Added
+- **User and Admin Editable Company Logo Management (#429)**:
+  - Enabled business owners to upload, preview, replace, and remove their official company logo via the Owner Portal (`public/owner/edit-business.php`).
+  - Added company logo management controls to the Admin Console (`public/admin/edit-business.php` and `public/admin/add-business.php`).
+  - Added optional company logo upload during initial business vetting submission (`public/submit.php`).
+  - Implemented `PhotoUploader::processBusinessLogo` with transparency preservation for PNG/WebP, decompression-bomb guards, 8 MB per-file limits, secure upload path resolution, and automatic deletion of superseded logo files.
+  - Added live client-side logo preview and removal toggle in `public/assets/js/form-enhancements.js`.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.9`.
+
 ## [0.40.8] - 2026-11-23
 
 ### Added

@@ -223,7 +223,7 @@ HTML;
 }
 
 if (!function_exists('bbiz_render_hours_and_photos_fields')) {
-    function bbiz_render_hours_and_photos_fields(?string $hoursJson = null, ?string $photosJson = null): string
+    function bbiz_render_hours_and_photos_fields(?string $hoursJson = null, ?string $photosJson = null, ?string $logoPath = null): string
     {
         $h = \BusherianBiasharas\Services\HoursEngine::extractFormValues($hoursJson);
         $existingPhotos = \BusherianBiasharas\Services\PhotoUploader::decodePhotosJson($photosJson);
@@ -238,6 +238,45 @@ if (!function_exists('bbiz_render_hours_and_photos_fields')) {
         $sunClose = htmlspecialchars($h['sun_close'], ENT_QUOTES, 'UTF-8');
         $sunClosedAttr = !empty($h['sun_closed']) ? 'checked' : '';
         $sunDisabledAttr = !empty($h['sun_closed']) ? 'disabled' : '';
+
+        $existingLogoHtml = '';
+        if ($logoPath !== null && trim($logoPath) !== '') {
+            $safeLogoUrl = htmlspecialchars(trim($logoPath), ENT_QUOTES, 'UTF-8');
+            $existingLogoHtml = <<<LOGO
+            <div id="existing-logo-card" style="margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:0.65rem 0.9rem;">
+              <div style="width:72px;height:54px;display:flex;align-items:center;justify-content:center;background:#F1F5F9;border-radius:6px;border:1px solid #E2E8F0;overflow:hidden;">
+                <img src="{$safeLogoUrl}" alt="Current Company Logo" style="max-width:64px;max-height:46px;object-fit:contain;">
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:0.82rem;font-weight:700;color:#1E293B;">Current Logo Active</div>
+                <div style="font-size:0.75rem;color:#64748B;">Upload a new image below to replace it, or check the box to remove it.</div>
+              </div>
+              <label style="font-size:0.78rem;color:#991B1B;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:0.35rem;white-space:nowrap;">
+                <input type="checkbox" name="remove_logo" value="1" id="remove_logo" data-testid="remove-logo-checkbox"> Remove Logo
+              </label>
+            </div>
+LOGO;
+        }
+
+        $logoSectionHtml = <<<LOGOSEC
+        <!-- COMPANY LOGO UPLOAD (OPTIONAL) -->
+        <div style="margin-top:1rem;background:#F8FAFC;border:1px solid #CBD5E1;border-radius:12px;padding:1rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.35rem;">
+            <label for="business_logo" style="font-weight:800;font-size:0.88rem;color:#1E293B;">
+              🏢 Official Company Logo (Optional)
+            </label>
+            <span style="font-size:0.76rem;font-weight:700;background:#E2E8F0;color:#334155;padding:0.2rem 0.6rem;border-radius:999px;">
+              PNG, WebP, or JPEG • Transparent background recommended
+            </span>
+          </div>
+          <p style="margin:0 0 0.65rem 0;font-size:0.8rem;color:#475569;">
+            Your logo is featured on directory cards and profile header banners. If uploaded, it replaces the school-initials abbreviation on your listing card.
+          </p>
+          {$existingLogoHtml}
+          <input type="file" id="business_logo" name="business_logo" accept="image/png,image/jpeg,image/webp" class="input-control" data-testid="business-logo-input" style="background:#fff;padding:0.45rem;">
+          <div id="business-logo-preview" style="margin-top:0.65rem;"></div>
+        </div>
+LOGOSEC;
 
         $existingPhotosHtml = '';
         if (!empty($existingPhotos)) {
@@ -325,6 +364,8 @@ WRAP;
             </div>
           </div>
         </div>
+
+        {$logoSectionHtml}
 
         <!-- BUSINESS PHOTOS UPLOAD (OPTIONAL: 3 TO 10 RECOMMENDED, MAX 10) -->
         <div style="margin-top:1rem;background:#F0FDF4;border:1px solid #A7F3D0;border-radius:12px;padding:1rem;">
