@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.6] - 2026-11-23
+
+### Added
+- **Direct Website Action Button on Business Detail Page (#422)**:
+  - Added an interactive `Website` action button (<span>🌐</span> Website) in `.detail-cta-bar` alongside WhatsApp, Call, Directions, and Share on the detail view (`public/index.php`, `public/assets/js/directory.js`).
+  - Added a dedicated official website row in Column 2 under Contact & Location with outbound referral attribution (`utm_source=busherianbiasharas.com`).
+  - Enabled `flex-wrap: wrap` on `.detail-cta-bar` in `public/assets/css/app.css` to guarantee graceful wrapping across mobile devices and small viewports.
+  - Added regression test suite coverage in `tests/test_streamlined_directory_features.php`.
+
 ## [0.40.5] - 2026-11-23
 ### Changed
 - **School Banner Color Harmony with Badge Tints & Typography (#425)**:

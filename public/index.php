@@ -678,12 +678,25 @@ $pageCanonicalPath = $requestedBiz
           $hasReqWa = $requestedBiz && !empty($requestedBiz['whatsapp_number']) && strlen(preg_replace('/[^0-9]/', '', (string)$requestedBiz['whatsapp_number'])) >= 7;
           $waReqDigits = $hasReqWa ? preg_replace('/[^0-9]/', '', (string)$requestedBiz['whatsapp_number']) : '';
           $waReqUrl = $hasReqWa ? ('https://wa.me/' . $waReqDigits . '?text=' . urlencode('Hello ' . $requestedBiz['name'])) : '#';
+          $hasReqWebsite = $requestedBiz && !empty($requestedBiz['website_url']) && preg_match('#^https?://#i', (string)$requestedBiz['website_url']);
+          $reqWebsiteUrl = '#';
+          if ($hasReqWebsite) {
+              $rawWeb = trim((string)$requestedBiz['website_url']);
+              if (strpos($rawWeb, 'utm_source') === false) {
+                  $sep = (strpos($rawWeb, '?') !== false) ? '&' : '?';
+                  $rawWeb .= $sep . 'utm_source=busherianbiasharas.com&utm_medium=referral&utm_campaign=alumni_directory';
+              }
+              $reqWebsiteUrl = htmlspecialchars($rawWeb, ENT_QUOTES, 'UTF-8');
+          }
           ?>
           <a href="<?= $waReqUrl ?>" id="detail-wa-btn" class="btn-action-primary btn-action-whatsapp<?= $hasReqWa ? '' : ' btn-action-disabled' ?>" style="padding:0 20px;height:42px;" target="_blank" rel="noopener"<?= $hasReqWa ? '' : ' aria-disabled="true" title="No WhatsApp line provided"' ?>>
             <span>💬</span> WhatsApp
           </a>
           <a href="<?= ($requestedBiz && !empty($requestedBiz['phone_primary'])) ? ('tel:' . htmlspecialchars((string)$requestedBiz['phone_primary'], ENT_QUOTES, 'UTF-8')) : '#' ?>" id="detail-call-btn" class="btn-action-primary btn-action-call" style="padding:0 20px;height:42px;">
             <span>📞</span> Call
+          </a>
+          <a href="<?= $reqWebsiteUrl ?>" id="detail-website-btn" data-testid="detail-website-btn" target="_blank" rel="noopener noreferrer" data-track="website" class="btn btn-outline" style="display:<?= $hasReqWebsite ? 'inline-flex' : 'none' ?>;align-items:center;gap:6px;height:42px;">
+            <span>🌐</span> Website
           </a>
           <a href="<?= ($requestedBiz && !empty($requestedBiz['google_maps_url']) && preg_match('#^https?://#i', (string)$requestedBiz['google_maps_url'])) ? htmlspecialchars((string)$requestedBiz['google_maps_url'], ENT_QUOTES, 'UTF-8') : '#' ?>" id="detail-route-btn" target="_blank" rel="noopener" class="btn btn-outline" style="display:inline-flex;align-items:center;gap:6px;height:42px;">
             <span>🧭</span> Directions
@@ -789,6 +802,12 @@ $pageCanonicalPath = $requestedBiz
             <div id="detail-phone-row">
               <strong><?= $requestedBiz ? htmlspecialchars((string)$requestedBiz['phone_primary'], ENT_QUOTES, 'UTF-8') : '' ?></strong>
               <div style="font-size:12px;color:#7E8D84;">Primary business contact and verified WhatsApp</div>
+            </div>
+            <div id="detail-website-row" data-testid="detail-website-row" style="<?= $hasReqWebsite ? '' : 'display:none;' ?>">
+              <a href="<?= $reqWebsiteUrl ?>" id="detail-website-link" target="_blank" rel="noopener noreferrer" data-track="website" style="color:#114B3E;font-weight:700;word-break:break-all;text-decoration:underline;">
+                <?= $hasReqWebsite ? htmlspecialchars((string)$requestedBiz['website_url'], ENT_QUOTES, 'UTF-8') : '' ?>
+              </a>
+              <div style="font-size:12px;color:#7E8D84;">Official business website</div>
             </div>
             <div id="detail-loc-row">
               <strong><?= $requestedBiz ? htmlspecialchars(trim(($requestedBiz['street_road'] ?? '') . ', ' . ($requestedBiz['city_county'] ?? '')), ENT_QUOTES, 'UTF-8') : '' ?></strong>
