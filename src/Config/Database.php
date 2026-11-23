@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v39-card-photos-and-mobile-layout';
+    public const SCHEMA_INIT_VERSION = '2026-11-v40-banner-logo';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
