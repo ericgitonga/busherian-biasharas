@@ -409,6 +409,8 @@ if ($testBizId > 0) {
     testAssert($revokedFounderRow['founder_name'] === null, 'updateBusinessByOwner clears founder_name on revocation (#435)');
     testAssert($revokedFounderRow['founder_school'] === null, 'updateBusinessByOwner clears founder_school on revocation (#435)');
     testAssert($revokedFounderRow['founder_year'] === null, 'updateBusinessByOwner clears founder_year on revocation (#435)');
+    $chkStmt->closeCursor();
+    unset($chkStmt);
 }
 
 // 20. Check BB-DPA-02 Rate Limiting and Contact/Coordinate Obfuscation (#436)
@@ -452,5 +454,48 @@ testAssert($firstSingleBiz['coords_fuzzed'] === false, 'single listing detail ha
 if (!empty($firstSingleBiz['phone_primary'])) {
     testAssert(!str_contains($firstSingleBiz['phone_primary'], 'X'), 'single listing detail phone_primary is unmasked (#436)');
 }
+
+// 21. Check BB-DPA-03 PWA Cache Eviction, Tombstone Sync & Status Headers (#437)
+$swContent = (string)file_get_contents(dirname(__DIR__) . '/public/sw.js');
+testAssert(str_contains($swContent, "const CACHE_VERSION = 'bbiz-pwa-v0.40.13'"), 'sw.js has CACHE_VERSION v0.40.13 (#437)');
+testAssert(str_contains($swContent, 'MAX_CACHE_AGE_MS'), 'sw.js defines MAX_CACHE_AGE_MS for 24h freshness (#437)');
+testAssert(str_contains($swContent, 'putInCacheWithTtl'), 'sw.js defines putInCacheWithTtl helper (#437)');
+testAssert(str_contains($swContent, 'evictTombstonesFromCache'), 'sw.js defines evictTombstonesFromCache helper (#437)');
+testAssert(str_contains($swContent, 'netRes.status === 404 || netRes.status === 410'), 'sw.js evicts on 404 or 410 network status (#437)');
+testAssert(str_contains($swContent, "data.type === 'EVICT_TOMBSTONES'"), 'sw.js handles EVICT_TOMBSTONES message (#437)');
+testAssert(str_contains($swContent, "data.type === 'PURGE_LISTING'"), 'sw.js handles PURGE_LISTING message (#437)');
+
+$jsContent = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+testAssert(str_contains($jsContent, 'evictListingFromClientCache'), 'directory.js defines evictListingFromClientCache (#437)');
+testAssert(str_contains($jsContent, 'evictTombstonesFromClient'), 'directory.js defines evictTombstonesFromClient (#437)');
+testAssert(str_contains($jsContent, 'res.status === 410 || res.status === 404'), 'directory.js openBizDetail checks 410 or 404 (#437)');
+
+// Test 404 on nonexistent listing
+$notFoundApiRes = $runBizApiTest(['id' => '99999999']);
+testAssert(($notFoundApiRes['code'] ?? '') === 'not_found', 'API returns code not_found for nonexistent listing (#437)');
+
+// Test 410 on quarantined listing
+$insQStmt = $pdo->prepare("
+    INSERT INTO businesses (
+        name, tagline, slug, sector_id, specialty_id, status, description, operating_hours_json, phone_primary, created_at, updated_at
+    ) VALUES (
+        'Quarantined Test Biz', 'Quarantined Tagline', 'quarantined-test-biz-437', 1, 2, 'quarantined_dpa', 'Test description', '{}', '+254711000111', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    )
+");
+$insQStmt->execute();
+$quarantinedBizId = (int)$pdo->lastInsertId();
+
+$quarantinedApiRes = $runBizApiTest(['id' => (string)$quarantinedBizId]);
+testAssert(($quarantinedApiRes['code'] ?? '') === 'quarantined', 'API returns code quarantined for quarantined listing (#437)');
+testAssert(($quarantinedApiRes['tombstone'] ?? false) === true, 'API returns tombstone = true for quarantined listing (#437)');
+testAssert(($quarantinedApiRes['business_id'] ?? 0) === $quarantinedBizId, 'API returns business_id for quarantined listing (#437)');
+
+// Test bulk directory includes tombstone ID
+$bulkWithTombstones = $runBizApiTest(['per_page' => '5']);
+$tombstones = $bulkWithTombstones['tombstones'] ?? [];
+testAssert(is_array($tombstones) && in_array($quarantinedBizId, $tombstones, true), 'bulk API returns tombstones array containing quarantined business ID (#437)');
+
+// Clean up test quarantined business
+$pdo->prepare("DELETE FROM businesses WHERE id = :id")->execute([':id' => $quarantinedBizId]);
 
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

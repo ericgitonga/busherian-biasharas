@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.13] - 2026-11-23
+
+### Security & Data Protection
+- **Implement PWA Service Worker Cache Eviction for Withdrawn and Quarantined Listings (#437, Parent #434)**:
+  - Added cache tombstone synchronization in `public/sw.js` and `public/assets/js/directory.js` to immediately purge withdrawn, rejected, or quarantined listings under Kenya DPA 2019 s. 40 (Right to Erasure & Rectification).
+  - Emitted `410 Gone` with `X-BBiz-Listing-Status: quarantined` and `X-BBiz-Tombstone: 1` when specific quarantined/rejected listings are queried, and `404 Not Found` for nonexistent listings.
+  - Added HTTP cache control headers on directory JSON feeds: `Cache-Control: public, max-age=180, stale-while-revalidate=300, must-revalidate` for unauthenticated feeds, `X-BBiz-Directory-Version`, `X-BBiz-Tombstones`, and `Cache-Control: private, no-store, no-cache` for authenticated visitors.
+  - Implemented 24-hour TTL expiry (`MAX_CACHE_AGE_MS = 86400000`) and message listener (`EVICT_TOMBSTONES`, `PURGE_LISTING`) in `public/sw.js` to ensure stale listing snapshots do not persist indefinitely in offline CacheStorage.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.13`.
+
 ## [0.40.12] - 2026-11-23
 
 ### Security & Data Protection
