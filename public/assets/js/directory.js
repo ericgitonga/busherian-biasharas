@@ -2044,6 +2044,18 @@
       callBtn.href = normPhone ? `tel:${normPhone}` : '#';
     }
 
+    const websiteBtn = document.getElementById('detail-website-btn');
+    const safeWebHref = withOutboundAttribution(biz.website_url);
+    if (websiteBtn) {
+      if (safeWebHref) {
+        websiteBtn.href = safeWebHref;
+        websiteBtn.style.display = 'inline-flex';
+      } else {
+        websiteBtn.href = '#';
+        websiteBtn.style.display = 'none';
+      }
+    }
+
     const routeBtn = document.getElementById('detail-route-btn');
     if (routeBtn) {
       const safeDetailGmaps = sanitizeHttpUrl(biz.google_maps_url);
@@ -2175,6 +2187,17 @@
     if (phoneRow) {
       const displayPhone = formatKenyaPhone(biz.phone_primary, biz.country);
       phoneRow.innerHTML = `<strong>${escapeHtml(displayPhone || 'Contact via WhatsApp')}</strong><div style="font-size:12px;color:#7E8D84;">Primary business phone and verified WhatsApp</div>`;
+    }
+    const websiteRow = document.getElementById('detail-website-row');
+    const websiteLink = document.getElementById('detail-website-link');
+    if (websiteRow && websiteLink) {
+      if (safeWebHref) {
+        websiteLink.href = safeWebHref;
+        websiteLink.textContent = biz.website_url || safeWebHref;
+        websiteRow.style.display = 'block';
+      } else {
+        websiteRow.style.display = 'none';
+      }
     }
     const locRow = document.getElementById('detail-loc-row');
     if (locRow) {

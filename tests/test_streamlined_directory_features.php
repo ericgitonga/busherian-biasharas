@@ -270,4 +270,11 @@ testAssert(str_contains($adminIndexSrc, 'data-testid="sort-<?= $col ?>-asc"') &&
 testAssert(str_contains($adminIndexSrc, "\$renderSortHeader('name'") && str_contains($adminIndexSrc, "\$renderSortHeader('number'"), 'admin/index.php renders sort controls for Business Name and other columns');
 testAssert(str_contains($adminIndexSrc, '$renderSortHeader = static function'), 'admin/index.php implements renderSortHeader component');
 
+// 19. Check Website Button on Detail Page (#426)
+testAssert(str_contains($indexSrc, 'id="detail-website-btn"') && str_contains($indexSrc, 'data-testid="detail-website-btn"'), 'index.php renders #detail-website-btn in detail CTA bar');
+testAssert(str_contains($indexSrc, 'id="detail-website-row"') && str_contains($indexSrc, 'data-testid="detail-website-row"'), 'index.php renders #detail-website-row in contact details');
+testAssert(str_contains($jsSrc, "document.getElementById('detail-website-btn')"), 'directory.js populates detail website CTA button');
+testAssert(str_contains($jsSrc, "document.getElementById('detail-website-row')"), 'directory.js populates detail website contact row');
+testAssert(str_contains($cssSrc, '.detail-cta-bar') && str_contains($cssSrc, 'flex-wrap: wrap'), 'app.css enables flex-wrap on .detail-cta-bar');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
