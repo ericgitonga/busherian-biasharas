@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.5] - 2026-11-23
+### Changed
+- **School Banner Color Harmony with Badge Tints & Typography (#425)**:
+  - Aligned blank initial banner backgrounds to the exact pastel tints of the school badges: `#EEF0FA` for AHS and `#EBF5ED` for AGHS, with matching subtle borders.
+  - Set bold initials typography in school brand colors: `#2E3192` for AHS and `#1E5E2A` for AGHS.
+  - Bumped PWA cache to `bbiz-pwa-v0.40.5` in `public/sw.js` and updated `VERSION` to `0.40.5`.
+
 ## [0.40.4] - 2026-11-23
 ### Added
 - **Interactive Column Header Sort Controls in Admin Console (#424)**:
