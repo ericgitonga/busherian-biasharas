@@ -61,13 +61,20 @@ final class VettingPurger
     }
 
     /**
-     * Persist a durable, non-PII media-deletion obligation inside the active DB transaction (#240 H-05).
+     * Persist a durable, non-PII media-deletion obligation inside the active DB transaction (#240 H-05, #442).
      */
-    public static function enqueueDurableMediaDeletion(PDO $pdo, int $businessId, ?string $photosJson): int
+    public static function enqueueDurableMediaDeletion(PDO $pdo, int $businessId, ?string $photosJson, ?string $logoPath = null): int
     {
-        $hasPhotos = ($photosJson !== null && trim($photosJson) !== '' && trim($photosJson) !== '[]');
+        $mediaList = PhotoUploader::decodePhotosJson($photosJson);
+        if ($logoPath !== null && trim($logoPath) !== '') {
+            $mediaList[] = trim($logoPath);
+        }
+        $mediaList = array_values(array_unique($mediaList));
+        $combinedJson = !empty($mediaList) ? json_encode($mediaList) : null;
+
+        $hasMedia = ($combinedJson !== null && $combinedJson !== '[]');
         $hasQuarDir = ($businessId > 0 && is_dir(PhotoUploader::quarantineDirRoot() . '/' . $businessId));
-        if (!$hasPhotos && !$hasQuarDir) {
+        if (!$hasMedia && !$hasQuarDir) {
             return 0;
         }
         $nowUtc = gmdate('Y-m-d H:i:s');
@@ -77,7 +84,7 @@ final class VettingPurger
         ");
         $ins->execute([
             ':bid' => max(0, $businessId),
-            ':pj' => $photosJson,
+            ':pj' => $combinedJson,
             ':c_at' => $nowUtc,
             ':u_at' => $nowUtc,
         ]);
@@ -682,7 +689,7 @@ final class VettingPurger
         }
         try {
             self::acquireBusinessLifecycleLock($pdo, $businessId);
-            $curStmt = $pdo->prepare("SELECT status, photos_json FROM businesses WHERE id = :id LIMIT 1");
+            $curStmt = $pdo->prepare("SELECT status, photos_json, logo_path FROM businesses WHERE id = :id LIMIT 1");
             $curStmt->execute([':id' => $businessId]);
             $row = $curStmt->fetch();
             if (!$row) {
@@ -693,6 +700,7 @@ final class VettingPurger
             }
             $curStatus = (string)($row['status'] ?? '');
             $photosJson = is_string($row['photos_json'] ?? null) ? $row['photos_json'] : null;
+            $logoPath = is_string($row['logo_path'] ?? null) ? $row['logo_path'] : null;
             if ($curStatus === '') {
                 if ($ownTx) {
                     $pdo->commit();
@@ -727,6 +735,7 @@ final class VettingPurger
                 self::invalidateConciergeCache($pdo);
             }
             PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+            PhotoUploader::quarantineBusinessLogo($businessId, $logoPath);
             if ($ownTx) {
                 $pdo->commit();
             }
@@ -751,7 +760,7 @@ final class VettingPurger
         }
         try {
         self::acquireBusinessLifecycleLock($pdo, $businessId);
-        $stmt = $pdo->prepare("SELECT status, quarantine_prev_status, verified_at, photos_json FROM businesses WHERE id = :id LIMIT 1");
+        $stmt = $pdo->prepare("SELECT status, quarantine_prev_status, verified_at, photos_json, logo_path FROM businesses WHERE id = :id LIMIT 1");
         $stmt->execute([':id' => $businessId]);
         $row = $stmt->fetch();
         if (!$row) {
@@ -802,7 +811,12 @@ final class VettingPurger
         );
 
         if ($targetStatus === 'rejected') {
-            self::enqueueDurableMediaDeletion($pdo, $businessId, is_string($row['photos_json'] ?? null) ? $row['photos_json'] : null);
+            self::enqueueDurableMediaDeletion(
+                $pdo,
+                $businessId,
+                is_string($row['photos_json'] ?? null) ? $row['photos_json'] : null,
+                is_string($row['logo_path'] ?? null) ? $row['logo_path'] : null
+            );
         }
         if ($ownTx) {
             $pdo->commit();
@@ -815,6 +829,7 @@ final class VettingPurger
         }
         if ($targetStatus !== 'rejected') {
             PhotoUploader::restoreQuarantinedBusinessPhotos($businessId, is_string($row['photos_json'] ?? null) ? $row['photos_json'] : null);
+            PhotoUploader::restoreQuarantinedBusinessLogo($businessId, is_string($row['logo_path'] ?? null) ? $row['logo_path'] : null);
         } else {
             self::drainDurableMediaDeletions($pdo, $businessId);
         }
@@ -1274,10 +1289,7 @@ final class VettingPurger
                 $logoPath = is_string($lockedBizRow['logo_path'] ?? null) ? $lockedBizRow['logo_path'] : $logoPath;
                 $prevStatus = (string)($lockedBizRow['status'] ?? $prevStatus);
             }
-            if ($logoPath !== null) {
-                PhotoUploader::deleteRemovedLogoFile($logoPath);
-            }
-            self::enqueueDurableMediaDeletion($pdo, $businessId, $photosJson);
+            self::enqueueDurableMediaDeletion($pdo, $businessId, $photosJson, $logoPath);
             $pdo->prepare("DELETE FROM business_vetting_queue WHERE business_id = :id")->execute([':id' => $businessId]);
             $pdo->prepare("DELETE FROM email_outbox WHERE business_id = :id")->execute([':id' => $businessId]);
             $pdo->prepare("DELETE FROM takedown_requests WHERE business_id = :id")->execute([':id' => $businessId]);
@@ -1359,6 +1371,8 @@ final class VettingPurger
             $pdo->beginTransaction();
         }
         $newlyWrittenPhotoUrls = [];
+        $newlyWrittenLogoPath = null;
+        $replacedLogoPath = null;
         try {
         self::acquireBusinessLifecycleLock($pdo, $businessId);
         $lockedExistingStmt = $pdo->prepare("SELECT status, photos_json, logo_path, founder_role, founder_name, founder_school, founder_year FROM businesses WHERE id = :id LIMIT 1");
@@ -1377,10 +1391,13 @@ final class VettingPurger
             !empty($data['remove_logo']),
             $_FILES['business_logo'] ?? null,
             isset($data['business_logo_data_url']) ? (string)$data['business_logo_data_url'] : null,
-            $businessId
+            $businessId,
+            true,
+            $replacedLogoPath
         );
         $keptPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
         $newlyWrittenPhotoUrls = array_values(array_diff($keptPhotoUrls, $previousPhotoUrls));
+        $newlyWrittenLogoPath = ($logoPath !== null && $logoPath !== ($lockedExisting['logo_path'] ?? null)) ? $logoPath : null;
 
         $hasFounderInput = array_key_exists('founder_role', $data) || array_key_exists('show_founder_publicly', $data);
         if ($hasFounderInput) {
@@ -1528,6 +1545,7 @@ final class VettingPurger
         }
         if ($targetStatus === 'quarantined_dpa') {
             PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+            PhotoUploader::quarantineBusinessLogo($businessId, $logoPath);
         }
         if ($targetStatus === 'approved') {
             AiListingIndexer::indexBusiness($pdo, $businessId);
@@ -1544,6 +1562,9 @@ final class VettingPurger
             if ($newlyWrittenPhotoUrls !== []) {
                 PhotoUploader::deleteRemovedBusinessPhotos($businessId, $newlyWrittenPhotoUrls, []);
             }
+            if ($newlyWrittenLogoPath !== null) {
+                PhotoUploader::deleteRemovedLogoFile($newlyWrittenLogoPath);
+            }
             throw $e;
         }
         self::invalidateConciergeCache($pdo);
@@ -1555,13 +1576,19 @@ final class VettingPurger
 
         if (in_array($currentLiveStatus, ['approved', 'pending'], true)) {
             PhotoUploader::restoreQuarantinedBusinessPhotos($businessId, $photosJson);
+            PhotoUploader::restoreQuarantinedBusinessLogo($businessId, $logoPath);
         } elseif ($currentLiveStatus === 'quarantined_dpa') {
             PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+            PhotoUploader::quarantineBusinessLogo($businessId, $logoPath);
         } elseif ($currentLiveStatus === 'rejected') {
-            PhotoUploader::deleteAllBusinessMedia($businessId, $photosJson);
+            PhotoUploader::deleteAllBusinessMedia($businessId, $photosJson, $logoPath);
         }
         if ($ownTx) {
             PhotoUploader::deleteRemovedBusinessPhotos($businessId, $previousPhotoUrls, $keptPhotoUrls);
+            if ($replacedLogoPath !== null) {
+                self::enqueueDurableMediaDeletion($pdo, $businessId, null, $replacedLogoPath);
+                self::drainDurableMediaDeletions($pdo, $businessId);
+            }
         }
     }
 
@@ -1783,6 +1810,7 @@ final class VettingPurger
         }
         if ($status === 'quarantined_dpa') {
             PhotoUploader::quarantineBusinessPhotos($newId, $photosJson);
+            PhotoUploader::quarantineBusinessLogo($newId, $logoPath);
         } elseif ($status === 'approved') {
             EngagementRanker::recomputeBusinessScore($pdo, $newId);
             AiListingIndexer::indexBusiness($pdo, $newId);
@@ -1892,6 +1920,8 @@ final class VettingPurger
             $pdo->beginTransaction();
         }
         $newlyWrittenPhotoUrls = [];
+        $newlyWrittenLogoPath = null;
+        $replacedOwnerLogoPath = null;
         $lockedOwnerStatus = strtolower(trim((string)($oldBiz['status'] ?? 'approved')));
         try {
         self::acquireBusinessLifecycleLock($pdo, $businessId);
@@ -1916,10 +1946,13 @@ final class VettingPurger
             !empty($data['remove_logo']),
             $_FILES['business_logo'] ?? null,
             isset($data['business_logo_data_url']) ? (string)$data['business_logo_data_url'] : null,
-            $businessId
+            $businessId,
+            true,
+            $replacedOwnerLogoPath
         );
         $keptPhotoUrls = PhotoUploader::decodePhotosJson($photosJson);
         $newlyWrittenPhotoUrls = array_values(array_diff($keptPhotoUrls, $previousPhotoUrls));
+        $newlyWrittenLogoPath = ($logoPath !== null && $logoPath !== ($lockedOwnerRow['logo_path'] ?? null)) ? $logoPath : null;
 
         $showFounderOwner = !empty($data['show_founder_publicly']);
         $rawOwnerFounderRole = in_array($data['founder_role'] ?? '', ['founder', 'co_founder', 'none'], true) ? $data['founder_role'] : '';
@@ -2049,8 +2082,9 @@ final class VettingPurger
         ]);
         if ($lockedOwnerStatus === 'quarantined_dpa') {
             PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+            PhotoUploader::quarantineBusinessLogo($businessId, $logoPath);
         } elseif ($lockedOwnerStatus === 'rejected') {
-            self::enqueueDurableMediaDeletion($pdo, $businessId, $photosJson);
+            self::enqueueDurableMediaDeletion($pdo, $businessId, $photosJson, $logoPath);
         }
         if ($ownTx) {
             $pdo->commit();
@@ -2061,6 +2095,9 @@ final class VettingPurger
             }
             if ($newlyWrittenPhotoUrls !== []) {
                 PhotoUploader::deleteRemovedBusinessPhotos($businessId, $newlyWrittenPhotoUrls, []);
+            }
+            if ($newlyWrittenLogoPath !== null) {
+                PhotoUploader::deleteRemovedLogoFile($newlyWrittenLogoPath);
             }
             throw $e;
         }
@@ -2075,12 +2112,18 @@ final class VettingPurger
 
             if (in_array($currentLiveStatus, ['approved', 'pending'], true)) {
                 PhotoUploader::restoreQuarantinedBusinessPhotos($businessId, $photosJson);
+                PhotoUploader::restoreQuarantinedBusinessLogo($businessId, $logoPath);
             } elseif ($currentLiveStatus === 'quarantined_dpa') {
                 PhotoUploader::quarantineBusinessPhotos($businessId, $photosJson);
+                PhotoUploader::quarantineBusinessLogo($businessId, $logoPath);
             } elseif ($currentLiveStatus === 'rejected') {
                 self::drainDurableMediaDeletions($pdo, $businessId);
             }
             PhotoUploader::deleteRemovedBusinessPhotos($businessId, $previousPhotoUrls, $keptPhotoUrls);
+            if ($replacedOwnerLogoPath !== null) {
+                self::enqueueDurableMediaDeletion($pdo, $businessId, null, $replacedOwnerLogoPath);
+                self::drainDurableMediaDeletions($pdo, $businessId);
+            }
         }
 
         $newStmt = $pdo->prepare("

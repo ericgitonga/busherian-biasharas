@@ -567,4 +567,39 @@ testAssert(str_contains(($enrichRes['error'] ?? ''), 'Rate limit exceeded'), 'en
 
 $pdo->prepare("DELETE FROM rate_limits WHERE ip_hmac = :h")->execute([':h' => $testEnrichHmacIp]);
 
+// 24. Check BB-SEC-04 Logo Lifecycle, Quarantine & Durable Media Deletions (#442)
+$testLogoBizId = 999442;
+$logoUploadDir = \BusherianBiasharas\Services\PhotoUploader::logoUploadDir();
+if (!is_dir($logoUploadDir)) {
+    @mkdir($logoUploadDir, 0775, true);
+}
+$dummyLogoPath = $logoUploadDir . '/test_lifecycle_logo_442.png';
+$im = imagecreatetruecolor(40, 40);
+imagepng($im, $dummyLogoPath);
+imagedestroy($im);
+
+$relLogoUrl = '/uploads/logos/test_lifecycle_logo_442.png';
+testAssert(file_exists($dummyLogoPath), 'Test logo created in uploads/logos (#442)');
+
+// 1. Quarantine logo
+\BusherianBiasharas\Services\PhotoUploader::quarantineBusinessLogo($testLogoBizId, $relLogoUrl);
+$quarFile = \BusherianBiasharas\Services\PhotoUploader::quarantineDirRoot() . '/' . $testLogoBizId . '/test_lifecycle_logo_442.png';
+testAssert(!file_exists($dummyLogoPath) && file_exists($quarFile), 'quarantineBusinessLogo relocates logo to storage/quarantined_media (#442)');
+
+// 2. Restore logo from quarantine
+\BusherianBiasharas\Services\PhotoUploader::restoreQuarantinedBusinessLogo($testLogoBizId, $relLogoUrl);
+testAssert(file_exists($dummyLogoPath) && !file_exists($quarFile), 'restoreQuarantinedBusinessLogo restores logo back to uploads/logos (#442)');
+
+// 3. Durable media deletion journaling & draining
+\BusherianBiasharas\Services\VettingPurger::enqueueDurableMediaDeletion($pdo, $testLogoBizId, null, $relLogoUrl);
+$chkDel = $pdo->prepare("SELECT photos_json FROM pending_media_deletions WHERE business_id = ?");
+$chkDel->execute([$testLogoBizId]);
+$delPj = (string)$chkDel->fetchColumn();
+$chkDel->closeCursor(); unset($chkDel);
+testAssert(str_contains($delPj, 'test_lifecycle_logo_442.png'), 'enqueueDurableMediaDeletion journals logo into pending_media_deletions (#442)');
+
+// Drain media deletion
+\BusherianBiasharas\Services\VettingPurger::drainDurableMediaDeletions($pdo, $testLogoBizId);
+testAssert(!file_exists($dummyLogoPath), 'drainDurableMediaDeletions purges logo from disk (#442)');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

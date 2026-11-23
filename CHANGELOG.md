@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.17] - 2026-11-23
+
+### Security & Hardening
+- **Integrate Company Logo Uploads into Pending Media Deletions and Takedown Quarantine (#442, Parent #438)**:
+  - Extended `PhotoUploader::quarantineBusinessLogo` and `PhotoUploader::restoreQuarantinedBusinessLogo` to relocate company logo files into private quarantine (`storage/quarantined_media/<id>/`) upon DPA takedown or vetting rejection, and restore them upon approval.
+  - Routed logo deletions and replacements through `pending_media_deletions` journaling in `VettingPurger::enqueueDurableMediaDeletion`, preventing premature unlinks before database commit.
+  - Added transaction rollback protection for newly uploaded logo files across `updateBusiness` and `updateBusinessByOwner` to prevent orphaned disk files.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.17`.
+
 ## [0.40.16] - 2026-11-23
 
 ### Security & Hardening
