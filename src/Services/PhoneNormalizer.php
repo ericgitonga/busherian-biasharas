@@ -327,6 +327,41 @@ final class PhoneNormalizer
     /**
      * Check if a normalized phone string has a valid ITU-T E.164 length (7 to 15 digits).
      */
+    /**
+     * Obfuscate a phone number for bulk directory responses to prevent automated harvesting (Kenya DPA s. 25, 41 #436).
+     * Retains international/national prefix and last 2 digits, masking the intermediate digits.
+     * Example: "+254 722 100 200" -> "+254 72X XXXX00"
+     */
+    public static function maskPhoneNumber(?string $phone): ?string
+    {
+        if ($phone === null || trim($phone) === '') {
+            return null;
+        }
+        $trimmed = trim($phone);
+        $digits = preg_replace('/\D+/', '', $trimmed) ?? '';
+        $len = strlen($digits);
+        if ($len < 7) {
+            return $trimmed;
+        }
+
+        // Kenyan mobile numbers standard: 2547XXXXXXXX or 2541XXXXXXXX (12 digits)
+        if (str_starts_with($digits, '254') && $len === 12) {
+            $operator = substr($digits, 3, 2);
+            $last2 = substr($digits, -2);
+            return "+254 {$operator}X XXXX{$last2}";
+        }
+
+        // General fallback masking for international/other numbers
+        $hasPlus = str_starts_with($trimmed, '+');
+        $prefixLen = min(4, (int)floor($len * 0.35));
+        $suffixLen = min(2, (int)floor($len * 0.2));
+        $middleLen = $len - $prefixLen - $suffixLen;
+
+        $prefix = substr($digits, 0, $prefixLen);
+        $suffix = substr($digits, -$suffixLen);
+        return ($hasPlus ? '+' : '') . $prefix . str_repeat('X', $middleLen) . $suffix;
+    }
+
     public static function isValidE164Length(string $normalized): bool
     {
         $digits = preg_replace('/\D+/', '', $normalized) ?? '';

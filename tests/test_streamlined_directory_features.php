@@ -411,4 +411,46 @@ if ($testBizId > 0) {
     testAssert($revokedFounderRow['founder_year'] === null, 'updateBusinessByOwner clears founder_year on revocation (#435)');
 }
 
+// 20. Check BB-DPA-02 Rate Limiting and Contact/Coordinate Obfuscation (#436)
+testAssert(\BusherianBiasharas\Services\PhoneNormalizer::maskPhoneNumber('+254722100200') === '+254 72X XXXX00', 'PhoneNormalizer::maskPhoneNumber masks Kenyan mobile number (#436)');
+testAssert(str_contains(\BusherianBiasharas\Services\PhoneNormalizer::maskPhoneNumber('+254700000099') ?? '', 'XXXX0099') || str_contains(\BusherianBiasharas\Services\PhoneNormalizer::maskPhoneNumber('+254700000099') ?? '', 'XXXX99'), 'PhoneNormalizer::maskPhoneNumber masks middle digits (#436)');
+
+$jsDirSrc = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+testAssert(str_contains($jsDirSrc, 'onCardContactClick'), 'directory.js defines onCardContactClick click-to-reveal handler (#436)');
+testAssert(str_contains($jsDirSrc, 'phone_obfuscated'), 'directory.js checks phone_obfuscated (#436)');
+
+// Test API bulk output vs single listing output
+$runBizApiTest = static function (array $queryParams): array {
+    $runner = sprintf(
+        '$_SERVER["REQUEST_METHOD"]="GET"; $_SERVER["REMOTE_ADDR"]="127.0.0.1"; $_GET=%s; require %s;',
+        var_export($queryParams, true),
+        var_export(dirname(__DIR__) . '/public/api/businesses.php', true)
+    );
+    $raw = (string)shell_exec('php -r ' . escapeshellarg($runner));
+    $dec = json_decode($raw, true);
+    return is_array($dec) ? $dec : ['status' => 'decode_err', 'raw' => $raw];
+};
+
+$bulkApiRes = $runBizApiTest(['per_page' => '5']);
+testAssert(($bulkApiRes['status'] ?? '') === 'ok', 'bulk /api/businesses.php returns status ok (#436)');
+$firstBulkBiz = $bulkApiRes['businesses'][0] ?? [];
+testAssert($firstBulkBiz['phone_obfuscated'] === true, 'bulk directory card has phone_obfuscated = true (#436)');
+testAssert($firstBulkBiz['coords_fuzzed'] === true, 'bulk directory card has coords_fuzzed = true (#436)');
+if (!empty($firstBulkBiz['phone_primary'])) {
+    testAssert(str_contains($firstBulkBiz['phone_primary'], 'X'), 'bulk directory card phone_primary is masked (#436)');
+}
+if (!empty($firstBulkBiz['latitude'])) {
+    $decPlaces = strlen(substr(strrchr((string)$firstBulkBiz['latitude'], '.'), 1));
+    testAssert($decPlaces <= 3, 'bulk directory card latitude is bounded to at most 3 decimal places (#436)');
+}
+
+$singleApiRes = $runBizApiTest(['id' => (string)$firstBulkBiz['id']]);
+testAssert(($singleApiRes['status'] ?? '') === 'ok', 'single /api/businesses.php?id= returns status ok (#436)');
+$firstSingleBiz = $singleApiRes['businesses'][0] ?? [];
+testAssert($firstSingleBiz['phone_obfuscated'] === false, 'single listing detail has phone_obfuscated = false (#436)');
+testAssert($firstSingleBiz['coords_fuzzed'] === false, 'single listing detail has coords_fuzzed = false (#436)');
+if (!empty($firstSingleBiz['phone_primary'])) {
+    testAssert(!str_contains($firstSingleBiz['phone_primary'], 'X'), 'single listing detail phone_primary is unmasked (#436)');
+}
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";

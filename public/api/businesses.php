@@ -11,6 +11,7 @@ use BusherianBiasharas\Services\EngagementRanker;
 use BusherianBiasharas\Services\HoursEngine;
 use BusherianBiasharas\Services\LocationEngine;
 use BusherianBiasharas\Services\OwnerAuth;
+use BusherianBiasharas\Services\PhoneNormalizer;
 use BusherianBiasharas\Services\PhotoUploader;
 
 bbiz_send_security_headers(true);
@@ -18,7 +19,10 @@ bbiz_send_security_headers(true);
 try {
     $pdo = Database::getConnection();
     $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
-    $apiBudget = AntiSpamGate::checkAuthAttemptAllowed($pdo, $clientIp, 'api_businesses_read', '', 240, 3000, 240, 3000);
+    $isTesting = (getenv('APP_ENV') === 'testing');
+    $ipLimit15m = $isTesting ? 2000 : 120;
+    $ipLimit24h = $isTesting ? 10000 : 1200;
+    $apiBudget = AntiSpamGate::checkAuthAttemptAllowed($pdo, $clientIp, 'api_businesses_read', '', $ipLimit15m, $ipLimit24h, $ipLimit15m, $ipLimit24h);
     if (!$apiBudget['allowed']) {
         http_response_code(429);
         header('Retry-After: 60');
@@ -32,6 +36,9 @@ try {
 
     $q           = mb_substr(trim((string)($_GET['q'] ?? '')), 0, 120);
     $filterBizId = isset($_GET['id']) && $_GET['id'] !== '' ? (int)$_GET['id'] : null;
+    $filterSlug  = mb_substr(trim((string)($_GET['slug'] ?? '')), 0, 120);
+    $isExplicitReveal = !empty($_GET['reveal']) || !empty($_REQUEST['reveal_token']);
+    $shouldRevealContacts = ($filterBizId !== null && $filterBizId > 0) || ($filterSlug !== '') || $isAuthenticatedViewer || $isExplicitReveal;
     $rawSort     = mb_substr(trim((string)($_GET['sort'] ?? '')), 0, 40);
     $sectorId   = isset($_GET['sector_id']) && $_GET['sector_id'] !== '' ? (int)$_GET['sector_id'] : null;
     $specId     = isset($_GET['specialty_id']) && $_GET['specialty_id'] !== '' ? (int)$_GET['specialty_id'] : null;
@@ -72,6 +79,10 @@ try {
     if ($filterBizId !== null && $filterBizId > 0) {
         $fromWhereSql .= " AND b.id = :filter_biz_id";
         $params[':filter_biz_id'] = $filterBizId;
+    }
+    if ($filterSlug !== '') {
+        $fromWhereSql .= " AND b.slug = :filter_slug";
+        $params[':filter_slug'] = $filterSlug;
     }
 
     if ($sectorId !== null && $sectorId > 0) {
@@ -359,6 +370,28 @@ try {
             ? ('/owner/edit-business.php?id=' . $bizId)
             : ($isAdminVisitor ? ('/admin/edit-business.php?id=' . $bizId) : null);
 
+        $rawLat = $row['latitude'] !== null ? (float)$row['latitude'] : null;
+        $rawLng = $row['longitude'] !== null ? (float)$row['longitude'] : null;
+        $rawPhone = $row['phone_primary'];
+        $rawWa = $row['whatsapp_number'];
+
+        if ($shouldRevealContacts) {
+            $phonePrimary = $rawPhone;
+            $whatsappNumber = $rawWa;
+            $latitude = $rawLat;
+            $longitude = $rawLng;
+            $phoneObfuscated = false;
+            $coordsFuzzed = false;
+        } else {
+            $phonePrimary = PhoneNormalizer::maskPhoneNumber($rawPhone);
+            $whatsappNumber = PhoneNormalizer::maskPhoneNumber($rawWa);
+            // Bound coordinates to 3 decimal places (~110m) for bulk list privacy protection (Kenya DPA s. 25, 41 #436)
+            $latitude = $rawLat !== null ? round($rawLat, 3) : null;
+            $longitude = $rawLng !== null ? round($rawLng, 3) : null;
+            $phoneObfuscated = true;
+            $coordsFuzzed = true;
+        }
+
         $item = [
             'id' => $bizId,
             'can_edit' => $canEdit,
@@ -399,16 +432,18 @@ try {
             'timezone' => $bizTz,
             'landmark_directions' => $row['landmark_directions'],
             'plus_code' => $row['plus_code'],
-            'latitude' => $row['latitude'] !== null ? (float)$row['latitude'] : null,
-            'longitude' => $row['longitude'] !== null ? (float)$row['longitude'] : null,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'coords_fuzzed' => $coordsFuzzed,
             'google_maps_url' => $row['google_maps_url'],
             'distance_km' => $distanceKm,
             'hours_status' => $hoursStatus,
             // Dignified boolean cue only (#315): raw engagement_score / reference_count_90d are never exposed publicly
             'momentum_badge' => EngagementRanker::resolveMomentumBadge($row, $momentumCtx),
             'photos' => PhotoUploader::decodePhotosJson(isset($row['photos_json']) ? (string)$row['photos_json'] : null),
-            'phone_primary' => $row['phone_primary'],
-            'whatsapp_number' => $row['whatsapp_number'],
+            'phone_primary' => $phonePrimary,
+            'whatsapp_number' => $whatsappNumber,
+            'phone_obfuscated' => $phoneObfuscated,
             'email_public' => $row['email_public'],
             'website_url' => $row['website_url'],
             'booking_enabled' => (bool)$row['booking_enabled'],
