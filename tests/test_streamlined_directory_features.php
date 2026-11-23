@@ -526,6 +526,42 @@ $pdo->prepare("DELETE FROM rate_limits WHERE ip_hmac = :h")->execute([':h' => $t
 putenv('APP_ENV=testing');
 
 $swContent439 = (string)file_get_contents(dirname(__DIR__) . '/public/sw.js');
-testAssert(str_contains($swContent439, "const CACHE_VERSION = 'bbiz-pwa-v0.40.14'"), 'sw.js has CACHE_VERSION v0.40.14 (#439)');
+testAssert(str_contains($swContent439, "const CACHE_VERSION = 'bbiz-pwa-v" . bbiz_app_version() . "'"), 'sw.js CACHE_VERSION is aligned with bbiz_app_version (#439)');
+
+// 23. Check BB-SEC-02 Rate Limiting on Enrichment & Map Proxies (#440)
+$enrichSrc = (string)file_get_contents(dirname(__DIR__) . '/public/api/enrich-website.php');
+testAssert(str_contains($enrichSrc, 'AntiSpamGate::checkAndRecordRateLimit'), 'enrich-website.php applies AntiSpamGate rate limiting (#440)');
+testAssert(str_contains($enrichSrc, 'WebsiteEnricher::fetchAndExtract'), 'enrich-website.php invokes WebsiteEnricher::fetchAndExtract (#440)');
+
+$directionsSrc = (string)file_get_contents(dirname(__DIR__) . '/public/api/route-directions.php');
+testAssert(str_contains($directionsSrc, 'AntiSpamGate::checkAndRecordRateLimit'), 'route-directions.php applies AntiSpamGate rate limiting (#440)');
+
+$geocodeSrc = (string)file_get_contents(dirname(__DIR__) . '/public/api/geocode.php');
+testAssert(str_contains($geocodeSrc, 'AntiSpamGate::checkAndRecordRateLimit'), 'geocode.php applies AntiSpamGate rate limiting (#440)');
+
+// Test enrich-website.php rate limit triggering via subprocess
+$runEnrichTest = static function (string $ip, string $url): array {
+    $runner = sprintf(
+        '$_SERVER["REQUEST_METHOD"]="POST"; $_SERVER["REMOTE_ADDR"]=%s; $_POST=["url"=>%s]; require %s;',
+        var_export($ip, true),
+        var_export($url, true),
+        var_export(dirname(__DIR__) . '/public/api/enrich-website.php', true)
+    );
+    $raw = (string)shell_exec('php -r ' . escapeshellarg($runner));
+    $dec = json_decode($raw, true);
+    return is_array($dec) ? $dec : ['raw' => $raw];
+};
+
+$testEnrichHmacIp = \BusherianBiasharas\Services\AntiSpamGate::pseudonymizeIp('198.51.100.88');
+$enrichNow = time();
+for ($i = 0; $i < 10; $i++) {
+    $pdo->prepare("INSERT INTO rate_limits (ip_hmac, action_type, created_at) VALUES (:h, 'autofill_url', :ts)")
+        ->execute([':h' => $testEnrichHmacIp, ':ts' => $enrichNow - ($i * 5)]);
+}
+
+$enrichRes = $runEnrichTest('198.51.100.88', 'https://example.com');
+testAssert(str_contains(($enrichRes['error'] ?? ''), 'Rate limit exceeded'), 'enrich-website.php blocks requests when autofill_url rate limit is reached (#440)');
+
+$pdo->prepare("DELETE FROM rate_limits WHERE ip_hmac = :h")->execute([':h' => $testEnrichHmacIp]);
 
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
