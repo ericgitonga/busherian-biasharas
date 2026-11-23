@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.3] - 2026-11-23
+### Changed
+- **Blank School Initials Banner in Lieu of Photos for Equal Height & Placement (#423)**:
+  - Added smart business initials extractor `getBusinessInitials(name)` in `public/assets/js/directory.js` generating crisp, intuitive initials from business names.
+  - Implemented school-branded blank hero banner (`.card-initials-banner`) in lieu of photographs when a business lacks photos, ensuring no listing is favored or disadvantaged based on photo presence.
+  - Applied school-specific banner colors: Alliance High School Blue (`#2E3192`, `.banner-ahs`) for AHS, Alliance Girls High School Green (`#1E5E2A`, `.banner-aghs`) for AGHS, and dual gradient for joint listings (`.banner-both`).
+  - Standardized directory layout to a unified `business-grid` where all businesses maintain their natural ranking and search relevance without separating or elevating photo listings over text listings.
+  - Enforced full height stretch (`height: 100%`) on `.biz-card` with bottom-pinned action buttons (`margin-top: auto`), ensuring identical card height and placement across all grid columns.
+  - Added unit regression test coverage in `tests/test_streamlined_directory_features.php` (Test 16).
+  - Bumped PWA cache to `bbiz-pwa-v0.40.3` in `public/sw.js` and updated `VERSION` to `0.40.3`.
+
 ## [0.40.2] - 2026-11-22
 ### Changed
 - **Preview Sample Photographs Isolation (Never Push to Production) (#422)**:

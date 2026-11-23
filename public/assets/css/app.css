@@ -2050,6 +2050,8 @@ a {
   box-shadow: 0 2px 6px rgba(17, 75, 62, 0.04);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .biz-card:hover {
@@ -2150,6 +2152,49 @@ a {
 
 .biz-card:hover .card-hero-img {
   transform: scale(1.025);
+}
+
+/* Card Blank Initials Banner in Lieu of Photos (#423) */
+.card-initials-banner {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+}
+
+.biz-card:hover .card-initials-banner {
+  transform: scale(1.025);
+}
+
+.card-initials-banner.banner-ahs {
+  background: #2E3192;
+  background: linear-gradient(135deg, #2E3192 0%, #1c1f73 100%);
+  color: #FFFFFF;
+}
+
+.card-initials-banner.banner-aghs {
+  background: #1E5E2A;
+  background: linear-gradient(135deg, #1E5E2A 0%, #13421d 100%);
+  color: #FFFFFF;
+}
+
+.card-initials-banner.banner-both {
+  background: linear-gradient(135deg, #2E3192 0%, #1E5E2A 100%);
+  color: #FFFFFF;
+}
+
+.card-initials-text {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 2.25rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #FFFFFF;
+  line-height: 1;
+  text-transform: uppercase;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  user-select: none;
 }
 
 /* Card Photo Carousel Navigation Chevrons */
