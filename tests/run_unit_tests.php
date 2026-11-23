@@ -862,11 +862,11 @@ $adminIndexPaginated = (string)file_get_contents(dirname(__DIR__) . '/public/adm
 $publicIndexPaginated = (string)file_get_contents(dirname(__DIR__) . '/public/index.php');
 $directoryJsPaginated = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
 assertTrue(
-    str_contains($adminIndexPaginated, '$allowedPerPage = [10, 25, 50, 100]') &&
+    str_contains($adminIndexPaginated, '$allowedPerPage = [25, 50, 100]') &&
     str_contains($adminIndexPaginated, 'id="admin-per-page"') &&
     str_contains($adminIndexPaginated, 'id="admin-pagination"') &&
     str_contains($adminIndexPaginated, '$pagedBusinesses = array_slice($allBusinesses, $pageOffset, $perPage)'),
-    'public/admin/index.php paginates business records to 10/25/50/100 defaulting to 10 (#143)'
+    'public/admin/index.php paginates business records to 25/50/100 defaulting to 25 (#143, #425)'
 );
 assertTrue(
     str_contains($publicIndexPaginated, 'id="per-page-select"') &&
@@ -3328,6 +3328,46 @@ assertTrue(
     $formBlocked236 === true &&
     $headerAfterLockout236 === false,
     'AdminAuth enforces rate limiting on HTTP_X_ADMIN_TOKEN, rejects human passwords in header auth, and disables header token in production by default (#236)'
+);
+
+// 44a-2. (#424): Admin 30-day persistent 'Remember Me' session cookie
+AdminAuth::logout();
+AdminAuth::establishAdminSession($pdo, true);
+$remCookie424 = $_COOKIE[AdminAuth::REMEMBER_ME_COOKIE] ?? '';
+$parts424 = explode('.', (string)$remCookie424);
+$cookieIssued424 = count($parts424) === 3 && (int)$parts424[1] > time() + 86400 * 25;
+
+// Simulate browser restart by clearing $_SESSION
+$_SESSION = [];
+$authRestored424 = AdminAuth::isAuthenticated($pdo);
+$sessionRebuilt424 = !empty($_SESSION['bbiz_admin_auth']) && !empty($_SESSION['bbiz_admin_remember']);
+
+// Tampered signature must fail closed and clear cookie
+$_SESSION = [];
+$_COOKIE[AdminAuth::REMEMBER_ME_COOKIE] = $parts424[0] . '.' . $parts424[1] . '.tampered_invalid_signature_hex';
+$tamperRejected424 = (AdminAuth::isAuthenticated($pdo) === false);
+$tamperCleared424 = empty($_COOKIE[AdminAuth::REMEMBER_ME_COOKIE]);
+
+// Server revocation invalidates remember cookie
+AdminAuth::establishAdminSession($pdo, true);
+AdminAuth::revokeAllAdminSessions($pdo);
+$_SESSION = [];
+$revocationRejected424 = (AdminAuth::isAuthenticated($pdo) === false);
+
+// Logout clears remember cookie
+AdminAuth::establishAdminSession($pdo, true);
+AdminAuth::logout();
+$logoutCleared424 = empty($_COOKIE[AdminAuth::REMEMBER_ME_COOKIE]) && empty($_SESSION);
+
+assertTrue(
+    $cookieIssued424 &&
+    $authRestored424 &&
+    $sessionRebuilt424 &&
+    $tamperRejected424 &&
+    $tamperCleared424 &&
+    $revocationRejected424 &&
+    $logoutCleared424,
+    'AdminAuth persistent 30-day Remember Me cookie restores session across restarts, rejects tampered signatures, and invalidates on revocation & logout (#424)'
 );
 
 // 44b. H-02 (#237): email_public alone never grants owner auto-quarantine authority; confirmOwnerTakedownByToken re-verifies ownership

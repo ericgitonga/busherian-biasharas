@@ -31,7 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logou
         $loginError = 'Invalid or expired security token (CSRF).';
     } else {
         $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
-        $res = AdminAuth::login($pdo, trim((string)$_POST['admin_token']), $ip);
+        $rememberMe = !empty($_POST['remember_me']);
+        $res = AdminAuth::login($pdo, trim((string)$_POST['admin_token']), $ip, $rememberMe);
         if ($res['ok']) {
             if (!headers_sent()) {
                 header('Location: /admin/index.php');
@@ -111,6 +112,12 @@ $tokens = AntiSpamGate::generateFormTokens();
         <div style="margin-bottom:1rem;">
           <label for="admin_token" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.35rem;">Admin Password / Access Token *</label>
           <input type="password" id="admin_token" name="admin_token" class="input-control" required autocomplete="current-password">
+        </div>
+        <div style="margin-bottom:1.25rem;display:flex;align-items:center;gap:0.5rem;">
+          <input type="checkbox" id="admin_remember_me" name="remember_me" value="1" data-testid="admin-remember-me-checkbox" style="width:16px;height:16px;accent-color:#7B1113;" checked>
+          <label for="admin_remember_me" style="font-size:0.85rem;color:#374151;cursor:pointer;user-select:none;">
+            Remember me on this machine for 30 days
+          </label>
         </div>
         <button type="submit" class="btn btn-crimson" style="width:100%;">Unlock Admin Queue &rarr;</button>
       </form>

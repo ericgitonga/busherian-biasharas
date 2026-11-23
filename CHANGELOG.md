@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.7] - 2026-11-23
+
+### Added
+- **30-Day Persistent Admin Session on Device (#424)**:
+  - Added a "Remember me on this machine for 30 days" checkbox on the Admin Sign In screen (`public/admin/login.php`, `data-testid="admin-remember-me-checkbox"`).
+  - Implemented secure HMAC-SHA256 bound persistent cookie authentication in `src/Services/AdminAuth.php` (`bbiz_admin_remember`), restoring admin sessions seamlessly across browser restarts without re-entering credentials for 30 days.
+  - Hardened cookie validation against credential rotation, session revocation, and signature tampering.
+
+### Changed
+- **Admin Console Default 25 Items with 50/100 Splits (#425)**:
+  - Updated admin record management pagination (`public/admin/index.php`) to display 25 business items by default (up from 10).
+  - Updated per-page selector splits to `[25, 50, 100]`.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.7` in `public/sw.js`.
+
 ## [0.40.6] - 2026-11-23
 
 ### Added
