@@ -179,6 +179,44 @@
     }
   }
 
+  // Business initials extractor for blank school hero banner (#423)
+  function getBusinessInitials(name) {
+    if (!name || typeof name !== 'string') return 'BB';
+    const clean = name.trim();
+    if (!clean) return 'BB';
+
+    // Handle camelCase or PascalCase in single words (e.g. "SasaSignal" -> "Sasa Signal")
+    const spaced = clean.replace(/([a-z])([A-Z])/g, '$1 $2');
+    const words = spaced.split(/[\s\-–—/]+/).filter(w => {
+      const alphanumeric = w.replace(/[^a-zA-Z0-9]/g, '');
+      return alphanumeric.length > 0;
+    });
+
+    if (words.length === 0) return 'BB';
+
+    // Filter out leading article "The" if multiple words exist (e.g. "The Last Village Lodge" -> LVL)
+    let significantWords = words;
+    if (significantWords.length > 1 && /^the$/i.test(significantWords[0])) {
+      significantWords = significantWords.slice(1);
+    }
+
+    if (significantWords.length >= 2) {
+      const count = significantWords.length === 2 ? 2 : Math.min(significantWords.length, 3);
+      const initials = significantWords.slice(0, count).map(w => {
+        const match = w.match(/[a-zA-Z0-9]/);
+        return match ? match[0].toUpperCase() : '';
+      }).join('');
+      return initials || 'BB';
+    }
+
+    // Single word: take up to first 2 characters
+    const single = significantWords[0].replace(/[^a-zA-Z0-9]/g, '');
+    if (single.length >= 2) {
+      return single.slice(0, 2).toUpperCase();
+    }
+    return (single || 'BB').toUpperCase();
+  }
+
   function getTodayEatIsoDate() {
     try {
       return new Intl.DateTimeFormat('en-CA', {
@@ -694,9 +732,13 @@
         ? `<div class="card-adjacency-reason" data-testid="card-adjacency-reason" style="background:#F0FDF4;border-left-color:#059669;color:#065F46;">🎯 <strong>Match Context:</strong> ${escapeHtml(biz.tailored_reason || opts.tailoredReason)}</div>`
         : '');
 
-    // Photographs on cards
+    // Photographs on cards or Blank School Initials Banner in lieu of photos (#423)
     const photos = Array.isArray(biz.photos) ? biz.photos.filter(p => typeof p === 'string' && p.trim() !== '') : [];
-    const cardPhotosHtml = photos.length > 0 ? `
+    const schoolRaw = (biz.school_badge || 'AHS').toUpperCase();
+    const bannerSchoolCls = schoolRaw === 'AGHS' ? 'banner-aghs' : (schoolRaw === 'BOTH' ? 'banner-both' : 'banner-ahs');
+    const initials = getBusinessInitials(biz.name);
+
+    const cardHeroHtml = photos.length > 0 ? `
       <div class="card-photo-hero" data-testid="biz-card-photo-hero" data-biz-id="${biz.id}" data-biz-name="${escapeHtml(biz.name)}" data-card-photos='${escapeHtml(JSON.stringify(photos))}' data-active-index="0">
         <div class="card-photo-stage" role="button" tabindex="0" aria-label="View ${escapeHtml(biz.name)} details and photos" onclick="openBusinessModal(${biz.id})">
           <img class="card-hero-img" src="${escapeHtml(photos[0])}" alt="${escapeHtml(biz.name)} photo 1" loading="lazy">
@@ -716,7 +758,11 @@
           `}
         </div>
       </div>
-    ` : '';
+    ` : `
+      <div class="card-photo-hero card-initials-banner ${bannerSchoolCls}" data-testid="biz-card-initials-banner" role="button" tabindex="0" aria-label="View ${escapeHtml(biz.name)} details" onclick="openBusinessModal(${biz.id})">
+        <span class="card-initials-text" data-testid="biz-card-initials-text">${escapeHtml(initials)}</span>
+      </div>
+    `;
 
     return `
       <article class="${cardClasses}" data-testid="biz-card" data-biz-id="${biz.id}" data-biz-slug="${escapeHtml(biz.slug)}" data-open-biz-source="${openSource}">
@@ -733,7 +779,7 @@
           </button>
         </div>
 
-        ${cardPhotosHtml}
+        ${cardHeroHtml}
 
         <!-- 1. Company Name -->
         <h2 class="company-name" data-testid="biz-card-title" onclick="openBusinessModal(${biz.id})">${escapeHtml(biz.name)}</h2>
@@ -945,36 +991,8 @@
       return;
     }
 
-    const photoBusinesses = [];
-    const textBusinesses = [];
-
-    for (const biz of pagedBusinesses) {
-      const hasPhotos = Array.isArray(biz.photos) && biz.photos.some(p => typeof p === 'string' && p.trim() !== '');
-      if (hasPhotos) {
-        photoBusinesses.push(biz);
-      } else {
-        textBusinesses.push(biz);
-      }
-    }
-
-    let groupsHtml = '';
-    if (photoBusinesses.length > 0) {
-      groupsHtml += `
-        <div class="cards-group cards-photo-group business-grid" data-testid="cards-photo-group">
-          ${photoBusinesses.map(biz => renderSingleBusinessCard(biz)).join('')}
-        </div>
-      `;
-    }
-    if (textBusinesses.length > 0) {
-      groupsHtml += `
-        <div class="cards-group cards-text-group business-grid" data-testid="cards-text-group">
-          ${textBusinesses.map(biz => renderSingleBusinessCard(biz)).join('')}
-        </div>
-      `;
-    }
-
-    els.cardsGrid.classList.add('cards-grid-grouped');
-    els.cardsGrid.innerHTML = groupsHtml;
+    els.cardsGrid.classList.remove('cards-grid-grouped');
+    els.cardsGrid.innerHTML = pagedBusinesses.map(biz => renderSingleBusinessCard(biz)).join('');
 
     renderPaginationControls(totalItems, state.currentPage, totalPages, startIdx, endIdx);
   }
@@ -1123,35 +1141,15 @@
       </div>
     `;
 
-    // Helper to render grouped concierge cards (#420)
-    function renderConciergeCardsGrouped(matches, isEcosystem) {
-      const photoMatches = [];
-      const textMatches = [];
-      for (const b of matches) {
-        const hasPhotos = Array.isArray(b.photos) && b.photos.some(p => typeof p === 'string' && p.trim() !== '');
-        if (hasPhotos) {
-          photoMatches.push(b);
-        } else {
-          textMatches.push(b);
-        }
-      }
-      let out = '';
+    // Helper to render concierge cards in unified grid (#423)
+    function renderConciergeCards(matches, isEcosystem) {
+      if (!matches || matches.length === 0) return '';
       const tierPrefix = isEcosystem ? 'ecosystem' : 'direct';
-      if (photoMatches.length > 0) {
-        out += `
-          <div class="cards-group cards-photo-group business-grid" data-testid="concierge-${tierPrefix}-photo-group">
-            ${photoMatches.map(b => renderSingleBusinessCard(b, { isConcierge: true, isEcosystem })).join('')}
-          </div>
-        `;
-      }
-      if (textMatches.length > 0) {
-        out += `
-          <div class="cards-group cards-text-group business-grid" data-testid="concierge-${tierPrefix}-text-group">
-            ${textMatches.map(b => renderSingleBusinessCard(b, { isConcierge: true, isEcosystem })).join('')}
-          </div>
-        `;
-      }
-      return out;
+      return `
+        <div class="cards-group concierge-${tierPrefix}-group business-grid" data-testid="concierge-${tierPrefix}-grid">
+          ${matches.map(b => renderSingleBusinessCard(b, { isConcierge: true, isEcosystem })).join('')}
+        </div>
+      `;
     }
 
     // 2. Direct Matches
@@ -1164,7 +1162,7 @@
           <p style="margin:0 0 0.6rem 0;font-size:0.8rem;color:#6B7280;">Verified alumni biasharas matching your immediate search specialty.</p>
         </div>
       `;
-      html += renderConciergeCardsGrouped(directMatches, false);
+      html += renderConciergeCards(directMatches, false);
     }
 
     // 3. Smart Ecosystem Suggestions
@@ -1177,7 +1175,7 @@
           <p style="margin:0 0 0.6rem 0;font-size:0.8rem;color:#6B7280;">Complementary partners (upstream prerequisites, downstream execution, companion services) across your business journey.</p>
         </div>
       `;
-      html += renderConciergeCardsGrouped(ecosystemMatches, true);
+      html += renderConciergeCards(ecosystemMatches, true);
     }
 
     if (directMatches.length === 0 && ecosystemMatches.length === 0) {
