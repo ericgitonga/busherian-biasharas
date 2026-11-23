@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.15] - 2026-11-23
+
+### Security & Hardening
+- **Apply Token-Bucket Rate Limiter to Public Website Enrichment and Map Proxy Endpoints (#440, Parent #438)**:
+  - Applied token-bucket rate limiting (`AntiSpamGate::checkAndRecordRateLimit`, 10 req / 15m, 30 / 24h, 60 / 1h) to `public/api/enrich-website.php` aligned with `public/api/autofill-url.php`.
+  - Maintained strict token-bucket rate limiting on map proxy and routing endpoints (`public/api/route-directions.php`, `public/api/geocode.php`).
+  - Verified 5-second fetch timeouts, 2 MB payload caps, and SSRF private IP validation across all redirects.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.15`.
+
 ## [0.40.14] - 2026-11-23
 
 ### Security & Hardening
