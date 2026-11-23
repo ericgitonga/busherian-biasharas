@@ -6,6 +6,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.5] - 2026-11-23
+### Changed
+- **School Banner Color Harmony with Badge Tints & Typography (#425)**:
+  - Aligned blank initial banner backgrounds to the exact pastel tints of the school badges: `#EEF0FA` for AHS and `#EBF5ED` for AGHS, with matching subtle borders.
+  - Set bold initials typography in school brand colors: `#2E3192` for AHS and `#1E5E2A` for AGHS.
+  - Bumped PWA cache to `bbiz-pwa-v0.40.5` in `public/sw.js` and updated `VERSION` to `0.40.5`.
+
+## [0.40.4] - 2026-11-23
+### Added
+- **Interactive Column Header Sort Controls in Admin Console (#424)**:
+  - Added clickable sort arrows (▲ ascending / ▼ descending) to table column headers in `public/admin/index.php` ("2. Manage Existing Business Records").
+  - Enabled multi-column sorting by Business Name (`b.name`), Record Number (`b.business_number`), Category (`sec.name, spec.name`), Location (`b.city_county, b.area_neighborhood`), and Status (`b.status`).
+  - Active sort column and direction are visually highlighted in dark forest green (`#114B3E`), with inactive arrows in muted grey (`#9CA3AF`).
+  - Seamlessly preserved search filter (`q`), status filter (`status`), records per page (`per_page`), and pagination query state during sorting.
+  - Aligned school initial banner colors to exact AHS Blue (`#2E3192`) and AGHS Green (`#1E5E2A`) badge shades in `public/assets/css/app.css`.
+  - Added unit regression test coverage in `tests/test_streamlined_directory_features.php` (Test 18).
+  - Bumped PWA cache to `bbiz-pwa-v0.40.4` in `public/sw.js` and updated `VERSION` to `0.40.4`.
+
+## [0.40.3] - 2026-11-23
+### Changed
+- **Blank School Initials Banner in Lieu of Photos for Equal Height & Placement (#423)**:
+  - Added smart business initials extractor `getBusinessInitials(name)` in `public/assets/js/directory.js` generating crisp, intuitive initials from business names.
+  - Implemented school-branded blank hero banner (`.card-initials-banner`) in lieu of photographs when a business lacks photos, ensuring no listing is favored or disadvantaged based on photo presence.
+  - Applied school-specific banner colors: Alliance High School Blue (`#2E3192`, `.banner-ahs`) for AHS, Alliance Girls High School Green (`#1E5E2A`, `.banner-aghs`) for AGHS, and dual gradient for joint listings (`.banner-both`).
+  - Standardized directory layout to a unified `business-grid` where all businesses maintain their natural ranking and search relevance without separating or elevating photo listings over text listings.
+  - Enforced full height stretch (`height: 100%`) on `.biz-card` with bottom-pinned action buttons (`margin-top: auto`), ensuring identical card height and placement across all grid columns.
+  - Added unit regression test coverage in `tests/test_streamlined_directory_features.php` (Test 16).
+  - Bumped PWA cache to `bbiz-pwa-v0.40.3` in `public/sw.js` and updated `VERSION` to `0.40.3`.
+
 ## [0.40.2] - 2026-11-22
 ### Changed
 - **Preview Sample Photographs Isolation (Never Push to Production) (#422)**:

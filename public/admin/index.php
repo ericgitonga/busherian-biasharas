@@ -142,6 +142,22 @@ $pendingRows = $pendingStmt->fetchAll();
 $searchQ = trim((string)($_GET['q'] ?? ''));
 $statusFilter = trim((string)($_GET['status'] ?? ''));
 
+$allowedSortCols = [
+    'number'   => 'b.business_number',
+    'name'     => 'b.name',
+    'category' => 'sec.name, spec.name',
+    'location' => 'b.city_county, b.area_neighborhood',
+    'status'   => 'b.status',
+];
+$sortCol = trim((string)($_GET['sort'] ?? 'number'));
+if (!array_key_exists($sortCol, $allowedSortCols)) {
+    $sortCol = 'number';
+}
+$sortDir = strtolower(trim((string)($_GET['dir'] ?? $_GET['order'] ?? 'asc')));
+if ($sortDir !== 'desc') {
+    $sortDir = 'asc';
+}
+
 $allSql = "
     SELECT
         b.id, b.business_id, b.business_number, b.name, b.slug, b.tagline, b.school_badge, b.status,
@@ -168,7 +184,15 @@ if ($statusFilter === 'unmapped_category') {
     $allSql .= " AND b.status = :st";
     $allParams[':st'] = $statusFilter;
 }
-$allSql .= " ORDER BY b.business_number ASC, b.id ASC";
+
+$orderSql = match ($sortCol) {
+    'name'     => "LOWER(b.name) " . strtoupper($sortDir) . ", b.business_number ASC",
+    'category' => "sec.name " . strtoupper($sortDir) . ", spec.name " . strtoupper($sortDir) . ", b.name ASC",
+    'location' => "b.city_county " . strtoupper($sortDir) . ", b.area_neighborhood " . strtoupper($sortDir) . ", b.name ASC",
+    'status'   => "b.status " . strtoupper($sortDir) . ", b.business_number ASC",
+    default    => "b.business_number " . strtoupper($sortDir) . ", b.id ASC",
+};
+$allSql .= " ORDER BY " . $orderSql;
 $allStmt = $pdo->prepare($allSql);
 $allStmt->execute($allParams);
 $allBusinesses = $allStmt->fetchAll();
@@ -535,7 +559,7 @@ try {
       $showingFrom = $totalMatchingBusinesses === 0 ? 0 : ($pageOffset + 1);
       $showingTo = min($totalMatchingBusinesses, $pageOffset + count($pagedBusinesses));
 
-      $buildAdminPageUrl = static function (int $targetPage) use ($searchQ, $statusFilter, $perPage): string {
+      $buildAdminPageUrl = static function (int $targetPage) use ($searchQ, $statusFilter, $perPage, $sortCol, $sortDir): string {
           $qp = ['per_page' => $perPage, 'page' => $targetPage];
           if ($searchQ !== '') {
               $qp['q'] = $searchQ;
@@ -543,7 +567,51 @@ try {
           if ($statusFilter !== '') {
               $qp['status'] = $statusFilter;
           }
+          if ($sortCol !== 'number' || $sortDir !== 'asc') {
+              $qp['sort'] = $sortCol;
+              $qp['dir'] = $sortDir;
+          }
           return '/admin/index.php?' . http_build_query($qp) . '#manage-businesses';
+      };
+
+      $buildSortUrl = static function (string $col, string $dir) use ($searchQ, $statusFilter, $perPage): string {
+          $qp = ['per_page' => $perPage, 'page' => 1, 'sort' => $col, 'dir' => $dir];
+          if ($searchQ !== '') {
+              $qp['q'] = $searchQ;
+          }
+          if ($statusFilter !== '') {
+              $qp['status'] = $statusFilter;
+          }
+          return '/admin/index.php?' . http_build_query($qp) . '#manage-businesses';
+      };
+
+      $renderSortHeader = static function (string $col, string $label, string $align = 'left') use ($sortCol, $sortDir, $buildSortUrl): void {
+          $isSorted = ($sortCol === $col);
+          $ascActive = $isSorted && $sortDir === 'asc';
+          $descActive = $isSorted && $sortDir === 'desc';
+          ?>
+          <th style="padding:0.75rem 1rem;text-align:<?= $align ?>;white-space:nowrap;">
+            <div style="display:inline-flex;align-items:center;gap:0.45rem;<?= $align === 'right' ? 'justify-content:flex-end;' : '' ?>">
+              <span><?= $label ?></span>
+              <span style="display:inline-flex;flex-direction:column;gap:1px;vertical-align:middle;line-height:1;" aria-label="Sort by <?= htmlspecialchars(strip_tags($label), ENT_QUOTES, 'UTF-8') ?>">
+                <a href="<?= $buildSortUrl($col, 'asc') ?>" 
+                   title="Sort <?= htmlspecialchars(strip_tags($label), ENT_QUOTES, 'UTF-8') ?> ascending"
+                   aria-label="Sort <?= htmlspecialchars(strip_tags($label), ENT_QUOTES, 'UTF-8') ?> ascending"
+                   data-testid="sort-<?= $col ?>-asc"
+                   style="color:<?= $ascActive ? '#114B3E' : '#9CA3AF' ?>;font-size:0.7rem;text-decoration:none;display:block;line-height:0.7;padding:1px 2px;font-weight:<?= $ascActive ? '900' : 'normal' ?>;"
+                   onmouseover="this.style.color='#114B3E'"
+                   onmouseout="this.style.color='<?= $ascActive ? '#114B3E' : '#9CA3AF' ?>'">&#9650;</a>
+                <a href="<?= $buildSortUrl($col, 'desc') ?>" 
+                   title="Sort <?= htmlspecialchars(strip_tags($label), ENT_QUOTES, 'UTF-8') ?> descending"
+                   aria-label="Sort <?= htmlspecialchars(strip_tags($label), ENT_QUOTES, 'UTF-8') ?> descending"
+                   data-testid="sort-<?= $col ?>-desc"
+                   style="color:<?= $descActive ? '#114B3E' : '#9CA3AF' ?>;font-size:0.7rem;text-decoration:none;display:block;line-height:0.7;padding:1px 2px;font-weight:<?= $descActive ? '900' : 'normal' ?>;"
+                   onmouseover="this.style.color='#114B3E'"
+                   onmouseout="this.style.color='<?= $descActive ? '#114B3E' : '#9CA3AF' ?>'">&#9660;</a>
+              </span>
+            </div>
+          </th>
+          <?php
       };
     ?>
     <section id="manage-businesses">
@@ -555,6 +623,10 @@ try {
           </div>
         </div>
         <form method="GET" action="/admin/index.php#manage-businesses" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+          <?php if ($sortCol !== 'number' || $sortDir !== 'asc'): ?>
+            <input type="hidden" name="sort" value="<?= htmlspecialchars($sortCol, ENT_QUOTES, 'UTF-8') ?>">
+            <input type="hidden" name="dir" value="<?= htmlspecialchars($sortDir, ENT_QUOTES, 'UTF-8') ?>">
+          <?php endif; ?>
           <input type="search" name="q" value="<?= htmlspecialchars($searchQ, ENT_QUOTES, 'UTF-8') ?>" class="input-control" style="width:230px;" placeholder="Filter by name, URL, or city...">
           <select name="status" class="select-control" style="width:auto;">
             <option value="">All Statuses</option>
@@ -580,11 +652,11 @@ try {
         <table style="width:100%;border-collapse:collapse;font-size:0.86rem;">
           <thead>
             <tr style="background:#F9FAFB;border-bottom:1px solid #E5E7EB;text-align:left;">
-              <th style="padding:0.75rem 1rem;">No. / Unique ID</th>
-              <th style="padding:0.75rem 1rem;">Business Name &amp; Website</th>
-              <th style="padding:0.75rem 1rem;">Category (Level 1 &rarr; Level 2)</th>
-              <th style="padding:0.75rem 1rem;">Location</th>
-              <th style="padding:0.75rem 1rem;">Status</th>
+              <?php $renderSortHeader('number', 'No. / Unique ID'); ?>
+              <?php $renderSortHeader('name', 'Business Name &amp; Website'); ?>
+              <?php $renderSortHeader('category', 'Category (Level 1 &rarr; Level 2)'); ?>
+              <?php $renderSortHeader('location', 'Location'); ?>
+              <?php $renderSortHeader('status', 'Status'); ?>
               <th style="padding:0.75rem 1rem;text-align:right;">Actions (Edit / Takedown / Delete)</th>
             </tr>
           </thead>

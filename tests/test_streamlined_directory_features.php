@@ -250,15 +250,24 @@ testAssert(str_contains($cssSrc, 'overflow-x: hidden'), 'app.css defines overflo
 testAssert(str_contains($cssSrc, 'grid-template-columns: 100% !important'), 'app.css defines 100% width grid columns for business-grid on mobile');
 testAssert(str_contains($cssSrc, 'align-items: stretch !important'), 'app.css defines align-items: stretch for directory-layout-wrapper on mobile');
 
-// 16. Check Directory Card Alignment by Photo Presence (#420)
-testAssert(str_contains($jsSrc, 'data-testid="cards-photo-group"'), 'directory.js defines cards-photo-group for listings with photos');
-testAssert(str_contains($jsSrc, 'data-testid="cards-text-group"'), 'directory.js defines cards-text-group for listings without photos');
-testAssert(str_contains($jsSrc, 'cards-grid-grouped'), 'directory.js manages cards-grid-grouped class on container');
-testAssert(str_contains($cssSrc, '.cards-group'), 'app.css defines .cards-group spanning full grid width');
-testAssert(str_contains($cssSrc, '#cards-grid:has(.cards-group)'), 'app.css defines #cards-grid:has(.cards-group) vertical flex isolation');
-testAssert(str_contains($cssSrc, '.cards-photo-group + .cards-text-group'), 'app.css defines spacing between photo and text card groups');
+// 16. Check Blank School Initials Banner in Lieu of Photos for Equal Height & Placement (#423)
+testAssert(str_contains($jsSrc, 'getBusinessInitials'), 'directory.js defines getBusinessInitials extractor');
+testAssert(str_contains($jsSrc, 'data-testid="biz-card-initials-banner"'), 'directory.js renders data-testid="biz-card-initials-banner" in lieu of photos');
+testAssert(str_contains($jsSrc, 'data-testid="biz-card-initials-text"'), 'directory.js renders data-testid="biz-card-initials-text"');
+testAssert(str_contains($jsSrc, 'banner-ahs') && str_contains($jsSrc, 'banner-aghs'), 'directory.js assigns school banner classes');
+testAssert(str_contains($cssSrc, '.card-initials-banner'), 'app.css defines .card-initials-banner styling');
+testAssert(str_contains($cssSrc, '.card-initials-banner.banner-ahs') && str_contains($cssSrc, '#2E3192'), 'app.css defines banner-ahs in AHS Blue (#2E3192)');
+testAssert(str_contains($cssSrc, '.card-initials-banner.banner-aghs') && str_contains($cssSrc, '#1E5E2A'), 'app.css defines banner-aghs in AGHS Green (#1E5E2A)');
+testAssert(str_contains($cssSrc, '.card-initials-text'), 'app.css defines .card-initials-text typography');
 
 // 17. Check Open Now/Closed Badges Removed from Cards (#421)
 testAssert(!str_contains($jsSrc, 'open-status-btn'), 'directory.js removes visual Open Now/Closed status badge from cards while preserving filter functionality');
+
+// 18. Check Admin Table Column Header Sort Arrows (#424)
+$adminIndexSrc = (string)file_get_contents(dirname(__DIR__) . '/public/admin/index.php');
+testAssert(str_contains($adminIndexSrc, '$allowedSortCols = ['), 'admin/index.php whitelists sortable columns');
+testAssert(str_contains($adminIndexSrc, 'data-testid="sort-<?= $col ?>-asc"') && str_contains($adminIndexSrc, 'data-testid="sort-<?= $col ?>-desc"'), 'admin/index.php renders top and bottom sort arrows');
+testAssert(str_contains($adminIndexSrc, "\$renderSortHeader('name'") && str_contains($adminIndexSrc, "\$renderSortHeader('number'"), 'admin/index.php renders sort controls for Business Name and other columns');
+testAssert(str_contains($adminIndexSrc, '$renderSortHeader = static function'), 'admin/index.php implements renderSortHeader component');
 
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
