@@ -369,11 +369,18 @@ final class PhotoUploader
         bool $removeLogo = false,
         ?array $uploadedFile = null,
         ?string $clientDataUrl = null,
-        int $stageBusinessId = 0
+        int $stageBusinessId = 0,
+        bool $deferDeletion = false,
+        ?string &$replacedLogoPath = null
     ): ?string {
+        $replacedLogoPath = null;
         if ($removeLogo) {
             if ($existingLogoPath !== null) {
-                self::deleteRemovedLogoFile($existingLogoPath);
+                if ($deferDeletion) {
+                    $replacedLogoPath = $existingLogoPath;
+                } else {
+                    self::deleteRemovedLogoFile($existingLogoPath);
+                }
             }
             return null;
         }
@@ -475,7 +482,11 @@ final class PhotoUploader
             if ($ok && is_file($fullPath)) {
                 @chmod($fullPath, 0644);
                 if ($existingLogoPath !== null) {
-                    self::deleteRemovedLogoFile($existingLogoPath);
+                    if ($deferDeletion) {
+                        $replacedLogoPath = $existingLogoPath;
+                    } else {
+                        self::deleteRemovedLogoFile($existingLogoPath);
+                    }
                 }
                 return '/uploads/logos/' . $filename;
             }
@@ -622,12 +633,91 @@ final class PhotoUploader
         return $restored;
     }
 
-    public static function deleteAllBusinessMedia(int $businessId, ?string $photosJson): int
+    /**
+     * Relocate public company logo file out of webroot into storage/quarantined_media/<businessId>/ (#442).
+     */
+    public static function quarantineBusinessLogo(int $businessId, ?string $logoPath): bool
+    {
+        if ($businessId <= 0 || $logoPath === null || trim($logoPath) === '') {
+            return false;
+        }
+        $srcPath = self::resolveSafeUploadFilePath($logoPath, true);
+        if ($srcPath === null || !self::isMutableUploadPath($srcPath)) {
+            return false;
+        }
+        $qDir = self::quarantineDirRoot() . '/' . $businessId;
+        if (!is_dir($qDir) && !@mkdir($qDir, 0750, true) && !is_dir($qDir)) {
+            throw new \RuntimeException("Failed to initialize quarantine media directory for business #{$businessId}.");
+        }
+        if (is_link($qDir) || !is_writable($qDir)) {
+            throw new \RuntimeException("Quarantine media directory is not writable for business #{$businessId}.");
+        }
+
+        $destPath = $qDir . '/' . basename($srcPath);
+        $movedOk = false;
+        if (@rename($srcPath, $destPath)) {
+            $movedOk = true;
+        } elseif (@copy($srcPath, $destPath) && @unlink($srcPath)) {
+            $movedOk = true;
+        }
+        if (!$movedOk || file_exists($srcPath) || !is_file($destPath)) {
+            throw new \RuntimeException("Failed to quarantine public logo file for business #{$businessId}.");
+        }
+        @chmod($destPath, 0640);
+        return true;
+    }
+
+    /**
+     * Restore quarantined company logo file from storage/quarantined_media/<businessId>/ back into webroot (#442).
+     */
+    public static function restoreQuarantinedBusinessLogo(int $businessId, ?string $logoPath): bool
+    {
+        if ($businessId <= 0 || $logoPath === null || trim($logoPath) === '') {
+            return false;
+        }
+        $destPath = self::resolveSafeUploadFilePath($logoPath, false);
+        if ($destPath === null || !self::isMutableUploadPath($destPath)) {
+            return false;
+        }
+        $qDir = self::quarantineDirRoot() . '/' . $businessId;
+        if (!is_dir($qDir)) {
+            return false;
+        }
+        $qFile = $qDir . '/' . basename($destPath);
+        if (!is_file($qFile) || is_link($qFile)) {
+            return false;
+        }
+        $parentDir = dirname($destPath);
+        if (!is_dir($parentDir) && !@mkdir($parentDir, 0775, true) && !is_dir($parentDir)) {
+            return false;
+        }
+        $restored = false;
+        if (@rename($qFile, $destPath)) {
+            @chmod($destPath, 0644);
+            $restored = true;
+        } elseif (@copy($qFile, $destPath) && @unlink($qFile)) {
+            @chmod($destPath, 0644);
+            $restored = true;
+        }
+        $remaining = @scandir($qDir);
+        if (is_array($remaining) && count(array_diff($remaining, ['.', '..'])) === 0) {
+            @rmdir($qDir);
+        }
+        return $restored;
+    }
+
+    public static function deleteAllBusinessMedia(int $businessId, ?string $photosJson, ?string $logoPath = null): int
     {
         $deleted = 0;
         foreach (self::decodePhotosJson($photosJson) as $url) {
             $safePath = self::resolveSafeUploadFilePath($url, true);
             if (self::isMutableUploadPath($safePath) && @unlink($safePath)) {
+                $deleted++;
+            }
+        }
+        if ($logoPath !== null && trim($logoPath) !== '') {
+            $logoSafe = self::resolveSafeUploadFilePath($logoPath, true);
+            if (self::isMutableUploadPath($logoSafe) && @unlink($logoSafe)) {
                 $deleted++;
             }
         }
@@ -649,11 +739,17 @@ final class PhotoUploader
         return $deleted;
     }
 
-    public static function hasRemainingBusinessMediaOnDisk(int $businessId, ?string $photosJson): bool
+    public static function hasRemainingBusinessMediaOnDisk(int $businessId, ?string $photosJson, ?string $logoPath = null): bool
     {
         foreach (self::decodePhotosJson($photosJson) as $url) {
             $safePath = self::resolveSafeUploadFilePath($url, true);
             if ($safePath !== null && is_file($safePath)) {
+                return true;
+            }
+        }
+        if ($logoPath !== null && trim($logoPath) !== '') {
+            $logoSafe = self::resolveSafeUploadFilePath($logoPath, true);
+            if ($logoSafe !== null && is_file($logoSafe)) {
                 return true;
             }
         }
