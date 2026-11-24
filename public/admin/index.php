@@ -788,7 +788,7 @@ try {
           <?php if ($currentPage > 1): ?>
             <a href="<?= htmlspecialchars($buildAdminPageUrl($currentPage - 1), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;">&larr; Prev</a>
           <?php else: ?>
-            <span class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;opacity:0.45;pointer-events:none;">&larr; Prev</a>
+            <span class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;opacity:0.45;pointer-events:none;">&larr; Prev</span>
           <?php endif; ?>
 
           <?php for ($p = 1; $p <= $totalPages; $p++):

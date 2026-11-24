@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.21] - 2026-11-24
+
+### Fixed
+- **Admin Console Pagination Next Navigation & Span Tag Closure**:
+  - Corrected unclosed `<span ...>&larr; Prev</a>` HTML syntax error to `</span>` on line 791 of `public/admin/index.php`.
+  - Resolved browser rendering bug where unclosed disabled span trapped subsequent pagination buttons (`1`, `2`, and `Next &rarr;`) inside `pointer-events: none` and `opacity: 0.45`, restoring clickability on `Next &rarr;` and subsequent page numbers.
+  - Added regression test asserting valid markup in `tests/run_unit_tests.php`.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.21`.
+
 ## [0.40.20] - 2026-11-23
 
 ### Fixed & Enhanced
