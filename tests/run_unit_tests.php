@@ -6102,6 +6102,80 @@ assertTrue(
     '66b (#413): form-enhancements.js script tags carry version cache buster and sw.js cache version is aligned'
 );
 
+// ==========================================
+// 67. Scheduled WebCron Endpoint & Automated Health (#458)
+// ==========================================
+$cronSecret67 = 'test_cron_secret_64_characters_hex_key_for_testing_0123456789abcdef';
+$runCronSubrequest = static function (array $serverEnv = [], array $getParams = []) use ($unitTempSqlite, $initialDriver): array {
+    $cliPrefix = $initialDriver === 'sqlite'
+        ? 'DB_DRIVER=sqlite DB_SQLITE_PATH=' . escapeshellarg($unitTempSqlite) . ' '
+        : '';
+    $runner = sprintf(
+        '$_SERVER["REQUEST_METHOD"]=%s; $_SERVER["REMOTE_ADDR"]=%s; '
+        . (isset($serverEnv['HTTP_AUTHORIZATION']) ? '$_SERVER["HTTP_AUTHORIZATION"]=' . var_export($serverEnv['HTTP_AUTHORIZATION'], true) . '; ' : '')
+        . (isset($serverEnv['HTTP_X_CRON_KEY']) ? '$_SERVER["HTTP_X_CRON_KEY"]=' . var_export($serverEnv['HTTP_X_CRON_KEY'], true) . '; ' : '')
+        . '$_GET=%s; require %s;',
+        var_export($serverEnv['REQUEST_METHOD'] ?? 'GET', true),
+        var_export($serverEnv['REMOTE_ADDR'] ?? '127.0.0.1', true),
+        var_export($getParams, true),
+        var_export(dirname(__DIR__) . '/public/api/cron.php', true)
+    );
+    $raw = (string)shell_exec($cliPrefix . 'CRON_SECRET=' . escapeshellarg($serverEnv['CRON_SECRET'] ?? '') . ' php -r ' . escapeshellarg($runner));
+    $dec = json_decode($raw, true);
+    return is_array($dec) ? $dec : ['status' => 'decode_err', 'raw' => $raw];
+};
+
+// 1. Unauthenticated request without token -> 401
+$cronNoAuth = $runCronSubrequest(['CRON_SECRET' => $cronSecret67]);
+assertTrue(
+    ($cronNoAuth['status'] ?? '') === 'error' && str_contains((string)($cronNoAuth['message'] ?? ''), 'Unauthorized'),
+    '67a (#458): /api/cron.php rejects requests without an authentication token'
+);
+
+// 2. Request with invalid token -> 401
+$cronBadAuth = $runCronSubrequest([
+    'CRON_SECRET' => $cronSecret67,
+    'HTTP_AUTHORIZATION' => 'Bearer wrong_token_value',
+]);
+assertTrue(
+    ($cronBadAuth['status'] ?? '') === 'error' && str_contains((string)($cronBadAuth['message'] ?? ''), 'Unauthorized'),
+    '67b (#458): /api/cron.php rejects requests with an invalid bearer token'
+);
+
+// 3. Valid authenticated request via Bearer token -> 200 ok with heartbeat & retention
+$cronValid = $runCronSubrequest([
+    'REQUEST_METHOD' => 'POST',
+    'CRON_SECRET' => $cronSecret67,
+    'HTTP_AUTHORIZATION' => "Bearer {$cronSecret67}",
+]);
+assertTrue(
+    ($cronValid['status'] ?? '') === 'ok' &&
+    !empty($cronValid['heartbeat_utc']) &&
+    is_array($cronValid['retention_purge'] ?? null) &&
+    is_array($cronValid['outbox_retry'] ?? null),
+    '67c (#458): /api/cron.php executes retention sweep, processes outbox, and records heartbeat with valid bearer token'
+);
+
+// 4. Valid authenticated request via query token -> 200 ok
+$cronValidQuery = $runCronSubrequest([
+    'REQUEST_METHOD' => 'GET',
+    'CRON_SECRET' => $cronSecret67,
+], ['token' => $cronSecret67]);
+assertTrue(
+    ($cronValidQuery['status'] ?? '') === 'ok' &&
+    !empty($cronValidQuery['heartbeat_utc']),
+    '67d (#458): /api/cron.php accepts valid token passed via query parameter'
+);
+
+// 5. Verify cron health in VettingPurger is now healthy
+$cronHealthAfter = VettingPurger::getRetentionCronHealth($pdo, 36);
+assertTrue(
+    $cronHealthAfter['healthy'] === true &&
+    $cronHealthAfter['status'] === 'healthy' &&
+    !empty($cronHealthAfter['last_run_utc']),
+    '67e (#458): VettingPurger::getRetentionCronHealth reports healthy=true after WebCron execution'
+);
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');

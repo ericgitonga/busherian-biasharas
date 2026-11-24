@@ -42,8 +42,10 @@ BASE_URL=http://127.0.0.1:8080 python e2e/run.py
 1. Import `src/schema.sql` into the Angryhosting MySQL database and run `php bin/migrate-and-seed.php` (with optional `--backfill-external-pins`) on CLI.
 2. Copy `.env.example` to `.env` above `public_html` (or inside the app root protected by `.htaccess`), set `APP_ENV=production`, `DB_DRIVER=mysql`, `DB_DRIVER_FALLBACK=none` (production fails closed with HTTP `503` on database maintenance and never falls back to SQLite or seeds sample businesses), configure your MySQL credentials and 64-character random hex secrets (`APP_HMAC_SECRET`, `IP_HASH_SECRET`, `CSRF_SECRET`), and set `SIMULATE_EMAILS=no`, `BBIZ_DISABLE_WEB_AUTO_MIGRATE=true`, `SMTP_ENCRYPTION=ssl` (or `tls`), and `ALLOW_PHP_MAIL_FALLBACK=no` (see `docs/DPA_TRANSFER_REGISTER.md` for the Kenya DPA ss. 48–50 sub-processor & transfer checklist).
 3. Point the domain document root to `public/`. Deployments run via atomic staged Explicit FTPS (`.bbiz_stage_*` + `SIZE` check + journaled `.bbiz_prev_*` rollback + `RNFR`/`RNTO` rename + `.deploy_manifest.json` + retired file cleanup with `CERT_REQUIRED` + hostname verification in `.github/scripts/ftps_deploy.py`), followed by a post-promotion `/api/health.php?verify_schema=1` HTTP & schema-readiness gate.
-4. Configure two cPanel Cron Jobs:
-   - Daily DPA 30-day storage-limitation & heartbeat sweep: `php /path/to/app/bin/purge-dpa-retention.php`
-   - Every 5–10 minutes outbound email retry worker: `php /path/to/app/bin/process-email-outbox.php`
+4. Configure Automated DPA Retention & Outbox Cron:
+   - **Automated GitHub Actions WebCron (Recommended for spartan/budget cPanel hosts)**: Add `CRON_SECRET` (or `APP_HMAC_SECRET`) to GitHub Repository Secrets (`Settings -> Secrets and variables -> Actions`). The `.github/workflows/scheduled-cron.yml` workflow automatically runs every 15 minutes, triggering `/api/cron.php` to perform the DPA retention sweep, stamp the cron heartbeat, flush retryable outbound emails, and drain durable media deletions.
+   - **Alternative (Native cPanel Cron Jobs if CLI access is enabled)**:
+     - Daily DPA 30-day storage-limitation & heartbeat sweep: `php /path/to/app/bin/purge-dpa-retention.php`
+     - Every 5–10 minutes outbound email retry worker: `php /path/to/app/bin/process-email-outbox.php`
 
 - **Local vs CI Python Parity:** Local developer & agent workflows run inside the `ds` conda environment (`Python 3.11`), while GitHub Actions `ubuntu-latest` CI workflows provision matching `Python 3.11` via `actions/setup-python@v5` for fast, deterministic PR gating.

@@ -1,0 +1,56 @@
+name: Scheduled DPA Retention & Outbox Worker
+
+on:
+  schedule:
+    # Run every 15 minutes to keep DPA retention heartbeat fresh and flush outbound email retries
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual execution'
+        required: false
+        default: 'Manual WebCron dispatch'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-cron-worker
+  cancel-in-progress: false
+
+jobs:
+  trigger-cron:
+    name: Dispatch Remote WebCron
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping WebCron Endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET || secrets.APP_HMAC_SECRET }}
+          CRON_ENDPOINT: ${{ secrets.CRON_ENDPOINT_URL || 'https://www.busherianbiasharas.com/api/cron.php' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::Neither CRON_SECRET nor APP_HMAC_SECRET is set in GitHub repository secrets. Please configure CRON_SECRET under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+          echo "Pinging WebCron endpoint at ${CRON_ENDPOINT}..."
+          HTTP_STATUS=$(curl -s -S -o /tmp/cron_response.json -w "%{http_code}" \
+            -X POST "${CRON_ENDPOINT}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "User-Agent: BusherianWebCron/1.0" \
+            --max-time 60)
+
+          echo "HTTP Response Status: ${HTTP_STATUS}"
+          if [ -f /tmp/cron_response.json ]; then
+            cat /tmp/cron_response.json
+            echo ""
+          fi
+
+          if [ "${HTTP_STATUS}" -ne 200 ]; then
+            echo "::error::WebCron returned non-200 HTTP code: ${HTTP_STATUS}"
+            exit 1
+          fi
+
+          echo "WebCron execution completed successfully."
