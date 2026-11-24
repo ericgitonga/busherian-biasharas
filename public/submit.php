@@ -253,10 +253,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($founderName === '') {
                     $founderName = $submitterName;
                 }
-                $founderSchool = in_array($_POST['founder_school'] ?? '', ['AHS', 'AGHS'], true) ? $_POST['founder_school'] : $schoolCode;
-                $founderYear = trim((string)($_POST['founder_year'] ?? ''));
-                if ($founderYear === '') {
+                if ($founderName === '') {
+                    $errors[] = 'Founder personal name is compulsory when founder attribution is enabled.';
+                }
+
+                // School is optional:
+                $hasSchoolKey = array_key_exists('founder_school', $_POST);
+                $schoolInput = trim((string)($_POST['founder_school'] ?? ''));
+                $displaySchool = !isset($_POST['display_founder_school']) || !empty($_POST['display_founder_school']);
+                if (!$displaySchool || ($hasSchoolKey && $schoolInput === '')) {
+                    $founderSchool = null;
+                } elseif (in_array($schoolInput, ['AHS', 'AGHS'], true)) {
+                    $founderSchool = $schoolInput;
+                } elseif (empty($_POST['is_detailed_mode']) && in_array($schoolCode, ['AHS', 'AGHS'], true)) {
+                    $founderSchool = $schoolCode;
+                } else {
+                    $founderSchool = null;
+                }
+
+                // Completion year is optional:
+                $hasYearKey = array_key_exists('founder_year', $_POST);
+                $yearInput = trim((string)($_POST['founder_year'] ?? ''));
+                $displayYear = !isset($_POST['display_founder_year']) || !empty($_POST['display_founder_year']);
+                if (!$displayYear || ($hasYearKey && $yearInput === '')) {
+                    $founderYear = null;
+                } elseif ($yearInput !== '') {
+                    $founderYear = ltrim($yearInput, "'");
+                } elseif (empty($_POST['is_detailed_mode']) && !empty($yearLeft)) {
                     $founderYear = (string)$yearLeft;
+                } else {
+                    $founderYear = null;
                 }
             } else {
                 $founderName = null;
@@ -840,12 +866,34 @@ $aghsHouses = Houses::AGHS_HOUSES;
                 <div style="display:flex;flex-direction:column;gap:0.45rem;font-size:0.85rem;">
                   <label style="display:flex;align-items:center;gap:0.45rem;cursor:pointer;">
                     <input type="radio" id="simple-founder-role-founder" name="simple_founder_role" value="founder" <?= (empty($_POST['simple_founder_role']) || ($_POST['simple_founder_role'] ?? '') === 'founder' || ($_POST['founder_role'] ?? '') === 'founder') ? 'checked' : '' ?> style="accent-color:#114B3E;">
-                    <span><strong>Founder (Solo)</strong> &mdash; Show <em>"Founded by [my name], [school] '[year]"</em></span>
+                    <span><strong>Founder (Solo)</strong> &mdash; Show <em>"Founded by..."</em></span>
                   </label>
                   <label style="display:flex;align-items:center;gap:0.45rem;cursor:pointer;">
                     <input type="radio" id="simple-founder-role-cofounder" name="simple_founder_role" value="co_founder" <?= (($_POST['simple_founder_role'] ?? '') === 'co_founder' || ($_POST['founder_role'] ?? '') === 'co_founder') ? 'checked' : '' ?> style="accent-color:#114B3E;">
-                    <span><strong>Co-Founder (Joint with others)</strong> &mdash; Show <em>"Co-Founded by [my name], [school] '[year]"</em></span>
+                    <span><strong>Co-Founder (Joint with others)</strong> &mdash; Show <em>"Co-Founded by..."</em></span>
                   </label>
+                </div>
+
+                <div style="margin-top:0.65rem;padding-top:0.55rem;border-top:1px dashed #E5DEC9;">
+                  <div style="font-size:0.82rem;font-weight:700;color:#374151;margin-bottom:0.25rem;">Select details to display publicly:</div>
+                  <div style="font-size:0.77rem;color:#6B7280;margin-bottom:0.4rem;">Name is compulsory when opting in. School affiliation and completion year are optional.</div>
+                  <div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.84rem;">
+                    <label style="display:flex;align-items:center;gap:0.45rem;color:#111827;">
+                      <input type="checkbox" checked disabled style="accent-color:#114B3E;">
+                      <span><strong>Full Name</strong> <span style="font-size:0.75rem;color:#047857;font-weight:600;">(Compulsory &mdash; uses verified submitter name)</span></span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:0.45rem;cursor:pointer;">
+                      <input type="checkbox" id="simple-display-school" name="display_founder_school" value="1" <?= (!isset($_POST['display_founder_school']) || !empty($_POST['display_founder_school'])) ? 'checked' : '' ?> style="accent-color:#114B3E;">
+                      <span>Include School Affiliation (AHS / AGHS)</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:0.45rem;cursor:pointer;">
+                      <input type="checkbox" id="simple-display-year" name="display_founder_year" value="1" <?= (!isset($_POST['display_founder_year']) || !empty($_POST['display_founder_year'])) ? 'checked' : '' ?> style="accent-color:#114B3E;">
+                      <span>Include Completion Year</span>
+                    </label>
+                  </div>
+                  <div id="simple-founder-preview" style="margin-top:0.55rem;padding:0.45rem 0.65rem;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;font-size:0.78rem;color:#166534;">
+                    <strong>Live Preview:</strong> <span id="simple-founder-preview-text">Founded by [Your Name]</span>
+                  </div>
                 </div>
                 <div style="margin-top:0.5rem;padding:0.45rem 0.65rem;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;font-size:0.77rem;color:#166534;line-height:1.4;">
                   🛡️ <strong>Kenya DPA 2019 Voluntary Publication Notice:</strong> Founder attribution is 100% voluntary. By checking this box, you provide explicit consent to publicly display your personal name, school, and completion year on this directory listing. You can modify or revoke this attribution anytime from your Owner Portal.
@@ -930,22 +978,25 @@ $aghsHouses = Houses::AGHS_HOUSES;
           </div>
           <div id="founder-fields-wrap" style="<?= in_array($_POST['founder_role'] ?? '', ['founder', 'co_founder'], true) ? '' : 'display:none;' ?>display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:0.75rem;">
             <div>
-              <label for="founder_name" style="font-size:0.78rem;font-weight:700;color:#374151;display:block;margin-bottom:0.25rem;">Full Name</label>
+              <label for="founder_name" style="font-size:0.78rem;font-weight:700;color:#374151;display:block;margin-bottom:0.25rem;">Full Name <span style="color:#DC2626;">* (Compulsory)</span></label>
               <input type="text" name="founder_name" id="founder_name" class="input-control" value="<?= htmlspecialchars((string)($_POST['founder_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. Stephen Kanyi Gitonga">
             </div>
             <div>
-              <label for="founder_school" style="font-size:0.78rem;font-weight:700;color:#374151;display:block;margin-bottom:0.25rem;">School</label>
+              <label for="founder_school" style="font-size:0.78rem;font-weight:700;color:#374151;display:block;margin-bottom:0.25rem;">School <span style="color:#6B7280;font-weight:400;">(Optional)</span></label>
               <select name="founder_school" id="founder_school" class="select-control">
-                <option value="">Select school</option>
+                <option value="">Do not display school (optional)</option>
                 <option value="AHS" <?= ($_POST['founder_school'] ?? '') === 'AHS' ? 'selected' : '' ?>>Alliance High School (AHS)</option>
                 <option value="AGHS" <?= ($_POST['founder_school'] ?? '') === 'AGHS' ? 'selected' : '' ?>>Alliance Girls High School (AGHS)</option>
               </select>
             </div>
             <div>
-              <label for="founder_year" style="font-size:0.78rem;font-weight:700;color:#374151;display:block;margin-bottom:0.25rem;">Completion Year</label>
-              <input type="text" name="founder_year" id="founder_year" class="input-control" value="<?= htmlspecialchars((string)($_POST['founder_year'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. '98 or 1998">
+              <label for="founder_year" style="font-size:0.78rem;font-weight:700;color:#374151;display:block;margin-bottom:0.25rem;">Completion Year <span style="color:#6B7280;font-weight:400;">(Optional)</span></label>
+              <input type="text" name="founder_year" id="founder_year" class="input-control" value="<?= htmlspecialchars((string)($_POST['founder_year'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. '98 or leave blank to omit">
             </div>
           </div>
+          <p style="font-size:0.74rem;color:#6B7280;margin:0.45rem 0 0 0;line-height:1.4;">
+            Name is compulsory when opting in. School affiliation and Completion Year are optional—leave them unselected/blank if you only want your name displayed.
+          </p>
         </div>
 
         <!-- Primary & secondary industry sectors and statutory regulators are configured in Section 1 above -->
@@ -1457,6 +1508,49 @@ $aghsHouses = Houses::AGHS_HOUSES;
       if (simpleCofounderRadio) {
         simpleCofounderRadio.addEventListener('change', syncFounderRoleSelection);
       }
+
+      function updateFounderAttributionPreview() {
+        const previewEl = document.getElementById('simple-founder-preview-text');
+        if (!previewEl) return;
+        const isCofounder = simpleCofounderRadio && simpleCofounderRadio.checked;
+        const prefix = isCofounder ? 'Co-Founded by ' : 'Founded by ';
+        const nameInput = document.getElementById('founder_name');
+        const submitterInput = document.getElementById('submitter_name');
+        const name = (nameInput && nameInput.value.trim()) || (submitterInput && submitterInput.value.trim()) || '[Your Name]';
+
+        const schoolCb = document.getElementById('simple-display-school');
+        const showSchool = schoolCb ? schoolCb.checked : true;
+        const yearCb = document.getElementById('simple-display-year');
+        const showYear = yearCb ? yearCb.checked : true;
+
+        const schoolRadio = document.querySelector('input[name="school_code"]:checked') || document.querySelector('input[name="school"]:checked');
+        const schoolVal = schoolRadio ? schoolRadio.value : 'AHS';
+        const yearInput = document.getElementById('year_left');
+        let yearVal = yearInput && yearInput.value.trim() ? yearInput.value.trim() : '98';
+        if (yearVal.length > 2) yearVal = yearVal.slice(-2);
+
+        const metaParts = [];
+        if (showSchool) metaParts.push(schoolVal);
+        if (showYear) metaParts.push("'" + yearVal.replace(/^'+/, ''));
+        const metaStr = metaParts.length ? ' (' + metaParts.join(' ') + ')' : '';
+
+        previewEl.textContent = prefix + name + metaStr;
+      }
+      window.updateFounderAttributionPreview = updateFounderAttributionPreview;
+
+      const simpleDispSchool = document.getElementById('simple-display-school');
+      if (simpleDispSchool) simpleDispSchool.addEventListener('change', updateFounderAttributionPreview);
+      const simpleDispYear = document.getElementById('simple-display-year');
+      if (simpleDispYear) simpleDispYear.addEventListener('change', updateFounderAttributionPreview);
+      const submitterInputEl = document.getElementById('submitter_name');
+      if (submitterInputEl) submitterInputEl.addEventListener('input', updateFounderAttributionPreview);
+      const founderInputEl = document.getElementById('founder_name');
+      if (founderInputEl) founderInputEl.addEventListener('input', updateFounderAttributionPreview);
+      const founderSchoolEl = document.getElementById('founder_school');
+      if (founderSchoolEl) founderSchoolEl.addEventListener('change', updateFounderAttributionPreview);
+      const founderYearEl = document.getElementById('founder_year');
+      if (founderYearEl) founderYearEl.addEventListener('input', updateFounderAttributionPreview);
+      updateFounderAttributionPreview();
 
       // Sync autofill area_town
       const origSetField = setField;

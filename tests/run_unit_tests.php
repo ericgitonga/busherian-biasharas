@@ -865,8 +865,10 @@ assertTrue(
     str_contains($adminIndexPaginated, '$allowedPerPage = [25, 50, 100]') &&
     str_contains($adminIndexPaginated, 'id="admin-per-page"') &&
     str_contains($adminIndexPaginated, 'id="admin-pagination"') &&
-    str_contains($adminIndexPaginated, '$pagedBusinesses = array_slice($allBusinesses, $pageOffset, $perPage)'),
-    'public/admin/index.php paginates business records to 25/50/100 defaulting to 25 (#143, #425)'
+    str_contains($adminIndexPaginated, '$pagedBusinesses = array_slice($allBusinesses, $pageOffset, $perPage)') &&
+    !str_contains($adminIndexPaginated, '<span class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;opacity:0.45;pointer-events:none;">&larr; Prev</a>') &&
+    str_contains($adminIndexPaginated, '<span class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;opacity:0.45;pointer-events:none;">&larr; Prev</span>'),
+    'public/admin/index.php paginates business records to 25/50/100 defaulting to 25 and correctly closes disabled span tags (#143, #425)'
 );
 assertTrue(
     str_contains($publicIndexPaginated, 'id="per-page-select"') &&

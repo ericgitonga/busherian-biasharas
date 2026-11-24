@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.21] - 2026-11-24
+
+### Fixed
+- **Admin Console Pagination Next Navigation & Span Tag Closure**:
+  - Corrected unclosed `<span ...>&larr; Prev</a>` HTML syntax error to `</span>` on line 791 of `public/admin/index.php`.
+  - Resolved browser rendering bug where unclosed disabled span trapped subsequent pagination buttons (`1`, `2`, and `Next &rarr;`) inside `pointer-events: none` and `opacity: 0.45`, restoring clickability on `Next &rarr;` and subsequent page numbers.
+  - Added regression test asserting valid markup in `tests/run_unit_tests.php`.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.21`.
+
+## [0.40.20] - 2026-11-23
+
+### Fixed & Enhanced
+- **Granular Founder & Co-Founder Attribution Opt-In (#457)**:
+  - Allowed founders and co-founders to select which details to display publicly upon opt-in: Full Name is compulsory, while School affiliation (AHS / AGHS) and Completion Year are optional.
+  - Added checkboxes `display_founder_school` and `display_founder_year` with real-time `#simple-founder-preview` in `public/submit.php`.
+  - Added optional school dropdown (`Do not display school (optional)`) and optional completion year in Section 2, `public/owner/edit-business.php`, and `public/admin/edit-business.php`.
+  - Updated `VettingPurger::updateBusinessByOwner` and `VettingPurger::updateBusiness` to enforce compulsory founder name when opting in and permit explicitly setting or clearing school/year to `null`.
+  - Added `formatFounderAttributionText` in `public/assets/js/directory.js` and updated `public/index.php` to seamlessly render Name only (`Founded by [Name]`), Name + School (`(AHS)`), Name + Year (`('98)`), or Name + School + Year (`(AHS '98)`).
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.40.20`.
+
 ## [0.40.19] - 2026-11-23
 
 ### Security & Hardening

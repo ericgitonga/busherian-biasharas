@@ -406,22 +406,25 @@ $vettingRow = $vetStmt->fetch() ?: null;
               </select>
             </div>
             <div>
-              <label style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Founder Personal Name</label>
+              <label style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Founder Personal Name <span style="color:#DC2626;">* (Compulsory)</span></label>
               <input type="text" name="founder_name" class="input-control" value="<?= htmlspecialchars((string)($biz['founder_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. Stephen Kanyi Gitonga">
             </div>
             <div>
-              <label style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Alumni School</label>
+              <label style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Alumni School <span style="color:#6B7280;font-weight:400;">(Optional)</span></label>
               <select name="founder_school" class="select-control">
-                <option value="">Select school...</option>
+                <option value="">Do not display school (optional)</option>
                 <option value="AHS" <?= ($biz['founder_school'] ?? '') === 'AHS' ? 'selected' : '' ?>>Alliance High School (AHS)</option>
                 <option value="AGHS" <?= ($biz['founder_school'] ?? '') === 'AGHS' ? 'selected' : '' ?>>Alliance Girls High School (AGHS)</option>
               </select>
             </div>
             <div>
-              <label style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Completion Year</label>
-              <input type="text" name="founder_year" class="input-control" value="<?= htmlspecialchars((string)($biz['founder_year'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. 1998">
+              <label style="font-weight:700;font-size:0.82rem;display:block;margin-bottom:0.25rem;">Completion Year <span style="color:#6B7280;font-weight:400;">(Optional)</span></label>
+              <input type="text" name="founder_year" class="input-control" value="<?= htmlspecialchars((string)($biz['founder_year'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. 1998 (or leave blank to omit)">
             </div>
           </div>
+          <p style="font-size:0.75rem;color:#6B7280;margin:0.5rem 0 0 0;line-height:1.4;">
+            Name is compulsory when founder attribution is active. School and completion year are optional.
+          </p>
         </div>
       </div>
 

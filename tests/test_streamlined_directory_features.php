@@ -649,4 +649,92 @@ $attestVal = $attestCheck->fetchColumn();
 testAssert(!empty($attestVal), 'OwnerAuth::recordAgeAttestation sets age_attested_at timestamp (#455)');
 $pdo->prepare("DELETE FROM business_owners WHERE id = ?")->execute([$testOwnerId]);
 
+// Granular Founder / Co-Founder Opt-In (Name compulsory, School & Year optional #457)
+$submitSrc457 = (string)file_get_contents(dirname(__DIR__) . "/public/submit.php");
+testAssert(str_contains($submitSrc457, "name=\"display_founder_school\""), "submit.php has display_founder_school checkbox in Section 1 (#457)");
+testAssert(str_contains($submitSrc457, "name=\"display_founder_year\""), "submit.php has display_founder_year checkbox in Section 1 (#457)");
+testAssert(str_contains($submitSrc457, "id=\"simple-founder-preview\""), "submit.php has #simple-founder-preview live preview container (#457)");
+testAssert(str_contains($submitSrc457, "Do not display school (optional)"), "submit.php has optional school option in Section 2 (#457)");
+testAssert(str_contains($submitSrc457, "Full Name <span style=\"color:#DC2626;\">* (Compulsory)</span>"), "submit.php marks Full Name as compulsory in Section 2 (#457)");
+
+$ownerEditSrc457 = (string)file_get_contents(dirname(__DIR__) . "/public/owner/edit-business.php");
+testAssert(str_contains($ownerEditSrc457, "Founder Personal Name <span style=\"color:#DC2626;\">* (Compulsory)</span>"), "owner/edit-business.php marks Founder Name as compulsory (#457)");
+testAssert(str_contains($ownerEditSrc457, "Do not display school (optional)"), "owner/edit-business.php allows omitting school (#457)");
+
+$adminEditSrc457 = (string)file_get_contents(dirname(__DIR__) . "/public/admin/edit-business.php");
+testAssert(str_contains($adminEditSrc457, "Founder Personal Name <span style=\"color:#DC2626;\">* (Compulsory)</span>"), "admin/edit-business.php marks Founder Name as compulsory (#457)");
+testAssert(str_contains($adminEditSrc457, "Do not display school (optional)"), "admin/edit-business.php allows omitting school (#457)");
+
+$jsSrc457 = (string)file_get_contents(dirname(__DIR__) . "/public/assets/js/directory.js");
+testAssert(str_contains($jsSrc457, "function formatFounderAttributionText"), "directory.js defines formatFounderAttributionText (#457)");
+
+// Functional tests: updateBusinessByOwner with granular opt-in fields
+$testBizId457 = $testBizId; // reuse active test biz
+$baseBizData = [
+    "name" => "Granular Biashara",
+    "tagline" => "Granular Opt-In Test",
+    "description" => "Testing name-only vs multi-field founder display",
+    "sector_id" => 1,
+    "specialty_id" => 2,
+    "service_mode" => "hybrid",
+    "owner_adult_attestation_18" => 1,
+    "status" => "approved"
+];
+
+// 1. Name only (School & Year explicitly omitted/blank)
+\BusherianBiasharas\Services\VettingPurger::updateBusinessByOwner($pdo, $testBizId457, $ownerRow, array_merge($baseBizData, [
+    "show_founder_publicly" => 1,
+    "founder_role" => "founder",
+    "founder_name" => "Stephen Kanyi Gitonga",
+    "founder_school" => "",
+    "founder_year" => ""
+]));
+$rowNameOnly = $pdo->query("SELECT founder_role, founder_name, founder_school, founder_year FROM businesses WHERE id = " . (int)$testBizId457)->fetch(PDO::FETCH_ASSOC);
+testAssert($rowNameOnly["founder_role"] === "founder", "updateBusinessByOwner saves founder_role founder (#457)");
+testAssert($rowNameOnly["founder_name"] === "Stephen Kanyi Gitonga", "updateBusinessByOwner saves compulsory founder_name (#457)");
+testAssert($rowNameOnly["founder_school"] === null, "updateBusinessByOwner sets founder_school to NULL when omitted (#457)");
+testAssert($rowNameOnly["founder_year"] === null, "updateBusinessByOwner sets founder_year to NULL when omitted (#457)");
+
+// 2. Name + School only
+\BusherianBiasharas\Services\VettingPurger::updateBusinessByOwner($pdo, $testBizId457, $ownerRow, array_merge($baseBizData, [
+    "show_founder_publicly" => 1,
+    "founder_role" => "founder",
+    "founder_name" => "Stephen Kanyi Gitonga",
+    "founder_school" => "AHS",
+    "founder_year" => ""
+]));
+$rowNameSchool = $pdo->query("SELECT founder_role, founder_name, founder_school, founder_year FROM businesses WHERE id = " . (int)$testBizId457)->fetch(PDO::FETCH_ASSOC);
+testAssert($rowNameSchool["founder_school"] === "AHS", "updateBusinessByOwner saves school when chosen (#457)");
+testAssert($rowNameSchool["founder_year"] === null, "updateBusinessByOwner keeps year NULL when omitted (#457)");
+
+// 3. Name + Year only
+\BusherianBiasharas\Services\VettingPurger::updateBusinessByOwner($pdo, $testBizId457, $ownerRow, array_merge($baseBizData, [
+    "show_founder_publicly" => 1,
+    "founder_role" => "co_founder",
+    "founder_name" => "Jane Wanjiku",
+    "founder_school" => "",
+    "founder_year" => "98"
+]));
+$rowNameYear = $pdo->query("SELECT founder_role, founder_name, founder_school, founder_year FROM businesses WHERE id = " . (int)$testBizId457)->fetch(PDO::FETCH_ASSOC);
+testAssert($rowNameYear["founder_role"] === "co_founder", "updateBusinessByOwner saves co_founder role (#457)");
+testAssert($rowNameYear["founder_name"] === "Jane Wanjiku", "updateBusinessByOwner saves founder_name (#457)");
+testAssert($rowNameYear["founder_school"] === null, "updateBusinessByOwner sets school to NULL (#457)");
+testAssert($rowNameYear["founder_year"] === "98", "updateBusinessByOwner saves year when chosen (#457)");
+
+// 4. Compulsory name validation: empty founder_name throws InvalidArgumentException
+$nameCompulsoryThrown = false;
+try {
+    \BusherianBiasharas\Services\VettingPurger::updateBusinessByOwner($pdo, $testBizId457, $ownerRow, [
+        "name" => "",
+        "show_founder_publicly" => 1,
+        "founder_role" => "founder",
+        "founder_name" => "",
+        "owner_adult_attestation_18" => 1
+    ]);
+} catch (InvalidArgumentException $e) {
+    $nameCompulsoryThrown = true;
+}
+testAssert($nameCompulsoryThrown, "updateBusinessByOwner enforces compulsory founder_name when opt-in is enabled (#457)");
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
+
