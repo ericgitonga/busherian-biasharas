@@ -717,3 +717,28 @@ def test_concierge_ui_and_two_tier_components():
     assert ".biz-card-ecosystem" in app_css
     assert ".btn-whatsapp-invite" in app_css
 
+
+
+def test_webcron_endpoint_and_scheduled_workflow_integrity():
+    """Verify /api/cron.php exists and .github/workflows/scheduled-cron.yml has valid structure (#458)."""
+    repo_root = Path(__file__).resolve().parent.parent
+    cron_api = repo_root / "public" / "api" / "cron.php"
+    cron_workflow = repo_root / ".github" / "workflows" / "scheduled-cron.yml"
+
+    assert cron_api.is_file(), "public/api/cron.php must exist"
+    assert cron_workflow.is_file(), ".github/workflows/scheduled-cron.yml must exist"
+
+    api_content = cron_api.read_text(encoding="utf-8")
+    assert "bbiz_send_security_headers" in api_content
+    assert "bbiz_acquire_cli_worker_lock" in api_content
+    assert "enforceRetentionCeilings" in api_content
+    assert "recordCronHeartbeat" in api_content
+    assert "processRetryQueue" in api_content
+    assert "drainDurableMediaDeletions" in api_content
+    assert "CRON_SECRET" in api_content
+
+    workflow_content = cron_workflow.read_text(encoding="utf-8")
+    assert "schedule:" in workflow_content
+    assert "cron:" in workflow_content
+    assert "CRON_SECRET" in workflow_content
+    assert "/api/cron.php" in workflow_content

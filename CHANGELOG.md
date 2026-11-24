@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.40.22] - 2026-11-24
+
+### Added & Enhanced
+- **Automated GitHub Actions WebCron Scheduler & Protected API Endpoint (#458)**:
+  - Added authenticated, non-blocking WebCron endpoint `public/api/cron.php` accepting `POST`/`GET` requests authorized with `CRON_SECRET` or `APP_HMAC_SECRET` (`Bearer` token, `X-Cron-Key`, or `?token=`).
+  - Implemented non-blocking OS concurrency lock via `bbiz_acquire_cli_worker_lock('scheduled_cron_worker')` to prevent overlapping runs.
+  - Automatically executes the Kenya DPA 2019 30-day retention storage-limitation sweep (`enforceRetentionCeilings`), updates `cron_heartbeats` (`recordCronHeartbeat`), processes bounded email outbox retry batches (`processRetryQueue`), and drains durable media deletions (`drainDurableMediaDeletions`).
+  - Added scheduled GitHub Actions workflow `.github/workflows/scheduled-cron.yml` running every 15 minutes (`*/15 * * * *`) and on manual `workflow_dispatch`, completely eliminating dependency on spartan shared hosting cPanel cron tools.
+  - Added unit test assertions (Section 67 in `tests/run_unit_tests.php` and `tests/test_unit.py`) validating token authentication, concurrency protection, and cron health status.
+  - Aligned service worker cache version to `bbiz-pwa-v0.40.22`.
+
 ## [0.40.21] - 2026-11-24
 
 ### Fixed
