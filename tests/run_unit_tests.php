@@ -66,7 +66,7 @@ assertTrue(in_array('Watson', Houses::AGHS_HOUSES, true) && in_array('Joan Mjomb
 
 // 2. Verify 2-Level Taxonomy & Synonym Expansion
 $tree = CategoryMatcher::getTaxonomyTree($pdo);
-assertTrue(count($tree) === 15, 'Taxonomy has 15 Industry Sectors including Arts, Visual & Performing Arts (#112)');
+assertTrue(count($tree) === 16, 'Taxonomy has 16 Industry Sectors including Non-Profit, Charity & Social Impact');
 $totalSpecs = array_sum(array_map(fn($s) => count($s['specialties']), $tree));
 assertTrue($totalSpecs >= 100, "Taxonomy has 100+ Level 2 Specialties (found {$totalSpecs})");
 
@@ -6174,6 +6174,62 @@ assertTrue(
     $cronHealthAfter['status'] === 'healthy' &&
     !empty($cronHealthAfter['last_run_utc']),
     '67e (#458): VettingPurger::getRetentionCronHealth reports healthy=true after WebCron execution'
+);
+
+// 68. Verify 16th Industry Sector: Non-Profit, Charity & Social Impact
+$tree68 = CategoryMatcher::getTaxonomyTree($pdo);
+$sectorNames68 = array_map(fn($s) => $s['name'], $tree68);
+assertTrue(
+    in_array('Non-Profit, Charity & Social Impact', $sectorNames68, true),
+    '68a: Taxonomy includes Non-Profit, Charity & Social Impact 16th sector'
+);
+$charitySector = array_values(array_filter($tree68, fn($s) => $s['name'] === 'Non-Profit, Charity & Social Impact'))[0] ?? null;
+assertTrue(
+    $charitySector !== null && $charitySector['icon'] === 'heart-handshake' && $charitySector['slug'] === 'non-profit-charity-social-impact',
+    '68b: Non-Profit sector carries heart-handshake icon and valid canonical slug'
+);
+$charitySpecs = $charitySector ? array_map(fn($sp) => $sp['name'], $charitySector['specialties']) : [];
+assertTrue(
+    in_array('Charitable Trust & Philanthropic Foundation', $charitySpecs, true) &&
+    in_array('Non-Profit & Community-Based Organization (CBO/NGO)', $charitySpecs, true) &&
+    in_array('Youth Mentorship, Bursary & Scholarship Fund', $charitySpecs, true) &&
+    in_array('Humanitarian Relief & Community Outreach', $charitySpecs, true),
+    '68c: Non-Profit sector contains Foundation, CBO/NGO, Scholarship, and Humanitarian specialties'
+);
+
+// Verify statutory regulation config
+$cboReg = CategoryMatcher::getRegulationInfoForSpecialty('Non-Profit & Community-Based Organization (CBO/NGO)');
+assertTrue(
+    $cboReg !== null && str_contains($cboReg['default'], 'NGOs Co-ordination Board / PBORA'),
+    '68d: CBO/NGO specialty is mapped to NGOs Co-ordination Board / PBORA statutory regulator'
+);
+
+// Verify Swahili & English search synonym expansions
+$charitySynonyms = CategoryMatcher::expandSearchTerms('charity');
+$harambeeSynonyms = CategoryMatcher::expandSearchTerms('harambee');
+$msaadaSynonyms = CategoryMatcher::expandSearchTerms('msaada');
+$bursarySynonyms = CategoryMatcher::expandSearchTerms('bursary');
+assertTrue(
+    in_array('Philanthropic Foundation', $charitySynonyms, true) &&
+    in_array('Community-Based Organization', $harambeeSynonyms, true) &&
+    in_array('Humanitarian Relief', $msaadaSynonyms, true) &&
+    in_array('Scholarship Fund', $bursarySynonyms, true),
+    '68e: Synonym lexicon expands charity, harambee, msaada, and bursary to relevant specialties'
+);
+
+// Verify NeedGraph social impact cluster and adjacencies
+$clusters68 = \BusherianBiasharas\Services\NeedGraph::getEcosystemClusters();
+assertTrue(
+    isset($clusters68['social_impact_foundation']) &&
+    in_array('Charitable Trust & Philanthropic Foundation', $clusters68['social_impact_foundation']['specialties'], true),
+    '68f: NeedGraph registers social_impact_foundation ecosystem cluster'
+);
+$charityAdjacencies = \BusherianBiasharas\Services\NeedGraph::getAdjacentSpecialties('Charitable Trust & Philanthropic Foundation');
+$adjTargets = array_map(fn($a) => $a['target_specialty'], $charityAdjacencies);
+assertTrue(
+    in_array('Advocates & Law Firm', $adjTargets, true) &&
+    in_array('Audit, Tax & Accounting (CPA)', $adjTargets, true),
+    '68g: NeedGraph maps Charitable Trust to Advocate (legal trust deed) and CPA (KRA tax exemption) adjacencies'
 );
 
 // Cleanup 55 fixtures

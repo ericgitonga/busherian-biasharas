@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.41.0] - 2026-11-26
+
+### Added & Enhanced
+- **Non-Profit, Charity & Social Impact 16th Industry Sector (#459)**:
+  - Added dedicated 16th Industry Sector **Non-Profit, Charity & Social Impact** (`non-profit-charity-social-impact`) with `heart-handshake` icon to `CategoryMatcher::DEFAULT_TAXONOMY`.
+  - Expanded taxonomy with 8 pre-populated specialties:
+    - *Charitable Trust & Philanthropic Foundation*
+    - *Non-Profit & Community-Based Organization (CBO/NGO)*
+    - *Youth Mentorship, Bursary & Scholarship Fund*
+    - *Humanitarian Relief & Community Outreach*
+    - *Environmental, Climate & Wildlife Conservation*
+    - *Civic Education, Human Rights & Public Advocacy*
+    - *Social Enterprise & Community Development*
+    - *Faith-Based & Pastoral Community Mission*
+  - Configured Kenyan statutory regulator presets in `CategoryMatcher::REGULATED_SPECIALTIES` for NGOs/CBOs (*NGOs Co-ordination Board / PBORA*, *Department of Social Development*, *BRS Company Limited by Guarantee*) and Charitable Trusts (*Registrar of Documents - Trustees Perpetual Succession Act*).
+  - Enriched `CategoryMatcher::SYNONYM_LEXICON` with search terms across English and Swahili: `charity`, `charitable`, `foundation`, `ngo`, `cbo`, `nonprofit`, `non-profit`, `mchango`, `harambee`, `msaada`, `bursary`, `bursaries`, `scholarship`, `scholarships`, `philanthropy`, and `humanitarian`.
+  - Added `social_impact_foundation` ecosystem cluster to `NeedGraph::ECOSYSTEM_CLUSTERS` and mapped curated upstream/downstream adjacencies (Trust Deed legal structuring via Advocates, KRA Sec 13(2) tax exemption audits via CPAs, impact pitch decks via PR agencies, and digital donor giving portals via Web Design).
+  - Bumped `Database::SCHEMA_INIT_VERSION` to `2026-11-v41-charity-nonprofit-sector` to ensure idempotent automated taxonomy upgrades on all SQLite/MySQL environments.
+  - Added unit test assertions (Section 68 in `tests/run_unit_tests.php`) validating 16-sector count, slug/icon metadata, statutory regulator mappings, synonym expansion, and NeedGraph adjacencies.
+  - Aligned service worker cache version to `bbiz-pwa-v0.41.0`.
+
 ## [0.40.22] - 2026-11-24
 
 ### Added & Enhanced

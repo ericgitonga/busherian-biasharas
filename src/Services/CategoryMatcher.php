@@ -8,7 +8,7 @@ use PDO;
 final class CategoryMatcher
 {
     /**
-     * 15 Standard Industry Sectors & 116 Pre-Populated Specialties
+     * 16 Standard Industry Sectors & 124 Pre-Populated Specialties
      */
     public const DEFAULT_TAXONOMY = [
         [
@@ -233,6 +233,21 @@ final class CategoryMatcher
                 'borehole Pump Servicing & Plumbing',
             ],
         ],
+        [
+            'name' => 'Non-Profit, Charity & Social Impact',
+            'slug' => 'non-profit-charity-social-impact',
+            'icon' => 'heart-handshake',
+            'specialties' => [
+                'Charitable Trust & Philanthropic Foundation',
+                'Non-Profit & Community-Based Organization (CBO/NGO)',
+                'Youth Mentorship, Bursary & Scholarship Fund',
+                'Humanitarian Relief & Community Outreach',
+                'Environmental, Climate & Wildlife Conservation',
+                'Civic Education, Human Rights & Public Advocacy',
+                'Social Enterprise & Community Development',
+                'Faith-Based & Pastoral Community Mission',
+            ],
+        ],
     ];
 
     /**
@@ -278,6 +293,22 @@ final class CategoryMatcher
         'salon' => ['Beauty', 'Hair Salon', 'Cosmetics'],
         'ushuru' => ['Tax', 'Accounting', 'Audit'],
         'bima' => ['Insurance'],
+        'charity' => ['Charity', 'Philanthropic Foundation', 'Non-Profit', 'Social Impact'],
+        'charitable' => ['Charity', 'Philanthropic Foundation', 'Non-Profit'],
+        'foundation' => ['Philanthropic Foundation', 'Charity', 'Scholarship Fund'],
+        'ngo' => ['Non-Profit', 'Community-Based Organization', 'Humanitarian Relief'],
+        'cbo' => ['Community-Based Organization', 'Non-Profit', 'Community Outreach'],
+        'nonprofit' => ['Non-Profit', 'Charity', 'Philanthropic Foundation'],
+        'non-profit' => ['Non-Profit', 'Charity', 'Philanthropic Foundation'],
+        'mchango' => ['Charity', 'Community Outreach', 'Philanthropic Foundation'],
+        'harambee' => ['Charity', 'Community-Based Organization', 'Philanthropic Foundation'],
+        'msaada' => ['Humanitarian Relief', 'Community Outreach', 'Charity'],
+        'bursary' => ['Scholarship Fund', 'Youth Mentorship', 'Philanthropic Foundation'],
+        'bursaries' => ['Scholarship Fund', 'Youth Mentorship', 'Philanthropic Foundation'],
+        'scholarship' => ['Scholarship Fund', 'Youth Mentorship', 'Philanthropic Foundation'],
+        'scholarships' => ['Scholarship Fund', 'Youth Mentorship', 'Philanthropic Foundation'],
+        'philanthropy' => ['Philanthropic Foundation', 'Charity', 'Social Impact'],
+        'humanitarian' => ['Humanitarian Relief', 'Community Outreach', 'Non-Profit'],
         'sanaa' => ['Visual Arts', 'Performing Arts', 'Fine Art', 'Music', 'Sculpture'],
         'art' => ['Visual Arts', 'Fine Art', 'Performing Arts', 'Illustration', 'Galleries'],
         'arts' => ['Visual Arts', 'Performing Arts', 'Fine Art', 'Theatre', 'Music'],
@@ -1545,6 +1576,28 @@ final class CategoryMatcher
                 'Other Statutory Regulator',
             ],
             'placeholder' => 'e.g. PCPB Pest Control Operator License No.',
+        ],
+
+        // 12. Non-Profit, Charity & Social Impact
+        'Non-Profit & Community-Based Organization (CBO/NGO)' => [
+            'default' => 'NGOs Co-ordination Board / PBORA (Public Benefit Organizations Regulatory Authority)',
+            'options' => [
+                'NGOs Co-ordination Board / PBORA (Public Benefit Organizations Regulatory Authority)',
+                'Department of Social Development (CBO Certificate)',
+                'BRS (Company Limited by Guarantee)',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. OP.218/051/... or CBO Reg No.',
+        ],
+        'Charitable Trust & Philanthropic Foundation' => [
+            'default' => 'Registrar of Documents (Trustees Perpetual Succession Act)',
+            'options' => [
+                'Registrar of Documents (Trustees Perpetual Succession Act)',
+                'BRS (Company Limited by Guarantee)',
+                'NGOs Co-ordination Board / PBORA',
+                'Other Statutory Regulator',
+            ],
+            'placeholder' => 'e.g. Trust Incorporation Cert / BRS No.',
         ],
     ];
 

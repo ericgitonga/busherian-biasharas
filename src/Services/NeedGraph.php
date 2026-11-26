@@ -9,7 +9,7 @@ use PDO;
  * NeedGraph — Kenyan Business Ecosystem Adjacency Graph
  *
  * Encodes real-world Kenyan business journeys, lifecycle dependencies, and companion
- * synergies across the 15 Level 1 Sectors and 116+ Level 2 Specialties.
+ * synergies across the 16 Level 1 Sectors and 124+ Level 2 Specialties.
  *
  * Maps upstream prerequisites, downstream execution steps, and companion services
  * with plain-English rationale explanations ("Why you might also need this").
@@ -129,6 +129,20 @@ final class NeedGraph
                 'CCTV, Electric Fencing & Guarding',
                 'Interior Design & Fit-Outs',
                 'Appliance Repair & Handyman',
+            ],
+        ],
+        'social_impact_foundation' => [
+            'label' => 'Charity, Foundation & Social Impact',
+            'description' => 'Trust deed registration, donor financial audit, PBO compliance, impact storytelling, and community outreach campaigns.',
+            'specialties' => [
+                'Charitable Trust & Philanthropic Foundation',
+                'Non-Profit & Community-Based Organization (CBO/NGO)',
+                'Youth Mentorship, Bursary & Scholarship Fund',
+                'Advocates & Law Firm',
+                'Audit, Tax & Accounting (CPA)',
+                'Branding, Graphic Design & PR Agency',
+                'Web Design & E-Commerce',
+                'Printing, Signage & Branded Merchandise',
             ],
         ],
     ];
@@ -732,6 +746,59 @@ final class NeedGraph
                 'weight' => 0.80,
                 'need_label' => 'Vehicle Upgrades & Trade-Ins',
                 'rationale' => 'Evaluating whether to repair an aging vehicle or trade in for a direct import with asset financing.',
+            ],
+        ],
+        'Charitable Trust & Philanthropic Foundation' => [
+            [
+                'target' => 'Advocates & Law Firm',
+                'type' => 'upstream',
+                'weight' => 0.95,
+                'need_label' => 'Trust Deed & Legal Structuring',
+                'rationale' => 'Establishing a charitable trust or foundation requires drawing compliant trust deeds, registration under the Trustees (Perpetual Succession) Act, or BRS guarantee structuring.',
+            ],
+            [
+                'target' => 'Audit, Tax & Accounting (CPA)',
+                'type' => 'companion',
+                'weight' => 0.95,
+                'need_label' => 'KRA Tax Exemption & Donor Audits',
+                'rationale' => 'Charitable trusts require statutory annual donor financial audits and formal KRA income tax exemption certificates (Section 13(2)).',
+            ],
+            [
+                'target' => 'Branding, Graphic Design & PR Agency',
+                'type' => 'downstream',
+                'weight' => 0.85,
+                'need_label' => 'Impact Reports & Donor Pitch Decks',
+                'rationale' => 'Communicating social return on investment (SROI), publishing annual impact reports, and engaging corporate philanthropic sponsors.',
+            ],
+            [
+                'target' => 'Web Design & E-Commerce',
+                'type' => 'downstream',
+                'weight' => 0.85,
+                'need_label' => 'Donor Portal & Digital Giving',
+                'rationale' => 'Receiving online donations, managing scholarship applications, and showcasing community projects transparently.',
+            ],
+        ],
+        'Non-Profit & Community-Based Organization (CBO/NGO)' => [
+            [
+                'target' => 'Advocates & Law Firm',
+                'type' => 'upstream',
+                'weight' => 0.90,
+                'need_label' => 'PBO Act & Regulatory Compliance',
+                'rationale' => 'PBO Act / NGOs Co-ordination Board compliance, governance bylaws, and community partnership agreements require legal oversight.',
+            ],
+            [
+                'target' => 'Audit, Tax & Accounting (CPA)',
+                'type' => 'companion',
+                'weight' => 0.90,
+                'need_label' => 'Grant Accounting & Donor Audits',
+                'rationale' => 'International and institutional grant makers require strict segregated fund accounting and independent project audits.',
+            ],
+            [
+                'target' => 'Bulk SMS, Voice, USSD & Communications APIs',
+                'type' => 'downstream',
+                'weight' => 0.85,
+                'need_label' => 'Community Alerts & Beneficiary Messaging',
+                'rationale' => 'Coordinating grassroots field activities, emergency outreach, and beneficiary survey notifications via direct SMS.',
             ],
         ],
     ];
