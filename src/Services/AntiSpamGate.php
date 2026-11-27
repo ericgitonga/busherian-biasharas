@@ -60,19 +60,14 @@ final class AntiSpamGate
     public static function generateCsrfToken(): string
     {
         OwnerAuth::startSecureSession();
-        if (session_status() === PHP_SESSION_ACTIVE) {
-            if (empty($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])) {
-                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-            }
-            return $_SESSION['csrf_token'];
+        $sessId = session_id();
+        if (session_status() !== PHP_SESSION_ACTIVE || !is_string($sessId) || $sessId === '') {
+            throw new \RuntimeException('Cannot generate CSRF token without an active PHP session.');
         }
-
-        // Fallback for headless CLI or tests where HTTP session headers cannot be sent
-        static $cliFallbackToken = null;
-        if ($cliFallbackToken === null) {
-            $cliFallbackToken = bin2hex(random_bytes(32));
+        if (empty($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])) {
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         }
-        return $cliFallbackToken;
+        return $_SESSION['csrf_token'];
     }
 
     public static function verifyCsrfToken(string $submittedToken): bool
@@ -82,7 +77,8 @@ final class AntiSpamGate
             return false;
         }
         OwnerAuth::startSecureSession();
-        if (session_status() !== PHP_SESSION_ACTIVE) {
+        $sessId = session_id();
+        if (session_status() !== PHP_SESSION_ACTIVE || !is_string($sessId) || $sessId === '') {
             return false;
         }
 
@@ -92,13 +88,10 @@ final class AntiSpamGate
         }
 
         // Backward compatibility fallback for legacy HMAC tokens generated before session-payload migration
-        $sessionId = session_id();
-        if (is_string($sessionId) && $sessionId !== '') {
-            $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
-            $legacyExpected = hash_hmac('sha256', $sessionId, $csrfSecret);
-            if (hash_equals($legacyExpected, $submittedToken)) {
-                return true;
-            }
+        $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
+        $legacyExpected = hash_hmac('sha256', $sessId, $csrfSecret);
+        if (hash_equals($legacyExpected, $submittedToken)) {
+            return true;
         }
         return false;
     }

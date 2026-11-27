@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.44.2] - 2026-11-27
+
+### Fixed
+- **Unblocked Alumni Owner Password Reset & Sign-In (#472)**: Removed restrictive pre-verification listing check in `public/owner/login.php` that blocked alumni from requesting a 6-digit verification code to set or reset their owner password. Valid emails are now dispatched a secure 6-digit OTP under AntiSpamGate rate limiting, allowing owners to verify their email, set their password, and access the portal autonomously.
+- **Fail-Closed Session-Bound CSRF Token Generation (#472, #187)**: Hardened `AntiSpamGate::generateCsrfToken()` to throw a `RuntimeException` when called without an active PHP session, ensuring strict fail-closed security and full test regression compliance for Section 38a (#187).
+
 ## [0.44.1] - 2026-11-27
 
 ### Fixed
