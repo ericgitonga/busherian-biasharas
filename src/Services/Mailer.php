@@ -79,9 +79,26 @@ final class Mailer
      * STRICT DPA PRIVACY RULE (#167): NEVER include House, Year Left, or School Number in email bodies or email_outbox.
      * Alumni vetting credentials remain exclusively in `business_vetting_queue` for authenticated Admin Console review.
      */
+    /**
+     * Resolve destination administrator email for moderation notices (#461).
+     * Defaults to gitonga@gmail.com if admin@busherianbiasharas.com or env is not configured.
+     */
+    public static function getAdminEmail(PDO $pdo): string
+    {
+        $setting = trim(Database::getSetting($pdo, 'ADMIN_EMAIL', ''));
+        if ($setting !== '' && filter_var($setting, FILTER_VALIDATE_EMAIL)) {
+            return $setting;
+        }
+        $env = trim(Database::env('ADMIN_EMAIL', 'gitonga@gmail.com'));
+        if ($env !== '' && filter_var($env, FILTER_VALIDATE_EMAIL)) {
+            return $env;
+        }
+        return 'gitonga@gmail.com';
+    }
+
     public static function notifyAdminNewSubmission(PDO $pdo, array $business, array $vetting, ?array $customCategory = null): int
     {
-        $adminEmail = Database::env('ADMIN_EMAIL', 'admin@busherianbiasharas.com');
+        $adminEmail = self::getAdminEmail($pdo);
         $bizId = (int)$business['id'];
         $bizName = htmlspecialchars((string)$business['name'], ENT_QUOTES, 'UTF-8');
         $school = htmlspecialchars((string)$vetting['school_code'], ENT_QUOTES, 'UTF-8');
@@ -316,7 +333,36 @@ final class Mailer
         return $stmt->rowCount() === 1;
     }
 
-    public static function dispatchOutboxRow(PDO $pdo, int $outboxId): bool
+    /**
+     * Resolve effective SMTP host for delivery (#461).
+     * On AngryHosting, mail.busherianbiasharas.com resolves to the web/cPanel server where port 465 is firewalled.
+     * The verified dedicated TLS mail relay is mx1.angryhosting.com.
+     */
+    public static function resolveEffectiveSmtpHost(string $configuredHost): string
+    {
+        $h = trim($configuredHost);
+        if ($h === '' || $h === 'mail.busherianbiasharas.com') {
+            return 'mx1.angryhosting.com';
+        }
+        return $h;
+    }
+
+    /**
+     * Resolve TLS SNI peer name matching the server certificate (#461).
+     */
+    public static function resolveEffectiveSmtpPeerName(string $host): string
+    {
+        $custom = trim(Database::env('SMTP_TLS_PEER_NAME', Database::env('SMTP_PEER_NAME', '')));
+        if ($custom !== '') {
+            return $custom;
+        }
+        if ($host === 'mx1.angryhosting.com' || str_ends_with($host, '.angryhosting.com')) {
+            return 'mx1.angryhosting.com';
+        }
+        return $host;
+    }
+
+    public static function dispatchOutboxRow(PDO $pdo, int $outboxId, bool $forceImmediate = false): bool
     {
         if ($pdo->inTransaction()) {
             return false;
@@ -324,7 +370,21 @@ final class Mailer
         $now = time();
         $leaseToken = bin2hex(random_bytes(16));
 
-        // Step 1 (#248 M-08): Atomic worker lease acquisition fenced by unique `lease_token` (120s lease >= ~5x 25s SMTP deadline)
+        // Step 1 (#248 M-08, #462): Atomic worker lease acquisition fenced by unique `lease_token`.
+        // When $forceImmediate is true (manual admin console retry), bypass future backoff timestamp.
+        $whereRetry = $forceImmediate
+            ? ''
+            : "AND (next_retry_at IS NULL OR next_retry_at <= :now2)";
+        $leaseParams = [
+            ':lu' => $now + self::OUTBOX_LEASE_SECONDS,
+            ':ltok' => $leaseToken,
+            ':id' => $outboxId,
+            ':now1' => $now,
+        ];
+        if (!$forceImmediate) {
+            $leaseParams[':now2'] = $now;
+        }
+
         $leaseStmt = $pdo->prepare("
             UPDATE email_outbox
             SET status = 'sending',
@@ -335,17 +395,11 @@ final class Mailer
                   status IN ('queued', 'failed')
                   OR (status = 'sending' AND (lease_until IS NULL OR lease_until < :now1))
               )
-              AND (next_retry_at IS NULL OR next_retry_at <= :now2)
+              {$whereRetry}
               AND body_html NOT LIKE '[REDACTED%'
               AND body_html NOT LIKE '[EXPIRED%'
         ");
-        $leaseStmt->execute([
-            ':lu' => $now + self::OUTBOX_LEASE_SECONDS,
-            ':ltok' => $leaseToken,
-            ':id' => $outboxId,
-            ':now1' => $now,
-            ':now2' => $now,
-        ]);
+        $leaseStmt->execute($leaseParams);
         if ($leaseStmt->rowCount() !== 1) {
             return false;
         }
@@ -426,10 +480,13 @@ final class Mailer
             ? AntiSpamGate::sanitizeHeaderValue($replyRaw)
             : null;
 
-        $smtpHost = trim(Database::env('SMTP_HOST', ''));
+        $rawHost = trim(Database::env('SMTP_HOST', ''));
+        if ($rawHost === '') {
+            $rawHost = trim(Database::getSetting($pdo, 'SMTP_HOST', ''));
+        }
         $ok = false;
-        if ($smtpHost !== '') {
-            $ok = self::sendViaAuthenticatedSmtp($recipient, $cleanSubject, $bodyHtml, $fromEmail, $fromName, $cleanReply);
+        if ($rawHost !== '' || Database::isProduction()) {
+            $ok = self::sendViaAuthenticatedSmtp($recipient, $cleanSubject, $bodyHtml, $fromEmail, $fromName, $cleanReply, $pdo);
         }
         if (!$ok && self::isPhpMailFallbackEnabled() && function_exists('mail')) {
             $msgId = '<' . bin2hex(random_bytes(12)) . '@busherianbiasharas.com>';
@@ -504,15 +561,31 @@ final class Mailer
     }
 
     /**
-     * Bounded retry worker for `queued` and `failed` outbox items (#188).
+     * Bounded retry worker for `queued` and `failed` outbox items (#188, #462).
      *
-     * @return array{processed: int, delivered: int, failed: int, last_run_utc: string}
+     * @return array{processed: int, delivered: int, expired: int, failed: int, last_run_utc: string}
      */
-    public static function processRetryQueue(PDO $pdo, int $maxBatch = 25, int $maxAttempts = 5): array
-    {
+    public static function processRetryQueue(
+        PDO $pdo,
+        int $maxBatch = 25,
+        int $maxAttempts = 5,
+        bool $forceImmediate = false
+    ): array {
         $limit = max(1, min(100, $maxBatch));
         $cap = max(1, min(10, $maxAttempts));
         $now = time();
+
+        $whereRetry = $forceImmediate
+            ? ''
+            : "AND (next_retry_at IS NULL OR next_retry_at <= :now2)";
+        $params = [
+            ':now1' => $now,
+            ':cap' => $cap,
+        ];
+        if (!$forceImmediate) {
+            $params[':now2'] = $now;
+        }
+
         $stmt = $pdo->prepare("
             SELECT id
             FROM email_outbox
@@ -520,23 +593,32 @@ final class Mailer
                   status IN ('queued', 'failed')
                   OR (status = 'sending' AND (lease_until IS NULL OR lease_until < :now1))
               )
-              AND (next_retry_at IS NULL OR next_retry_at <= :now2)
+              {$whereRetry}
               AND attempts < :cap
               AND body_html NOT LIKE '[REDACTED%'
               AND body_html NOT LIKE '[EXPIRED%'
             ORDER BY id ASC
             LIMIT {$limit}
         ");
-        $stmt->execute([':now1' => $now, ':now2' => $now, ':cap' => $cap]);
+        $stmt->execute($params);
         $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
 
         $delivered = 0;
+        $expired = 0;
         $failed = 0;
         foreach ($ids as $id) {
-            if (self::dispatchOutboxRow($pdo, $id)) {
+            $ok = self::dispatchOutboxRow($pdo, $id, $forceImmediate);
+            if ($ok) {
                 $delivered++;
             } else {
-                $failed++;
+                $checkStmt = $pdo->prepare("SELECT status FROM email_outbox WHERE id = :id LIMIT 1");
+                $checkStmt->execute([':id' => $id]);
+                $st = (string)($checkStmt->fetchColumn() ?: '');
+                if ($st === 'expired') {
+                    $expired++;
+                } else {
+                    $failed++;
+                }
             }
         }
         $nowUtc = gmdate('Y-m-d H:i:s');
@@ -544,13 +626,105 @@ final class Mailer
         return [
             'processed' => count($ids),
             'delivered' => $delivered,
+            'expired' => $expired,
             'failed' => $failed,
             'last_run_utc' => $nowUtc,
         ];
     }
 
     /**
-     * Optional authenticated SMTP transport (cPanel / transactional SMTP) for high-deliverability Yahoo/Gmail delivery (#152).
+     * Proactive SMTP relay connectivity and TLS handshake health check (#460).
+     *
+     * @return array{healthy: bool, relay: string, port: int, error: ?string, timestamp_utc: string}
+     */
+    public static function checkSmtpHealth(?PDO $pdo = null): array
+    {
+        $simulate = strtolower(Database::env('SIMULATE_EMAILS', 'yes')) === 'yes'
+                 || strtolower(Database::env('APP_ENV', 'development')) !== 'production';
+        if ($simulate) {
+            return [
+                'healthy' => true,
+                'relay' => 'simulated',
+                'port' => 0,
+                'error' => null,
+                'timestamp_utc' => gmdate('Y-m-d H:i:s'),
+            ];
+        }
+
+        $rawHost = trim(Database::env('SMTP_HOST', ''));
+        if ($rawHost === '' && $pdo !== null) {
+            $rawHost = trim(Database::getSetting($pdo, 'SMTP_HOST', ''));
+        }
+        $host = self::resolveEffectiveSmtpHost($rawHost);
+        $port = (int)Database::env('SMTP_PORT', '465');
+        $rawSec = trim(Database::env('SMTP_ENCRYPTION', Database::env('SMTP_SECURE', $port === 465 ? 'ssl' : 'tls')));
+        $sec = strtolower($rawSec);
+        $peerName = self::resolveEffectiveSmtpPeerName($host);
+
+        $sslCtx = stream_context_create([
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true,
+                'SNI_enabled' => true,
+                'peer_name' => $peerName,
+            ],
+        ]);
+        $remote = ($sec === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port;
+        $fp = @stream_socket_client($remote, $errno, $errstr, 5.0, STREAM_CLIENT_CONNECT, $sslCtx);
+        if (!is_resource($fp)) {
+            $err = "Cannot connect to SMTP relay {$remote} ({$errno}): {$errstr}";
+            if ($pdo !== null) {
+                Database::setSetting($pdo, 'SMTP_LAST_HEALTH_ERROR', $err);
+                Database::setSetting($pdo, 'SMTP_LAST_HEALTH_STATUS', 'critical');
+                Database::setSetting($pdo, 'SMTP_LAST_HEALTH_CHECK_AT', gmdate('Y-m-d H:i:s'));
+            }
+            return [
+                'healthy' => false,
+                'relay' => $host,
+                'port' => $port,
+                'error' => $err,
+                'timestamp_utc' => gmdate('Y-m-d H:i:s'),
+            ];
+        }
+
+        stream_set_timeout($fp, 5);
+        $greeting = (string)fgets($fp, 515);
+        fwrite($fp, "QUIT\r\n");
+        fclose($fp);
+
+        if (!str_starts_with($greeting, '220')) {
+            $err = "Unexpected SMTP greeting from {$remote}: " . trim($greeting);
+            if ($pdo !== null) {
+                Database::setSetting($pdo, 'SMTP_LAST_HEALTH_ERROR', $err);
+                Database::setSetting($pdo, 'SMTP_LAST_HEALTH_STATUS', 'critical');
+                Database::setSetting($pdo, 'SMTP_LAST_HEALTH_CHECK_AT', gmdate('Y-m-d H:i:s'));
+            }
+            return [
+                'healthy' => false,
+                'relay' => $host,
+                'port' => $port,
+                'error' => $err,
+                'timestamp_utc' => gmdate('Y-m-d H:i:s'),
+            ];
+        }
+
+        if ($pdo !== null) {
+            Database::setSetting($pdo, 'SMTP_LAST_HEALTH_ERROR', '');
+            Database::setSetting($pdo, 'SMTP_LAST_HEALTH_STATUS', 'healthy');
+            Database::setSetting($pdo, 'SMTP_LAST_HEALTH_CHECK_AT', gmdate('Y-m-d H:i:s'));
+        }
+
+        return [
+            'healthy' => true,
+            'relay' => $host,
+            'port' => $port,
+            'error' => null,
+            'timestamp_utc' => gmdate('Y-m-d H:i:s'),
+        ];
+    }
+
+    /**
+     * Optional authenticated SMTP transport (cPanel / transactional SMTP) for high-deliverability Yahoo/Gmail delivery (#152, #461).
      */
     private static function sendViaAuthenticatedSmtp(
         string $to,
@@ -558,9 +732,14 @@ final class Mailer
         string $bodyHtml,
         string $fromEmail,
         string $fromName,
-        ?string $replyTo
+        ?string $replyTo,
+        ?PDO $pdo = null
     ): bool {
-        $host = trim(Database::env('SMTP_HOST', ''));
+        $rawHost = trim(Database::env('SMTP_HOST', ''));
+        if ($rawHost === '' && $pdo !== null) {
+            $rawHost = trim(Database::getSetting($pdo, 'SMTP_HOST', ''));
+        }
+        $host = self::resolveEffectiveSmtpHost($rawHost);
         $port = (int)Database::env('SMTP_PORT', '465');
         // Support both SMTP_USER and SMTP_USERNAME, plus SMTP_PASS and SMTP_PASSWORD aliases (M-06)
         $user = trim(Database::env('SMTP_USER', Database::env('SMTP_USERNAME', '')));
@@ -585,16 +764,37 @@ final class Mailer
         $deadline = microtime(true) + (float)self::SMTP_TOTAL_DEADLINE_SECONDS;
         // In production, TLS peer and hostname verification must never be disabled (M-07)
         $verifyPeer = $isProd ? true : (strtolower(trim(Database::env('SMTP_VERIFY_TLS_PEER', 'yes'))) !== 'no');
+        $peerName = self::resolveEffectiveSmtpPeerName($host);
         $sslCtx = stream_context_create([
             'ssl' => [
                 'verify_peer' => $verifyPeer,
                 'verify_peer_name' => $verifyPeer,
                 'SNI_enabled' => true,
-                'peer_name' => $host,
+                'peer_name' => $peerName,
             ],
         ]);
         $remote = ($sec === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port;
-        $fp = @stream_socket_client($remote, $errno, $errstr, 8.0, STREAM_CLIENT_CONNECT, $sslCtx);
+        $fp = @stream_socket_client($remote, $errno, $errstr, 5.0, STREAM_CLIENT_CONNECT, $sslCtx);
+
+        // Fallback: If connecting to configured host failed and mx1.angryhosting.com was not primary, try mx1.angryhosting.com (#461)
+        if (!is_resource($fp) && $host !== 'mx1.angryhosting.com' && ($rawHost === 'mail.busherianbiasharas.com' || str_contains($rawHost, 'busherianbiasharas.com'))) {
+            error_log("[Mailer::sendViaAuthenticatedSmtp] Primary host {$remote} failed ({$errno}: {$errstr}), falling back to mx1.angryhosting.com:465");
+            $host = 'mx1.angryhosting.com';
+            $port = 465;
+            $sec = 'ssl';
+            $peerName = 'mx1.angryhosting.com';
+            $sslCtx = stream_context_create([
+                'ssl' => [
+                    'verify_peer' => $verifyPeer,
+                    'verify_peer_name' => $verifyPeer,
+                    'SNI_enabled' => true,
+                    'peer_name' => $peerName,
+                ],
+            ]);
+            $remote = 'ssl://mx1.angryhosting.com:465';
+            $fp = @stream_socket_client($remote, $errno, $errstr, 5.0, STREAM_CLIENT_CONNECT, $sslCtx);
+        }
+
         if (!is_resource($fp)) {
             error_log("[Mailer::sendViaAuthenticatedSmtp] Failed connecting to {$remote} ({$errno}): {$errstr}");
             return false;
@@ -780,7 +980,7 @@ final class Mailer
      */
     public static function notifyAdminOwnerCriticalEdit(PDO $pdo, array $owner, array $oldBiz, array $newBiz, array $changes): int
     {
-        $adminEmail = Database::env('ADMIN_EMAIL', 'admin@busherianbiasharas.com');
+        $adminEmail = self::getAdminEmail($pdo);
         $ownerEmail = htmlspecialchars((string)($owner['email'] ?? ''), ENT_QUOTES, 'UTF-8');
         $bizId = (int)($newBiz['id'] ?? $oldBiz['id'] ?? 0);
         $bizUid = htmlspecialchars((string)($newBiz['business_id'] ?? $oldBiz['business_id'] ?? ''), ENT_QUOTES, 'UTF-8');
@@ -873,7 +1073,7 @@ final class Mailer
      */
     public static function notifyAdminTakedownRequest(PDO $pdo, array $business, array $requestInfo, string $mode): int
     {
-        $adminEmail = Database::env('ADMIN_EMAIL', 'admin@busherianbiasharas.com');
+        $adminEmail = self::getAdminEmail($pdo);
         $bizId = (int)($business['id'] ?? 0);
         $bizName = htmlspecialchars((string)($business['name'] ?? "Business #{$bizId}"), ENT_QUOTES, 'UTF-8');
         $reqName = htmlspecialchars(AntiSpamGate::sanitizeHeaderValue((string)($requestInfo['requester_name'] ?? '')), ENT_QUOTES, 'UTF-8');

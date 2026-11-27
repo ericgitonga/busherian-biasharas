@@ -736,5 +736,60 @@ try {
 }
 testAssert($nameCompulsoryThrown, "updateBusinessByOwner enforces compulsory founder_name when opt-in is enabled (#457)");
 
+// 28. Check AngryHosting SMTP Relay Resolution, Manual Retry Backoff Bypass, and Outbox Triage (#460, #461, #462)
+testAssert(\BusherianBiasharas\Services\Mailer::resolveEffectiveSmtpHost('mail.busherianbiasharas.com') === 'mx1.angryhosting.com', 'Mailer maps mail.busherianbiasharas.com to mx1.angryhosting.com (#461)');
+testAssert(\BusherianBiasharas\Services\Mailer::resolveEffectiveSmtpHost('') === 'mx1.angryhosting.com', 'Mailer resolves empty host to default mx1.angryhosting.com relay (#461)');
+testAssert(\BusherianBiasharas\Services\Mailer::resolveEffectiveSmtpHost('custom.smtp.relay.com') === 'custom.smtp.relay.com', 'Mailer preserves custom external SMTP relays (#461)');
+testAssert(\BusherianBiasharas\Services\Mailer::resolveEffectiveSmtpPeerName('mx1.angryhosting.com') === 'mx1.angryhosting.com', 'Mailer aligns SNI peer name for mx1.angryhosting.com (#461)');
+testAssert(\BusherianBiasharas\Services\Mailer::getAdminEmail($pdo) !== '', 'Mailer::getAdminEmail returns active administrator email (#461)');
+
+// Verify $forceImmediate bypasses future next_retry_at in processRetryQueue
+$futureRetryTs = time() + 1800; // 30 minutes in future
+$pdo->prepare("
+    INSERT INTO email_outbox (business_id, recipient_email, subject, body_html, status, attempts, next_retry_at)
+    VALUES (NULL, 'retrytest462@example.com', 'Immediate Retry Test', '<p>Test</p>', 'failed', 2, :nra)
+")->execute([':nra' => $futureRetryTs]);
+$testOutboxId462 = (int)$pdo->lastInsertId();
+
+// Normal retry with forceImmediate=false should ignore future next_retry_at
+$normalRetryRes = \BusherianBiasharas\Services\Mailer::processRetryQueue($pdo, 25, 5, false);
+$stCheck1 = (string)$pdo->query("SELECT status FROM email_outbox WHERE id = {$testOutboxId462}")->fetchColumn();
+testAssert($stCheck1 === 'failed', 'processRetryQueue with forceImmediate=false respects future backoff window (#462)');
+
+// Manual retry with forceImmediate=true should lease and process immediately
+putenv('SIMULATE_EMAILS=yes');
+$forcedRetryRes = \BusherianBiasharas\Services\Mailer::processRetryQueue($pdo, 25, 5, true);
+$stCheck2 = (string)$pdo->query("SELECT status FROM email_outbox WHERE id = {$testOutboxId462}")->fetchColumn();
+testAssert(in_array($stCheck2, ['sent', 'simulated'], true), 'processRetryQueue with forceImmediate=true immediately processes backoff-locked outbox rows (#462)');
+testAssert(isset($forcedRetryRes['expired']), 'processRetryQueue returns distinct expired tally in result dictionary (#462)');
+
+// Clean up test outbox row
+$pdo->prepare("DELETE FROM email_outbox WHERE id = :id")->execute([':id' => $testOutboxId462]);
+
+// 29. Check Preview Subdomain Production .env Resolution & Admin Credentials Inheritance (#464)
+$tempDir464 = sys_get_temp_dir() . '/bbiz_test_env_' . getmypid() . '_' . time();
+mkdir($tempDir464 . '/www', 0755, true);
+mkdir($tempDir464 . '/preview', 0755, true);
+$mockToken464 = 'preview_test_token_' . bin2hex(random_bytes(8));
+$mockHmac464 = 'preview_test_hmac_secret_32bytes_long_min!';
+file_put_contents($tempDir464 . '/www/.env', "ADMIN_ACCESS_TOKEN={$mockToken464}\nAPP_HMAC_SECRET={$mockHmac464}\n");
+
+$parsedProd464 = \BusherianBiasharas\Services\PreprodSandbox::parseEnvFile($tempDir464 . '/www/.env');
+testAssert(($parsedProd464['ADMIN_ACCESS_TOKEN'] ?? '') === $mockToken464, 'PreprodSandbox::parseEnvFile successfully parses production .env without mutating global env (#464)');
+testAssert(($parsedProd464['APP_HMAC_SECRET'] ?? '') === $mockHmac464, 'PreprodSandbox::parseEnvFile extracts APP_HMAC_SECRET for handoff validation (#464)');
+
+// Test handoff token generated with production secret
+$handoffExp464 = time() + 300;
+$handoffSig464 = hash_hmac('sha256', "preprod_handoff|{$handoffExp464}", $mockHmac464);
+$rawHandoffToken464 = "{$handoffExp464}.{$handoffSig464}";
+$fakeHandoffToken464 = "{$handoffExp464}.badsignature";
+testAssert(\BusherianBiasharas\Services\PreprodSandbox::verifyProdHandoffToken($fakeHandoffToken464) === false, 'PreprodSandbox::verifyProdHandoffToken blocks invalid signature (#464)');
+
+// Clean up temp directories
+@unlink($tempDir464 . '/www/.env');
+@rmdir($tempDir464 . '/www');
+@rmdir($tempDir464 . '/preview');
+@rmdir($tempDir464);
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
 

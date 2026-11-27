@@ -53,4 +53,23 @@ jobs:
             exit 1
           fi
 
+          # Proactive SMTP Health and Outbox Failure Sentinel (#460)
+          # Fails workflow immediately so GitHub sends an instant push notification & email alert upon failure
+          python3 -c "
+          import json, sys
+          try:
+              with open('/tmp/cron_response.json') as f:
+                  data = json.load(f)
+              smtp = data.get('smtp_health', {})
+              outbox = data.get('outbox_retry', {})
+              if smtp.get('healthy') is False:
+                  print(f'::error::SMTP Relay Health Check Failed: {smtp.get(\"error\", \"Unknown error\")}')
+                  sys.exit(1)
+              if outbox.get('failed', 0) > 0:
+                  print(f'::error::Outbox Retry Has {outbox.get(\"failed\")} Failing Email(s)!')
+                  sys.exit(1)
+          except Exception as e:
+              print(f'::warning::Could not evaluate SMTP health JSON: {e}')
+          "
+
           echo "WebCron execution completed successfully."

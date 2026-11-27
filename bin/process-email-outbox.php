@@ -9,6 +9,8 @@ use BusherianBiasharas\Services\Mailer;
 
 $maxBatch = isset($argv[1]) ? max(1, min(100, (int)$argv[1])) : 25;
 $maxAttempts = isset($argv[2]) ? max(1, min(10, (int)$argv[2])) : 5;
+$forceImmediate = (isset($argv[3]) && in_array(strtolower($argv[3]), ['--force', 'force', '1', 'true'], true))
+               || (isset($argv[1]) && in_array(strtolower($argv[1]), ['--force', 'force'], true));
 
 try {
     $workerLock = bbiz_acquire_cli_worker_lock('process_email_outbox');
@@ -21,7 +23,7 @@ try {
         exit(0);
     }
     $pdo = Database::getConnection();
-    $result = Mailer::processRetryQueue($pdo, $maxBatch, $maxAttempts);
+    $result = Mailer::processRetryQueue($pdo, $maxBatch, $maxAttempts, $forceImmediate);
     echo json_encode(['status' => 'ok', 'outbox_retry' => $result], JSON_UNESCAPED_SLASHES) . PHP_EOL;
     exit(0);
 } catch (\Throwable $e) {

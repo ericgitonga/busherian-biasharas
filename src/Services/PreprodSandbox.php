@@ -131,8 +131,15 @@ final class PreprodSandbox
         if (defined('BBIZ_PROD_ENV_PATH') && is_string(BBIZ_PROD_ENV_PATH)) {
             $prodEnvCandidates[] = BBIZ_PROD_ENV_PATH;
         }
-        $prodEnvCandidates[] = dirname($appRoot) . '/.env';
+        if (getenv('BBIZ_PROD_ENV_PATH') !== false && trim((string)getenv('BBIZ_PROD_ENV_PATH')) !== '') {
+            $prodEnvCandidates[] = trim((string)getenv('BBIZ_PROD_ENV_PATH'));
+        }
         $prodEnvCandidates[] = $appRoot . '/.env';
+        $prodEnvCandidates[] = dirname($appRoot) . '/www/.env';
+        $prodEnvCandidates[] = dirname($appRoot) . '/public_html/.env';
+        $prodEnvCandidates[] = dirname($appRoot) . '/.env';
+        $prodEnvCandidates[] = dirname($appRoot, 2) . '/www/.env';
+        $prodEnvCandidates[] = dirname($appRoot, 2) . '/.env';
 
         foreach ($prodEnvCandidates as $cand) {
             if (is_file($cand) && is_readable($cand)) {

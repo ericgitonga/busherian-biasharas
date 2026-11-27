@@ -70,14 +70,20 @@ try {
     // Task 3: Drain durable DPA media erasure obligations
     $mediaSummary = VettingPurger::drainDurableMediaDeletions($pdo, null);
 
+    // Task 4: Proactive SMTP Relay Health & Connectivity Check (#460)
+    $smtpHealth = Mailer::checkSmtpHealth($pdo);
+
+    $isDegraded = ($outboxSummary['failed'] > 0) || ($smtpHealth['healthy'] === false);
+
     http_response_code(200);
     echo json_encode([
-        'status' => 'ok',
+        'status' => $isDegraded ? 'warning_degraded' : 'ok',
         'timestamp_utc' => gmdate('Y-m-d H:i:s'),
         'heartbeat_utc' => $heartbeatUtc,
         'retention_purge' => $retentionSummary,
         'outbox_retry' => $outboxSummary,
         'media_deletions' => $mediaSummary,
+        'smtp_health' => $smtpHealth,
     ], JSON_UNESCAPED_SLASHES);
     exit;
 } catch (\Throwable $e) {
