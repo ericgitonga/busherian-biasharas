@@ -632,9 +632,9 @@ $aghsHouses = Houses::AGHS_HOUSES;
           <p class="brand-subtitle">Register a Verified Busherian Business (AHS &amp; AGHS)</p>
         </div>
       </a>
-      <nav class="header-actions">
+      <nav class="header-actions portal-header-actions">
         <a href="/" class="btn btn-outline-light">&larr; Back to Directory</a>
-        <a href="<?= $loggedOwner ? '/owner/index.php' : '/owner/login.php?from=list_edit' ?>" class="btn btn-outline-light">👤 <?= $loggedOwner ? "My Biasharas (Edit / + List)" : "List / Edit Biashara" ?></a>
+        <a href="<?= $loggedOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light">👤 <?= $loggedOwner ? "My Biasharas (Edit / + List)" : "List / Edit Biashara" ?></a>
         <a href="/privacy.php" class="btn btn-outline-light">🔒 Privacy Notice</a>
       </nav>
     </div>

@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.44.0] - 2026-11-27
+
+### Added
+- **Explicit Owner Sign-Out Controls (#470)**: Added explicit, prominent CSRF-protected sign-out options for authenticated business owners across key touchpoints:
+  - **Public Homepage Desktop Header**: `🚪 Sign Out` button rendered alongside `✏️ My Biasharas (Edit / + List)` when signed in (`public/index.php`).
+  - **Public Homepage Mobile Drawer**: `🚪 Sign Out (<email>)` highlighted action item under `ACTIONS & ACCOUNT` (`public/index.php`).
+  - **Owner Dashboard In-Page Section**: New `Account Session & Sign Out` section in the owner dashboard body allowing one-click sign-out on the current browser or across all devices (`public/owner/index.php`).
+  - **Portal Navigation Headers**: Added `Sign Out` buttons to listing management and registration headers with responsive flex-wrapping on mobile (`public/owner/edit-business.php`, `public/submit.php`, `public/assets/css/app.css`).
+- **CSRF & Security Compliance (#203, #470)**: All sign-out controls strictly submit POST forms with session CSRF tokens to `/owner/logout.php`, preventing accidental prefetching or cross-site request forgery.
+
 ## [0.43.0] - 2026-11-27
 
 ### Added

@@ -108,7 +108,7 @@ $tokens = AntiSpamGate::generateFormTokens();
           <p class="brand-subtitle">Signed in as <?= htmlspecialchars((string)$owner['email'], ENT_QUOTES, 'UTF-8') ?> • Changes Go Live Immediately</p>
         </div>
       </a>
-      <nav class="header-actions">
+      <nav class="header-actions portal-header-actions">
         <a href="/owner/index.php" class="btn btn-outline-light">&larr; My Businesses</a>
         <a href="/" class="btn btn-outline-light">Public Directory</a>
       </nav>

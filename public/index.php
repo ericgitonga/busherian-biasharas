@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/src/bootstrap.php';
 
 use BusherianBiasharas\Config\Database;
+use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\CategoryMatcher;
 use BusherianBiasharas\Services\EngagementRanker;
 use BusherianBiasharas\Services\AdminAuth;
@@ -18,6 +19,7 @@ bbiz_send_security_headers(false);
 $appVersion = trim((string)@file_get_contents(dirname(__DIR__) . '/VERSION') ?: '0.32.5');
 $pdo = Database::getConnection();
 $currentOwner = OwnerAuth::getCurrentOwner($pdo);
+$ownerCsrfToken = $currentOwner !== null ? AntiSpamGate::generateCsrfToken() : '';
 $isAdminVisitor = AdminAuth::isAuthenticated();
 $taxonomyTree = CategoryMatcher::getTaxonomyTree($pdo, false);
 $placeHierarchy = LocationEngine::getPlaceHierarchy();
@@ -301,6 +303,12 @@ $pageCanonicalPath = $requestedBiz
         </button>
         <a href="/privacy.php" class="btn btn-outline-light header-desktop-action">🔒 Privacy Notice</a>
         <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-gold btn-list-biashara" data-testid="btn-list-edit-biashara"><?= $currentOwner ? '✏️ My Biasharas (Edit / + List)' : '+ List / Edit Your Biashara' ?></a>
+        <?php if ($currentOwner): ?>
+        <form method="POST" action="/owner/logout.php" class="header-desktop-action" style="margin:0;display:inline;">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($ownerCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+          <button type="submit" data-testid="btn-owner-logout" class="btn btn-outline-light" style="border-color:rgba(255,255,255,0.45);font-size:0.85rem;cursor:pointer;" title="Sign out of <?= htmlspecialchars((string)$currentOwner['email'], ENT_QUOTES, 'UTF-8') ?>">🚪 Sign Out</button>
+        </form>
+        <?php endif; ?>
         <button type="button" id="btn-mobile-menu" data-testid="btn-mobile-menu" class="btn btn-outline-light btn-hamburger header-mobile-only" aria-label="Open Menu &amp; Filters" onclick="toggleMobileDrawer(true)">
           <span style="font-size:18px;line-height:1;">☰</span>
         </button>
@@ -458,6 +466,14 @@ $pageCanonicalPath = $requestedBiz
           <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light" style="border:1.5px solid #D97706;background:#FFFBEB;color:#92400E;font-weight:700;justify-content:flex-start;font-size:13px;padding:8px 12px;" data-testid="drawer-list-edit-biashara">
             <?= $currentOwner ? '✏️ My Biasharas (Edit / + List)' : '+ List / Edit Your Biashara' ?>
           </a>
+          <?php if ($currentOwner): ?>
+          <form method="POST" action="/owner/logout.php" style="margin:0;">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($ownerCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+            <button type="submit" data-testid="drawer-owner-logout" class="btn btn-outline-light" style="width:100%;border:1.5px solid #DC2626;background:#FEF2F2;color:#991B1B;font-weight:700;justify-content:flex-start;font-size:13px;padding:8px 12px;cursor:pointer;">
+              🚪 Sign Out (<?= htmlspecialchars((string)$currentOwner['email'], ENT_QUOTES, 'UTF-8') ?>)
+            </button>
+          </form>
+          <?php endif; ?>
           <button type="button" id="btn-drawer-shortlist" class="btn btn-outline-light" style="border:1px solid #E5DEC9;background:#FBF8F3;color:#18201B;justify-content:flex-start;font-size:13px;padding:8px 12px;" onclick="if(document.getElementById('btn-export-shortlist')){document.getElementById('btn-export-shortlist').click();}">
             🏢 B2B Shortlist (<span class="drawer-shortlist-count">0</span>/5)
           </button>
