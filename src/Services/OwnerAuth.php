@@ -28,9 +28,26 @@ final class OwnerAuth
     }
 
     /**
-     * Centralized secure PHP session bootstrap (#165):
+     * Compute shared cookie domain across apex and www subdomains (#468):
+     * Ensures session cookies (PHPSESSID and bbiz_owner_session) survive across
+     * busherianbiasharas.com and www.busherianbiasharas.com seamlessly.
+     */
+    public static function cookieDomain(): string
+    {
+        $host = strtolower(trim((string)($_SERVER['HTTP_HOST'] ?? '')));
+        if ($host !== '') {
+            $hostOnly = explode(':', $host)[0];
+            if ($hostOnly === 'busherianbiasharas.com' || $hostOnly === 'www.busherianbiasharas.com') {
+                return '.busherianbiasharas.com';
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Centralized secure PHP session bootstrap (#165, #468):
      * Enforces session.use_strict_mode=1, session.use_only_cookies=1, HttpOnly, SameSite=Lax,
-     * and Secure flag under HTTPS/reverse-proxy TLS.
+     * Secure flag under HTTPS/reverse-proxy TLS, and unified apex/www cookie domain.
      */
     public static function startSecureSession(): void
     {
@@ -41,13 +58,20 @@ final class OwnerAuth
             }
             @ini_set('session.use_strict_mode', '1');
             @ini_set('session.use_only_cookies', '1');
-            session_set_cookie_params([
+
+            $cookieParams = [
                 'lifetime' => 0,
                 'path' => '/',
                 'secure' => self::isHttpsRequest(),
                 'httponly' => true,
                 'samesite' => 'Lax',
-            ]);
+            ];
+            $domain = self::cookieDomain();
+            if ($domain !== '') {
+                $cookieParams['domain'] = $domain;
+            }
+
+            session_set_cookie_params($cookieParams);
             @session_start();
         }
     }
@@ -917,13 +941,23 @@ final class OwnerAuth
     {
         $cName = self::cookieName();
         if (!headers_sent()) {
-            setcookie($cName, $cookieVal, [
+            $domain = self::cookieDomain();
+            $options = [
                 'expires' => $expTs,
                 'path' => self::cookiePath(),
                 'secure' => self::isHttpsRequest(),
                 'httponly' => true,
                 'samesite' => 'Lax',
-            ]);
+            ];
+            if ($domain !== '') {
+                $options['domain'] = $domain;
+            }
+            setcookie($cName, $cookieVal, $options);
+            if ($cookieVal === '' && $domain !== '') {
+                $legacyOptions = $options;
+                unset($legacyOptions['domain']);
+                setcookie($cName, '', $legacyOptions);
+            }
         }
         if ($cookieVal === '' || $expTs < time()) {
             unset($_COOKIE[$cName]);
@@ -1736,15 +1770,30 @@ final class OwnerAuth
         return $clientId !== '' && $clientSecret !== '';
     }
 
-    public static function getGoogleAuthorizationUrl(string $stateToken, ?PDO $pdo = null): string
+    /**
+     * Compute canonical Google OAuth redirect URI matching the active request host (#468):
+     * Avoids domain-hopping between apex and www (which drops host-only cookies).
+     */
+    public static function getGoogleRedirectUri(): string
+    {
+        $host = strtolower(trim((string)($_SERVER['HTTP_HOST'] ?? '')));
+        if ($host !== '') {
+            $hostOnly = explode(':', $host)[0];
+            $scheme = self::isHttpsRequest() ? 'https' : 'http';
+            return "{$scheme}://{$hostOnly}/owner/google-callback.php";
+        }
+        $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
+        return "{$baseUrl}/owner/google-callback.php";
+    }
+
+    public static function getGoogleAuthorizationUrl(string $stateToken, ?PDO $pdo = null, ?string $redirectUri = null): string
     {
         $clientId = self::getGoogleClientId($pdo);
-        $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
-        $redirectUri = "{$baseUrl}/owner/google-callback.php";
+        $resolvedUri = $redirectUri ?: self::getGoogleRedirectUri();
 
         return 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query([
             'client_id' => $clientId,
-            'redirect_uri' => $redirectUri,
+            'redirect_uri' => $resolvedUri,
             'response_type' => 'code',
             'scope' => 'openid email profile',
             'state' => $stateToken,
@@ -1753,15 +1802,14 @@ final class OwnerAuth
         ]);
     }
 
-    public static function exchangeGoogleCodeForProfile(string $code, ?PDO $pdo = null): ?array
+    public static function exchangeGoogleCodeForProfile(string $code, ?PDO $pdo = null, ?string $redirectUri = null): ?array
     {
         if (!self::isGoogleSsoConfigured($pdo) || !function_exists('curl_init')) {
             return null;
         }
         $clientId = self::getGoogleClientId($pdo);
         $clientSecret = self::getGoogleClientSecret($pdo);
-        $baseUrl = rtrim(Database::env('APP_URL', 'https://www.busherianbiasharas.com'), '/');
-        $redirectUri = "{$baseUrl}/owner/google-callback.php";
+        $resolvedUri = $redirectUri ?: ($_SESSION['bbiz_google_oauth_redirect_uri'] ?? self::getGoogleRedirectUri());
 
         $ch = curl_init('https://oauth2.googleapis.com/token');
         if ($ch === false) {
@@ -1773,7 +1821,7 @@ final class OwnerAuth
                 'code' => $code,
                 'client_id' => $clientId,
                 'client_secret' => $clientSecret,
-                'redirect_uri' => $redirectUri,
+                'redirect_uri' => $resolvedUri,
                 'grant_type' => 'authorization_code',
             ]),
             CURLOPT_RETURNTRANSFER => true,
@@ -1783,14 +1831,17 @@ final class OwnerAuth
         ]);
         $rawTokenResp = curl_exec($ch);
         $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = curl_error($ch);
         curl_close($ch);
 
         if (!is_string($rawTokenResp) || $httpCode !== 200) {
+            error_log("[GoogleAuth] Token exchange failed: httpCode={$httpCode} curlErr={$curlErr} uri={$resolvedUri} response={$rawTokenResp}");
             return null;
         }
         $tokenData = json_decode($rawTokenResp, true);
         $accessToken = (string)($tokenData['access_token'] ?? '');
         if ($accessToken === '') {
+            error_log("[GoogleAuth] Access token missing in token response");
             return null;
         }
 
@@ -1807,13 +1858,16 @@ final class OwnerAuth
         ]);
         $rawUser = curl_exec($uch);
         $uCode = (int)curl_getinfo($uch, CURLINFO_HTTP_CODE);
+        $uErr = curl_error($uch);
         curl_close($uch);
 
         if (!is_string($rawUser) || $uCode !== 200) {
+            error_log("[GoogleAuth] UserInfo request failed: uCode={$uCode} curlErr={$uErr}");
             return null;
         }
         $userData = json_decode($rawUser, true);
         if (!is_array($userData) || empty($userData['email']) || empty($userData['email_verified'])) {
+            error_log("[GoogleAuth] User data missing or email not verified");
             return null;
         }
 

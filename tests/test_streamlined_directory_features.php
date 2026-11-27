@@ -802,5 +802,20 @@ testAssert(str_contains($authUrl466, 'client_id=64004769695-fev3ccrifjenfi4priml
 testAssert(str_contains($authUrl466, 'redirect_uri='), 'Google authorization URL includes redirect_uri (#466)');
 testAssert(str_contains($authUrl466, 'scope=openid+email+profile') || str_contains($authUrl466, 'scope=openid%20email%20profile'), 'Google authorization URL requests standard non-sensitive scopes (#466)');
 
+// #468: Unified Cookie Domain & Google OAuth Redirect URI Scoping
+$_SERVER['HTTP_HOST'] = 'busherianbiasharas.com';
+testAssert(\BusherianBiasharas\Services\OwnerAuth::cookieDomain() === '.busherianbiasharas.com', 'OwnerAuth::cookieDomain unifies apex domain into .busherianbiasharas.com (#468)');
+testAssert(str_starts_with(\BusherianBiasharas\Services\OwnerAuth::getGoogleRedirectUri(), 'http://busherianbiasharas.com/owner/google-callback.php') || str_starts_with(\BusherianBiasharas\Services\OwnerAuth::getGoogleRedirectUri(), 'https://busherianbiasharas.com/owner/google-callback.php'), 'getGoogleRedirectUri matches apex request host (#468)');
+
+$_SERVER['HTTP_HOST'] = 'www.busherianbiasharas.com';
+testAssert(\BusherianBiasharas\Services\OwnerAuth::cookieDomain() === '.busherianbiasharas.com', 'OwnerAuth::cookieDomain unifies www subdomain into .busherianbiasharas.com (#468)');
+testAssert(str_contains(\BusherianBiasharas\Services\OwnerAuth::getGoogleRedirectUri(), 'www.busherianbiasharas.com/owner/google-callback.php'), 'getGoogleRedirectUri matches www request host (#468)');
+
+$_SERVER['HTTP_HOST'] = 'preview.busherianbiasharas.com';
+testAssert(\BusherianBiasharas\Services\OwnerAuth::cookieDomain() === '', 'OwnerAuth::cookieDomain isolates preview subdomain (#468)');
+testAssert(str_contains(\BusherianBiasharas\Services\OwnerAuth::getGoogleRedirectUri(), 'preview.busherianbiasharas.com/owner/google-callback.php'), 'getGoogleRedirectUri matches preview request host (#468)');
+
+unset($_SERVER['HTTP_HOST']);
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
 

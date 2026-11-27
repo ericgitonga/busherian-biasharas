@@ -96,8 +96,10 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
 
 if (($_GET['action'] ?? '') === 'google' && $googleReady) {
     $state = bin2hex(random_bytes(16));
+    $redirectUri = OwnerAuth::getGoogleRedirectUri();
     $_SESSION['bbiz_google_oauth_state'] = $state;
-    header('Location: ' . OwnerAuth::getGoogleAuthorizationUrl($state, $pdo));
+    $_SESSION['bbiz_google_oauth_redirect_uri'] = $redirectUri;
+    header('Location: ' . OwnerAuth::getGoogleAuthorizationUrl($state, $pdo, $redirectUri));
     exit;
 }
 
@@ -122,8 +124,16 @@ if (isset($_GET['account_erased'])) {
 } elseif (isset($_GET['logged_out'])) {
     $flashSuccess = 'You have been signed out of your Owner session.';
 }
-if (isset($_GET['err']) && $_GET['err'] === 'invalid_link') {
-    $flashError = 'That link has expired or was already used. Sign in with your email and password below, or request a 6-digit password reset code.';
+if (isset($_GET['err'])) {
+    if ($_GET['err'] === 'invalid_link') {
+        $flashError = 'That link has expired or was already used. Sign in with your email and password below, or request a 6-digit password reset code.';
+    } elseif ($_GET['err'] === 'state_mismatch') {
+        $flashError = 'Your Google sign-in session was interrupted or expired. Please tap Continue with Google to try again.';
+    } elseif ($_GET['err'] === 'google_cancelled') {
+        $flashError = 'Google sign-in was cancelled. You can try again or sign in with your email and password below.';
+    } elseif ($_GET['err'] === 'google_failed') {
+        $flashError = 'Unable to complete Google sign-in. Please ensure your Google account email is verified, or sign in with your email and password below.';
+    }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

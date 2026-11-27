@@ -11,7 +11,7 @@
  */
 'use strict';
 
-const CACHE_VERSION = 'bbiz-pwa-v0.42.0';
+const CACHE_VERSION = 'bbiz-pwa-v0.42.1';
 const CACHE_PREFIX = 'bbiz-pwa-';
 const MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours (Kenya DPA 2019 s. 40 freshness limit)
 
