@@ -634,13 +634,25 @@ $aghsHouses = Houses::AGHS_HOUSES;
       </a>
       <nav class="header-actions">
         <a href="/" class="btn btn-outline-light">&larr; Back to Directory</a>
-        <a href="/owner/login.php" class="btn btn-outline-light">👤 <?= $loggedOwner ? "My Biasharas" : "Owner Login" ?></a>
+        <a href="<?= $loggedOwner ? '/owner/index.php' : '/owner/login.php?from=list_edit' ?>" class="btn btn-outline-light">👤 <?= $loggedOwner ? "My Biasharas (Edit / + List)" : "List / Edit Biashara" ?></a>
         <a href="/privacy.php" class="btn btn-outline-light">🔒 Privacy Notice</a>
       </nav>
     </div>
   </header>
 
   <main style="max-width:920px;margin:1.75rem auto;padding:0 1.25rem;">
+
+    <?php if (isset($_GET['welcome_owner']) && $loggedOwner): ?>
+      <div data-testid="submit-welcome-owner-banner" style="background:#ECFDF5;border:1.5px solid #10B981;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.5rem;color:#065F46;display:flex;align-items:center;gap:0.75rem;">
+        <span style="font-size:1.6rem;line-height:1;">👋</span>
+        <div>
+          <strong style="font-size:0.95rem;color:#065F46;">Signed in as <?= htmlspecialchars((string)($loggedOwner['full_name'] ?: $loggedOwner['email']), ENT_QUOTES, 'UTF-8') ?></strong>
+          <p style="margin:0.2rem 0 0 0;font-size:0.84rem;color:#047857;">
+            Your name and email have been pre-filled below. This new biashara listing will be linked directly to your Owner Account upon submission.
+          </p>
+        </div>
+      </div>
+    <?php endif; ?>
 
     <?php if ($successMessage !== ''): ?>
       <div data-testid="submit-success-banner" style="background:#ECFDF5;border:2px solid #059669;border-radius:14px;padding:1.5rem;margin-bottom:1.5rem;">

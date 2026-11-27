@@ -38,6 +38,15 @@ if ($currentOwner !== null) {
         header("Location: /owner/edit-business.php?id={$targetBizId}");
         exit;
     }
+    $fromAction = trim((string)($_REQUEST['from'] ?? ($_SESSION['bbiz_login_from'] ?? '')));
+    unset($_SESSION['bbiz_login_from']);
+    if ($fromAction === 'list_edit') {
+        $myBusinesses = OwnerAuth::getLinkedBusinessesForOwner($pdo, (int)$currentOwner['id']);
+        if (empty($myBusinesses)) {
+            header('Location: /submit.php?welcome_owner=1');
+            exit;
+        }
+    }
     header('Location: /owner/index.php');
     exit;
 }
@@ -93,6 +102,11 @@ if ($claimBizId > 0) {
 }
 
 $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
+
+$fromAction = trim((string)($_REQUEST['from'] ?? ''));
+if ($fromAction !== '') {
+    $_SESSION['bbiz_login_from'] = $fromAction;
+}
 
 if (($_GET['action'] ?? '') === 'google' && $googleReady) {
     $state = bin2hex(random_bytes(16));
@@ -247,6 +261,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         header("Location: /owner/edit-business.php?id={$targetBizId}");
                         exit;
                     }
+                    $fromAction = trim((string)($_SESSION['bbiz_login_from'] ?? ''));
+                    unset($_SESSION['bbiz_login_from']);
+                    $myBusinesses = OwnerAuth::getLinkedBusinessesForOwner($pdo, (int)$verifiedOwner['id']);
+                    if ($fromAction === 'list_edit' && empty($myBusinesses)) {
+                        header('Location: /submit.php?welcome_owner=1');
+                        exit;
+                    }
                     header('Location: /owner/index.php');
                     exit;
                 }
@@ -289,6 +310,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($targetBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$authOwner['id'], $targetBizId)) {
                         unset($_SESSION['bbiz_target_edit_biz_id']);
                         header("Location: /owner/edit-business.php?id={$targetBizId}");
+                        exit;
+                    }
+                    $fromAction = trim((string)($_SESSION['bbiz_login_from'] ?? ''));
+                    unset($_SESSION['bbiz_login_from']);
+                    $myBusinesses = OwnerAuth::getLinkedBusinessesForOwner($pdo, (int)$authOwner['id']);
+                    if ($fromAction === 'list_edit' && empty($myBusinesses)) {
+                        header('Location: /submit.php?welcome_owner=1');
                         exit;
                     }
                     header('Location: /owner/index.php');
@@ -497,6 +525,12 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
         <div style="margin-top:0.9rem;padding:0.75rem 0.9rem;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;text-align:center;font-size:0.82rem;color:#374151;">
           Registered your business earlier without setting a password?
           <a href="/owner/login.php?mode=reset<?= htmlspecialchars($bizParamSuffix, ENT_QUOTES, 'UTF-8') ?>" style="color:#114B3E;font-weight:800;display:inline-block;margin-top:0.15rem;">Set or Reset Password with a 6-Digit Email Code &rarr;</a>
+        </div>
+
+        <div style="margin-top:0.9rem;padding:0.85rem 1rem;background:#FFFBEB;border:1.5px dashed #F59E0B;border-radius:10px;text-align:center;font-size:0.83rem;color:#78350F;line-height:1.45;">
+          <strong>Listing a business for the first time?</strong><br>
+          Sign in above with <strong>Continue with Google</strong> to easily manage and edit your listing anytime, or
+          <a href="/submit.php" style="color:#114B3E;font-weight:800;display:inline-block;margin-top:0.25rem;text-decoration:underline;">proceed directly to the listing submission form &rarr;</a>
         </div>
       <?php endif; ?>
 
