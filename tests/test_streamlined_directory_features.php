@@ -791,5 +791,16 @@ testAssert(\BusherianBiasharas\Services\PreprodSandbox::verifyProdHandoffToken($
 @rmdir($tempDir464 . '/preview');
 @rmdir($tempDir464);
 
+// 30. Check Google SSO OAuth 2.0 Credentials & URL Generation (#466)
+testAssert(\BusherianBiasharas\Services\OwnerAuth::isGoogleSsoConfigured($pdo) === true, 'OwnerAuth::isGoogleSsoConfigured returns true when credentials present in env (#466)');
+testAssert(\BusherianBiasharas\Services\OwnerAuth::getGoogleClientId($pdo) === '64004769695-fev3ccrifjenfi4priml8q5ganppb1vo.apps.googleusercontent.com', 'OwnerAuth::getGoogleClientId matches configured Client ID (#466)');
+testAssert(\BusherianBiasharas\Services\OwnerAuth::getGoogleClientSecret($pdo) === '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', 'OwnerAuth::getGoogleClientSecret matches configured Client Secret (#466)');
+$testState466 = 'test_state_nonce_12345';
+$authUrl466 = \BusherianBiasharas\Services\OwnerAuth::getGoogleAuthorizationUrl($testState466, $pdo);
+testAssert(str_starts_with($authUrl466, 'https://accounts.google.com/o/oauth2/v2/auth?'), 'Google authorization URL points to Google OAuth 2.0 endpoint (#466)');
+testAssert(str_contains($authUrl466, 'client_id=64004769695-fev3ccrifjenfi4priml8q5ganppb1vo.apps.googleusercontent.com'), 'Google authorization URL includes client_id (#466)');
+testAssert(str_contains($authUrl466, 'redirect_uri='), 'Google authorization URL includes redirect_uri (#466)');
+testAssert(str_contains($authUrl466, 'scope=openid+email+profile') || str_contains($authUrl466, 'scope=openid%20email%20profile'), 'Google authorization URL requests standard non-sensitive scopes (#466)');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
 

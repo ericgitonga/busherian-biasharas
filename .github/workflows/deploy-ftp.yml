@@ -77,6 +77,48 @@ jobs:
           if [[ "${FTP_SERVER}" != "angryhosting.com" && "${FTP_SERVER}" != *.angryhosting.com ]]; then
             TLS_ARG=(--tls-servername "angryhosting.com")
           fi
+          python3 - << 'PYEOF'
+          import io, os, sys
+          sys.path.insert(0, ".github/scripts")
+          from ftps_deploy import connect_verified_ftps
+          host = os.environ["FTP_SERVER"]
+          user = os.environ["FTP_USERNAME"]
+          password = os.environ["FTP_PASSWORD"]
+          try:
+              ftp = connect_verified_ftps(host, user, password, cafile=".github/scripts/letsencrypt_geny_intermediates.pem")
+              buf = io.BytesIO()
+              ftp.retrbinary("RETR /busherianbiasharas.com/www/.env", buf.write)
+              raw = buf.getvalue().decode("utf-8", errors="replace")
+              if raw.strip():
+                  creds = {
+                      "GOOGLE_CLIENT_ID": "64004769695-fev3ccrifjenfi4priml8q5ganppb1vo.apps.googleusercontent.com",
+                      "GOOGLE_CLIENT_SECRET": "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",
+                  }
+                  lines = []
+                  seen = set()
+                  for line in raw.splitlines():
+                      t = line.strip()
+                      if t == "" or t.startswith("#") or "=" not in t:
+                          lines.append(line)
+                          continue
+                      k, _ = t.split("=", 1)
+                      k = k.strip()
+                      if k in creds:
+                          lines.append(f"{k}={creds[k]}")
+                          seen.add(k)
+                      else:
+                          lines.append(line)
+                          seen.add(k)
+                  for k, v in creds.items():
+                      if k not in seen:
+                          lines.append(f"{k}={v}")
+                  updated = ("\n".join(lines) + "\n").encode("utf-8")
+                  ftp.storbinary("STOR /busherianbiasharas.com/www/.env", io.BytesIO(updated))
+                  print("Production .env Google SSO credentials synced.")
+              ftp.quit()
+          except Exception as e:
+              print(f"Notice: .env Google SSO sync: {e}")
+          PYEOF
           python3 .github/scripts/ftps_deploy.py --mode prod --files-list /tmp/changed_files.txt --deleted-files-list /tmp/deleted_files.txt --release-sha "${GITHUB_SHA}" "${TLS_ARG[@]}"
 
       - name: Verify live production HTTP & schema readiness (#251)

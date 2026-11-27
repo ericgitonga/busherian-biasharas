@@ -360,6 +360,11 @@ assertTrue(
 );
 
 // 16. Verify Ticket #44: Database::setSetting / getSetting for Google OAuth Client ID & Secret
+$prevGId = getenv('GOOGLE_CLIENT_ID');
+$prevGSec = getenv('GOOGLE_CLIENT_SECRET');
+putenv('GOOGLE_CLIENT_ID=');
+putenv('GOOGLE_CLIENT_SECRET=');
+unset($_ENV['GOOGLE_CLIENT_ID'], $_ENV['GOOGLE_CLIENT_SECRET']);
 assertTrue(!OwnerAuth::isGoogleSsoConfigured($pdo), 'Google SSO is initially unconfigured when no env/db credentials exist');
 Database::setSetting($pdo, 'GOOGLE_CLIENT_ID', '123456789-test.apps.googleusercontent.com');
 Database::setSetting($pdo, 'GOOGLE_CLIENT_SECRET', 'GOCSPX-testsecret123');
@@ -367,6 +372,8 @@ assertTrue(OwnerAuth::isGoogleSsoConfigured($pdo), 'Google SSO becomes active im
 assertTrue(str_contains(OwnerAuth::getGoogleAuthorizationUrl('state123', $pdo), '123456789-test.apps.googleusercontent.com'), 'getGoogleAuthorizationUrl uses DB-stored GOOGLE_CLIENT_ID');
 Database::setSetting($pdo, 'GOOGLE_CLIENT_ID', '');
 Database::setSetting($pdo, 'GOOGLE_CLIENT_SECRET', '');
+if ($prevGId !== false && $prevGId !== '') { putenv("GOOGLE_CLIENT_ID={$prevGId}"); $_ENV['GOOGLE_CLIENT_ID'] = $prevGId; }
+if ($prevGSec !== false && $prevGSec !== '') { putenv("GOOGLE_CLIENT_SECRET={$prevGSec}"); $_ENV['GOOGLE_CLIENT_SECRET'] = $prevGSec; }
 
 // 17. Verify Tickets #46, #88, #89: Sunday operating hours in HoursEngine::buildScheduleJsonFromPost & extractFormValues
 $sunSchedJson = HoursEngine::buildScheduleJsonFromPost([
