@@ -127,16 +127,32 @@ testAssert(str_contains($submitSrc, "name=\"simple_founder_role\""), "submit.php
 testAssert(str_contains($submitSrc, "Founder (Solo)"), "submit.php allows selecting Founder (Solo)");
 testAssert(str_contains($submitSrc, "Co-Founder (Joint with others)"), "submit.php allows selecting Co-Founder (Joint with others)");
 
-// 10. Check H-01 Basic Submission Fallbacks (#386, H-01)
+// 10. Check H-01 Basic Submission Fallbacks (#386, #478)
 testAssert(str_contains($submitSrc, '$description = $tagline;'), 'submit.php defaults empty description to tagline');
 testAssert(str_contains($submitSrc, '$rawPrimaryPhone = $rawWhatsappPhone;'), 'submit.php defaults primary phone to whatsapp when collapsed');
-testAssert(str_contains($submitSrc, "\$houseName = 'Unspecified';"), 'submit.php defaults omitted house to Unspecified');
-testAssert(str_contains($submitSrc, "\$houseName !== 'Unspecified'"), 'submit.php allows Unspecified house in validation');
+testAssert(str_contains($submitSrc, '!Houses::isValidHouse($schoolCode, $houseName)'), 'submit.php enforces compulsory valid house for school');
 
-// Verify VettingPurger accepts Unspecified house and basic payload
+// Verify VettingPurger validates compulsory house
+$caughtEmptyHouse = false;
+try {
+    \BusherianBiasharas\Services\VettingPurger::validateVettingIdentityPayload([
+        'school_code' => 'AHS',
+        'house_name' => '',
+        'year_left' => 2012,
+        'school_number' => '',
+        'submitter_name' => 'Kanyi Gitonga',
+        'submitter_email' => 'kanyi@example.com',
+        'raw_submitter_phone' => '+254711223344',
+        'submitter_phone' => '+254711223344',
+    ]);
+} catch (\InvalidArgumentException $e) {
+    $caughtEmptyHouse = true;
+}
+testAssert($caughtEmptyHouse, 'VettingPurger rejects empty house when house is compulsory');
+
 \BusherianBiasharas\Services\VettingPurger::validateVettingIdentityPayload([
     'school_code' => 'AHS',
-    'house_name' => 'Unspecified',
+    'house_name' => 'Livingstone',
     'year_left' => 2012,
     'school_number' => '',
     'submitter_name' => 'Kanyi Gitonga',
@@ -144,7 +160,7 @@ testAssert(str_contains($submitSrc, "\$houseName !== 'Unspecified'"), 'submit.ph
     'raw_submitter_phone' => '+254711223344',
     'submitter_phone' => '+254711223344',
 ]);
-testAssert(true, 'VettingPurger validates basic vetting identity with Unspecified house and WhatsApp contact');
+testAssert(true, 'VettingPurger validates basic vetting identity with confirmed House and WhatsApp contact');
 
 // 11. Check business_recommendations table exists in DB (#Mockup)
 $recTableExists = (bool)$pdo->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='business_recommendations'")->fetchColumn();

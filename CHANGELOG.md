@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.44.3] - 2026-11-27
+
+### Changed
+- **Compulsory Alumni House Vetting (#478)**: Made the House field compulsory on the public listing submission form (`public/submit.php`). Moved the House selector to Section 2 ("About you, for vetting") alongside School and Completion Year, and enforced strict validation via `VettingPurger::validateVettingIdentityPayload()` requiring a confirmed, valid house for the chosen school (`AHS` or `AGHS`). Retired `Unspecified` fallback and removed house from the optional collapsed container.
+
 ## [0.44.2] - 2026-11-27
 
 ### Fixed

@@ -59,9 +59,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $houseSelect   = trim((string)($_POST['house_name'] ?? ''));
             $houseCustom   = trim((string)($_POST['house_custom'] ?? ''));
             $houseName     = ($houseSelect === 'Other / Unlisted House' && $houseCustom !== '') ? $houseCustom : $houseSelect;
-            if ($houseName === '') {
-                $houseName = 'Unspecified';
-            }
             $yearLeft      = (int)($_POST['year_left'] ?? 0);
             $schoolNumber  = trim((string)($_POST['school_number'] ?? '')); // Strictly optional "School Number"
             $submitterName = trim((string)($_POST['submitter_name'] ?? ''));
@@ -76,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (!in_array($schoolCode, ['AHS', 'AGHS'], true)) {
                 $errors[] = 'Please select your School (AHS or AGHS).';
-            } elseif ($houseName !== 'Unspecified' && (mb_strlen($houseName) > 80 || !Houses::isValidHouse($schoolCode, $houseName))) {
+            } elseif ($houseName === '' || mb_strlen($houseName) > 80 || !Houses::isValidHouse($schoolCode, $houseName)) {
                 $errors[] = 'Please select a valid confirmed House for your school (80 characters or fewer).';
             }
 
@@ -834,7 +831,7 @@ $aghsHouses = Houses::AGHS_HOUSES;
             <input type="text" id="submitter_name" name="submitter_name" maxlength="150" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['full_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="e.g. Jane Wanjiku" required autocomplete="name">
           </div>
 
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.9rem;">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.9rem;">
             <div>
               <label for="school_code" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">School *</label>
               <select id="school_code" name="school_code" class="select-control" required>
@@ -842,6 +839,13 @@ $aghsHouses = Houses::AGHS_HOUSES;
                 <option value="AHS">Alliance High School (AHS)</option>
                 <option value="AGHS">Alliance Girls High School (AGHS)</option>
               </select>
+            </div>
+
+            <div>
+              <label for="house_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">House *</label>
+              <select id="house_name" name="house_name" class="select-control" required></select>
+              <input type="text" id="house_custom" name="house_custom" maxlength="80" class="input-control"
+                placeholder="Enter your AGHS House name..." style="margin-top:0.45rem;display:none;">
             </div>
 
             <div>
@@ -928,10 +932,10 @@ $aghsHouses = Houses::AGHS_HOUSES;
       <div class="advanced-toggle-wrap" style="margin:1.5rem 0 1rem 0;padding:14px 16px;background:#F9FAFB;border-radius:12px;border:1.5px solid #E5DEC9;">
         <label style="display:flex;align-items:center;gap:10px;font-weight:700;cursor:pointer;margin:0;color:#114B3E;font-size:0.95rem;">
           <input type="checkbox" id="toggle-advanced-details" name="toggle_advanced_details" value="1" style="width:18px;height:18px;accent-color:#114B3E;">
-          <span>⚙️ Show Advanced / Additional Details (House, Specialty, Full Description, Pin, Perks, B2B, Hours, Socials, Photos)</span>
+          <span>⚙️ Show Advanced / Additional Details (Specialty, Full Description, Pin, Perks, B2B, Hours, Socials, Photos)</span>
         </label>
         <p style="margin:4px 0 0 28px;font-size:12px;color:#6B7280;">
-          Optional. Check this box if you want to enter your House, full description, operating hours, physical address/pin, perks, or upload photos now. Otherwise, you can submit directly and add them anytime from your Owner Dashboard.
+          Optional. Check this box if you want to enter your full description, operating hours, physical address/pin, perks, or upload photos now. Otherwise, you can submit directly and add them anytime from your Owner Dashboard.
         </p>
       </div>
 
@@ -941,14 +945,8 @@ $aghsHouses = Houses::AGHS_HOUSES;
           Additional Details &amp; Customization
         </div>
 
-        <!-- House & Submitter Phone (Optional Vetting Details) -->
+        <!-- Submitter Phone & Service Mode -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.9rem;margin-bottom:1.25rem;">
-          <div>
-            <label for="house_name" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">House (For Vetting Only)</label>
-            <select id="house_name" name="house_name" class="select-control"></select>
-            <input type="text" id="house_custom" name="house_custom" maxlength="80" class="input-control"
-              placeholder="Enter your AGHS House name..." style="margin-top:0.45rem;display:none;">
-          </div>
           <div>
             <label for="submitter_phone" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.3rem;">Direct Submitter Phone</label>
             <input type="tel" id="submitter_phone" name="submitter_phone" maxlength="40" class="input-control" value="<?= htmlspecialchars((string)($loggedOwner['phone'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="+254722000000">
