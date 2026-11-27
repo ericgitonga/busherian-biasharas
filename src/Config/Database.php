@@ -19,6 +19,8 @@ final class Database
         if (self::$envLoaded) {
             return;
         }
+        self::$envLoaded = true;
+
         $path = $envPath;
         if ($path === null) {
             $appRoot = dirname(__DIR__, 2);
@@ -41,7 +43,9 @@ final class Database
         if (is_file($path) && is_readable($path)) {
             $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             if (is_array($lines)) {
-                $isPreview = self::isPreview();
+                $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+                $appEnvRaw = strtolower((string)(getenv('APP_ENV') ?: ($_ENV['APP_ENV'] ?? '')));
+                $isPreview = str_starts_with($host, 'preview.') || in_array($appEnvRaw, ['preview', 'preprod', 'staging'], true);
                 foreach ($lines as $line) {
                     $trimmed = trim($line);
                     if ($trimmed === '' || str_starts_with($trimmed, '#') || !str_contains($trimmed, '=')) {
@@ -72,7 +76,6 @@ final class Database
                 }
             }
         }
-        self::$envLoaded = true;
     }
 
     public static function env(string $key, string $default = ''): string
