@@ -100,6 +100,44 @@ jobs:
                   lines.append("PREV=" + " | ".join(prev_items))
               except Exception as e:
                   lines.append(f"PREV_ERR={e}")
+              # Auto-provision /busherianbiasharas.com/preview/.env from /busherianbiasharas.com/www/.env (#464)
+              try:
+                  import io
+                  prod_env_buf = io.BytesIO()
+                  ftp.retrbinary("RETR /busherianbiasharas.com/www/.env", prod_env_buf.write)
+                  prod_raw = prod_env_buf.getvalue().decode("utf-8", errors="replace")
+                  if prod_raw.strip():
+                      overrides = {
+                          "APP_ENV": "preview",
+                          "DB_DRIVER": "sqlite",
+                          "DB_DRIVER_FALLBACK": "sqlite",
+                          "SIMULATE_EMAILS": "yes",
+                          "APP_URL": "https://preview.busherianbiasharas.com",
+                          "SMTP_HOST": "mx1.angryhosting.com",
+                      }
+                      synced_lines = []
+                      seen_keys = set()
+                      for raw_line in prod_raw.splitlines():
+                          tline = raw_line.strip()
+                          if tline == "" or tline.startswith("#") or "=" not in tline:
+                              synced_lines.append(raw_line)
+                              continue
+                          k, _ = tline.split("=", 1)
+                          k = k.strip()
+                          if k in overrides:
+                              synced_lines.append(f"{k}={overrides[k]}")
+                              seen_keys.add(k)
+                          else:
+                              synced_lines.append(raw_line)
+                              seen_keys.add(k)
+                      for k, v in overrides.items():
+                          if k not in seen_keys:
+                              synced_lines.append(f"{k}={v}")
+                      preview_env_bytes = ("\n".join(synced_lines) + "\n").encode("utf-8")
+                      ftp.storbinary("STOR /busherianbiasharas.com/preview/.env", io.BytesIO(preview_env_bytes))
+                      lines.append("PREVIEW_ENV_SYNCED=true")
+              except Exception as e:
+                  lines.append(f"PREVIEW_ENV_ERR={e}")
               ftp.quit()
           except Exception as e:
               lines.append(f"ERR={e}")

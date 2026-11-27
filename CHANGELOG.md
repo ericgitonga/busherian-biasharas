@@ -22,6 +22,10 @@ behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
   - Added `bin/test-email-health.php` CLI sentinel for cPanel cron integration, alerting on STDERR/exit code 1 whenever SMTP connectivity or outbox delivery fails.
   - Integrated SMTP health monitoring into remote WebCron (`public/api/cron.php`) and `.github/workflows/scheduled-cron.yml` (every 15 minutes), failing workflow steps immediately so GitHub dispatches real-time push/email alerts to the repository owner upon any failure.
   - Added real-time SMTP diagnostic panel and live test email dispatcher in Admin Console (`/admin/index.php`).
+- **Preview Subdomain .env Resolution & Admin Credentials Inheritance (#464)**:
+  - Added `dirname($appRoot) . '/www/.env'` and `dirname($appRoot) . '/public_html/.env'` candidate lookups to `PreprodSandbox::$prodEnvCandidates` and `Database::loadEnv()`.
+  - Added automated FTPS `.env` provisioning in `.github/workflows/deploy-preview.yml`, syncing `/busherianbiasharas.com/preview/.env` directly from `/busherianbiasharas.com/www/.env` with strict sandbox isolation overrides (`APP_ENV=preview`, `DB_DRIVER=sqlite`, `SIMULATE_EMAILS=yes`, `APP_URL=https://preview.busherianbiasharas.com`).
+  - Restores 1-click signed admin handoff from live production (`/admin/index.php`) and direct token/password login on `preview.busherianbiasharas.com`.
 
 ## [0.41.0] - 2026-11-26
 

@@ -19,10 +19,29 @@ final class Database
         if (self::$envLoaded) {
             return;
         }
-        $path = $envPath ?? dirname(__DIR__, 2) . '/.env';
+        $path = $envPath;
+        if ($path === null) {
+            $appRoot = dirname(__DIR__, 2);
+            $candidates = [
+                $appRoot . '/.env',
+                dirname($appRoot) . '/www/.env',
+                dirname($appRoot) . '/public_html/.env',
+                dirname($appRoot) . '/.env',
+                dirname($appRoot, 2) . '/www/.env',
+                dirname($appRoot, 2) . '/.env',
+            ];
+            foreach ($candidates as $cand) {
+                if (is_file($cand) && is_readable($cand)) {
+                    $path = $cand;
+                    break;
+                }
+            }
+            $path ??= $appRoot . '/.env';
+        }
         if (is_file($path) && is_readable($path)) {
             $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             if (is_array($lines)) {
+                $isPreview = self::isPreview();
                 foreach ($lines as $line) {
                     $trimmed = trim($line);
                     if ($trimmed === '' || str_starts_with($trimmed, '#') || !str_contains($trimmed, '=')) {
@@ -34,6 +53,17 @@ final class Database
                     if ((str_starts_with($val, "'") && str_ends_with($val, "'")) ||
                         (str_starts_with($val, '"') && str_ends_with($val, '"'))) {
                         $val = substr($val, 1, -1);
+                    }
+                    if ($isPreview) {
+                        if ($key === 'APP_ENV' && strtolower($val) === 'production') {
+                            $val = 'preview';
+                        }
+                        if ($key === 'DB_DRIVER' && strtolower($val) === 'mysql') {
+                            $val = 'sqlite';
+                        }
+                        if ($key === 'SIMULATE_EMAILS') {
+                            $val = 'yes';
+                        }
                     }
                     if (getenv($key) === false) {
                         putenv("{$key}={$val}");

@@ -766,5 +766,30 @@ testAssert(isset($forcedRetryRes['expired']), 'processRetryQueue returns distinc
 // Clean up test outbox row
 $pdo->prepare("DELETE FROM email_outbox WHERE id = :id")->execute([':id' => $testOutboxId462]);
 
+// 29. Check Preview Subdomain Production .env Resolution & Admin Credentials Inheritance (#464)
+$tempDir464 = sys_get_temp_dir() . '/bbiz_test_env_' . getmypid() . '_' . time();
+mkdir($tempDir464 . '/www', 0755, true);
+mkdir($tempDir464 . '/preview', 0755, true);
+$mockToken464 = 'preview_test_token_' . bin2hex(random_bytes(8));
+$mockHmac464 = 'preview_test_hmac_secret_32bytes_long_min!';
+file_put_contents($tempDir464 . '/www/.env', "ADMIN_ACCESS_TOKEN={$mockToken464}\nAPP_HMAC_SECRET={$mockHmac464}\n");
+
+$parsedProd464 = \BusherianBiasharas\Services\PreprodSandbox::parseEnvFile($tempDir464 . '/www/.env');
+testAssert(($parsedProd464['ADMIN_ACCESS_TOKEN'] ?? '') === $mockToken464, 'PreprodSandbox::parseEnvFile successfully parses production .env without mutating global env (#464)');
+testAssert(($parsedProd464['APP_HMAC_SECRET'] ?? '') === $mockHmac464, 'PreprodSandbox::parseEnvFile extracts APP_HMAC_SECRET for handoff validation (#464)');
+
+// Test handoff token generated with production secret
+$handoffExp464 = time() + 300;
+$handoffSig464 = hash_hmac('sha256', "preprod_handoff|{$handoffExp464}", $mockHmac464);
+$rawHandoffToken464 = "{$handoffExp464}.{$handoffSig464}";
+$fakeHandoffToken464 = "{$handoffExp464}.badsignature";
+testAssert(\BusherianBiasharas\Services\PreprodSandbox::verifyProdHandoffToken($fakeHandoffToken464) === false, 'PreprodSandbox::verifyProdHandoffToken blocks invalid signature (#464)');
+
+// Clean up temp directories
+@unlink($tempDir464 . '/www/.env');
+@rmdir($tempDir464 . '/www');
+@rmdir($tempDir464 . '/preview');
+@rmdir($tempDir464);
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
 
