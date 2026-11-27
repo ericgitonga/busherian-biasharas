@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.44.1] - 2026-11-27
+
+### Fixed
+- **Decoupled CSRF Tokens from Session ID (#472, #473)**: Migrated `AntiSpamGate` to generate and store dedicated cryptographic tokens in `$_SESSION['csrf_token']` instead of deriving them directly from `session_id()`. Prevents session ID regeneration (such as privilege elevation or background rotation) from invalidating open forms. Maintained backward-compatible legacy HMAC verification for rolling migrations (`src/Services/AntiSpamGate.php`).
+- **Logout Execution Order & Session Regeneration Race Condition (#472, #474)**: Inverted execution order in `public/owner/logout.php` to verify CSRF tokens before resolving the owner identity or attempting persistent-cookie restoration, preventing token checks from failing against a freshly regenerated session ID.
+- **Session & Cookie Scoping Isolation (#472, #475)**:
+  - Isolated owner sessions (`bbiz_sess`) from admin sessions (`bbiz_admin_sess`) and preview sessions (`bbiz_prev_sess`), eliminating shared `PHPSESSID` session clobbering.
+  - Refactored `AdminAuth::logout()` to selectively unset admin keys rather than destroying the shared PHP session (`src/Services/AdminAuth.php`).
+  - Isolated preview remember-me cookies (`bbiz_prev_owner_session`) from production (`bbiz_owner_session`) to prevent RFC 6265 parent-domain cookie collisions across subdomains (`src/Services/OwnerAuth.php`).
+- **Authentication Route Anti-Cache Headers & Multi-Slot Google OAuth (#472, #476)**:
+  - Enforced `Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0` across `login.php`, `logout.php`, and `google-callback.php` to prevent browsers from serving stale form tokens from bfcache.
+  - Stored Google OAuth states in a keyed array (`$_SESSION['bbiz_google_oauth_states']`) with expiration, eliminating state mismatch collisions when multiple login tabs are opened (`public/owner/login.php`, `public/owner/google-callback.php`).
+
 ## [0.44.0] - 2026-11-27
 
 ### Added

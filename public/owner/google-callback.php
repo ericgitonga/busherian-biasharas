@@ -9,6 +9,8 @@ use BusherianBiasharas\Services\OwnerAuth;
 use BusherianBiasharas\Services\VettingPurger;
 
 bbiz_send_security_headers(false);
+header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 OwnerAuth::startSecureSession();
 
 $pdo = Database::getConnection();
@@ -69,19 +71,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $state = trim((string)($_GET['state'] ?? ''));
-    $expectedState = trim((string)($_SESSION['bbiz_google_oauth_state'] ?? ''));
-    $savedRedirectUri = trim((string)($_SESSION['bbiz_google_oauth_redirect_uri'] ?? ''));
     $code = trim((string)($_GET['code'] ?? ''));
 
-    if ($state === '' || $expectedState === '' || !hash_equals($expectedState, $state)) {
-        error_log("[GoogleCallback] State mismatch: state=" . substr($state, 0, 8) . " expected=" . substr($expectedState, 0, 8) . " host=" . ($_SERVER['HTTP_HOST'] ?? ''));
+    $stateValid = false;
+    $savedRedirectUri = '';
+
+    if ($state !== '') {
+        $states = $_SESSION['bbiz_google_oauth_states'] ?? [];
+        if (is_array($states) && isset($states[$state])) {
+            $info = $states[$state];
+            if (is_array($info) && ($info['expires_at'] ?? 0) >= time()) {
+                $stateValid = true;
+                $savedRedirectUri = (string)($info['redirect_uri'] ?? '');
+            }
+            unset($_SESSION['bbiz_google_oauth_states'][$state]);
+        }
+        // Fallback to legacy single-slot state
+        if (!$stateValid && !empty($_SESSION['bbiz_google_oauth_state'])) {
+            $expectedState = trim((string)$_SESSION['bbiz_google_oauth_state']);
+            if (hash_equals($expectedState, $state)) {
+                $stateValid = true;
+                $savedRedirectUri = trim((string)($_SESSION['bbiz_google_oauth_redirect_uri'] ?? ''));
+            }
+            unset($_SESSION['bbiz_google_oauth_state'], $_SESSION['bbiz_google_oauth_redirect_uri']);
+        }
+    }
+
+    if (!$stateValid || $savedRedirectUri === '' || $code === '') {
+        error_log("[GoogleCallback] State mismatch: state=" . substr($state, 0, 8) . " host=" . ($_SERVER['HTTP_HOST'] ?? ''));
         unset($_SESSION['bbiz_google_oauth_state'], $_SESSION['bbiz_google_oauth_redirect_uri']);
         header('Location: /owner/login.php?err=state_mismatch');
-        exit;
-    }
-    if ($code === '') {
-        unset($_SESSION['bbiz_google_oauth_state'], $_SESSION['bbiz_google_oauth_redirect_uri']);
-        header('Location: /owner/login.php?err=invalid_link');
         exit;
     }
     unset($_SESSION['bbiz_google_oauth_state'], $_SESSION['bbiz_google_oauth_redirect_uri']);

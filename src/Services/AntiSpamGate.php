@@ -60,27 +60,47 @@ final class AntiSpamGate
     public static function generateCsrfToken(): string
     {
         OwnerAuth::startSecureSession();
-        $sessionId = session_id();
-        if (!is_string($sessionId) || $sessionId === '') {
-            throw new \RuntimeException('Cannot generate CSRF token without an active PHP session.');
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            if (empty($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])) {
+                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+            }
+            return $_SESSION['csrf_token'];
         }
-        $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
-        return hash_hmac('sha256', $sessionId, $csrfSecret);
+
+        // Fallback for headless CLI or tests where HTTP session headers cannot be sent
+        static $cliFallbackToken = null;
+        if ($cliFallbackToken === null) {
+            $cliFallbackToken = bin2hex(random_bytes(32));
+        }
+        return $cliFallbackToken;
     }
 
     public static function verifyCsrfToken(string $submittedToken): bool
     {
+        $submittedToken = trim($submittedToken);
         if ($submittedToken === '') {
             return false;
         }
         OwnerAuth::startSecureSession();
-        $sessionId = session_id();
-        if (!is_string($sessionId) || $sessionId === '') {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
             return false;
         }
-        $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
-        $expected = hash_hmac('sha256', $sessionId, $csrfSecret);
-        return hash_equals($expected, $submittedToken);
+
+        $expected = $_SESSION['csrf_token'] ?? null;
+        if (is_string($expected) && $expected !== '' && hash_equals($expected, $submittedToken)) {
+            return true;
+        }
+
+        // Backward compatibility fallback for legacy HMAC tokens generated before session-payload migration
+        $sessionId = session_id();
+        if (is_string($sessionId) && $sessionId !== '') {
+            $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
+            $legacyExpected = hash_hmac('sha256', $sessionId, $csrfSecret);
+            if (hash_equals($legacyExpected, $submittedToken)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static function claimSingleUseNonce(PDO $pdo, string $nonceHash, int $expiresAt): bool

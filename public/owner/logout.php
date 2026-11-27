@@ -8,10 +8,11 @@ use BusherianBiasharas\Services\AntiSpamGate;
 use BusherianBiasharas\Services\OwnerAuth;
 
 bbiz_send_security_headers(false);
+header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 OwnerAuth::startSecureSession();
 
 $pdo = Database::getConnection();
-$currentOwner = OwnerAuth::getCurrentOwner($pdo);
 $logoutError = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -19,7 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
         http_response_code(403);
         $logoutError = 'Your security token expired or could not be verified. Please confirm sign-out below.';
+        $currentOwner = OwnerAuth::getCurrentOwner($pdo);
     } else {
+        $currentOwner = OwnerAuth::getCurrentOwner($pdo);
         if ($currentOwner !== null && ($_POST['scope'] ?? '') === 'all') {
             OwnerAuth::revokeAllOwnerSessions($pdo, (int)$currentOwner['id'], true);
             OwnerAuth::logoutOwner($pdo);
@@ -30,6 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: /owner/login.php?logged_out=1');
         exit;
     }
+} else {
+    $currentOwner = OwnerAuth::getCurrentOwner($pdo);
 }
 
 if ($currentOwner === null) {

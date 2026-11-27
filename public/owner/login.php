@@ -10,6 +10,8 @@ use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\OwnerAuth;
 
 bbiz_send_security_headers(false);
+header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 OwnerAuth::startSecureSession();
 
 $pdo = Database::getConnection();
@@ -97,6 +99,19 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
 if (($_GET['action'] ?? '') === 'google' && $googleReady) {
     $state = bin2hex(random_bytes(16));
     $redirectUri = OwnerAuth::getGoogleRedirectUri();
+    if (!isset($_SESSION['bbiz_google_oauth_states']) || !is_array($_SESSION['bbiz_google_oauth_states'])) {
+        $_SESSION['bbiz_google_oauth_states'] = [];
+    }
+    $now = time();
+    foreach ($_SESSION['bbiz_google_oauth_states'] as $st => $info) {
+        if (($info['expires_at'] ?? 0) < $now) {
+            unset($_SESSION['bbiz_google_oauth_states'][$st]);
+        }
+    }
+    $_SESSION['bbiz_google_oauth_states'][$state] = [
+        'redirect_uri' => $redirectUri,
+        'expires_at' => $now + 900,
+    ];
     $_SESSION['bbiz_google_oauth_state'] = $state;
     $_SESSION['bbiz_google_oauth_redirect_uri'] = $redirectUri;
     header('Location: ' . OwnerAuth::getGoogleAuthorizationUrl($state, $pdo, $redirectUri));
@@ -143,7 +158,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stickyEmail = $email;
 
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
-        $flashError = 'Your page session expired. Please reload and try again.';
+        http_response_code(403);
+        $flashError = 'This sign-in form expired. Please enter your password again.';
     } elseif ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $flashError = 'Please enter a valid email address.';
     } elseif ($formStep === 'send_otp') {

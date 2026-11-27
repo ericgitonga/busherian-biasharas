@@ -9,6 +9,7 @@ putenv('DB_SQLITE_PATH=' . $tempSqlite);
 putenv('SIMULATE_EMAILS=yes');
 
 require_once dirname(__DIR__) . '/src/bootstrap.php';
+\BusherianBiasharas\Services\OwnerAuth::startSecureSession();
 
 use BusherianBiasharas\Config\Database;
 use BusherianBiasharas\Services\WebsiteEnricher;
@@ -841,6 +842,39 @@ testAssert(str_contains($ownerIndexHtml, 'owner-session-security-section'), 'own
 testAssert(str_contains($ownerIndexHtml, 'owner-body-logout-btn'), 'owner/index.php contains body logout button (#470)');
 testAssert(str_contains($ownerIndexHtml, 'owner-body-logout-all-btn'), 'owner/index.php contains body logout-all button (#470)');
 testAssert(str_contains($ownerIndexHtml, 'portal-header-actions'), 'owner/index.php header uses responsive portal-header-actions (#470)');
+
+// #472 / #473: Decoupled CSRF Tokens surviving session ID regeneration
+\BusherianBiasharas\Services\OwnerAuth::startSecureSession();
+$csrfToken = \BusherianBiasharas\Services\AntiSpamGate::generateCsrfToken();
+testAssert(strlen($csrfToken) === 64, 'AntiSpamGate::generateCsrfToken returns 64-char hex token (#473)');
+testAssert($_SESSION['csrf_token'] === $csrfToken, 'AntiSpamGate stores csrf_token directly in session payload (#473)');
+testAssert(\BusherianBiasharas\Services\AntiSpamGate::verifyCsrfToken($csrfToken), 'AntiSpamGate::verifyCsrfToken validates active session token (#473)');
+
+// Simulate session ID regeneration (e.g. login privilege elevation or background re-key)
+if (session_status() === PHP_SESSION_ACTIVE) {
+    @session_regenerate_id(true);
+}
+testAssert(\BusherianBiasharas\Services\AntiSpamGate::verifyCsrfToken($csrfToken), 'AntiSpamGate::verifyCsrfToken survives session_regenerate_id without invalidating form (#473)');
+
+// Legacy HMAC fallback test
+$legacyHmac = hash_hmac('sha256', session_id(), \BusherianBiasharas\Config\Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len'));
+testAssert(\BusherianBiasharas\Services\AntiSpamGate::verifyCsrfToken($legacyHmac), 'AntiSpamGate::verifyCsrfToken accepts legacy HMAC token during rolling deployment migration (#473)');
+
+// #472 / #475: Cookie Names & Session Isolation across preview and production
+testAssert(\BusherianBiasharas\Services\OwnerAuth::sessionCookieName() === 'bbiz_sess', 'OwnerAuth::sessionCookieName defaults to bbiz_sess in production (#475)');
+testAssert(\BusherianBiasharas\Services\OwnerAuth::cookieName() === 'bbiz_owner_session', 'OwnerAuth::cookieName defaults to bbiz_owner_session in production (#475)');
+
+// #472 / #474 & #476: Anti-cache headers and Logout Verification Order
+$logoutSource = file_get_contents(dirname(__DIR__) . '/public/owner/logout.php');
+testAssert(str_contains($logoutSource, "header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0')"), 'logout.php enforces private no-store cache control headers (#474, #476)');
+testAssert(strpos($logoutSource, 'AntiSpamGate::verifyCsrfToken') < strpos($logoutSource, 'OwnerAuth::revokeAllOwnerSessions'), 'logout.php verifies CSRF token before revoking sessions (#474)');
+
+$loginSource = file_get_contents(dirname(__DIR__) . '/public/owner/login.php');
+testAssert(str_contains($loginSource, "header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0')"), 'login.php enforces private no-store cache control headers (#476)');
+testAssert(str_contains($loginSource, 'bbiz_google_oauth_states'), 'login.php tracks multi-slot OAuth states to prevent multi-tab collisions (#476)');
+
+$callbackSource = file_get_contents(dirname(__DIR__) . '/public/owner/google-callback.php');
+testAssert(str_contains($callbackSource, 'bbiz_google_oauth_states'), 'google-callback.php validates and consumes multi-slot OAuth states (#476)');
 
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
 
