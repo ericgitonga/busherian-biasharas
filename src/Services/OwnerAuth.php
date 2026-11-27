@@ -11,9 +11,14 @@ final class OwnerAuth
     public const MAX_OTP_FAILED_ATTEMPTS = 5;
     private const COOKIE_NAME = 'bbiz_owner_session';
 
-    private static function cookieName(): string
+    public static function sessionCookieName(): string
     {
-        return self::COOKIE_NAME;
+        return Database::isPreview() ? 'bbiz_prev_sess' : 'bbiz_sess';
+    }
+
+    public static function cookieName(): string
+    {
+        return Database::isPreview() ? 'bbiz_prev_owner_session' : self::COOKIE_NAME;
     }
 
     private static function cookiePath(): string
@@ -53,25 +58,27 @@ final class OwnerAuth
     {
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
             $savePath = session_save_path();
-            if ($savePath === '' || !@is_writable($savePath)) {
-                @session_save_path(sys_get_temp_dir());
-            }
-            @ini_set('session.use_strict_mode', '1');
-            @ini_set('session.use_only_cookies', '1');
+                if ($savePath === '' || !@is_writable($savePath)) {
+                    @session_save_path(sys_get_temp_dir());
+                }
+                @ini_set('session.use_strict_mode', '1');
+                @ini_set('session.use_only_cookies', '1');
 
-            $cookieParams = [
-                'lifetime' => 0,
-                'path' => '/',
-                'secure' => self::isHttpsRequest(),
-                'httponly' => true,
-                'samesite' => 'Lax',
-            ];
-            $domain = self::cookieDomain();
-            if ($domain !== '') {
-                $cookieParams['domain'] = $domain;
-            }
+                session_name(self::sessionCookieName());
 
-            session_set_cookie_params($cookieParams);
+                $cookieParams = [
+                    'lifetime' => 0,
+                    'path' => '/',
+                    'secure' => self::isHttpsRequest(),
+                    'httponly' => true,
+                    'samesite' => 'Lax',
+                ];
+                $domain = self::cookieDomain();
+                if ($domain !== '') {
+                    $cookieParams['domain'] = $domain;
+                }
+
+                session_set_cookie_params($cookieParams);
             @session_start();
         }
     }
@@ -958,6 +965,9 @@ final class OwnerAuth
                 unset($legacyOptions['domain']);
                 setcookie($cName, '', $legacyOptions);
             }
+            if ($cookieVal === '' && $cName !== 'bbiz_owner_session') {
+                setcookie('bbiz_owner_session', '', $options);
+            }
         }
         if ($cookieVal === '' || $expTs < time()) {
             unset($_COOKIE[$cName]);
@@ -1100,6 +1110,9 @@ final class OwnerAuth
 
         // 2. Validate persistent v2.<selector>.<validator> cookie against server-side owner_sessions
         $rawCookie = trim((string)($_COOKIE[$cName] ?? ''));
+        if ($rawCookie === '' && $cName !== 'bbiz_owner_session' && !empty($_COOKIE['bbiz_owner_session'])) {
+            $rawCookie = trim((string)$_COOKIE['bbiz_owner_session']);
+        }
         if ($rawCookie === '') {
             return null;
         }
@@ -1219,8 +1232,9 @@ final class OwnerAuth
 
         $cName = self::cookieName();
         $selector = trim((string)($_SESSION['bbiz_owner_session_selector'] ?? ''));
-        if ($selector === '' && !empty($_COOKIE[$cName])) {
-            if (preg_match('/^v2\.([a-f0-9]{24})\.[a-f0-9]{64}$/', (string)$_COOKIE[$cName], $m)) {
+        $cookieRaw = (string)($_COOKIE[$cName] ?? ($_COOKIE['bbiz_owner_session'] ?? ''));
+        if ($selector === '' && $cookieRaw !== '') {
+            if (preg_match('/^v2\.([a-f0-9]{24})\.[a-f0-9]{64}$/', $cookieRaw, $m)) {
                 $selector = $m[1];
             }
         }
@@ -1242,7 +1256,11 @@ final class OwnerAuth
             $_SESSION['bbiz_owner_session_selector'],
             $_SESSION['bbiz_pending_claim_biz_id'],
             $_SESSION['bbiz_verified_claim'],
-            $_SESSION['bbiz_self_submitted_pending']
+            $_SESSION['bbiz_self_submitted_pending'],
+            $_SESSION['csrf_token'],
+            $_SESSION['bbiz_google_oauth_states'],
+            $_SESSION['bbiz_google_oauth_state'],
+            $_SESSION['bbiz_google_oauth_redirect_uri']
         );
 
         if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {

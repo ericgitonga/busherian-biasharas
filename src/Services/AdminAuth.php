@@ -74,6 +74,7 @@ final class AdminAuth
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
             @ini_set('session.use_strict_mode', '1');
             @ini_set('session.use_only_cookies', '1');
+            session_name('bbiz_admin_sess');
             $isHttps = self::isHttpsRequest();
             session_set_cookie_params([
                 'lifetime' => self::REMEMBER_ME_TTL_SECONDS,
@@ -385,9 +386,16 @@ final class AdminAuth
         }
 
         self::clearRememberMeCookie();
-        $_SESSION = [];
+        unset(
+            $_SESSION['bbiz_admin_auth'],
+            $_SESSION['bbiz_admin_exp'],
+            $_SESSION['bbiz_admin_ver'],
+            $_SESSION['bbiz_admin_cred_fp'],
+            $_SESSION['bbiz_admin_remember'],
+            $_SESSION['bbiz_admin_remember_sel']
+        );
         if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
-            @session_destroy();
+            @session_regenerate_id(true);
         }
     }
 

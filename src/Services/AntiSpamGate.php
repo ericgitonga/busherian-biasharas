@@ -60,27 +60,40 @@ final class AntiSpamGate
     public static function generateCsrfToken(): string
     {
         OwnerAuth::startSecureSession();
-        $sessionId = session_id();
-        if (!is_string($sessionId) || $sessionId === '') {
+        $sessId = session_id();
+        if (session_status() !== PHP_SESSION_ACTIVE || !is_string($sessId) || $sessId === '') {
             throw new \RuntimeException('Cannot generate CSRF token without an active PHP session.');
         }
-        $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
-        return hash_hmac('sha256', $sessionId, $csrfSecret);
+        if (empty($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])) {
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        }
+        return $_SESSION['csrf_token'];
     }
 
     public static function verifyCsrfToken(string $submittedToken): bool
     {
+        $submittedToken = trim($submittedToken);
         if ($submittedToken === '') {
             return false;
         }
         OwnerAuth::startSecureSession();
-        $sessionId = session_id();
-        if (!is_string($sessionId) || $sessionId === '') {
+        $sessId = session_id();
+        if (session_status() !== PHP_SESSION_ACTIVE || !is_string($sessId) || $sessId === '') {
             return false;
         }
+
+        $expected = $_SESSION['csrf_token'] ?? null;
+        if (is_string($expected) && $expected !== '' && hash_equals($expected, $submittedToken)) {
+            return true;
+        }
+
+        // Backward compatibility fallback for legacy HMAC tokens generated before session-payload migration
         $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
-        $expected = hash_hmac('sha256', $sessionId, $csrfSecret);
-        return hash_equals($expected, $submittedToken);
+        $legacyExpected = hash_hmac('sha256', $sessId, $csrfSecret);
+        if (hash_equals($legacyExpected, $submittedToken)) {
+            return true;
+        }
+        return false;
     }
 
     public static function claimSingleUseNonce(PDO $pdo, string $nonceHash, int $expiresAt): bool

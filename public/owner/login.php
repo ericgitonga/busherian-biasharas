@@ -10,6 +10,8 @@ use BusherianBiasharas\Services\Mailer;
 use BusherianBiasharas\Services\OwnerAuth;
 
 bbiz_send_security_headers(false);
+header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 OwnerAuth::startSecureSession();
 
 $pdo = Database::getConnection();
@@ -97,6 +99,19 @@ $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
 if (($_GET['action'] ?? '') === 'google' && $googleReady) {
     $state = bin2hex(random_bytes(16));
     $redirectUri = OwnerAuth::getGoogleRedirectUri();
+    if (!isset($_SESSION['bbiz_google_oauth_states']) || !is_array($_SESSION['bbiz_google_oauth_states'])) {
+        $_SESSION['bbiz_google_oauth_states'] = [];
+    }
+    $now = time();
+    foreach ($_SESSION['bbiz_google_oauth_states'] as $st => $info) {
+        if (($info['expires_at'] ?? 0) < $now) {
+            unset($_SESSION['bbiz_google_oauth_states'][$st]);
+        }
+    }
+    $_SESSION['bbiz_google_oauth_states'][$state] = [
+        'redirect_uri' => $redirectUri,
+        'expires_at' => $now + 900,
+    ];
     $_SESSION['bbiz_google_oauth_state'] = $state;
     $_SESSION['bbiz_google_oauth_redirect_uri'] = $redirectUri;
     header('Location: ' . OwnerAuth::getGoogleAuthorizationUrl($state, $pdo, $redirectUri));
@@ -143,7 +158,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stickyEmail = $email;
 
     if (!AntiSpamGate::verifyCsrfToken($csrf)) {
-        $flashError = 'Your page session expired. Please reload and try again.';
+        http_response_code(403);
+        $flashError = 'This sign-in form expired. Please enter your password again.';
     } elseif ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $flashError = 'Please enter a valid email address.';
     } elseif ($formStep === 'send_otp') {
@@ -183,29 +199,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $claimBizId > 0 &&
                 OwnerAuth::isEmailEligibleForClaim($pdo, $claimBizId, $email, $claimInvitedEmail)
             );
-            if (!OwnerAuth::isRecognizedOwnerEmail($pdo, $email) && $pendingSubBizId === null && !$hasEligibleVerifiedClaim) {
-                $flashError = 'We could not find a business listing matching that exact email address. Please check the masked email hint on your listing card, or ask the directory admin for your Owner Access Link.';
+            $mailQuota = AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, $email, true);
+            if (!$mailQuota['allowed']) {
                 $viewStep = 'reset';
+                $flashError = $mailQuota['reason'] === 'otp_recipient_cooldown_60s'
+                    ? 'A 6-digit verification code was just sent to that email address. Please check your inbox or wait 60 seconds before requesting another code.'
+                    : 'Too many verification emails requested recently. Please wait a few minutes and try again.';
             } else {
-                $mailQuota = AntiSpamGate::checkAndRecordOutboundMailQuota($pdo, $clientIp, $email, true);
-                if (!$mailQuota['allowed']) {
+                $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, $pendingSubBizId);
+                $ctxName = $claimBizName ?: $targetBizName;
+                $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
+                if (!Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
                     $viewStep = 'reset';
-                    $flashError = $mailQuota['reason'] === 'otp_recipient_cooldown_60s'
-                        ? 'A 6-digit verification code was just sent to that email address. Please check your inbox or wait 60 seconds before requesting another code.'
-                        : 'Too many verification emails requested recently. Please wait a few minutes and try again.';
+                    $flashError = 'We could not deliver your 6-digit verification email right now due to a temporary mail server issue. Your email is queued for automatic retry — please check your inbox shortly or try again in a few minutes.';
                 } else {
-                    $otpInfo = OwnerAuth::issuePasswordOtp($pdo, $email, $pendingSubBizId);
-                    $ctxName = $claimBizName ?: $targetBizName;
-                    $otpOutboxId = Mailer::sendOwnerPasswordOtp($pdo, $email, $otpInfo['code'], $ctxName ? (string)$ctxName : null);
-                    if (!Mailer::wasDeliveredOrSimulated($pdo, $otpOutboxId)) {
-                        $viewStep = 'reset';
-                        $flashError = 'We could not deliver your 6-digit verification email right now due to a temporary mail server issue. Your email is queued for automatic retry — please check your inbox shortly or try again in a few minutes.';
-                    } else {
-                        $viewStep = 'verify_otp';
-                        $flashSuccess = "We sent a 6-digit verification code to {$email}. Enter the 6-digit code below and choose your password right here in this browser window.";
-                        if (OwnerAuth::canRenderDevOtpPreview()) {
-                            $devPreviewOtpCode = $otpInfo['code'];
-                        }
+                    $viewStep = 'verify_otp';
+                    $flashSuccess = "We sent a 6-digit verification code to {$email}. Enter the 6-digit code below and choose your password right here in this browser window.";
+                    if (OwnerAuth::canRenderDevOtpPreview()) {
+                        $devPreviewOtpCode = $otpInfo['code'];
                     }
                 }
             }
