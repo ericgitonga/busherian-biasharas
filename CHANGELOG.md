@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.42.0] - 2026-11-27
+
+### Added
+- **Owner Google Single Sign-On (SSO) Activation (#466)**:
+  - Configured verified Google OAuth 2.0 Web Client credentials (`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`) across environment configuration and database settings.
+  - Activated the **"🌐 Continue with Google"** button on `/owner/login.php` enabling one-click passwordless sign-in for verified alumni business owners.
+  - Retains 30-day authenticated session persistence, automatic business linking by owner email, and one-time 18+ adult attestation compliance with Kenya DPA 2019.
+  - Added automated FTPS synchronization in deployment workflows (`deploy-ftp.yml` and `deploy-preview.yml`) so Google SSO credentials persist seamlessly across production and preview server environments.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.42.0`.
+
 ## [0.41.1] - 2026-11-27
 
 ### Fixed

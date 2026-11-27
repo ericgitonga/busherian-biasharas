@@ -1243,10 +1243,6 @@ final class Database
 
     public static function getSetting(PDO $pdo, string $key, string $default = ''): string
     {
-        $envVal = self::env($key, '');
-        if ($envVal !== '') {
-            return $envVal;
-        }
         try {
             $stmt = $pdo->prepare("SELECT setting_value FROM app_settings WHERE setting_key = :k LIMIT 1");
             $stmt->execute([':k' => $key]);
@@ -1255,6 +1251,10 @@ final class Database
                 return trim((string)$val);
             }
         } catch (\Throwable $e) {
+        }
+        $envVal = self::env($key, '');
+        if ($envVal !== '') {
+            return $envVal;
         }
         return $default;
     }

@@ -114,6 +114,8 @@ jobs:
                           "SIMULATE_EMAILS": "yes",
                           "APP_URL": "https://preview.busherianbiasharas.com",
                           "SMTP_HOST": "mx1.angryhosting.com",
+                          "GOOGLE_CLIENT_ID": "64004769695-fev3ccrifjenfi4priml8q5ganppb1vo.apps.googleusercontent.com",
+                          "GOOGLE_CLIENT_SECRET": "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",
                       }
                       synced_lines = []
                       seen_keys = set()
