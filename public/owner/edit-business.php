@@ -111,10 +111,6 @@ $tokens = AntiSpamGate::generateFormTokens();
       <nav class="header-actions portal-header-actions">
         <a href="/owner/index.php" class="btn btn-outline-light">&larr; My Businesses</a>
         <a href="/" class="btn btn-outline-light">Public Directory</a>
-        <form method="POST" action="/owner/logout.php" style="margin:0;display:inline;">
-          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
-          <button type="submit" data-testid="owner-edit-logout-btn" class="btn btn-outline-light" style="cursor:pointer;">Sign Out</button>
-        </form>
       </nav>
     </div>
   </header>

@@ -840,11 +840,7 @@ $ownerIndexHtml = file_get_contents(dirname(__DIR__) . '/public/owner/index.php'
 testAssert(str_contains($ownerIndexHtml, 'owner-session-security-section'), 'owner/index.php contains owner-session-security-section in dashboard body (#470)');
 testAssert(str_contains($ownerIndexHtml, 'owner-body-logout-btn'), 'owner/index.php contains body logout button (#470)');
 testAssert(str_contains($ownerIndexHtml, 'owner-body-logout-all-btn'), 'owner/index.php contains body logout-all button (#470)');
-
-$ownerEditHtml = file_get_contents(dirname(__DIR__) . '/public/owner/edit-business.php');
-testAssert(str_contains($ownerEditHtml, 'owner-edit-logout-btn'), 'owner/edit-business.php contains owner-edit-logout-btn (#470)');
-
-testAssert(str_contains($submitHtml, 'submit-owner-logout-btn'), 'submit.php contains submit-owner-logout-btn (#470)');
+testAssert(str_contains($ownerIndexHtml, 'portal-header-actions'), 'owner/index.php header uses responsive portal-header-actions (#470)');
 
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
 

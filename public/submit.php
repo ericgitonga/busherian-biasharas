@@ -636,12 +636,6 @@ $aghsHouses = Houses::AGHS_HOUSES;
         <a href="/" class="btn btn-outline-light">&larr; Back to Directory</a>
         <a href="<?= $loggedOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light">👤 <?= $loggedOwner ? "My Biasharas (Edit / + List)" : "List / Edit Biashara" ?></a>
         <a href="/privacy.php" class="btn btn-outline-light">🔒 Privacy Notice</a>
-        <?php if ($loggedOwner): ?>
-        <form method="POST" action="/owner/logout.php" style="margin:0;display:inline;">
-          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
-          <button type="submit" data-testid="submit-owner-logout-btn" class="btn btn-outline-light" style="cursor:pointer;">Sign Out</button>
-        </form>
-        <?php endif; ?>
       </nav>
     </div>
   </header>
