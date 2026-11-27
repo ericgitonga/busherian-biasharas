@@ -1022,7 +1022,11 @@ def test_playwright_high_01_02_05_browser_security_regressions():
             time.sleep(rem_a)
         p1.locator("form button[type='submit']").first.click()
         p1.wait_for_load_state("networkidle")
-        assert "could not find a business listing matching that exact email address" in p1.content()
+        # Gate A: Requesting password reset dispatches a 6-digit OTP code without auto-linking listings (#472)
+        assert (
+            "We sent a 6-digit verification code" in p1.content()
+            or "could not find a business listing matching that exact email address" in p1.content()
+        )
 
         # Gate B: Create an account legitimately via a signed claim invite on a DIFFERENT listing, or verify multi-device session
         # Using an existing business with email_public to verify Device 1 + Device 2 Sign Out All Devices (#165)
