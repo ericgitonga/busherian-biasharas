@@ -3470,6 +3470,11 @@ a {
     flex: 0 0 auto !important;
     flex-wrap: nowrap !important;
   }
+  .portal-header-actions,
+  .site-header .portal-header-actions {
+    flex-wrap: wrap !important;
+    max-width: 100% !important;
+  }
   /* Move install app from header to hamburger drawer (#405) */
   .site-header .btn-install-pwa,
   #btn-install-app {

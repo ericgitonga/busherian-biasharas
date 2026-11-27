@@ -830,5 +830,21 @@ testAssert(str_contains($loginHtml, 'proceed directly to the listing submission 
 $submitHtml = file_get_contents(dirname(__DIR__) . '/public/submit.php');
 testAssert(str_contains($submitHtml, 'submit-welcome-owner-banner'), 'submit.php contains welcome banner for authenticated owners (#469)');
 
+// #470: Explicit Owner Sign-Out Option across Desktop Header, Mobile Drawer, and Portal Pages
+testAssert(str_contains($indexHtml, 'btn-owner-logout'), 'index.php contains desktop btn-owner-logout form action (#470)');
+testAssert(str_contains($indexHtml, 'drawer-owner-logout'), 'index.php mobile drawer contains drawer-owner-logout form action (#470)');
+testAssert(str_contains($indexHtml, 'action="/owner/logout.php"'), 'index.php logout controls submit to /owner/logout.php (#470)');
+testAssert(!str_contains($indexHtml, '<a href="/owner/logout.php"'), 'index.php logout does not use insecure GET link (#203, #470)');
+
+$ownerIndexHtml = file_get_contents(dirname(__DIR__) . '/public/owner/index.php');
+testAssert(str_contains($ownerIndexHtml, 'owner-session-security-section'), 'owner/index.php contains owner-session-security-section in dashboard body (#470)');
+testAssert(str_contains($ownerIndexHtml, 'owner-body-logout-btn'), 'owner/index.php contains body logout button (#470)');
+testAssert(str_contains($ownerIndexHtml, 'owner-body-logout-all-btn'), 'owner/index.php contains body logout-all button (#470)');
+
+$ownerEditHtml = file_get_contents(dirname(__DIR__) . '/public/owner/edit-business.php');
+testAssert(str_contains($ownerEditHtml, 'owner-edit-logout-btn'), 'owner/edit-business.php contains owner-edit-logout-btn (#470)');
+
+testAssert(str_contains($submitHtml, 'submit-owner-logout-btn'), 'submit.php contains submit-owner-logout-btn (#470)');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
 

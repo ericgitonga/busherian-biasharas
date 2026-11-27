@@ -142,7 +142,7 @@ $tokens = AntiSpamGate::generateFormTokens();
           <p class="brand-subtitle" data-testid="owner-signed-in-email">Signed in as <?= htmlspecialchars((string)$owner['email'], ENT_QUOTES, 'UTF-8') ?> (You stay signed in for 30 days)</p>
         </div>
       </a>
-      <nav class="header-actions" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+      <nav class="header-actions portal-header-actions" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
         <a href="/submit.php" class="btn btn-gold">+ Register Another Biashara</a>
         <a href="/" class="btn btn-outline-light">Public Directory</a>
         <form method="POST" action="/owner/logout.php" style="margin:0;display:inline;">
@@ -284,6 +284,29 @@ $tokens = AntiSpamGate::generateFormTokens();
           <button type="submit" data-testid="owner-save-profile-btn" class="btn btn-outline" style="width:100%;justify-content:center;">💾 Save Owner Profile &amp; Password</button>
         </div>
       </form>
+    </section>
+
+    <!-- Section 2.5: Session Security & Sign Out (#470) -->
+    <section data-testid="owner-session-security-section" style="margin-top:1.5rem;background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1.35rem;">
+      <h3 style="margin:0 0 0.3rem 0;color:#114B3E;font-size:1rem;">Account Session &amp; Sign Out</h3>
+      <p style="margin:0 0 0.9rem 0;font-size:0.82rem;color:#4B5563;line-height:1.5;">
+        You are currently signed in as <strong><?= htmlspecialchars((string)$owner['email'], ENT_QUOTES, 'UTF-8') ?></strong> on this device. You can sign out of this browser or invalidate all active sessions across all devices.
+      </p>
+      <div style="display:flex;flex-wrap:wrap;gap:0.75rem;align-items:center;">
+        <form method="POST" action="/owner/logout.php" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+          <button type="submit" data-testid="owner-body-logout-btn" class="btn btn-outline-crimson" style="border:1.5px solid #DC2626;color:#991B1B;background:#FEF2F2;cursor:pointer;">
+            🚪 Sign Out of This Device
+          </button>
+        </form>
+        <form method="POST" action="/owner/logout.php" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="scope" value="all">
+          <button type="submit" data-testid="owner-body-logout-all-btn" class="btn btn-outline" style="border:1px solid #9CA3AF;color:#374151;cursor:pointer;">
+            🔒 Sign Out All Devices
+          </button>
+        </form>
+      </div>
     </section>
 
     <!-- Section 3: Kenya DPA Rights — Personal Data Export & Subject-Level Account Erasure (#215 M-07) -->
