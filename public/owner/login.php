@@ -38,15 +38,6 @@ if ($currentOwner !== null) {
         header("Location: /owner/edit-business.php?id={$targetBizId}");
         exit;
     }
-    $fromAction = trim((string)($_REQUEST['from'] ?? ($_SESSION['bbiz_login_from'] ?? '')));
-    unset($_SESSION['bbiz_login_from']);
-    if ($fromAction === 'list_edit') {
-        $myBusinesses = OwnerAuth::getLinkedBusinessesForOwner($pdo, (int)$currentOwner['id']);
-        if (empty($myBusinesses)) {
-            header('Location: /submit.php?welcome_owner=1');
-            exit;
-        }
-    }
     header('Location: /owner/index.php');
     exit;
 }
@@ -102,11 +93,6 @@ if ($claimBizId > 0) {
 }
 
 $googleReady = OwnerAuth::isGoogleSsoConfigured($pdo);
-
-$fromAction = trim((string)($_REQUEST['from'] ?? ''));
-if ($fromAction !== '') {
-    $_SESSION['bbiz_login_from'] = $fromAction;
-}
 
 if (($_GET['action'] ?? '') === 'google' && $googleReady) {
     $state = bin2hex(random_bytes(16));
@@ -261,13 +247,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         header("Location: /owner/edit-business.php?id={$targetBizId}");
                         exit;
                     }
-                    $fromAction = trim((string)($_SESSION['bbiz_login_from'] ?? ''));
-                    unset($_SESSION['bbiz_login_from']);
-                    $myBusinesses = OwnerAuth::getLinkedBusinessesForOwner($pdo, (int)$verifiedOwner['id']);
-                    if ($fromAction === 'list_edit' && empty($myBusinesses)) {
-                        header('Location: /submit.php?welcome_owner=1');
-                        exit;
-                    }
                     header('Location: /owner/index.php');
                     exit;
                 }
@@ -310,13 +289,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($targetBizId > 0 && OwnerAuth::canOwnerEditBusiness($pdo, (int)$authOwner['id'], $targetBizId)) {
                         unset($_SESSION['bbiz_target_edit_biz_id']);
                         header("Location: /owner/edit-business.php?id={$targetBizId}");
-                        exit;
-                    }
-                    $fromAction = trim((string)($_SESSION['bbiz_login_from'] ?? ''));
-                    unset($_SESSION['bbiz_login_from']);
-                    $myBusinesses = OwnerAuth::getLinkedBusinessesForOwner($pdo, (int)$authOwner['id']);
-                    if ($fromAction === 'list_edit' && empty($myBusinesses)) {
-                        header('Location: /submit.php?welcome_owner=1');
                         exit;
                     }
                     header('Location: /owner/index.php');

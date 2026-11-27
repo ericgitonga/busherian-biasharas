@@ -32,14 +32,7 @@ $completeOwnerSignIn = static function (PDO $pdo, array $profile, bool $attested
         ]);
         header("Location: /owner/claim.php?{$claimQs}");
     } else {
-        $fromAction = trim((string)($_SESSION['bbiz_login_from'] ?? ''));
-        unset($_SESSION['bbiz_login_from']);
-        $myBusinesses = OwnerAuth::getLinkedBusinessesForOwner($pdo, (int)$owner['id']);
-        if ($fromAction === 'list_edit' && empty($myBusinesses)) {
-            header('Location: /submit.php?welcome_owner=1');
-        } else {
-            header('Location: /owner/index.php');
-        }
+        header('Location: /owner/index.php');
     }
     exit;
 };

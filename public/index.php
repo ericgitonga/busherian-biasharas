@@ -300,7 +300,7 @@ $pageCanonicalPath = $requestedBiz
           🏢 B2B Shortlist (<span id="shortlist-count">0</span>/5)
         </button>
         <a href="/privacy.php" class="btn btn-outline-light header-desktop-action">🔒 Privacy Notice</a>
-        <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php?from=list_edit' ?>" class="btn btn-gold btn-list-biashara" data-testid="btn-list-edit-biashara"><?= $currentOwner ? '✏️ My Biasharas (Edit / + List)' : '+ List / Edit Your Biashara' ?></a>
+        <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-gold btn-list-biashara" data-testid="btn-list-edit-biashara"><?= $currentOwner ? '✏️ My Biasharas (Edit / + List)' : '+ List / Edit Your Biashara' ?></a>
         <button type="button" id="btn-mobile-menu" data-testid="btn-mobile-menu" class="btn btn-outline-light btn-hamburger header-mobile-only" aria-label="Open Menu &amp; Filters" onclick="toggleMobileDrawer(true)">
           <span style="font-size:18px;line-height:1;">☰</span>
         </button>
@@ -455,7 +455,7 @@ $pageCanonicalPath = $requestedBiz
       <div class="filter-group mobile-drawer-only" style="border-top:1px solid #EFE9DC;padding-top:14px;">
         <div class="filter-group-title">ACTIONS &amp; ACCOUNT</div>
         <div style="display:flex;flex-direction:column;gap:8px;">
-          <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php?from=list_edit' ?>" class="btn btn-outline-light" style="border:1.5px solid #D97706;background:#FFFBEB;color:#92400E;font-weight:700;justify-content:flex-start;font-size:13px;padding:8px 12px;" data-testid="drawer-list-edit-biashara">
+          <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light" style="border:1.5px solid #D97706;background:#FFFBEB;color:#92400E;font-weight:700;justify-content:flex-start;font-size:13px;padding:8px 12px;" data-testid="drawer-list-edit-biashara">
             <?= $currentOwner ? '✏️ My Biasharas (Edit / + List)' : '+ List / Edit Your Biashara' ?>
           </a>
           <button type="button" id="btn-drawer-shortlist" class="btn btn-outline-light" style="border:1px solid #E5DEC9;background:#FBF8F3;color:#18201B;justify-content:flex-start;font-size:13px;padding:8px 12px;" onclick="if(document.getElementById('btn-export-shortlist')){document.getElementById('btn-export-shortlist').click();}">
