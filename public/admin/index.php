@@ -51,8 +51,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ? 'Google SSO (OAuth 2.0) credentials saved! The "Continue with Google (SSO)" button is now active on /owner/login.php.'
             : 'Google SSO credentials cleared.';
     } elseif ($adminAction === 'retry_outbox') {
-        $retryRes = Mailer::processRetryQueue($pdo, 25, 5);
-        $flashMsg = "Processed {$retryRes['processed']} queued/failed outbox email(s): {$retryRes['delivered']} delivered/simulated, {$retryRes['failed']} still failing.";
+        $retryRes = Mailer::processRetryQueue($pdo, 25, 5, true);
+        $parts = [];
+        if ($retryRes['delivered'] > 0) {
+            $parts[] = "{$retryRes['delivered']} delivered/simulated";
+        }
+        if (($retryRes['expired'] ?? 0) > 0) {
+            $parts[] = "{$retryRes['expired']} expired/cleared";
+        }
+        if ($retryRes['failed'] > 0) {
+            $parts[] = "{$retryRes['failed']} still failing";
+        }
+        if ($parts === []) {
+            $parts[] = "0 delivered/simulated";
+        }
+        $flashMsg = "Processed {$retryRes['processed']} queued/failed outbox email(s): " . implode(', ', $parts) . '.';
+    } elseif ($adminAction === 'test_smtp_relay') {
+        $testRecipient = trim((string)($_POST['test_recipient'] ?? ''));
+        if ($testRecipient === '' || !filter_var($testRecipient, FILTER_VALIDATE_EMAIL)) {
+            $flashErr = 'Please enter a valid recipient email address for the test.';
+        } else {
+            $testSubject = '[Busherian Biasharas] Outbound SMTP Relay Test Delivery';
+            $testBody = "<div style='font-family:sans-serif;max-width:540px;color:#111827;'><h2 style='color:#114B3E;'>✓ SMTP Relay Test Succeeded!</h2><p>Your authenticated SMTP delivery configuration on Busherian Biasharas is verified and working cleanly.</p><p style='font-size:12px;color:#6B7280;'>Timestamp: " . gmdate('Y-m-d H:i:s') . " UTC</p></div>";
+            $outboxId = Mailer::enqueueAndSend($pdo, $testRecipient, $testSubject, $testBody);
+            $checkStmt = $pdo->prepare("SELECT status FROM email_outbox WHERE id = :id LIMIT 1");
+            $checkStmt->execute([':id' => $outboxId]);
+            $st = (string)($checkStmt->fetchColumn() ?: '');
+            if (in_array($st, ['sent', 'simulated'], true)) {
+                $flashMsg = "✓ Test email #{$outboxId} successfully dispatched to {$testRecipient} (Status: {$st})!";
+            } else {
+                $flashErr = "⚠️ Test email #{$outboxId} failed to deliver (Status: {$st}). Check server error logs or verify SMTP host/credentials.";
+            }
+        }
     } elseif ($adminAction === 'retry_media_deletions') {
         $drainRes = VettingPurger::drainDurableMediaDeletions($pdo, null);
         $flashMsg = "Processed {$drainRes['processed']} queued media deletion(s): {$drainRes['completed']} completed, {$drainRes['remaining']} remaining.";
@@ -213,6 +243,8 @@ $unmappedCategoryCount = (int)$pdo->query("
     WHERE b.status = 'approved' AND (sec.id IS NULL OR spec.id IS NULL)
 ")->fetchColumn();
 $cronHealth = VettingPurger::getRetentionCronHealth($pdo, 36);
+$smtpHealthStatus = Database::getSetting($pdo, 'SMTP_LAST_HEALTH_STATUS', 'healthy');
+$smtpHealthError = Database::getSetting($pdo, 'SMTP_LAST_HEALTH_ERROR', '');
 $retryableOutboxCount = (int)$pdo->query("
     SELECT COUNT(*)
     FROM email_outbox
@@ -303,6 +335,9 @@ try {
         <?php if ($unmappedCategoryCount > 0): ?>
           &nbsp;•&nbsp;<a href="/admin/index.php?status=unmapped_category#manage-businesses" style="color:#B45309;text-decoration:none;"><strong style="color:#B45309;">⚠️ <?= $unmappedCategoryCount ?> approved business(es) have unmapped categories (hidden from directory)</strong></a>
         <?php endif; ?>
+        <?php if ($smtpHealthStatus === 'critical'): ?>
+          &nbsp;•&nbsp;<a href="#smtp-config" style="color:#DC2626;text-decoration:none;"><strong style="color:#DC2626;">🚨 Outbound SMTP Relay Error: <?= htmlspecialchars($smtpHealthError !== '' ? $smtpHealthError : 'Connection or TLS failure') ?></strong></a>
+        <?php endif; ?>
         <?php if ($retryableOutboxCount > 0): ?>
           &nbsp;•&nbsp;<strong style="color:#991B1B;"><?= $retryableOutboxCount ?> queued/failed email(s) awaiting retry</strong> (<code>php bin/process-email-outbox.php</code>)
         <?php endif; ?>
@@ -336,6 +371,38 @@ try {
       </div>
       <span class="badge-verified">DPA Storage Limitation Enforced</span>
     </div>
+
+    <!-- SMTP RELAY CONFIGURATION & TEST DISPATCH BOX -->
+    <?php
+      $effectiveSmtpHost = \BusherianBiasharas\Services\Mailer::resolveEffectiveSmtpHost(Database::env('SMTP_HOST', Database::getSetting($pdo, 'SMTP_HOST', '')));
+      $configuredSmtpHost = Database::env('SMTP_HOST', Database::getSetting($pdo, 'SMTP_HOST', ''));
+      $smtpUser = Database::env('SMTP_USER', Database::env('SMTP_USERNAME', ''));
+      $smtpPort = Database::env('SMTP_PORT', '465');
+      $adminEmail = Database::env('ADMIN_EMAIL', 'admin@busherianbiasharas.com');
+    ?>
+    <section id="smtp-config" style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.5rem;">
+      <details>
+        <summary style="cursor:pointer;font-weight:800;color:#114B3E;font-size:0.92rem;">
+          📧 Outbound SMTP Relay &amp; Delivery Diagnostics <span class="badge-verified" style="margin-left:0.5rem;">✓ Active Relay: <?= htmlspecialchars($effectiveSmtpHost, ENT_QUOTES, 'UTF-8') ?>:<?= htmlspecialchars((string)$smtpPort, ENT_QUOTES, 'UTF-8') ?></span>
+        </summary>
+        <div style="margin-top:0.85rem;font-size:0.82rem;color:#4B5563;">
+          <p style="margin:0 0 0.6rem 0;">
+            Outbound email is authenticated over encrypted TLS/SSL via <strong><?= htmlspecialchars($effectiveSmtpHost, ENT_QUOTES, 'UTF-8') ?>:<?= htmlspecialchars((string)$smtpPort, ENT_QUOTES, 'UTF-8') ?></strong> (User: <code><?= htmlspecialchars($smtpUser, ENT_QUOTES, 'UTF-8') ?></code>). Send a one-time test email below to verify live delivery into your inbox.
+          </p>
+          <form method="POST" action="/admin/index.php" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.65rem;align-items:end;">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+            <input type="hidden" name="admin_action" value="test_smtp_relay">
+            <div>
+              <label style="font-weight:700;display:block;margin-bottom:0.2rem;">Send Live Test Email To:</label>
+              <input type="email" name="test_recipient" class="input-control" value="<?= htmlspecialchars($adminEmail, ENT_QUOTES, 'UTF-8') ?>" placeholder="admin@busherianbiasharas.com" required>
+            </div>
+            <div>
+              <button type="submit" class="btn btn-gold" style="width:100%;justify-content:center;">🚀 Dispatch Test Email Now</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    </section>
 
     <!-- GOOGLE SSO CONFIGURATION BOX -->
     <?php

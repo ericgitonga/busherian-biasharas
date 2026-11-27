@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.41.1] - 2026-11-27
+
+### Fixed
+- **Resolve AngryHosting SMTP Relay Failure & Port 465 Timeout (#460, #461)**:
+  - Mapped default and `mail.busherianbiasharas.com` SMTP host to `mx1.angryhosting.com` (the verified dedicated TLS mail relay on AngryHosting with port 465 SSL open, valid certificate, and authenticated user credentials).
+  - Added automatic fallback to `mx1.angryhosting.com:465` if the primary vanity SMTP host times out or fails connection.
+  - Added support for `SMTP_TLS_PEER_NAME` / `SMTP_PEER_NAME` and automatic SNI certificate alignment.
+  - Added `Mailer::getAdminEmail($pdo)` defaulting to `gitonga@gmail.com` when configured or when `ADMIN_EMAIL` in `.env` is unmonitored.
+- **Manual Outbox Retry Backoff Window Bypass & Accurate Triage Reporting (#460, #462)**:
+  - Added `$forceImmediate` flag to `Mailer::processRetryQueue()` and `dispatchOutboxRow()` so manual admin console retries (`admin_action === 'retry_outbox'`) and CLI retries (`bin/process-email-outbox.php --force`) immediately attempt waiting rows without being blocked by exponential backoff (`next_retry_at`).
+  - Separated `expired` authentication challenges from `failed` delivery errors in `processRetryQueue()` result and admin console flash messages.
+- **Proactive SMTP Relay Health Check & Real-Time Alert Sentinel (#460)**:
+  - Added `Mailer::checkSmtpHealth()` performing proactive SMTP TLS handshake verification on the relay.
+  - Added `bin/test-email-health.php` CLI sentinel for cPanel cron integration, alerting on STDERR/exit code 1 whenever SMTP connectivity or outbox delivery fails.
+  - Integrated SMTP health monitoring into remote WebCron (`public/api/cron.php`) and `.github/workflows/scheduled-cron.yml` (every 15 minutes), failing workflow steps immediately so GitHub dispatches real-time push/email alerts to the repository owner upon any failure.
+  - Added real-time SMTP diagnostic panel and live test email dispatcher in Admin Console (`/admin/index.php`).
+
 ## [0.41.0] - 2026-11-26
 
 ### Added & Enhanced

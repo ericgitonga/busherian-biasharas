@@ -736,5 +736,35 @@ try {
 }
 testAssert($nameCompulsoryThrown, "updateBusinessByOwner enforces compulsory founder_name when opt-in is enabled (#457)");
 
+// 28. Check AngryHosting SMTP Relay Resolution, Manual Retry Backoff Bypass, and Outbox Triage (#460, #461, #462)
+testAssert(\BusherianBiasharas\Services\Mailer::resolveEffectiveSmtpHost('mail.busherianbiasharas.com') === 'mx1.angryhosting.com', 'Mailer maps mail.busherianbiasharas.com to mx1.angryhosting.com (#461)');
+testAssert(\BusherianBiasharas\Services\Mailer::resolveEffectiveSmtpHost('') === 'mx1.angryhosting.com', 'Mailer resolves empty host to default mx1.angryhosting.com relay (#461)');
+testAssert(\BusherianBiasharas\Services\Mailer::resolveEffectiveSmtpHost('custom.smtp.relay.com') === 'custom.smtp.relay.com', 'Mailer preserves custom external SMTP relays (#461)');
+testAssert(\BusherianBiasharas\Services\Mailer::resolveEffectiveSmtpPeerName('mx1.angryhosting.com') === 'mx1.angryhosting.com', 'Mailer aligns SNI peer name for mx1.angryhosting.com (#461)');
+testAssert(\BusherianBiasharas\Services\Mailer::getAdminEmail($pdo) !== '', 'Mailer::getAdminEmail returns active administrator email (#461)');
+
+// Verify $forceImmediate bypasses future next_retry_at in processRetryQueue
+$futureRetryTs = time() + 1800; // 30 minutes in future
+$pdo->prepare("
+    INSERT INTO email_outbox (business_id, recipient_email, subject, body_html, status, attempts, next_retry_at)
+    VALUES (NULL, 'retrytest462@example.com', 'Immediate Retry Test', '<p>Test</p>', 'failed', 2, :nra)
+")->execute([':nra' => $futureRetryTs]);
+$testOutboxId462 = (int)$pdo->lastInsertId();
+
+// Normal retry with forceImmediate=false should ignore future next_retry_at
+$normalRetryRes = \BusherianBiasharas\Services\Mailer::processRetryQueue($pdo, 25, 5, false);
+$stCheck1 = (string)$pdo->query("SELECT status FROM email_outbox WHERE id = {$testOutboxId462}")->fetchColumn();
+testAssert($stCheck1 === 'failed', 'processRetryQueue with forceImmediate=false respects future backoff window (#462)');
+
+// Manual retry with forceImmediate=true should lease and process immediately
+putenv('SIMULATE_EMAILS=yes');
+$forcedRetryRes = \BusherianBiasharas\Services\Mailer::processRetryQueue($pdo, 25, 5, true);
+$stCheck2 = (string)$pdo->query("SELECT status FROM email_outbox WHERE id = {$testOutboxId462}")->fetchColumn();
+testAssert(in_array($stCheck2, ['sent', 'simulated'], true), 'processRetryQueue with forceImmediate=true immediately processes backoff-locked outbox rows (#462)');
+testAssert(isset($forcedRetryRes['expired']), 'processRetryQueue returns distinct expired tally in result dictionary (#462)');
+
+// Clean up test outbox row
+$pdo->prepare("DELETE FROM email_outbox WHERE id = :id")->execute([':id' => $testOutboxId462]);
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
 
