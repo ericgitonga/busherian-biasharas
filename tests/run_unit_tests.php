@@ -576,13 +576,12 @@ assertTrue(
     'submit.php retired obsolete Same as Direct Phone checkboxes and provides toggle-secondary-sector checkbox (#386, #395)'
 );
 
-// 23b. Verify H-01 Basic Submission Fallbacks: description defaults to tagline, direct phone defaults to whatsapp, and house defaults to Unspecified
+// 23b. Verify H-01 Basic Submission Fallbacks & Compulsory House (#386, #478)
 assertTrue(
     str_contains($submitHtml, '$description = $tagline;') &&
     str_contains($submitHtml, '$rawPrimaryPhone = $rawWhatsappPhone;') &&
-    str_contains($submitHtml, "\$houseName = 'Unspecified';") &&
-    str_contains($submitHtml, "\$houseName !== 'Unspecified'"),
-    'submit.php implements H-01 basic submission fallbacks for description, phone, and house'
+    str_contains($submitHtml, '!Houses::isValidHouse($schoolCode, $houseName)'),
+    'submit.php implements basic submission fallbacks for description and phone, and enforces compulsory house (#478)'
 );
 
 // 24. Verify Ticket #116: All 197 world countries included in LocationEngine::getPlaceHierarchy

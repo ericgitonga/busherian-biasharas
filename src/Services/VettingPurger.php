@@ -460,7 +460,7 @@ final class VettingPurger
         if (!in_array($schoolCode, ['AHS', 'AGHS'], true)) {
             throw new \InvalidArgumentException('Please select your School (AHS or AGHS).');
         }
-        if ($houseName !== '' && $houseName !== 'Unspecified' && (mb_strlen($houseName) > 80 || !\BusherianBiasharas\Config\Houses::isValidHouse($schoolCode, $houseName))) {
+        if ($houseName === '' || mb_strlen($houseName) > 80 || !\BusherianBiasharas\Config\Houses::isValidHouse($schoolCode, $houseName)) {
             throw new \InvalidArgumentException('Please select a valid confirmed House for your school (80 characters or fewer).');
         }
         $currentYear = (int)date('Y');
