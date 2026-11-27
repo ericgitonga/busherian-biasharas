@@ -61,19 +61,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $completeOwnerSignIn($pdo, $pending, true);
     }
 } else {
+    if (isset($_GET['error'])) {
+        error_log("[GoogleCallback] OAuth cancelled or error returned: " . (string)$_GET['error']);
+        unset($_SESSION['bbiz_google_oauth_state'], $_SESSION['bbiz_google_oauth_redirect_uri']);
+        header('Location: /owner/login.php?err=google_cancelled');
+        exit;
+    }
+
     $state = trim((string)($_GET['state'] ?? ''));
     $expectedState = trim((string)($_SESSION['bbiz_google_oauth_state'] ?? ''));
+    $savedRedirectUri = trim((string)($_SESSION['bbiz_google_oauth_redirect_uri'] ?? ''));
     $code = trim((string)($_GET['code'] ?? ''));
 
-    if ($state === '' || $expectedState === '' || !hash_equals($expectedState, $state) || $code === '') {
+    if ($state === '' || $expectedState === '' || !hash_equals($expectedState, $state)) {
+        error_log("[GoogleCallback] State mismatch: state=" . substr($state, 0, 8) . " expected=" . substr($expectedState, 0, 8) . " host=" . ($_SERVER['HTTP_HOST'] ?? ''));
+        unset($_SESSION['bbiz_google_oauth_state'], $_SESSION['bbiz_google_oauth_redirect_uri']);
+        header('Location: /owner/login.php?err=state_mismatch');
+        exit;
+    }
+    if ($code === '') {
+        unset($_SESSION['bbiz_google_oauth_state'], $_SESSION['bbiz_google_oauth_redirect_uri']);
         header('Location: /owner/login.php?err=invalid_link');
         exit;
     }
-    unset($_SESSION['bbiz_google_oauth_state']);
+    unset($_SESSION['bbiz_google_oauth_state'], $_SESSION['bbiz_google_oauth_redirect_uri']);
 
-    $profile = OwnerAuth::exchangeGoogleCodeForProfile($code);
+    $profile = OwnerAuth::exchangeGoogleCodeForProfile($code, $pdo, $savedRedirectUri ?: null);
     if ($profile === null) {
-        header('Location: /owner/login.php?err=invalid_link');
+        error_log("[GoogleCallback] exchangeGoogleCodeForProfile failed");
+        header('Location: /owner/login.php?err=google_failed');
         exit;
     }
 

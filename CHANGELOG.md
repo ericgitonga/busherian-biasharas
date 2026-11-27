@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.42.1] - 2026-11-27
+
+### Fixed
+- **Google OAuth Redirect URI Scoping & Unified Cookie Domain (#468)**:
+  - Dynamically resolved Google OAuth redirect URI to match the active incoming request hostname (`busherianbiasharas.com`, `www.busherianbiasharas.com`, or `preview.busherianbiasharas.com`), preventing browser domain hopping during authentication that previously caused session state loss and dropped tokens.
+  - Unified session cookie (`PHPSESSID`) and persistent owner session cookie (`bbiz_owner_session`) domain to `.busherianbiasharas.com` across apex and www subdomains while keeping preview isolated.
+  - Stored initiating OAuth redirect URI in session state (`bbiz_google_oauth_redirect_uri`) so token exchange with Google OAuth token endpoint always sends the exact matching redirect URI.
+  - Differentiated error responses on Google callback (`state_mismatch`, `google_cancelled`, `google_failed`, `invalid_link`) with descriptive and actionable user flash alerts.
+  - Bumped PWA service worker cache version to `bbiz-pwa-v0.42.1`.
+
 ## [0.42.0] - 2026-11-27
 
 ### Added
