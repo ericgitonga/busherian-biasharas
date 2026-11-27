@@ -299,9 +299,8 @@ $pageCanonicalPath = $requestedBiz
         <button type="button" id="btn-export-shortlist" class="btn btn-outline-light header-desktop-action" title="Export selected B2B vendors as CSV">
           🏢 B2B Shortlist (<span id="shortlist-count">0</span>/5)
         </button>
-        <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light header-desktop-action" style="border-color:#FCD34D;font-weight:700;">✏️ <?= $currentOwner ? 'My Biasharas (Edit)' : 'Owner Sign In / Edit Listing' ?></a>
         <a href="/privacy.php" class="btn btn-outline-light header-desktop-action">🔒 Privacy Notice</a>
-        <a href="/submit.php" class="btn btn-gold btn-list-biashara">+ List Your Biashara</a>
+        <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-gold btn-list-biashara" data-testid="btn-list-edit-biashara"><?= $currentOwner ? '✏️ My Biasharas (Edit / + List)' : '+ List / Edit Your Biashara' ?></a>
         <button type="button" id="btn-mobile-menu" data-testid="btn-mobile-menu" class="btn btn-outline-light btn-hamburger header-mobile-only" aria-label="Open Menu &amp; Filters" onclick="toggleMobileDrawer(true)">
           <span style="font-size:18px;line-height:1;">☰</span>
         </button>
@@ -456,8 +455,8 @@ $pageCanonicalPath = $requestedBiz
       <div class="filter-group mobile-drawer-only" style="border-top:1px solid #EFE9DC;padding-top:14px;">
         <div class="filter-group-title">ACTIONS &amp; ACCOUNT</div>
         <div style="display:flex;flex-direction:column;gap:8px;">
-          <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light" style="border:1.5px solid #D97706;background:#FFFBEB;color:#92400E;font-weight:700;justify-content:flex-start;font-size:13px;padding:8px 12px;">
-            ✏️ <?= $currentOwner ? 'My Biasharas (Edit)' : 'Owner Sign In / Edit Listing' ?>
+          <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>" class="btn btn-outline-light" style="border:1.5px solid #D97706;background:#FFFBEB;color:#92400E;font-weight:700;justify-content:flex-start;font-size:13px;padding:8px 12px;" data-testid="drawer-list-edit-biashara">
+            <?= $currentOwner ? '✏️ My Biasharas (Edit / + List)' : '+ List / Edit Your Biashara' ?>
           </a>
           <button type="button" id="btn-drawer-shortlist" class="btn btn-outline-light" style="border:1px solid #E5DEC9;background:#FBF8F3;color:#18201B;justify-content:flex-start;font-size:13px;padding:8px 12px;" onclick="if(document.getElementById('btn-export-shortlist')){document.getElementById('btn-export-shortlist').click();}">
             🏢 B2B Shortlist (<span class="drawer-shortlist-count">0</span>/5)
@@ -1087,8 +1086,8 @@ $pageCanonicalPath = $requestedBiz
         </nav>
         <nav class="foot-col" aria-label="For business owners">
           <h2>FOR BUSINESS OWNERS</h2>
-          <a href="/submit.php">List your biashara</a>
-          <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php' ?>">Owner's page</a>
+          <a href="<?= $currentOwner ? '/owner/index.php' : '/owner/login.php?from=list_edit' ?>">List or edit a biashara</a>
+          <a href="/submit.php">Direct submission form</a>
           <a href="/takedown.php">Remove my listing</a>
         </nav>
         <nav class="foot-col" aria-label="Help and trust">

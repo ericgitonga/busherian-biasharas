@@ -70,6 +70,8 @@ jobs:
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
           set -euo pipefail
           TLS_ARG=()
@@ -114,9 +116,11 @@ jobs:
                           "SIMULATE_EMAILS": "yes",
                           "APP_URL": "https://preview.busherianbiasharas.com",
                           "SMTP_HOST": "mx1.angryhosting.com",
-                          "GOOGLE_CLIENT_ID": "64004769695-fev3ccrifjenfi4priml8q5ganppb1vo.apps.googleusercontent.com",
-                          "GOOGLE_CLIENT_SECRET": "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",
                       }
+                      if os.environ.get("GOOGLE_CLIENT_ID"):
+                          overrides["GOOGLE_CLIENT_ID"] = os.environ["GOOGLE_CLIENT_ID"].strip()
+                      if os.environ.get("GOOGLE_CLIENT_SECRET"):
+                          overrides["GOOGLE_CLIENT_SECRET"] = os.environ["GOOGLE_CLIENT_SECRET"].strip()
                       synced_lines = []
                       seen_keys = set()
                       for raw_line in prod_raw.splitlines():

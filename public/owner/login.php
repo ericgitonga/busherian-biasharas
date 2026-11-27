@@ -498,6 +498,12 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
           Registered your business earlier without setting a password?
           <a href="/owner/login.php?mode=reset<?= htmlspecialchars($bizParamSuffix, ENT_QUOTES, 'UTF-8') ?>" style="color:#114B3E;font-weight:800;display:inline-block;margin-top:0.15rem;">Set or Reset Password with a 6-Digit Email Code &rarr;</a>
         </div>
+
+        <div style="margin-top:0.9rem;padding:0.85rem 1rem;background:#FFFBEB;border:1.5px dashed #F59E0B;border-radius:10px;text-align:center;font-size:0.83rem;color:#78350F;line-height:1.45;">
+          <strong>Listing a business for the first time?</strong><br>
+          Sign in above with <strong>Continue with Google</strong> to easily manage and edit your listing anytime, or
+          <a href="/submit.php" style="color:#114B3E;font-weight:800;display:inline-block;margin-top:0.25rem;text-decoration:underline;">proceed directly to the listing submission form &rarr;</a>
+        </div>
       <?php endif; ?>
 
       <div id="owner-signin-guide" style="margin-top:1.35rem;padding-top:1.15rem;border-top:1px solid #E5E7EB;">

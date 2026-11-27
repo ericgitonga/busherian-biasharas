@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.43.0] - 2026-11-27
+
+### Added
+- **Unified "List / Edit Your Biashara" Navbar Action & Streamlined Onboarding Flow (#469)**:
+  - Consolidated redundant "Owner Sign In / Edit Listing" and "+ List Your Biashara" header actions into a single prominent gold button: `+ List / Edit Your Biashara` for unauthenticated visitors and `✏️ My Biasharas (Edit / + List)` for logged-in business owners.
+  - Aligned mobile navigation drawer and desktop header so alumni have a single, frictionless entry point to both register new businesses and manage existing listings.
+  - Automatically routes first-time owners without existing listings straight to `/submit.php?welcome_owner=1` with pre-filled name and verified email upon 1-click Google or email login.
+  - Added an accessible shortcut callout on the login portal for first-time founders who prefer submitting their details directly before creating a login password.
+
+### Security
+- **Google OAuth Client Secret Rotation & Workflow Secret Decoupling (#469)**:
+  - Rotated compromised Google OAuth Client Secret in Google Cloud Console and revoked the exposed token.
+  - Decoupled `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from repository workflow source code into GitHub Actions Repository Secrets across production and preview deployment workflows (`deploy-ftp.yml` and `deploy-preview.yml`).
+  - Redacted sensitive secret credentials from GitHub issue #466.
+
 ## [0.42.1] - 2026-11-27
 
 ### Fixed

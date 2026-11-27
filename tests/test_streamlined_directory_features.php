@@ -794,7 +794,7 @@ testAssert(\BusherianBiasharas\Services\PreprodSandbox::verifyProdHandoffToken($
 // 30. Check Google SSO OAuth 2.0 Credentials & URL Generation (#466)
 testAssert(\BusherianBiasharas\Services\OwnerAuth::isGoogleSsoConfigured($pdo) === true, 'OwnerAuth::isGoogleSsoConfigured returns true when credentials present in env (#466)');
 testAssert(\BusherianBiasharas\Services\OwnerAuth::getGoogleClientId($pdo) === '64004769695-fev3ccrifjenfi4priml8q5ganppb1vo.apps.googleusercontent.com', 'OwnerAuth::getGoogleClientId matches configured Client ID (#466)');
-testAssert(\BusherianBiasharas\Services\OwnerAuth::getGoogleClientSecret($pdo) === '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', 'OwnerAuth::getGoogleClientSecret matches configured Client Secret (#466)');
+testAssert(str_starts_with(\BusherianBiasharas\Services\OwnerAuth::getGoogleClientSecret($pdo), 'GOCSPX-'), 'OwnerAuth::getGoogleClientSecret matches configured Client Secret format (#466, #469)');
 $testState466 = 'test_state_nonce_12345';
 $authUrl466 = \BusherianBiasharas\Services\OwnerAuth::getGoogleAuthorizationUrl($testState466, $pdo);
 testAssert(str_starts_with($authUrl466, 'https://accounts.google.com/o/oauth2/v2/auth?'), 'Google authorization URL points to Google OAuth 2.0 endpoint (#466)');
@@ -816,6 +816,19 @@ testAssert(\BusherianBiasharas\Services\OwnerAuth::cookieDomain() === '', 'Owner
 testAssert(str_contains(\BusherianBiasharas\Services\OwnerAuth::getGoogleRedirectUri(), 'preview.busherianbiasharas.com/owner/google-callback.php'), 'getGoogleRedirectUri matches preview request host (#468)');
 
 unset($_SERVER['HTTP_HOST']);
+
+// #469: Unified List / Edit Navbar Action & Streamlined Onboarding
+$indexHtml = file_get_contents(dirname(__DIR__) . '/public/index.php');
+testAssert(str_contains($indexHtml, 'btn-list-edit-biashara'), 'index.php contains unified btn-list-edit-biashara action (#469)');
+testAssert(str_contains($indexHtml, '+ List / Edit Your Biashara'), 'index.php renders unified + List / Edit Your Biashara label (#469)');
+testAssert(!str_contains($indexHtml, 'Owner Sign In / Edit Listing'), 'index.php eliminates redundant Owner Sign In / Edit Listing button (#469)');
+testAssert(str_contains($indexHtml, 'drawer-list-edit-biashara'), 'index.php mobile drawer contains drawer-list-edit-biashara action (#469)');
+
+$loginHtml = file_get_contents(dirname(__DIR__) . '/public/owner/login.php');
+testAssert(str_contains($loginHtml, 'proceed directly to the listing submission form'), 'login.php contains direct link to listing submission form (#469)');
+
+$submitHtml = file_get_contents(dirname(__DIR__) . '/public/submit.php');
+testAssert(str_contains($submitHtml, 'submit-welcome-owner-banner'), 'submit.php contains welcome banner for authenticated owners (#469)');
 
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
 

@@ -71,6 +71,8 @@ jobs:
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           FTP_APP_ROOT: ${{ secrets.FTP_SERVER_DIR }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
           set -euo pipefail
           TLS_ARG=()
@@ -90,10 +92,11 @@ jobs:
               ftp.retrbinary("RETR /busherianbiasharas.com/www/.env", buf.write)
               raw = buf.getvalue().decode("utf-8", errors="replace")
               if raw.strip():
-                  creds = {
-                      "GOOGLE_CLIENT_ID": "64004769695-fev3ccrifjenfi4priml8q5ganppb1vo.apps.googleusercontent.com",
-                      "GOOGLE_CLIENT_SECRET": "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",
-                  }
+                  creds = {}
+                  if os.environ.get("GOOGLE_CLIENT_ID"):
+                      creds["GOOGLE_CLIENT_ID"] = os.environ["GOOGLE_CLIENT_ID"].strip()
+                  if os.environ.get("GOOGLE_CLIENT_SECRET"):
+                      creds["GOOGLE_CLIENT_SECRET"] = os.environ["GOOGLE_CLIENT_SECRET"].strip()
                   lines = []
                   seen = set()
                   for line in raw.splitlines():
