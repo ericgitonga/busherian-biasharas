@@ -892,5 +892,32 @@ testAssert(str_contains($loginSource, 'bbiz_google_oauth_states'), 'login.php tr
 $callbackSource = file_get_contents(dirname(__DIR__) . '/public/owner/google-callback.php');
 testAssert(str_contains($callbackSource, 'bbiz_google_oauth_states'), 'google-callback.php validates and consumes multi-slot OAuth states (#476)');
 
+// #480: Anti-cache headers, PHPSESSID cross-migration fallback, and session GC lifetime
+$submitSource = file_get_contents(dirname(__DIR__) . '/public/submit.php');
+testAssert(str_contains($submitSource, "header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0')"), 'submit.php enforces private no-store cache control headers (#480)');
+testAssert(str_contains($submitSource, "exceeded the maximum upload limit"), 'submit.php detects empty $_POST on large uploads and warns user (#480)');
+
+// Test PHPSESSID cross-migration fallback
+$_COOKIE['PHPSESSID'] = 'legacy_sess_999';
+$legacyPhpSessHmac = hash_hmac('sha256', 'legacy_sess_999', \BusherianBiasharas\Config\Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len'));
+testAssert(\BusherianBiasharas\Services\AntiSpamGate::verifyCsrfToken($legacyPhpSessHmac), 'AntiSpamGate::verifyCsrfToken accepts legacy token derived from PHPSESSID across session migration (#480)');
+testAssert(!empty($_SESSION['csrf_token']), 'AntiSpamGate re-seeds active session csrf_token upon legacy PHPSESSID fallback match (#480)');
+unset($_COOKIE['PHPSESSID']);
+
+// Test csrf-token.php endpoint source and validity
+$csrfTokenSource = file_get_contents(dirname(__DIR__) . '/public/api/csrf-token.php');
+testAssert(str_contains($csrfTokenSource, 'generateFormTokens'), 'csrf-token.php generates and returns fresh security tokens (#480)');
+testAssert(str_contains($csrfTokenSource, "header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0')"), 'csrf-token.php enforces private no-store cache headers (#480)');
+
+// Test session.gc_maxlifetime is configured to 7200 in OwnerAuth
+$ownerAuthSource = file_get_contents(dirname(__DIR__) . '/src/Services/OwnerAuth.php');
+testAssert(str_contains($ownerAuthSource, "'session.gc_maxlifetime', '7200'"), 'OwnerAuth::startSecureSession configures 2-hour session.gc_maxlifetime (#480)');
+
+// Test form-enhancements.js has refreshSecurityTokens and visibilitychange listeners
+$enhancementsJs = file_get_contents(dirname(__DIR__) . '/public/assets/js/form-enhancements.js');
+testAssert(str_contains($enhancementsJs, 'refreshSecurityTokens'), 'form-enhancements.js implements refreshSecurityTokens (#480)');
+testAssert(str_contains($enhancementsJs, "visibilityState === 'visible'"), 'form-enhancements.js hooks visibilitychange to refresh tokens (#480)');
+testAssert(str_contains($enhancementsJs, 'pageshow'), 'form-enhancements.js hooks pageshow for bfcache restoration (#480)');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
 
