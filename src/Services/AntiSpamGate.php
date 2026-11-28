@@ -233,6 +233,26 @@ final class AntiSpamGate
         return ['passed' => true, 'silent_drop' => false, 'reason' => 'ok'];
     }
 
+    public static function containsSpamUrl(string $text): bool
+    {
+        if (preg_match('#(?:https?://|www\.)#i', $text)) {
+            return true;
+        }
+        $lower = strtolower($text);
+        foreach (self::BLOCKED_DOMAINS as $domain) {
+            if (str_contains($lower, $domain)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static function isCamelCaseBotName(string $text): bool
+    {
+        $trimmed = trim($text);
+        return $trimmed !== '' && !str_contains($trimmed, ' ') && preg_match('/^[a-zA-Z]+[a-z][A-Z][a-zA-Z]*$/', $trimmed) === 1;
+    }
+
     public static function isBlockedSpamOrShortenerUrl(?string $rawUrl): bool
     {
         $u = strtolower(trim((string)($rawUrl ?? '')));
