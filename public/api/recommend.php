@@ -111,15 +111,6 @@ try {
 
     $ownerId = (int)$currentOwner['id'];
     $isVerifiedAlum = \BusherianBiasharas\Services\OwnerAuth::isOwnerVerifiedAlumnus($pdo, $ownerId);
-    if (!$isVerifiedAlum && Database::env('APP_ENV') !== 'testing') {
-        http_response_code(403);
-        echo json_encode([
-            'status' => 'error',
-            'message' => 'Only verified alumni members with an approved directory listing can recommend businesses.',
-            'requires_verified_alumnus' => true
-        ]);
-        exit;
-    }
 
     // Check if already recommended by this token
     $chkStmt = $pdo->prepare("
@@ -131,6 +122,16 @@ try {
     $existing = $chkStmt->fetch();
 
     if ($existing) {
+        if (!$isVerifiedAlum && Database::env('APP_ENV') !== 'testing') {
+            http_response_code(403);
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'Only verified alumni members can manage recommendations.',
+                'requires_verified_alumnus' => true
+            ]);
+            exit;
+        }
+
         // Retract / take back recommendation
         $delStmt = $pdo->prepare("DELETE FROM business_recommendations WHERE id = :id");
         $delStmt->execute([':id' => $existing['id']]);
@@ -165,6 +166,40 @@ try {
         exit;
     }
 
+    $rawSchool = strtoupper(trim((string)($data['school'] ?? 'AHS')));
+    $school = str_contains($rawSchool, 'GIRL') || str_contains($rawSchool, 'AGHS') ? 'AGHS' : 'AHS';
+
+    $year = null;
+    if (!empty($data['year'])) {
+        $yearInt = (int)$data['year'];
+        if ($yearInt >= 1926 && $yearInt <= ((int)date('Y') + 1)) {
+            $year = $yearInt;
+        }
+    }
+
+    // If House is submitted, persist to confidential alumni profile in business_owners (#509, #510)
+    $house = trim((string)($data['house'] ?? ''));
+    if ($house !== '') {
+        $saveResult = \BusherianBiasharas\Services\OwnerAuth::saveAlumniProfile($pdo, $ownerId, $school, $house, $year);
+        if (!$saveResult['success']) {
+            http_response_code(422);
+            echo json_encode(['status' => 'error', 'message' => $saveResult['error']]);
+            exit;
+        }
+    }
+
+    // Verify alumni status: either approved business owner or completed alumni profile with House (#509, #510)
+    $isVerifiedAlum = \BusherianBiasharas\Services\OwnerAuth::isOwnerVerifiedAlumnus($pdo, $ownerId);
+    if (!$isVerifiedAlum && Database::env('APP_ENV') !== 'testing') {
+        http_response_code(422);
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Please select your House to complete your verified alumni profile and vouch for this business.',
+            'requires_alumni_profile' => true
+        ]);
+        exit;
+    }
+
     $name = trim(strip_tags((string)($data['name'] ?? '')));
     if ($name === '') {
         $name = !empty($currentOwner['full_name']) ? (string)$currentOwner['full_name'] : 'Verified Alumnus';
@@ -186,18 +221,8 @@ try {
         }
     }
 
-    $rawSchool = strtoupper(trim((string)($data['school'] ?? 'AHS')));
-    $school = str_contains($rawSchool, 'GIRL') || str_contains($rawSchool, 'AGHS') ? 'AGHS' : 'AHS';
-
-    $year = null;
-    if (!empty($data['year'])) {
-        $yearInt = (int)$data['year'];
-        if ($yearInt >= 1940 && $yearInt <= ((int)date('Y') + 1)) {
-            $year = $yearInt;
-        }
-    }
-
     $isVerifiedAlumnus = 1;
+    $isAuthenticatedAlum = $isVerifiedAlum;
     $signalWeight = $isAuthenticatedAlum ? 3.0 : 0.5;
 
     try {
@@ -279,37 +304,5 @@ try {
 
 function formatRecommendationsPayload(array $rows, string $visitorToken, int $businessId): array
 {
-    $count = count($rows);
-    $userRecommended = false;
-    $names = [];
-
-    foreach ($rows as $r) {
-        if ($visitorToken !== '' && (string)$r['visitor_token'] === $visitorToken) {
-            $userRecommended = true;
-        }
-
-        $yr = !empty($r['recommender_year']) ? (" '" . substr((string)$r['recommender_year'], -2)) : '';
-        $verBadge = !empty($r['is_verified_alumnus']) ? ' (Verified Alumnus)' : '';
-        $names[] = htmlspecialchars($r['recommender_name'], ENT_QUOTES, 'UTF-8') . ', ' .
-                   htmlspecialchars($r['recommender_school'], ENT_QUOTES, 'UTF-8') . $yr . $verBadge;
-    }
-
-    $summaryHtml = '';
-    if ($count === 0) {
-        $summaryHtml = '<span class="note">No recommendations yet. Be the first.</span>';
-    } elseif ($count === 1) {
-        $summaryHtml = '<strong>1 alumnus recommends this business.</strong> <span class="recs-names">' . $names[0] . '</span>';
-    } elseif ($count === 2) {
-        $summaryHtml = '<strong>2 alumni recommend this business.</strong> <span class="recs-names">' . implode('; ', array_slice($names, 0, 2)) . '</span>';
-    } else {
-        $summaryHtml = '<strong>' . $count . ' alumni recommend this business.</strong> <span class="recs-names">' . implode('; ', array_slice($names, 0, 2)) . '; and others</span>';
-    }
-
-    return [
-        'business_id' => $businessId,
-        'count' => $count,
-        'user_recommended' => $userRecommended,
-        'alumni_names' => array_slice($names, 0, 5),
-        'summary_html' => $summaryHtml,
-    ];
+    return EngagementRanker::formatRecommendationsPayload($rows, $visitorToken, $businessId);
 }

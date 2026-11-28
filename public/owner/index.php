@@ -115,7 +115,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_alumni_profile') {
+    $csrf = trim((string)($_POST['csrf_token'] ?? ''));
+    if (!AntiSpamGate::verifyCsrfToken($csrf)) {
+        $profileError = 'Your page session expired. Please reload and try again.';
+    } else {
+        $school = trim((string)($_POST['alumni_school'] ?? ''));
+        $house = trim((string)($_POST['alumni_house'] ?? ''));
+        $year = !empty($_POST['alumni_year']) ? (int)$_POST['alumni_year'] : null;
+        $res = OwnerAuth::saveAlumniProfile($pdo, (int)$owner['id'], $school, $house, $year);
+        if ($res['success']) {
+            $profileSaved = 'Your confidential alumni profile has been updated. You are verified to recommend biasharas across the directory.';
+        } else {
+            $profileError = $res['error'] ?? 'Could not save alumni profile.';
+        }
+    }
+}
+
 $myBusinesses = OwnerAuth::getBusinessesForOwner($pdo, (int)$owner['id']);
+$alumniProfile = OwnerAuth::getAlumniProfile($pdo, (int)$owner['id']);
+$isVerifiedAlum = OwnerAuth::isOwnerVerifiedAlumnus($pdo, (int)$owner['id']);
 $engagementSummaries = [];
 foreach ($myBusinesses as $engBiz) {
     $engagementSummaries[(int)$engBiz['id']] = EngagementRanker::getOwnerEngagementSummary($pdo, (int)$engBiz['id']);
@@ -253,6 +272,59 @@ $tokens = AntiSpamGate::generateFormTokens();
       <?php endif; ?>
     </section>
 
+    <!-- Section 1.5: Alumni Membership & Vouching Profile (#509, #510) -->
+    <section data-testid="owner-alumni-profile-section" style="margin-top:1.5rem;background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1.35rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.4rem;">
+        <h3 style="margin:0;color:#114B3E;font-size:1rem;">Alumni Membership &amp; Vouching Verification</h3>
+        <?php if ($isVerifiedAlum): ?>
+          <span style="font-size:0.75rem;background:#ECFDF5;color:#065F46;border:1px solid #059669;padding:0.2rem 0.6rem;border-radius:999px;font-weight:700;">
+            ✓ Verified Alumnus Status Active
+          </span>
+        <?php else: ?>
+          <span style="font-size:0.75rem;background:#FFFBEB;color:#92400E;border:1px solid #F59E0B;padding:0.2rem 0.6rem;border-radius:999px;font-weight:700;">
+            🟡 Complete Profile to Vouch for Businesses
+          </span>
+        <?php endif; ?>
+      </div>
+      <p style="margin:0 0 0.9rem 0;font-size:0.82rem;color:#4B5563;line-height:1.5;">
+        You can recommend and vouch for alumni biasharas across the directory. To prevent fake endorsements, recommendations are restricted to verified alumni. <strong>Your House is confidential and used strictly for identity grounding — it is never displayed publicly on recommendations.</strong>
+      </p>
+      <form method="POST" action="/owner/index.php" data-testid="owner-alumni-form" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.85rem;align-items:end;">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+        <input type="hidden" name="action" value="update_alumni_profile">
+        <div>
+          <label style="font-weight:700;font-size:0.8rem;display:block;margin-bottom:0.25rem;">School Attended</label>
+          <select name="alumni_school" id="owner-alumni-school" class="input-control" style="background:#fff;" onchange="updateOwnerHousesDropdown(this.value);">
+            <option value="AHS" <?= ($alumniProfile && $alumniProfile['school'] === 'AHS') ? 'selected' : '' ?>>Alliance High School (AHS — Bush)</option>
+            <option value="AGHS" <?= ($alumniProfile && $alumniProfile['school'] === 'AGHS') ? 'selected' : '' ?>>Alliance Girls High School (AGHS)</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-weight:700;font-size:0.8rem;display:block;margin-bottom:0.25rem;">House (Confidential)</label>
+          <select name="alumni_house" id="owner-alumni-house" class="input-control" required style="background:#fff;">
+            <option value="">Select your house...</option>
+            <?php
+              $currentSchool = ($alumniProfile && !empty($alumniProfile['school'])) ? $alumniProfile['school'] : 'AHS';
+              foreach (\BusherianBiasharas\Config\Houses::getForSchool($currentSchool) as $hName):
+            ?>
+              <option value="<?= htmlspecialchars($hName, ENT_QUOTES, 'UTF-8') ?>" <?= ($alumniProfile && ($alumniProfile['house'] ?? '') === $hName) ? 'selected' : '' ?>>
+                <?= htmlspecialchars($hName, ENT_QUOTES, 'UTF-8') ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div>
+          <label style="font-weight:700;font-size:0.8rem;display:block;margin-bottom:0.25rem;">Year Left (Optional)</label>
+          <input type="number" name="alumni_year" min="1926" max="2027" class="input-control" value="<?= $alumniProfile && !empty($alumniProfile['year']) ? (int)$alumniProfile['year'] : '' ?>" placeholder="e.g. 2011">
+        </div>
+        <div>
+          <button type="submit" data-testid="owner-save-alumni-btn" class="btn btn-green" style="width:100%;justify-content:center;">
+            <?= $alumniProfile ? '💾 Update Alumni Profile' : '✓ Save &amp; Verify Status' ?>
+          </button>
+        </div>
+      </form>
+    </section>
+
     <!-- Section 2: Persistent Owner Contact Profile -->
     <section style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1.35rem;">
       <h3 style="margin:0 0 0.3rem 0;color:#7B1113;font-size:1rem;">Persistent Owner Contact Details &amp; Security</h3>
@@ -339,5 +411,23 @@ $tokens = AntiSpamGate::generateFormTokens();
     </section>
     <?= bbiz_render_github_delete_modal($tokens['csrf_token'], '/owner/index.php', 0, '', 'action', 'delete_business') ?>
   </main>
+  <script>
+    const AHS_HOUSES = <?= json_encode(\BusherianBiasharas\Config\Houses::AHS_HOUSES) ?>;
+    const AGHS_HOUSES = <?= json_encode(\BusherianBiasharas\Config\Houses::AGHS_HOUSES) ?>;
+    function updateOwnerHousesDropdown(school) {
+      const houseSelect = document.getElementById('owner-alumni-house');
+      if (!houseSelect) return;
+      const houses = school === 'AGHS' ? AGHS_HOUSES : AHS_HOUSES;
+      const current = houseSelect.value;
+      houseSelect.innerHTML = '<option value="">Select your house...</option>';
+      houses.forEach(function(h) {
+        const opt = document.createElement('option');
+        opt.value = h;
+        opt.textContent = h;
+        if (h === current) opt.selected = true;
+        houseSelect.appendChild(opt);
+      });
+    }
+  </script>
 </body>
 </html>

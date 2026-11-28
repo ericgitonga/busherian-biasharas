@@ -6405,6 +6405,104 @@ assertTrue(
     '71e (#507): admin/index.php uses distinct named placeholders for MySQL native prepared statements'
 );
 
+// =========================================================================
+// 72. Self-Attested Alumni Member Profiles with Confidential House & Badging (#509, #510, #511)
+// =========================================================================
+
+// 72a (#510): Schema migration creates alumni profile columns on business_owners
+$currDriver72 = Database::getActiveDriver();
+Database::ensureAlumniProfileColumns($pdo, $currDriver72);
+$ownerTableCols = [];
+if ($currDriver72 === 'mysql') {
+    $colStmt = $pdo->query("SHOW COLUMNS FROM business_owners");
+    while ($colRow = $colStmt->fetch(PDO::FETCH_ASSOC)) {
+        $ownerTableCols[strtolower($colRow['Field'])] = true;
+    }
+} else {
+    $colStmt = $pdo->query("PRAGMA table_info(business_owners)");
+    while ($colRow = $colStmt->fetch(PDO::FETCH_ASSOC)) {
+        $ownerTableCols[strtolower($colRow['name'])] = true;
+    }
+}
+assertTrue(
+    isset($ownerTableCols['alumni_school']) &&
+    isset($ownerTableCols['alumni_house']) &&
+    isset($ownerTableCols['alumni_year']) &&
+    isset($ownerTableCols['alumni_profile_completed_at']),
+    '72a (#510): Database::ensureAlumniProfileColumns creates alumni_school, alumni_house, alumni_year, alumni_profile_completed_at on business_owners'
+);
+
+// 72b (#510): OwnerAuth::saveAlumniProfile validates school, house, and graduation year
+$member72 = OwnerAuth::upsertOwner($pdo, 'member72@busherian.co.ke', 'Wanjiku Kamau');
+$member72Id = (int)$member72['id'];
+
+$badSchoolRes = OwnerAuth::saveAlumniProfile($pdo, $member72Id, 'Starehe', 'Livingstone', 2014);
+assertTrue(
+    $badSchoolRes['success'] === false && str_contains($badSchoolRes['error'], 'Invalid school'),
+    '72b (#510): saveAlumniProfile rejects invalid school'
+);
+
+$badHouseRes = OwnerAuth::saveAlumniProfile($pdo, $member72Id, 'AHS', 'NonexistentHouse', 2014);
+assertTrue(
+    $badHouseRes['success'] === false && str_contains($badHouseRes['error'], 'Invalid house'),
+    '72b (#510): saveAlumniProfile rejects invalid house for school'
+);
+
+$badCrossHouseRes = OwnerAuth::saveAlumniProfile($pdo, $member72Id, 'AHS', 'Joan Mjomba', 2014);
+assertTrue(
+    $badCrossHouseRes['success'] === false && str_contains($badCrossHouseRes['error'], 'Invalid house'),
+    '72b (#510): saveAlumniProfile rejects cross-school house mismatch'
+);
+
+$badYearRes = OwnerAuth::saveAlumniProfile($pdo, $member72Id, 'AHS', 'Livingstone', 1910);
+assertTrue(
+    $badYearRes['success'] === false && str_contains($badYearRes['error'], 'Graduation year'),
+    '72b (#510): saveAlumniProfile rejects out-of-range graduation year'
+);
+
+// 72c (#510): Valid alumni profile succeeds and grants verified alumnus status to member without business listings
+$validAgyRes = OwnerAuth::saveAlumniProfile($pdo, $member72Id, 'AHS', 'Livingstone', 2015);
+assertTrue(
+    $validAgyRes['success'] === true,
+    '72c (#510): saveAlumniProfile successfully persists valid school, house, and year'
+);
+
+$savedProf72 = OwnerAuth::getAlumniProfile($pdo, $member72Id);
+assertTrue(
+    $savedProf72 !== null &&
+    $savedProf72['school'] === 'AHS' &&
+    $savedProf72['house'] === 'Livingstone' &&
+    $savedProf72['year'] === 2015 &&
+    !empty($savedProf72['completed_at']),
+    '72c (#510): getAlumniProfile retrieves saved alumni profile'
+);
+
+assertTrue(
+    OwnerAuth::isOwnerVerifiedAlumnus($pdo, $member72Id),
+    '72c (#510): isOwnerVerifiedAlumnus returns true for member who completed alumni profile with zero business listings'
+);
+
+// 72d (#511): Confidentiality invariant — House is never exposed in recommendation payload
+$mockRecRows = [
+    [
+        'recommender_name' => 'Wanjiku Kamau',
+        'recommender_school' => 'AHS',
+        'recommender_year' => 2015,
+        'visitor_token' => 'tok_72_mock',
+        'is_verified_alumnus' => 1,
+    ]
+];
+$recPayload72 = \BusherianBiasharas\Services\EngagementRanker::formatRecommendationsPayload($mockRecRows, 'tok_72_mock', 101);
+assertTrue(
+    str_contains($recPayload72['alumni_names'][0], '(Verified Alumnus)') &&
+    str_contains($recPayload72['summary_html'], '(Verified Alumnus)') &&
+    !str_contains(json_encode($recPayload72), 'Livingstone') &&
+    !str_contains(json_encode($recPayload72), 'house'),
+    '72d (#511): formatRecommendationsPayload includes (Verified Alumnus) badge and strictly excludes house preserving confidentiality'
+);
+
+OwnerAuth::deleteOwnerAccountAndData($pdo, $member72Id, true, '127.0.0.1');
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');

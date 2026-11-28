@@ -9,7 +9,7 @@ use RuntimeException;
 
 final class Database
 {
-    public const SCHEMA_INIT_VERSION = '2026-11-v42-recommendation-consent';
+    public const SCHEMA_INIT_VERSION = '2026-11-v43-alumni-profiles';
     private static ?PDO $pdo = null;
     private static bool $envLoaded = false;
     private static string $activeDriver = 'sqlite';
@@ -1522,6 +1522,47 @@ final class Database
                     INDEX idx_token_expires (expires_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
+        }
+        self::ensureAlumniProfileColumns($pdo, $driver);
+    }
+
+    public static function ensureAlumniProfileColumns(PDO $pdo, string $driver): void
+    {
+        $cols = [];
+        if ($driver === 'sqlite') {
+            $stmt = $pdo->query("PRAGMA table_info(business_owners)");
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $cols[strtolower($row['name'])] = true;
+            }
+            if (!isset($cols['alumni_school'])) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN alumni_school TEXT NULL");
+            }
+            if (!isset($cols['alumni_house'])) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN alumni_house TEXT NULL");
+            }
+            if (!isset($cols['alumni_year'])) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN alumni_year INTEGER NULL");
+            }
+            if (!isset($cols['alumni_profile_completed_at'])) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN alumni_profile_completed_at TEXT NULL");
+            }
+        } elseif ($driver === 'mysql') {
+            $stmt = $pdo->query("SHOW COLUMNS FROM business_owners");
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $cols[strtolower($row['Field'])] = true;
+            }
+            if (!isset($cols['alumni_school'])) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN alumni_school VARCHAR(32) NULL AFTER age_attested_at");
+            }
+            if (!isset($cols['alumni_house'])) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN alumni_house VARCHAR(64) NULL AFTER alumni_school");
+            }
+            if (!isset($cols['alumni_year'])) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN alumni_year SMALLINT UNSIGNED NULL AFTER alumni_house");
+            }
+            if (!isset($cols['alumni_profile_completed_at'])) {
+                $pdo->exec("ALTER TABLE business_owners ADD COLUMN alumni_profile_completed_at DATETIME NULL AFTER alumni_year");
+            }
         }
     }
 

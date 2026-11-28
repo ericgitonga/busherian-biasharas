@@ -19,6 +19,7 @@ bbiz_send_security_headers(false);
 $appVersion = trim((string)@file_get_contents(dirname(__DIR__) . '/VERSION') ?: '0.32.5');
 $pdo = Database::getConnection();
 $currentOwner = OwnerAuth::getCurrentOwner($pdo);
+$alumniProfile = $currentOwner !== null ? OwnerAuth::getAlumniProfile($pdo, (int)$currentOwner['id']) : null;
 $ownerCsrfToken = $currentOwner !== null ? AntiSpamGate::generateCsrfToken() : '';
 $isAdminVisitor = AdminAuth::isAuthenticated();
 $taxonomyTree = CategoryMatcher::getTaxonomyTree($pdo, false);
@@ -949,14 +950,32 @@ $pageCanonicalPath = $requestedBiz
             <div>
               <label for="rec-school" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">School</label>
               <select id="rec-school" style="width:100%;padding:9px 10px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:13.5px;box-sizing:border-box;">
-                <option value="AHS">Alliance High (AHS)</option>
-                <option value="AGHS">Alliance Girls (AGHS)</option>
+                <option value="AHS" <?= ($alumniProfile && $alumniProfile['school'] === 'AHS') ? 'selected' : '' ?>>Alliance High (AHS)</option>
+                <option value="AGHS" <?= ($alumniProfile && $alumniProfile['school'] === 'AGHS') ? 'selected' : '' ?>>Alliance Girls (AGHS)</option>
               </select>
             </div>
             <div>
               <label for="rec-year" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">Year Left (Optional)</label>
-              <input type="number" id="rec-year" min="1940" max="2027" placeholder="e.g. 2011" style="width:100%;padding:9px 12px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:14px;box-sizing:border-box;">
+              <input type="number" id="rec-year" min="1926" max="2027" placeholder="e.g. 2011" value="<?= $alumniProfile && !empty($alumniProfile['year']) ? (int)$alumniProfile['year'] : '' ?>" style="width:100%;padding:9px 12px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:14px;box-sizing:border-box;">
             </div>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label for="rec-house" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">House</label>
+            <select id="rec-house" required style="width:100%;padding:9px 10px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:13.5px;box-sizing:border-box;">
+              <option value="">Select your house...</option>
+              <?php
+                $initialSchool = ($alumniProfile && !empty($alumniProfile['school'])) ? $alumniProfile['school'] : 'AHS';
+                $housesList = \BusherianBiasharas\Config\Houses::getForSchool($initialSchool);
+                foreach ($housesList as $hName):
+              ?>
+                <option value="<?= htmlspecialchars($hName, ENT_QUOTES, 'UTF-8') ?>" <?= ($alumniProfile && ($alumniProfile['house'] ?? '') === $hName) ? 'selected' : '' ?>>
+                  <?= htmlspecialchars($hName, ENT_QUOTES, 'UTF-8') ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            <p style="font-size:0.75rem;color:#94A3B8;margin:4px 0 0 0;line-height:1.3;">
+              🔒 House is used strictly to verify alumni affiliation and is never shown publicly on recommendations.
+            </p>
           </div>
           <div style="margin-bottom:16px;">
             <label style="display:flex;align-items:flex-start;gap:8px;font-size:0.8rem;color:#C5D0C9;cursor:pointer;line-height:1.4;">
@@ -1243,6 +1262,11 @@ $pageCanonicalPath = $requestedBiz
     window.REQUESTED_BIZ = <?= json_encode($requestedBiz) ?>;
     window.BBIZ_IS_AUTHENTICATED_MEMBER = <?= $currentOwner !== null ? 'true' : 'false' ?>;
     window.BBIZ_CURRENT_MEMBER_NAME = <?= json_encode(!empty($currentOwner['full_name']) ? (string)$currentOwner['full_name'] : ($currentOwner !== null ? 'Verified Alumnus' : '')) ?>;
+    window.BBIZ_ALUMNI_PROFILE = <?= json_encode($alumniProfile) ?>;
+    window.BB_HOUSES = {
+      AHS: <?= json_encode(\BusherianBiasharas\Config\Houses::AHS_HOUSES) ?>,
+      AGHS: <?= json_encode(\BusherianBiasharas\Config\Houses::AGHS_HOUSES) ?>
+    };
   </script>
   <script src="/assets/vendor/leaflet/leaflet.js"></script>
   <script src="/assets/js/consent-metrics.js?v=<?= urlencode($appVersion) ?>"></script>

@@ -498,13 +498,17 @@ final class OwnerAuth
     }
 
     /**
-     * Check whether an owner has an approved, vetted business listing linking them as a verified alumnus (#506).
+     * Check whether an owner is a verified alumnus (#506, #509, #510):
+     * - Case 1: Owner is linked to an approved directory listing (#506).
+     * - Case 2: Owner has completed their self-attested alumni profile with valid school and house (#509, #510).
      */
     public static function isOwnerVerifiedAlumnus(PDO $pdo, int $ownerId): bool
     {
         if ($ownerId <= 0) {
             return false;
         }
+
+        // Case 1: Linked to an approved business listing
         $stmt = $pdo->prepare("
             SELECT 1
             FROM business_owner_links l
@@ -513,7 +517,109 @@ final class OwnerAuth
             LIMIT 1
         ");
         $stmt->execute([':oid' => $ownerId]);
-        return (bool)$stmt->fetchColumn();
+        if ((bool)$stmt->fetchColumn()) {
+            return true;
+        }
+
+        // Case 2: Self-attested alumni profile with valid school and house
+        try {
+            $ownerStmt = $pdo->prepare("
+                SELECT alumni_school, alumni_house, alumni_profile_completed_at
+                FROM business_owners
+                WHERE id = :oid
+                LIMIT 1
+            ");
+            $ownerStmt->execute([':oid' => $ownerId]);
+            $row = $ownerStmt->fetch(PDO::FETCH_ASSOC);
+            if ($row && !empty($row['alumni_school']) && !empty($row['alumni_house'])) {
+                return \BusherianBiasharas\Config\Houses::isValidHouse((string)$row['alumni_school'], (string)$row['alumni_house']);
+            }
+        } catch (\Throwable $e) {
+            // Column may not yet exist on unmigrated test DBs
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * Retrieve the self-attested alumni profile for an owner (#509, #510).
+     */
+    public static function getAlumniProfile(PDO $pdo, int $ownerId): ?array
+    {
+        if ($ownerId <= 0) {
+            return null;
+        }
+        try {
+            $stmt = $pdo->prepare("
+                SELECT alumni_school, alumni_house, alumni_year, alumni_profile_completed_at
+                FROM business_owners
+                WHERE id = :oid
+                LIMIT 1
+            ");
+            $stmt->execute([':oid' => $ownerId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row || empty($row['alumni_school']) || empty($row['alumni_house'])) {
+                return null;
+            }
+            return [
+                'school' => (string)$row['alumni_school'],
+                'house' => (string)$row['alumni_house'],
+                'year' => !empty($row['alumni_year']) ? (int)$row['alumni_year'] : null,
+                'completed_at' => (string)($row['alumni_profile_completed_at'] ?? ''),
+            ];
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Persist an owner's self-attested alumni profile (#509, #510).
+     */
+    public static function saveAlumniProfile(PDO $pdo, int $ownerId, string $school, string $house, ?int $year): array
+    {
+        if ($ownerId <= 0) {
+            return ['success' => false, 'error' => 'Invalid owner ID.'];
+        }
+
+        $schoolClean = strtoupper(trim($school));
+        if (!in_array($schoolClean, ['AHS', 'AGHS'], true)) {
+            return ['success' => false, 'error' => 'Invalid school. Must be AHS or AGHS.'];
+        }
+
+        $houseClean = trim($house);
+        if (!\BusherianBiasharas\Config\Houses::isValidHouse($schoolClean, $houseClean)) {
+            return ['success' => false, 'error' => 'Invalid house for the selected school.'];
+        }
+
+        $currentYear = (int)date('Y');
+        if ($year !== null && ($year < 1926 || $year > $currentYear)) {
+            return ['success' => false, 'error' => "Graduation year must be between 1926 and {$currentYear}."];
+        }
+
+        try {
+            $now = date('Y-m-d H:i:s');
+            $stmt = $pdo->prepare("
+                UPDATE business_owners
+                SET alumni_school = :school,
+                    alumni_house = :house,
+                    alumni_year = :year,
+                    alumni_profile_completed_at = COALESCE(alumni_profile_completed_at, :completed_at)
+                WHERE id = :oid
+            ");
+            $stmt->execute([
+                ':school' => $schoolClean,
+                ':house' => $houseClean,
+                ':year' => $year,
+                ':completed_at' => $now,
+                ':oid' => $ownerId,
+            ]);
+
+            return ['success' => true];
+        } catch (\Throwable $e) {
+            error_log('[OwnerAuth::saveAlumniProfile] Error: ' . $e->getMessage());
+            return ['success' => false, 'error' => 'Database error saving alumni profile.'];
+        }
     }
 
     /**

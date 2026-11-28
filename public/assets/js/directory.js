@@ -2448,26 +2448,63 @@
     window.openRecommendationModal(bizId);
   };
 
+  const FALLBACK_HOUSES = {
+    AHS: ['Livingstone', 'Aggrey', 'Wilberforce', 'Grieve', 'Arthur', 'Francis', 'Smith', 'Sellwood', 'Campbell', 'Sanders', 'Wangai', 'Githaiga', 'Maneno'],
+    AGHS: ['Watson', 'Stephenson', 'Burns', 'Kenya', 'McPherson', 'Bruce', 'Dorcas Luseno', 'Joan Waithaka', 'Joan Mjomba', 'Rebecca Karanja', 'Other / Unlisted House']
+  };
+
+  function updateRecommendHousesDropdown(schoolCode, targetHouse) {
+    const houseSelect = document.getElementById('rec-house');
+    if (!houseSelect) return;
+    const code = (schoolCode || 'AHS').toUpperCase().indexOf('GIRL') !== -1 || (schoolCode || 'AHS').toUpperCase().indexOf('AGHS') !== -1 ? 'AGHS' : 'AHS';
+    const houses = (window.BB_HOUSES && window.BB_HOUSES[code]) ? window.BB_HOUSES[code] : (FALLBACK_HOUSES[code] || FALLBACK_HOUSES.AHS);
+    const currentVal = targetHouse || houseSelect.value;
+    houseSelect.innerHTML = '<option value="">Select your house...</option>';
+    houses.forEach(function(h) {
+      const opt = document.createElement('option');
+      opt.value = h;
+      opt.textContent = h;
+      if (h === currentVal) opt.selected = true;
+      houseSelect.appendChild(opt);
+    });
+  }
+
   window.openRecommendationModal = function(bizId) {
     const modal = document.getElementById('modal-recommend');
     if (!modal) return;
     const bizInput = document.getElementById('rec-biz-id');
     if (bizInput) bizInput.value = String(bizId);
-    const prof = getRecommenderProfile();
-    if (prof) {
-      if (prof.name) {
-        const nameEl = document.getElementById('rec-name');
-        if (nameEl && !nameEl.value) nameEl.value = prof.name;
-      }
-      if (prof.school) {
-        const schoolEl = document.getElementById('rec-school');
-        if (schoolEl) schoolEl.value = prof.school;
-      }
-      if (prof.year) {
-        const yearEl = document.getElementById('rec-year');
-        if (yearEl) yearEl.value = prof.year;
-      }
+
+    const schoolEl = document.getElementById('rec-school');
+    if (schoolEl && !schoolEl.hasAttribute('data-houses-bound')) {
+      schoolEl.setAttribute('data-houses-bound', '1');
+      schoolEl.addEventListener('change', function() {
+        updateRecommendHousesDropdown(schoolEl.value, '');
+      });
     }
+
+    const prof = getRecommenderProfile() || {};
+    const serverProf = window.BBIZ_ALUMNI_PROFILE || {};
+
+    const activeSchool = serverProf.school || prof.school || (schoolEl ? schoolEl.value : 'AHS');
+    if (schoolEl && activeSchool) {
+      schoolEl.value = activeSchool;
+    }
+
+    const activeHouse = serverProf.house || prof.house || '';
+    updateRecommendHousesDropdown(activeSchool, activeHouse);
+
+    const nameEl = document.getElementById('rec-name');
+    if (nameEl && !nameEl.value) {
+      nameEl.value = prof.name || window.BBIZ_CURRENT_MEMBER_NAME || '';
+    }
+
+    const yearEl = document.getElementById('rec-year');
+    if (yearEl && !yearEl.value) {
+      const activeYear = serverProf.year || prof.year;
+      if (activeYear) yearEl.value = activeYear;
+    }
+
     modal.hidden = false;
     modal.classList.add('open');
   };
@@ -2487,6 +2524,14 @@
     const school = schoolEl ? schoolEl.value : 'AHS';
     const yearEl = document.getElementById('rec-year');
     const year = yearEl ? yearEl.value.trim() : '';
+    const houseEl = document.getElementById('rec-house');
+    const house = houseEl ? houseEl.value.trim() : '';
+
+    if (!house) {
+      showToast('Please select your House to complete verification.');
+      if (houseEl) houseEl.focus();
+      return;
+    }
 
     const consentEl = document.getElementById('rec-consent');
     if (!consentEl || !consentEl.checked) {
@@ -2494,7 +2539,7 @@
       return;
     }
 
-    saveRecommenderProfile({ name, school, year: year ? Number(year) : null });
+    saveRecommenderProfile({ name, school, house, year: year ? Number(year) : null });
     window.closeRecommendationModal();
 
     const btn = document.getElementById('btn-toggle-recommend');
@@ -2510,6 +2555,7 @@
           action: 'toggle',
           name: name,
           school: school,
+          house: house,
           year: year ? Number(year) : null,
           consent_18_publication: 1
         })
@@ -2520,6 +2566,9 @@
         showToast('✓ Verified recommendation added!');
       } else if (data.requires_auth) {
         showToast(data.message || 'Please sign in to recommend businesses.');
+        window.openRecommendationModal(bizId);
+      } else if (data.requires_alumni_profile) {
+        showToast(data.message || 'Please select your House to complete verification.');
         window.openRecommendationModal(bizId);
       } else {
         showToast(data.message || 'Could not add recommendation');
