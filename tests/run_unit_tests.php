@@ -6351,6 +6351,10 @@ assertTrue(
     !\BusherianBiasharas\Services\AntiSpamGate::containsSpamUrl('Mwangi Maina'),
     '70d (#496): AntiSpamGate provides reusable containsSpamUrl and isCamelCaseBotName methods'
 );
+assertTrue(
+    function_exists('bbiz_client_ip') && is_string(bbiz_client_ip()) && strlen(bbiz_client_ip()) > 0,
+    '70e (#496): bbiz_client_ip() helper exists and resolves client IP'
+);
 
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');

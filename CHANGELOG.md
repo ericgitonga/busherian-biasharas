@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.46.4] - 2026-11-28
+
+### Fixed
+- **AntiSpam Client IP Resolution (#496)**: Added `bbiz_client_ip()` global helper in `src/bootstrap.php` and resilient fallback in `recommend.php`, preventing fatal `Call to undefined function` on recommendation toggles.
+
 ## [0.46.3] - 2026-11-28
 
 ### Fixed
