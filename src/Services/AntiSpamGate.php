@@ -91,7 +91,20 @@ final class AntiSpamGate
         $csrfSecret = Database::env('CSRF_SECRET', 'dev_csrf_secret_key_32_bytes_min_len');
         $legacyExpected = hash_hmac('sha256', $sessId, $csrfSecret);
         if (hash_equals($legacyExpected, $submittedToken)) {
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
             return true;
+        }
+
+        // Fallback for sessions crossing the PHPSESSID -> bbiz_sess cookie name migration (#480)
+        if (!empty($_COOKIE['PHPSESSID']) && is_string($_COOKIE['PHPSESSID'])) {
+            $legacyPhpSessId = trim($_COOKIE['PHPSESSID']);
+            if ($legacyPhpSessId !== '') {
+                $legacyPhpSessExpected = hash_hmac('sha256', $legacyPhpSessId, $csrfSecret);
+                if (hash_equals($legacyPhpSessExpected, $submittedToken)) {
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                    return true;
+                }
+            }
         }
         return false;
     }

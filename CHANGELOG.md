@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.44.4] - 2026-11-28
+
+### Fixed
+- **CSRF Token & Session Robustness Across Form Lifecycles (#480)**:
+  - **bfcache & Tab-Restore Anti-Cache Headers**: Enforced `Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0` and `Pragma: no-cache` on `public/submit.php` to prevent browsers from serving stale security tokens when restoring suspended tabs or navigating back from external policy links.
+  - **Session GC Lifetime Alignment**: Extended `session.gc_maxlifetime` to 7200 seconds (2 hours) in `OwnerAuth::startSecureSession()` to match client-side 2-hour draft persistence, preventing background PHP session cleanup during long form-completion workflows (`src/Services/OwnerAuth.php`).
+  - **PHPSESSID Migration Fallback**: Added cross-cookie validation fallback in `AntiSpamGate::verifyCsrfToken()` accepting legacy tokens generated with `PHPSESSID` before the `bbiz_sess` rename and immediately seeding the active session token (`src/Services/AntiSpamGate.php`).
+  - **Background Token Auto-Refresh Endpoint**: Introduced `/api/csrf-token.php` and hooked `visibilitychange` and `pageshow` listeners in `form-enhancements.js` to silently refresh CSRF and anti-spam tokens when a tab wakes up or restores from draft (`public/api/csrf-token.php`, `public/assets/js/form-enhancements.js`).
+  - **Post Size Exceeded Detection**: Detected when `$_POST` is discarded due to `post_max_size` violations and rendered a clear upload-limit warning rather than an ambiguous CSRF error (`public/submit.php`).
+
 ## [0.44.3] - 2026-11-27
 
 ### Changed

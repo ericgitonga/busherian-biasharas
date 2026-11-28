@@ -1136,6 +1136,26 @@
     });
   }
 
+  // Automatic CSRF & Security Token Refresh on Tab Wake-up & Draft Restore (#480)
+  async function refreshSecurityTokens() {
+    if (!submitForm) return;
+    try {
+      const res = await fetch('/api/csrf-token.php', { credentials: 'same-origin', cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.status === 'ok' && data.csrf_token) {
+        const csrfEl = document.getElementById('csrf_token') || submitForm.querySelector('input[name="csrf_token"]');
+        if (csrfEl) csrfEl.value = data.csrf_token;
+        const tsEl = submitForm.querySelector('input[name="form_ts"]');
+        if (tsEl && data.form_ts) tsEl.value = String(data.form_ts);
+        const nonceEl = submitForm.querySelector('input[name="form_nonce"]');
+        if (nonceEl && data.form_nonce) nonceEl.value = data.form_nonce;
+        const sigEl = submitForm.querySelector('input[name="form_sig"]');
+        if (sigEl && data.form_sig) sigEl.value = data.form_sig;
+      }
+    } catch (_) {}
+  }
+
   if (submitForm && window.BBIZ_SUBMIT_SUCCESS !== true) {
     let restoredFields = null;
     if (window.BBIZ_SUBMIT_POST_DRAFT && typeof window.BBIZ_SUBMIT_POST_DRAFT === 'object') {
@@ -1162,7 +1182,28 @@
         restoredBanner.style.display = 'flex';
       }
       saveSubmitDraft();
+      refreshSecurityTokens();
     }
+
+    // Refresh security tokens whenever tab wakes up or restores from bfcache (#480)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        refreshSecurityTokens();
+      }
+    });
+
+    window.addEventListener('pageshow', (e) => {
+      if (e.persisted) {
+        refreshSecurityTokens();
+      }
+    });
+
+    submitForm.addEventListener('submit', () => {
+      const jsTok = document.getElementById('js_interaction_token');
+      if (jsTok && !jsTok.value) {
+        jsTok.value = 'human_verified_' + Date.now();
+      }
+    });
 
     submitForm.addEventListener('input', scheduleSaveDraft);
     submitForm.addEventListener('change', scheduleSaveDraft);

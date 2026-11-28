@@ -19,6 +19,8 @@ use BusherianBiasharas\Services\VettingPurger;
 use BusherianBiasharas\Services\WebsiteEnricher;
 
 bbiz_send_security_headers(false);
+header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 OwnerAuth::startSecureSession();
 
 $pdo = Database::getConnection();
@@ -32,10 +34,14 @@ $postSubmitVerifyUrl = '';
 $postSubmitVerifyLabel = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $csrfToken = trim((string)($_POST['csrf_token'] ?? ''));
-    if (!AntiSpamGate::verifyCsrfToken($csrfToken)) {
-        $errors[] = 'Invalid or expired security token (CSRF). Please reload the form and try again.';
+    $contentLen = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+    if (empty($_POST) && $contentLen > 0) {
+        $errors[] = 'The uploaded photos or form submission exceeded the maximum upload limit. Please select fewer or smaller images and try again.';
     } else {
+        $csrfToken = trim((string)($_POST['csrf_token'] ?? ''));
+        if (!AntiSpamGate::verifyCsrfToken($csrfToken)) {
+            $errors[] = 'Invalid or expired security token (CSRF). Please reload the form and try again.';
+        } else {
         $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
         $spamCheck = AntiSpamGate::verifySubmission($pdo, $_POST, $clientIp, 'business_submit');
 
@@ -602,6 +608,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+}
 }
 
 $tokens = AntiSpamGate::generateFormTokens();

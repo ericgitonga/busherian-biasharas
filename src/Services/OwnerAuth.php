@@ -63,6 +63,7 @@ final class OwnerAuth
                 }
                 @ini_set('session.use_strict_mode', '1');
                 @ini_set('session.use_only_cookies', '1');
+                @ini_set('session.gc_maxlifetime', '7200'); // 2 hours to match client-side draft persistence (#480)
 
                 session_name(self::sessionCookieName());
 
