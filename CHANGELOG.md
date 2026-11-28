@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.47.1] - 2026-11-28
+
+### Fixed
+- **Recommendation Retraction & Verified Status Gate (#505, #506)**: Placed session authentication and verified alumni status validation (`OwnerAuth::isOwnerVerifiedAlumnus()`) strictly before checking or executing recommendation retraction in `public/api/recommend.php`. Only verified alumni with vetted listings may recommend or retract.
+- **Admin Registered User Search MySQL Native Prepares (#505, #507)**: Replaced reused `:uq` placeholder with distinct `:uq_em`, `:uq_fn`, `:uq_ph` parameters in `public/admin/index.php`, eliminating potential `HY093: Invalid parameter number` errors under MySQL native prepared statements (`ATTR_EMULATE_PREPARES => false`).
+
 ## [0.47.0] - 2026-11-28
 
 ### Added

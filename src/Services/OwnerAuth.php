@@ -498,6 +498,25 @@ final class OwnerAuth
     }
 
     /**
+     * Check whether an owner has an approved, vetted business listing linking them as a verified alumnus (#506).
+     */
+    public static function isOwnerVerifiedAlumnus(PDO $pdo, int $ownerId): bool
+    {
+        if ($ownerId <= 0) {
+            return false;
+        }
+        $stmt = $pdo->prepare("
+            SELECT 1
+            FROM business_owner_links l
+            INNER JOIN businesses b ON b.id = l.business_id
+            WHERE l.owner_id = :oid AND b.status = 'approved'
+            LIMIT 1
+        ");
+        $stmt->execute([':oid' => $ownerId]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    /**
      * Return all businesses linked to a given owner.
      */
     public static function getBusinessesForOwner(PDO $pdo, int $ownerId): array
