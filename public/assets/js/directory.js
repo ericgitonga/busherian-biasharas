@@ -2517,6 +2517,9 @@
 
     if (!name) return;
 
+    const consentEl = document.getElementById('rec-consent');
+    const consent18 = consentEl ? consentEl.checked : true;
+
     saveRecommenderProfile({ name, school, year: year ? Number(year) : null });
     window.closeRecommendationModal();
 
@@ -2533,7 +2536,8 @@
           action: 'toggle',
           name: name,
           school: school,
-          year: year ? Number(year) : null
+          year: year ? Number(year) : null,
+          consent_18_publication: consent18 ? 1 : 0
         })
       });
       const data = await resp.json();

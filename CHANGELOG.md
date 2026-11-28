@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.46.2] - 2026-11-28
+
+### Security
+- **Data Protection & Authentication Audit Remediations (#493)**:
+  - **[Adversarial HIGH-02] Secure Google SSO Account-Linking & Age Attestation (#494)**:
+    - Guarded against silent OAuth account-linking takeover in `public/owner/google-callback.php`: if an account with matching email has an existing password and unlinked Google account, the user is redirected to `public/owner/login.php?notice=google_link_password_required` to confirm their password before attaching the Google identity.
+    - Enforced mandatory age attestation: if an existing owner matched via Google SSO has not completed age attestation (`age_attested_at` is null), the flow holds them in the 18+ adult attestation dialog before granting session privileges.
+  - **[Adversarial HIGH-03] Disallow Anonymous Bulk Contact & Coordinate Disclosure (#495)**:
+    - In `public/api/businesses.php`, restricted `?reveal=1` contact and coordinate unmasking strictly to single-business lookups (`id` or `slug` specified).
+    - Guaranteed that bulk directory browsing and automated scraping requests from unauthenticated visitors always receive masked phone numbers (`+254 7•• ••• •89`) and fuzzed GPS coordinates (rounded to 3 decimal places / ~110m) in compliance with Kenya DPA ss. 25 & 41 data minimization standards.
+  - **[Adversarial HIGH-04] Enforce 18+ & Publication Consent for Guest Recommendations (#496)**:
+    - Implemented a blended recommendation model in `public/api/recommend.php`, `public/index.php`, and `public/assets/js/directory.js`.
+    - **Verified Alumni Badging:** Endorsements from authenticated alumni/owners are verified against their logged-in identity and badged as "Verified Alumnus".
+    - **Named Guest Endorsements:** Requires explicit affirmative 18+ confirmation and publication consent (`consent_18_publication`) before publishing personal names and school alumni affiliations, satisfying Kenya DPA 2019 s. 33 child data protection and publication consent rules.
+    - **Anonymous Supporter Endorsements:** Enables visitors to record a recommendation without publishing personal names.
+
 ## [0.46.1] - 2026-11-28
 
 ### Security

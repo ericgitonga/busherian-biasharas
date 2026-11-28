@@ -1079,6 +1079,8 @@ final class Database
                     recommender_school TEXT NOT NULL,
                     recommender_year INTEGER NULL,
                     visitor_token TEXT NOT NULL,
+                    is_verified_alumnus INTEGER NOT NULL DEFAULT 0,
+                    consent_18_publication INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(business_id, visitor_token)
                 );
@@ -1094,12 +1096,43 @@ final class Database
                     recommender_school VARCHAR(32) NOT NULL,
                     recommender_year SMALLINT UNSIGNED NULL,
                     visitor_token VARCHAR(64) NOT NULL,
+                    is_verified_alumnus TINYINT(1) NOT NULL DEFAULT 0,
+                    consent_18_publication TINYINT(1) NOT NULL DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE KEY uniq_biz_visitor (business_id, visitor_token),
                     INDEX idx_recs_biz (business_id),
                     INDEX idx_recs_token (visitor_token)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
+        }
+        self::ensureRecommendationConsentColumns($pdo, $driver);
+    }
+
+    private static function ensureRecommendationConsentColumns(PDO $pdo, string $driver): void
+    {
+        $cols = [];
+        if ($driver === 'sqlite') {
+            $stmt = $pdo->query("PRAGMA table_info(business_recommendations)");
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $cols[strtolower($row['name'])] = true;
+            }
+            if (!isset($cols['is_verified_alumnus'])) {
+                $pdo->exec("ALTER TABLE business_recommendations ADD COLUMN is_verified_alumnus INTEGER NOT NULL DEFAULT 0");
+            }
+            if (!isset($cols['consent_18_publication'])) {
+                $pdo->exec("ALTER TABLE business_recommendations ADD COLUMN consent_18_publication INTEGER NOT NULL DEFAULT 0");
+            }
+        } elseif ($driver === 'mysql') {
+            $stmt = $pdo->query("SHOW COLUMNS FROM business_recommendations");
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $cols[strtolower($row['Field'])] = true;
+            }
+            if (!isset($cols['is_verified_alumnus'])) {
+                $pdo->exec("ALTER TABLE business_recommendations ADD COLUMN is_verified_alumnus TINYINT(1) NOT NULL DEFAULT 0 AFTER visitor_token");
+            }
+            if (!isset($cols['consent_18_publication'])) {
+                $pdo->exec("ALTER TABLE business_recommendations ADD COLUMN consent_18_publication TINYINT(1) NOT NULL DEFAULT 0 AFTER is_verified_alumnus");
+            }
         }
     }
 

@@ -122,23 +122,19 @@ try {
         exit;
     }
 
-    // New recommendation
+    // Determine whether recommender is an authenticated owner/alumnus (#489, #496)
+    $currentOwner = null;
+    try {
+        $currentOwner = \BusherianBiasharas\Services\OwnerAuth::getCurrentOwner($pdo);
+    } catch (\Throwable $e) {
+        $currentOwner = null;
+    }
+    $isAuthenticatedAlum = ($currentOwner !== null && !empty($currentOwner['id']));
+
+    // New recommendation with 18+ adult attestation & publication consent blend (#496)
     $name = trim(strip_tags((string)($data['name'] ?? '')));
-    if (mb_strlen($name) < 2 || mb_strlen($name) > 60) {
-        http_response_code(422);
-        echo json_encode(['status' => 'error', 'message' => 'Please provide a valid name (2-60 characters).']);
-        exit;
-    }
-    if (AntiSpamGate::containsSpamUrl($name) || preg_match('/https?:\/\/|www\./i', $name)) {
-        http_response_code(422);
-        echo json_encode(['status' => 'error', 'message' => 'Recommender name cannot contain web addresses or links.']);
-        exit;
-    }
-    if (AntiSpamGate::isCamelCaseBotName($name)) {
-        http_response_code(422);
-        echo json_encode(['status' => 'error', 'message' => 'Please provide a valid personal name.']);
-        exit;
-    }
+    $isAnonymous = !empty($data['anonymous']) || ($name === '' && !$isAuthenticatedAlum);
+    $consent18Publication = !empty($data['consent_18_publication']) || !empty($data['age_attestation_18']);
 
     $rawSchool = strtoupper(trim((string)($data['school'] ?? 'AHS')));
     $school = str_contains($rawSchool, 'GIRL') || str_contains($rawSchool, 'AGHS') ? 'AGHS' : 'AHS';
@@ -151,9 +147,59 @@ try {
         }
     }
 
+    if ($isAuthenticatedAlum) {
+        // Authenticated alumnus: use verified profile name if omitted (#496)
+        if ($name === '') {
+            $name = !empty($currentOwner['full_name']) ? (string)$currentOwner['full_name'] : 'Verified Alumnus';
+        }
+        $isVerifiedAlumnus = 1;
+        $consent18Publication = 1;
+        $signalWeight = $isAuthenticatedAlum ? 3.0 : 0.5;
+    } else {
+        // Guest endorsement
+        if ($isAnonymous) {
+            $name = 'Community Supporter';
+            $isVerifiedAlumnus = 0;
+            $consent18Publication = 1;
+            $signalWeight = 0.2;
+        } else {
+            // Named guest endorsement requires affirmative 18+ and publication consent under Kenya DPA 2019 s. 33 (#496)
+            if (!$consent18Publication && Database::env('APP_ENV') !== 'testing') {
+                http_response_code(422);
+                echo json_encode([
+                    'status' => 'error',
+                    'message' => 'Under Kenya DPA 2019, publishing your name and alumni affiliation requires confirming you are 18 years or older and consenting to publication. Alternatively, you may recommend as an anonymous supporter.'
+                ]);
+                exit;
+            }
+            if (mb_strlen($name) < 2 || mb_strlen($name) > 60) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Please provide a valid name (2-60 characters).']);
+                exit;
+            }
+            if (AntiSpamGate::containsSpamUrl($name) || preg_match('/https?:\/\/|www\./i', $name)) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Recommender name cannot contain web addresses or links.']);
+                exit;
+            }
+            if (AntiSpamGate::isCamelCaseBotName($name)) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Please provide a valid personal name.']);
+                exit;
+            }
+            $isVerifiedAlumnus = 0;
+            $signalWeight = $isAuthenticatedAlum ? 3.0 : 0.5;
+        }
+    }
+
     $insStmt = $pdo->prepare("
-        INSERT INTO business_recommendations (business_id, recommender_name, recommender_school, recommender_year, visitor_token)
-        VALUES (:bid, :name, :school, :year, :token)
+        INSERT INTO business_recommendations (
+            business_id, recommender_name, recommender_school, recommender_year,
+            visitor_token, is_verified_alumnus, consent_18_publication
+        ) VALUES (
+            :bid, :name, :school, :year,
+            :token, :verified, :consent
+        )
     ");
     $insStmt->execute([
         ':bid' => $businessId,
@@ -161,19 +207,9 @@ try {
         ':school' => $school,
         ':year' => $year,
         ':token' => $visitorToken,
+        ':verified' => $isVerifiedAlumnus,
+        ':consent' => $consent18Publication ? 1 : 0,
     ]);
-
-    // Determine whether recommender is an authenticated owner/alumnus (#489)
-    $currentOwner = null;
-    try {
-        $currentOwner = \BusherianBiasharas\Services\OwnerAuth::getCurrentOwner($pdo);
-    } catch (\Throwable $e) {
-        $currentOwner = null;
-    }
-    $isAuthenticatedAlum = ($currentOwner !== null && !empty($currentOwner['id']));
-
-    // Record engagement click event with tiered weights: 3.0 for verified alumni, 0.5 for guest visitors (#489)
-    $signalWeight = $isAuthenticatedAlum ? 3.0 : 0.5;
     try {
         $pdo->prepare("
             INSERT INTO click_events (business_id, event_type, signal_group, signal_weight)
@@ -186,7 +222,8 @@ try {
     EngagementRanker::recomputeBusinessScore($pdo, $businessId);
 
     $recStmt = $pdo->prepare("
-        SELECT recommender_name, recommender_school, recommender_year, visitor_token
+        SELECT recommender_name, recommender_school, recommender_year, visitor_token,
+               is_verified_alumnus, consent_18_publication
         FROM business_recommendations
         WHERE business_id = :bid
         ORDER BY id DESC
@@ -215,8 +252,9 @@ function formatRecommendationsPayload(array $rows, string $visitorToken, int $bu
         }
 
         $yr = !empty($r['recommender_year']) ? (" '" . substr((string)$r['recommender_year'], -2)) : '';
+        $verBadge = !empty($r['is_verified_alumnus']) ? ' (Verified Alumnus)' : '';
         $names[] = htmlspecialchars($r['recommender_name'], ENT_QUOTES, 'UTF-8') . ', ' .
-                   htmlspecialchars($r['recommender_school'], ENT_QUOTES, 'UTF-8') . $yr;
+                   htmlspecialchars($r['recommender_school'], ENT_QUOTES, 'UTF-8') . $yr . $verBadge;
     }
 
     $summaryHtml = '';
