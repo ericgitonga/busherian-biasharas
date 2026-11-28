@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.46.3] - 2026-11-28
+
+### Fixed
+- **AntiSpamGate Reusable Helpers & Recommendation Error Logging (#496)**: Added `AntiSpamGate::containsSpamUrl()` and `AntiSpamGate::isCamelCaseBotName()` helper methods invoked by recommendation vetting, eliminating runtime `Call to undefined method` errors on named guest endorsements, and attached diagnostic error logging to `recommend.php`.
+
 All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project

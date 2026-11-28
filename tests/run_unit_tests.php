@@ -6344,6 +6344,13 @@ assertTrue(
     str_contains($recPhp70, 'Under Kenya DPA 2019, publishing your name and alumni affiliation requires confirming you are 18 years or older'),
     '70c (#496): recommend.php enforces 18+ publication consent under Kenya DPA s. 33 and badges verified alumni'
 );
+assertTrue(
+    \BusherianBiasharas\Services\AntiSpamGate::isCamelCaseBotName('EdwardWaw') &&
+    !\BusherianBiasharas\Services\AntiSpamGate::isCamelCaseBotName('Edward Waweru') &&
+    \BusherianBiasharas\Services\AntiSpamGate::containsSpamUrl('Check out https://spam.ru/buy') &&
+    !\BusherianBiasharas\Services\AntiSpamGate::containsSpamUrl('Mwangi Maina'),
+    '70d (#496): AntiSpamGate provides reusable containsSpamUrl and isCamelCaseBotName methods'
+);
 
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
