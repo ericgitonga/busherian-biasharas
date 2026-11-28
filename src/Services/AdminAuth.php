@@ -290,7 +290,7 @@ final class AdminAuth
     public static function isHeaderTokenEnabled(): bool
     {
         $appEnv = strtolower(trim(Database::env('APP_ENV', 'production')));
-        if ($appEnv === 'production' && !PreprodSandbox::isPreprod()) {
+        if ($appEnv === 'production') {
             return strtolower(trim(Database::env('ALLOW_ADMIN_HEADER_TOKEN', 'false'))) === 'true';
         }
         return true;

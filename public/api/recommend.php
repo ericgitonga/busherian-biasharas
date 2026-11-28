@@ -74,7 +74,7 @@ try {
     $businessId = (int)($data['business_id'] ?? 0);
     $visitorToken = trim((string)($data['visitor_token'] ?? ''));
 
-    if ($businessId <= 0 || $visitorToken === '' || strlen($visitorToken) > 64) {
+    if ($businessId <= 0 || $visitorToken === '' || strlen($visitorToken) > 64 || !preg_match('/^[a-zA-Z0-9_-]{8,64}$/', $visitorToken)) {
         http_response_code(400);
         echo json_encode(['status' => 'error', 'message' => 'Valid business_id and visitor_token required']);
         exit;
@@ -134,6 +134,11 @@ try {
         echo json_encode(['status' => 'error', 'message' => 'Recommender name cannot contain web addresses or links.']);
         exit;
     }
+    if (AntiSpamGate::isCamelCaseBotName($name)) {
+        http_response_code(422);
+        echo json_encode(['status' => 'error', 'message' => 'Please provide a valid personal name.']);
+        exit;
+    }
 
     $rawSchool = strtoupper(trim((string)($data['school'] ?? 'AHS')));
     $school = str_contains($rawSchool, 'GIRL') || str_contains($rawSchool, 'AGHS') ? 'AGHS' : 'AHS';
@@ -158,12 +163,22 @@ try {
         ':token' => $visitorToken,
     ]);
 
-    // Record engagement click event
+    // Determine whether recommender is an authenticated owner/alumnus (#489)
+    $currentOwner = null;
+    try {
+        $currentOwner = \BusherianBiasharas\Services\OwnerAuth::getCurrentOwner($pdo);
+    } catch (\Throwable $e) {
+        $currentOwner = null;
+    }
+    $isAuthenticatedAlum = ($currentOwner !== null && !empty($currentOwner['id']));
+
+    // Record engagement click event with tiered weights: 3.0 for verified alumni, 0.5 for guest visitors (#489)
+    $signalWeight = $isAuthenticatedAlum ? 3.0 : 0.5;
     try {
         $pdo->prepare("
             INSERT INTO click_events (business_id, event_type, signal_group, signal_weight)
-            VALUES (:bid, 'recommend', 'direct_contact', 3.0)
-        ")->execute([':bid' => $businessId]);
+            VALUES (:bid, 'recommend', 'direct_contact', :weight)
+        ")->execute([':bid' => $businessId, ':weight' => $signalWeight]);
     } catch (\Throwable $ignored) {
     }
 

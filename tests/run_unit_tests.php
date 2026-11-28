@@ -6239,6 +6239,84 @@ assertTrue(
     '68g: NeedGraph maps Charitable Trust to Advocate (legal trust deed) and CPA (KRA tax exemption) adjacencies'
 );
 
+// 69. Pass-4 Adversarial Codex Review Hardening (#486, #487, #488, #489, #490, #491)
+
+// 69a (#487): locate-lost-photos.php in webroot is retired (404) and CLI rescue exists
+$retiredPhp = (string)file_get_contents(dirname(__DIR__) . '/public/api/locate-lost-photos.php');
+assertTrue(
+    str_contains($retiredPhp, "http_response_code(404)") &&
+    str_contains($retiredPhp, "Route Retired (#487)") &&
+    !str_contains($retiredPhp, "bbiz_rescue_photos_9876"),
+    '69a (#487): public/api/locate-lost-photos.php is retired with 404 stub and hardcoded token removed'
+);
+
+$cliRescue = (string)file_get_contents(dirname(__DIR__) . '/bin/locate-lost-photos.php');
+assertTrue(
+    str_contains($cliRescue, "PHP_SAPI !== 'cli'") &&
+    file_exists(dirname(__DIR__) . '/bin/locate-lost-photos.php'),
+    '69a (#487): bin/locate-lost-photos.php exists and enforces CLI-only execution'
+);
+
+// 69b (#488): Host header spoofing does not downgrade production security policy
+$prevEnv69 = getenv('APP_ENV');
+$prevHost69 = $_SERVER['HTTP_HOST'] ?? null;
+$prevHdrTok69 = getenv('ALLOW_ADMIN_HEADER_TOKEN');
+
+putenv('APP_ENV=production');
+putenv('ALLOW_ADMIN_HEADER_TOKEN=false');
+$_SERVER['HTTP_HOST'] = 'preview.busherianbiasharas.com';
+
+assertTrue(
+    PreprodSandbox::isPreprod() === false,
+    '69b (#488): PreprodSandbox::isPreprod() rejects spoofed Host: preview.* when APP_ENV=production'
+);
+assertTrue(
+    AdminAuth::isHeaderTokenEnabled() === false,
+    '69b (#488): AdminAuth::isHeaderTokenEnabled() refuses header token when APP_ENV=production despite spoofed Host header'
+);
+
+// Clean up env
+putenv($prevEnv69 !== false ? 'APP_ENV=' . $prevEnv69 : 'APP_ENV=testing');
+putenv($prevHdrTok69 !== false ? 'ALLOW_ADMIN_HEADER_TOKEN=' . $prevHdrTok69 : 'ALLOW_ADMIN_HEADER_TOKEN');
+if ($prevHost69 !== null) {
+    $_SERVER['HTTP_HOST'] = $prevHost69;
+} else {
+    unset($_SERVER['HTTP_HOST']);
+}
+
+// 69c (#489): recommend.php token validation and tiered ranking weights
+$recPhp69 = (string)file_get_contents(dirname(__DIR__) . '/public/api/recommend.php');
+assertTrue(
+    str_contains($recPhp69, "preg_match('/^[a-zA-Z0-9_-]{8,64}$/'") &&
+    str_contains($recPhp69, "AntiSpamGate::isCamelCaseBotName") &&
+    str_contains($recPhp69, 'signalWeight = $isAuthenticatedAlum ? 3.0 : 0.5'),
+    '69c (#489): recommend.php validates visitor token format, checks bot names, and tiers ranking signal weights'
+);
+
+// 69d (#490): concierge.php pre-cache flood rate limit
+$conciergePhp69 = (string)file_get_contents(dirname(__DIR__) . '/public/api/concierge.php');
+assertTrue(
+    str_contains($conciergePhp69, "'concierge_request',") &&
+    str_contains($conciergePhp69, "// 2b. Pre-Cache Global IP Rate Limiter"),
+    '69d (#490): concierge.php enforces pre-cache global rate limit to protect DB hydration from cached query floods'
+);
+
+// 69e (#491): enrich-website.php and autofill-url.php payload and CSRF protection
+$enrichPhp69 = (string)file_get_contents(dirname(__DIR__) . '/public/api/enrich-website.php');
+assertTrue(
+    str_contains($enrichPhp69, 'strlen($rawBody) > 8192') &&
+    str_contains($enrichPhp69, "AntiSpamGate::verifyCsrfToken") &&
+    str_contains($enrichPhp69, 'strlen($rawUrl) > 2048'),
+    '69e (#491): enrich-website.php enforces body size limits, CSRF token validation, and URL length bounds'
+);
+
+$autofillPhp69 = (string)file_get_contents(dirname(__DIR__) . '/public/api/autofill-url.php');
+assertTrue(
+    str_contains($autofillPhp69, 'strlen($rawBody) > 8192') &&
+    str_contains($autofillPhp69, 'strlen($targetUrl) > 2048'),
+    '69e (#491): autofill-url.php enforces body size limits and URL length bounds'
+);
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');
