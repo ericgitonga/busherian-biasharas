@@ -6410,11 +6410,19 @@ assertTrue(
 // =========================================================================
 
 // 72a (#510): Schema migration creates alumni profile columns on business_owners
-Database::ensureAlumniProfileColumns($pdo, 'sqlite');
+$currDriver72 = Database::getActiveDriver();
+Database::ensureAlumniProfileColumns($pdo, $currDriver72);
 $ownerTableCols = [];
-$colStmt = $pdo->query("PRAGMA table_info(business_owners)");
-while ($colRow = $colStmt->fetch(PDO::FETCH_ASSOC)) {
-    $ownerTableCols[strtolower($colRow['name'])] = true;
+if ($currDriver72 === 'mysql') {
+    $colStmt = $pdo->query("SHOW COLUMNS FROM business_owners");
+    while ($colRow = $colStmt->fetch(PDO::FETCH_ASSOC)) {
+        $ownerTableCols[strtolower($colRow['Field'])] = true;
+    }
+} else {
+    $colStmt = $pdo->query("PRAGMA table_info(business_owners)");
+    while ($colRow = $colStmt->fetch(PDO::FETCH_ASSOC)) {
+        $ownerTableCols[strtolower($colRow['name'])] = true;
+    }
 }
 assertTrue(
     isset($ownerTableCols['alumni_school']) &&
