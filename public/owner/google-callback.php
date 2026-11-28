@@ -18,7 +18,7 @@ $onboardingError = '';
 
 $completeOwnerSignIn = static function (PDO $pdo, array $profile, bool $attestedNow = false): never {
     $owner = OwnerAuth::upsertOwner($pdo, (string)$profile['email'], (string)($profile['name'] ?? ''), null, (string)($profile['sub'] ?? ''));
-    if ($attestedNow || empty($owner['age_attested_at'])) {
+    if ($attestedNow) {
         OwnerAuth::recordAgeAttestation($pdo, (int)$owner['id']);
         $owner['age_attested_at'] = date('Y-m-d H:i:s');
     }
@@ -112,28 +112,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // Check whether an Owner Account already exists: prioritize stable google_sub first, then email (#455 M-08)
+    // Check whether an Owner Account already exists: prioritize stable google_sub first, then email (#455 M-08, #494)
     $existingOwner = null;
+    $matchedBySub = false;
     if (!empty($profile['sub'])) {
         $subStmt = $pdo->prepare("SELECT * FROM business_owners WHERE google_sub = :sub LIMIT 1");
         $subStmt->execute([':sub' => (string)$profile['sub']]);
         $existingOwner = $subStmt->fetch() ?: null;
+        if ($existingOwner !== null) {
+            $matchedBySub = true;
+        }
     }
     if ($existingOwner === null) {
         $existingOwner = OwnerAuth::findOwnerByEmail($pdo, (string)$profile['email']);
     }
 
     if ($existingOwner !== null) {
-        $completeOwnerSignIn($pdo, $profile, false);
-    }
+        // If the account has an existing password and was NOT previously linked to this google_sub:
+        // Do NOT silently link or take over! Require the owner to verify their password before linking Google SSO (#494).
+        if (!$matchedBySub && !empty($existingOwner['password_hash'])) {
+            $_SESSION['bbiz_pending_google_link'] = [
+                'email' => (string)$profile['email'],
+                'sub' => (string)($profile['sub'] ?? ''),
+                'name' => (string)($profile['name'] ?? ''),
+                'expires_at' => time() + 600,
+            ];
+            header('Location: /owner/login.php?notice=google_link_password_required&email=' . urlencode((string)$profile['email']));
+            exit;
+        }
 
-    // First-time Google account onboarding: hold in ephemeral session until 18+ & Privacy Notice attestation is confirmed
-    $_SESSION['bbiz_pending_google_onboarding'] = [
-        'email' => (string)$profile['email'],
-        'name' => (string)($profile['name'] ?? ''),
-        'sub' => (string)($profile['sub'] ?? ''),
-        'expires_at' => time() + 600,
-    ];
+        // If age attestation is missing, hold in onboarding flow to obtain mandatory DPA adult attestation (#494)
+        if (empty($existingOwner['age_attested_at'])) {
+            $_SESSION['bbiz_pending_google_onboarding'] = [
+                'email' => (string)$profile['email'],
+                'name' => (string)($profile['name'] ?? ''),
+                'sub' => (string)($profile['sub'] ?? ''),
+                'existing_id' => (int)$existingOwner['id'],
+                'expires_at' => time() + 600,
+            ];
+        } else {
+            $completeOwnerSignIn($pdo, $profile, false);
+        }
+    } else {
+        // First-time Google account onboarding: hold in ephemeral session until 18+ & Privacy Notice attestation is confirmed
+        $_SESSION['bbiz_pending_google_onboarding'] = [
+            'email' => (string)$profile['email'],
+            'name' => (string)($profile['name'] ?? ''),
+            'sub' => (string)($profile['sub'] ?? ''),
+            'expires_at' => time() + 600,
+        ];
+    }
 }
 
 $pendingOnboarding = $_SESSION['bbiz_pending_google_onboarding'] ?? [];

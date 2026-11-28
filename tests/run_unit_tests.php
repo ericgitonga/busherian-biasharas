@@ -6317,6 +6317,34 @@ assertTrue(
     '69e (#491): autofill-url.php enforces body size limits and URL length bounds'
 );
 
+// 70. Pass-4 Adversarial Codex Wave-2 Remediations (#493, #494, #495, #496)
+
+// 70a (#494): Google OAuth account-linking security and mandatory age attestation
+$gcbPhp70 = (string)file_get_contents(dirname(__DIR__) . '/public/owner/google-callback.php');
+assertTrue(
+    str_contains($gcbPhp70, 'notice=google_link_password_required') &&
+    str_contains($gcbPhp70, 'bbiz_pending_google_link') &&
+    str_contains($gcbPhp70, "empty(\$existingOwner['age_attested_at'])"),
+    '70a (#494): google-callback.php guards against pre-account linking takeover and enforces age attestation'
+);
+
+// 70b (#495): businesses.php restricts contact and location reveal exclusively to single-business lookups
+$bizPhp70 = (string)file_get_contents(dirname(__DIR__) . '/public/api/businesses.php');
+assertTrue(
+    str_contains($bizPhp70, "\$isSingleBizQuery = (\$filterBizId !== null && \$filterBizId > 0) || (\$filterSlug !== '');") &&
+    str_contains($bizPhp70, "\$isExplicitReveal = (!empty(\$_GET['reveal']) || !empty(\$_REQUEST['reveal_token'])) && \$isSingleBizQuery;"),
+    '70b (#495): businesses.php restricts explicit contact and location unmasking strictly to single business lookups'
+);
+
+// 70c (#496): recommend.php enforces 18+ publication consent for named endorsements, anonymous support, and verified badging
+$recPhp70 = (string)file_get_contents(dirname(__DIR__) . '/public/api/recommend.php');
+assertTrue(
+    str_contains($recPhp70, 'consent_18_publication') &&
+    str_contains($recPhp70, 'is_verified_alumnus') &&
+    str_contains($recPhp70, 'Under Kenya DPA 2019, publishing your name and alumni affiliation requires confirming you are 18 years or older'),
+    '70c (#496): recommend.php enforces 18+ publication consent under Kenya DPA s. 33 and badges verified alumni'
+);
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');

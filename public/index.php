@@ -935,7 +935,7 @@ $pageCanonicalPath = $requestedBiz
           <label for="rec-name" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">Your Name</label>
           <input type="text" id="rec-name" required placeholder="e.g. Akinyi or Onyango" style="width:100%;padding:9px 12px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:14px;box-sizing:border-box;">
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
           <div>
             <label for="rec-school" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">School</label>
             <select id="rec-school" style="width:100%;padding:9px 10px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:13.5px;box-sizing:border-box;">
@@ -947,6 +947,12 @@ $pageCanonicalPath = $requestedBiz
             <label for="rec-year" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">Year Left (Optional)</label>
             <input type="number" id="rec-year" min="1940" max="2027" placeholder="e.g. 2011" style="width:100%;padding:9px 12px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:14px;box-sizing:border-box;">
           </div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="display:flex;align-items:flex-start;gap:8px;font-size:0.8rem;color:#C5D0C9;cursor:pointer;line-height:1.4;">
+            <input type="checkbox" id="rec-consent" checked style="margin-top:2px;">
+            <span>I confirm I am 18 years or older and consent to having my name and school published on this recommendation.</span>
+          </label>
         </div>
         <button type="submit" class="btn" style="width:100%;background:#22C55E;color:#0B332A;font-weight:700;padding:11px;font-size:14.5px;border:none;border-radius:8px;cursor:pointer;">
           Vouch &amp; Recommend &rarr;

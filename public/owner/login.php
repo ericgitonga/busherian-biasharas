@@ -139,6 +139,9 @@ if (isset($_GET['account_erased'])) {
 } elseif (isset($_GET['logged_out'])) {
     $flashSuccess = 'You have been signed out of your Owner session.';
 }
+if (isset($_GET['notice']) && $_GET['notice'] === 'google_link_password_required') {
+    $flashSuccess = 'An account with this email address already exists. Please enter your password to verify and link your Google Account.';
+}
 if (isset($_GET['err'])) {
     if ($_GET['err'] === 'invalid_link') {
         $flashError = 'That link has expired or was already used. Sign in with your email and password below, or request a 6-digit password reset code.';
@@ -284,6 +287,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $authOwner = OwnerAuth::authenticateWithPassword($pdo, $email, $password);
                 if ($authOwner !== null) {
+                    // If a Google SSO account-link request was pending for this email, link google_sub now (#494)
+                    if (!empty($_SESSION['bbiz_pending_google_link']) && is_array($_SESSION['bbiz_pending_google_link'])) {
+                        $pLink = $_SESSION['bbiz_pending_google_link'];
+                        if (strtolower((string)($pLink['email'] ?? '')) === $email && !empty($pLink['sub']) && (int)($pLink['expires_at'] ?? 0) >= time()) {
+                            $pdo->prepare("UPDATE business_owners SET google_sub = :sub WHERE id = :id")->execute([
+                                ':sub' => (string)$pLink['sub'],
+                                ':id' => (int)$authOwner['id']
+                            ]);
+                            $authOwner['google_sub'] = (string)$pLink['sub'];
+                            unset($_SESSION['bbiz_pending_google_link']);
+                        }
+                    }
                     OwnerAuth::linkSessionSubmittedPendingBusinesses($pdo, (int)$authOwner['id'], $email);
                     $pendingSessionClaim = OwnerAuth::getVerifiedClaimFromSession($pdo);
                     OwnerAuth::establishOwnerSession($authOwner, true, $pdo);

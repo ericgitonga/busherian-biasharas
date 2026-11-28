@@ -37,8 +37,10 @@ try {
     $q           = mb_substr(trim((string)($_GET['q'] ?? '')), 0, 120);
     $filterBizId = isset($_GET['id']) && $_GET['id'] !== '' ? (int)$_GET['id'] : null;
     $filterSlug  = mb_substr(trim((string)($_GET['slug'] ?? '')), 0, 120);
-    $isExplicitReveal = !empty($_GET['reveal']) || !empty($_REQUEST['reveal_token']);
-    $shouldRevealContacts = ($filterBizId !== null && $filterBizId > 0) || ($filterSlug !== '') || $isAuthenticatedViewer || $isExplicitReveal;
+    $isSingleBizQuery = ($filterBizId !== null && $filterBizId > 0) || ($filterSlug !== '');
+    // Explicit reveal is restricted to single-business lookups to prevent anonymous bulk scraping (#495)
+    $isExplicitReveal = (!empty($_GET['reveal']) || !empty($_REQUEST['reveal_token'])) && $isSingleBizQuery;
+    $shouldRevealContacts = $isSingleBizQuery || $isAuthenticatedViewer;
     $rawSort     = mb_substr(trim((string)($_GET['sort'] ?? '')), 0, 40);
     $sectorId   = isset($_GET['sector_id']) && $_GET['sector_id'] !== '' ? (int)$_GET['sector_id'] : null;
     $specId     = isset($_GET['specialty_id']) && $_GET['specialty_id'] !== '' ? (int)$_GET['specialty_id'] : null;
