@@ -406,12 +406,24 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
 
           <div style="margin-bottom:0.85rem;">
             <label for="new-owner-password" style="display:block;font-weight:700;font-size:0.84rem;margin-bottom:0.3rem;color:#111827;">Choose Your New Password (At least 8 characters) *</label>
-            <input type="password" id="new-owner-password" name="new_password" data-testid="owner-otp-new-password" class="input-control" minlength="8" autocomplete="new-password" placeholder="At least 8 characters..." required>
+            <div style="position:relative;">
+              <input type="password" id="new-owner-password" name="new_password" data-testid="owner-otp-new-password" class="input-control" minlength="8" autocomplete="new-password" placeholder="At least 8 characters..." required style="padding-right:2.75rem;">
+              <button type="button" class="btn-toggle-password" data-target="new-owner-password" data-testid="toggle-new-owner-password" aria-label="Show password" title="Show password" style="position:absolute;right:0.45rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:0.4rem;color:#6B7280;display:flex;align-items:center;justify-content:center;border-radius:6px;">
+                <svg class="eye-icon-show" style="width:20px;height:20px;display:block;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                <svg class="eye-icon-hide" style="width:20px;height:20px;display:none;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+              </button>
+            </div>
           </div>
 
           <div style="margin-bottom:1.1rem;">
             <label for="confirm-owner-password" style="display:block;font-weight:700;font-size:0.84rem;margin-bottom:0.3rem;color:#111827;">Confirm New Password *</label>
-            <input type="password" id="confirm-owner-password" name="confirm_password" data-testid="owner-otp-confirm-password" class="input-control" minlength="8" autocomplete="new-password" placeholder="Re-enter your password..." required>
+            <div style="position:relative;">
+              <input type="password" id="confirm-owner-password" name="confirm_password" data-testid="owner-otp-confirm-password" class="input-control" minlength="8" autocomplete="new-password" placeholder="Re-enter your password..." required style="padding-right:2.75rem;">
+              <button type="button" class="btn-toggle-password" data-target="confirm-owner-password" data-testid="toggle-confirm-owner-password" aria-label="Show password" title="Show password" style="position:absolute;right:0.45rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:0.4rem;color:#6B7280;display:flex;align-items:center;justify-content:center;border-radius:6px;">
+                <svg class="eye-icon-show" style="width:20px;height:20px;display:block;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                <svg class="eye-icon-hide" style="width:20px;height:20px;display:none;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+              </button>
+            </div>
           </div>
 
           <button type="submit" data-testid="owner-otp-verify-submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.94rem;">
@@ -495,9 +507,15 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
               <label for="owner-password" style="font-weight:700;font-size:0.84rem;color:#111827;">Password *</label>
               <a href="/owner/login.php?mode=reset<?= htmlspecialchars($bizParamSuffix, ENT_QUOTES, 'UTF-8') ?>" data-testid="owner-forgot-password-link" style="font-size:0.79rem;color:#7B1113;font-weight:700;">Forgot or haven't set a password?</a>
             </div>
-            <input type="password" id="owner-password" name="password" data-testid="owner-login-password" class="input-control"
-              autocomplete="current-password"
-              placeholder="Enter your password" required>
+            <div style="position:relative;">
+              <input type="password" id="owner-password" name="password" data-testid="owner-login-password" class="input-control"
+                autocomplete="current-password"
+                placeholder="Enter your password" required style="padding-right:2.75rem;">
+              <button type="button" class="btn-toggle-password" data-target="owner-password" data-testid="toggle-owner-password" aria-label="Show password" title="Show password" style="position:absolute;right:0.45rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:0.4rem;color:#6B7280;display:flex;align-items:center;justify-content:center;border-radius:6px;">
+                <svg class="eye-icon-show" style="width:20px;height:20px;display:block;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                <svg class="eye-icon-hide" style="width:20px;height:20px;display:none;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+              </button>
+            </div>
           </div>
 
           <button type="submit" data-testid="owner-login-submit" class="btn btn-green" style="width:100%;justify-content:center;padding:0.75rem 1rem;font-size:0.94rem;margin-top:1.1rem;">
@@ -564,6 +582,24 @@ $bizParamSuffix = $targetBizId > 0 ? ('&biz=' . $targetBizId) : '';
           }
         }, 1000);
       }
+
+      // Password visibility toggle (#484)
+      document.querySelectorAll('.btn-toggle-password').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var targetId = btn.getAttribute('data-target');
+          var input = document.getElementById(targetId);
+          if (!input) return;
+          var isPassword = input.type === 'password';
+          input.type = isPassword ? 'text' : 'password';
+          var iconShow = btn.querySelector('.eye-icon-show');
+          var iconHide = btn.querySelector('.eye-icon-hide');
+          if (iconShow) iconShow.style.display = isPassword ? 'none' : 'block';
+          if (iconHide) iconHide.style.display = isPassword ? 'block' : 'none';
+          btn.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+          btn.setAttribute('title', isPassword ? 'Hide password' : 'Show password');
+          input.focus();
+        });
+      });
     })();
   </script>
 </body>

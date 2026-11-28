@@ -940,5 +940,12 @@ testAssert(str_contains($enhancementsJs, 'refreshSecurityTokens'), 'form-enhance
 testAssert(str_contains($enhancementsJs, "visibilityState === 'visible'"), 'form-enhancements.js hooks visibilitychange to refresh tokens (#480)');
 testAssert(str_contains($enhancementsJs, 'pageshow'), 'form-enhancements.js hooks pageshow for bfcache restoration (#480)');
 
+// Test password visibility toggle on owner and admin login screens (#484)
+$ownerLoginSource = (string)file_get_contents(dirname(__DIR__) . '/public/owner/login.php');
+$adminLoginSource = (string)file_get_contents(dirname(__DIR__) . '/public/admin/login.php');
+testAssert(str_contains($ownerLoginSource, 'data-testid="toggle-owner-password"'), 'owner/login.php provides password visibility toggle on main login form (#484)');
+testAssert(str_contains($ownerLoginSource, 'data-testid="toggle-new-owner-password"') && str_contains($ownerLoginSource, 'data-testid="toggle-confirm-owner-password"'), 'owner/login.php provides password visibility toggle on OTP reset form (#484)');
+testAssert(str_contains($adminLoginSource, 'data-testid="toggle-admin-token"'), 'admin/login.php provides password visibility toggle on admin login form (#484)');
+
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
 

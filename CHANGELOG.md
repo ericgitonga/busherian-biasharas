@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.45.2] - 2026-11-28
+
+### Added
+- **Password Visibility View Toggle on Login Screens (#484)**:
+  - **Owner Login & Password Reset**: Added interactive eye icon button to reveal or mask passwords on the owner email/password login screen (`public/owner/login.php`) and OTP reset fields (`new_password`, `confirm_password`).
+  - **Admin Login**: Added matching password visibility toggle to the admin login form (`public/admin/login.php`) on the admin token input.
+  - **Accessible & Clean UX**: Implemented via SVG eye icons (`eye-icon-show` / `eye-icon-hide`), dynamically updating `aria-label` and `title` without interfering with form submission or password autofill.
+
 ## [0.45.1] - 2026-11-28
 
 ### Changed
