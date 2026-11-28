@@ -373,6 +373,18 @@ $removedLogoUrl = \BusherianBiasharas\Services\PhotoUploader::processBusinessLog
 testAssert($removedLogoUrl === null, 'PhotoUploader::processBusinessLogo with removeLogo returns null and deletes file (#429)');
 testAssert(\BusherianBiasharas\Services\PhotoUploader::resolveSafeUploadFilePath($logoUrl, true) === null, 'Removed logo file no longer exists on disk (#429)');
 
+// Unit test PhotoUploader::processBusinessLogo with client-side inline data URL (#481)
+$dataUrlLogo = 'data:image/png;base64,' . base64_encode($testTransparentPng);
+$inlineLogoUrl = \BusherianBiasharas\Services\PhotoUploader::processBusinessLogo(null, false, null, $dataUrlLogo);
+testAssert($inlineLogoUrl !== null && str_starts_with($inlineLogoUrl, '/uploads/logos/'), 'PhotoUploader::processBusinessLogo handles inline client-side resized data URL (#481)');
+testAssert(\BusherianBiasharas\Services\PhotoUploader::resolveSafeUploadFilePath($inlineLogoUrl, true) !== null, 'Inline client-side logo saved safely to disk (#481)');
+\BusherianBiasharas\Services\PhotoUploader::processBusinessLogo($inlineLogoUrl, true, null);
+
+testAssert(str_contains($bootstrapSrc, 'id="business_logo_data_url"'), 'bootstrap.php renders hidden business_logo_data_url input (#481)');
+testAssert(str_contains($formEnhanceSrc, 'resizeImageFile'), 'form-enhancements.js contains universal client-side image downscaler (#481)');
+testAssert(str_contains($formEnhanceSrc, 'business_logo_data_url'), 'form-enhancements.js binds business_logo_data_url for optimized upload (#481)');
+testAssert(!str_contains($formEnhanceSrc, 'Logo file exceeds 8 MB size limit'), 'form-enhancements.js eliminates 8MB logo size limit barrier in favor of auto-downscaling (#481)');
+
 // 19. Check BB-DPA-01 Founder Attribution Consent Contract & Revocation (#435)
 $privacySrc = (string)file_get_contents(dirname(__DIR__) . '/public/privacy.php');
 testAssert(str_contains($submitSrc, 'Kenya DPA 2019 Voluntary Publication Notice'), 'submit.php has voluntary publication notice (#435)');
