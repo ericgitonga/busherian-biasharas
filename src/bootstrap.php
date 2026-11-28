@@ -136,6 +136,13 @@ if (!function_exists('bbiz_send_security_headers')) {
     }
 }
 
+if (!function_exists('bbiz_client_ip')) {
+    function bbiz_client_ip(): string
+    {
+        return (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+    }
+}
+
 if (!function_exists('bbiz_app_version')) {
     function bbiz_app_version(): string
     {

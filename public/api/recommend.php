@@ -55,7 +55,7 @@ try {
     }
 
     // POST: Toggle recommendation on/off
-    $clientIp = bbiz_client_ip();
+    $clientIp = function_exists('bbiz_client_ip') ? bbiz_client_ip() : (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
     $rateLimit = AntiSpamGate::checkAndRecordRateLimit($pdo, $clientIp, 'recommend_toggle', 15, 60, 45, 120);
     if (!$rateLimit['allowed']) {
         http_response_code(429);
