@@ -111,7 +111,13 @@ $tokens = AntiSpamGate::generateFormTokens();
         </p>
         <div style="margin-bottom:1rem;">
           <label for="admin_token" style="font-weight:700;font-size:0.85rem;display:block;margin-bottom:0.35rem;">Admin Password / Access Token *</label>
-          <input type="password" id="admin_token" name="admin_token" class="input-control" required autocomplete="current-password">
+          <div style="position:relative;">
+            <input type="password" id="admin_token" name="admin_token" class="input-control" required autocomplete="current-password" style="padding-right:2.75rem;">
+            <button type="button" class="btn-toggle-password" data-target="admin_token" data-testid="toggle-admin-token" aria-label="Show password" title="Show password" style="position:absolute;right:0.45rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:0.4rem;color:#6B7280;display:flex;align-items:center;justify-content:center;border-radius:6px;">
+              <svg class="eye-icon-show" style="width:20px;height:20px;display:block;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              <svg class="eye-icon-hide" style="width:20px;height:20px;display:none;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+            </button>
+          </div>
         </div>
         <div style="margin-bottom:1.25rem;display:flex;align-items:center;gap:0.5rem;">
           <input type="checkbox" id="admin_remember_me" name="remember_me" value="1" data-testid="admin-remember-me-checkbox" style="width:16px;height:16px;accent-color:#7B1113;" checked>
@@ -123,5 +129,23 @@ $tokens = AntiSpamGate::generateFormTokens();
       </form>
     <?php endif; ?>
   </main>
+  <script>
+    document.querySelectorAll('.btn-toggle-password').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var targetId = btn.getAttribute('data-target');
+        var input = document.getElementById(targetId);
+        if (!input) return;
+        var isPassword = input.type === 'password';
+        input.type = isPassword ? 'text' : 'password';
+        var iconShow = btn.querySelector('.eye-icon-show');
+        var iconHide = btn.querySelector('.eye-icon-hide');
+        if (iconShow) iconShow.style.display = isPassword ? 'none' : 'block';
+        if (iconHide) iconHide.style.display = isPassword ? 'block' : 'none';
+        btn.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+        btn.setAttribute('title', isPassword ? 'Hide password' : 'Show password');
+        input.focus();
+      });
+    });
+  </script>
 </body>
 </html>
