@@ -6375,6 +6375,36 @@ assertTrue(
     '71b (#503): recommend.php strictly requires affirmative publication consent without age-only flag substitution'
 );
 
+// 71c (#506): OwnerAuth::isOwnerVerifiedAlumnus checks approved linked listing
+$unlinkedOwner71 = OwnerAuth::upsertOwner($pdo, 'unlinked71@busherian.co.ke', 'Unlinked 71');
+assertTrue(
+    !OwnerAuth::isOwnerVerifiedAlumnus($pdo, (int)$unlinkedOwner71['id']),
+    '71c (#506): OwnerAuth::isOwnerVerifiedAlumnus returns false for unlinked or unvetted accounts'
+);
+assertTrue(
+    OwnerAuth::isOwnerVerifiedAlumnus($pdo, (int)$bustaniOwner['id']),
+    '71c (#506): OwnerAuth::isOwnerVerifiedAlumnus returns true for owners with approved directory listings'
+);
+OwnerAuth::deleteOwnerAccountAndData($pdo, (int)$unlinkedOwner71['id'], true, '127.0.0.1');
+
+// 71d (#506): recommend.php places authentication and verified alumni check before retraction
+$recPhp71 = (string)file_get_contents(dirname(__DIR__) . '/public/api/recommend.php');
+$authPos71 = strpos($recPhp71, 'isOwnerVerifiedAlumnus');
+$retractPos71 = strpos($recPhp71, 'action_taken\'] = \'retracted\'');
+assertTrue(
+    $authPos71 !== false && $retractPos71 !== false && $authPos71 < $retractPos71,
+    '71d (#506): recommend.php places authentication and isOwnerVerifiedAlumnus gate before recommendation retraction'
+);
+
+// 71e (#507): admin user search uses distinct parameter placeholders for MySQL native prepares
+$adminPhp71 = (string)file_get_contents(dirname(__DIR__) . '/public/admin/index.php');
+assertTrue(
+    str_contains($adminPhp71, ':uq_em') &&
+    str_contains($adminPhp71, ':uq_fn') &&
+    str_contains($adminPhp71, ':uq_ph'),
+    '71e (#507): admin/index.php uses distinct named placeholders for MySQL native prepared statements'
+);
+
 // Cleanup 55 fixtures
 VettingPurger::deleteBusiness($pdo, $bizPending321, 'admin_dashboard', 'audit_cleanup_321');
 VettingPurger::deleteBusiness($pdo, $bizUnapproved322, 'admin_dashboard', 'audit_cleanup_322');

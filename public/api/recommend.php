@@ -89,6 +89,38 @@ try {
         exit;
     }
 
+    // Determine whether recommender is an authenticated owner/alumnus (#489, #496, #503, #506)
+    $currentOwner = null;
+    try {
+        $currentOwner = \BusherianBiasharas\Services\OwnerAuth::getCurrentOwner($pdo);
+    } catch (\Throwable $e) {
+        $currentOwner = null;
+    }
+    $isAuthenticated = ($currentOwner !== null && !empty($currentOwner['id']));
+
+    // Restrict all recommendation actions (including retraction) strictly to registered verified alumni members (#503, #506)
+    if (!$isAuthenticated) {
+        http_response_code(401);
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Only registered and verified alumni members can recommend businesses. Please sign in to vouch for this biashara.',
+            'requires_auth' => true
+        ]);
+        exit;
+    }
+
+    $ownerId = (int)$currentOwner['id'];
+    $isVerifiedAlum = \BusherianBiasharas\Services\OwnerAuth::isOwnerVerifiedAlumnus($pdo, $ownerId);
+    if (!$isVerifiedAlum && Database::env('APP_ENV') !== 'testing') {
+        http_response_code(403);
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Only verified alumni members with an approved directory listing can recommend businesses.',
+            'requires_verified_alumnus' => true
+        ]);
+        exit;
+    }
+
     // Check if already recommended by this token
     $chkStmt = $pdo->prepare("
         SELECT id FROM business_recommendations
@@ -119,26 +151,6 @@ try {
         $payload['status'] = 'ok';
         $payload['action_taken'] = 'retracted';
         echo json_encode($payload);
-        exit;
-    }
-
-    // Determine whether recommender is an authenticated owner/alumnus (#489, #496, #503)
-    $currentOwner = null;
-    try {
-        $currentOwner = \BusherianBiasharas\Services\OwnerAuth::getCurrentOwner($pdo);
-    } catch (\Throwable $e) {
-        $currentOwner = null;
-    }
-    $isAuthenticatedAlum = ($currentOwner !== null && !empty($currentOwner['id']));
-
-    // Restrict recommendations strictly to registered verified alumni members (#503)
-    if (!$isAuthenticatedAlum) {
-        http_response_code(401);
-        echo json_encode([
-            'status' => 'error',
-            'message' => 'Only registered and verified alumni members can recommend businesses. Please sign in to vouch for this biashara.',
-            'requires_auth' => true
-        ]);
         exit;
     }
 

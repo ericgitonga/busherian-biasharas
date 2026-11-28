@@ -282,8 +282,11 @@ $userWhere = [];
 $userParams = [];
 
 if ($userSearch !== '') {
-    $userWhere[] = "(LOWER(o.email) LIKE :uq OR LOWER(COALESCE(o.full_name, '')) LIKE :uq OR o.phone LIKE :uq)";
-    $userParams[':uq'] = '%' . strtolower($userSearch) . '%';
+    $userWhere[] = "(LOWER(o.email) LIKE :uq_em OR LOWER(COALESCE(o.full_name, '')) LIKE :uq_fn OR o.phone LIKE :uq_ph)";
+    $userSearchParam = '%' . strtolower($userSearch) . '%';
+    $userParams[':uq_em'] = $userSearchParam;
+    $userParams[':uq_fn'] = $userSearchParam;
+    $userParams[':uq_ph'] = $userSearchParam;
 }
 if ($userAuthFilter === 'google') {
     $userWhere[] = "(o.google_sub IS NOT NULL AND o.google_sub != '')";
