@@ -31,11 +31,11 @@ $isAdvisorEnabled = (\BusherianBiasharas\Services\PreprodSandbox::isPreprod()
     || (getenv('BBIZ_ENABLE_ADVISOR') === 'true'))
     && (strtolower((string)(getenv('APP_ENV') ?: ($_ENV['APP_ENV'] ?? 'development'))) !== 'production');
 
-// Load bounded initial page-1 approved businesses (#180, #389: LIMIT 25 OFFSET 0, zero N+1, zero vetting columns)
-$allowedPageSizes = [25, 50, 100];
+// Load bounded initial page-1 approved businesses (#180, #389, #482: LIMIT 30 OFFSET 0, zero N+1, zero vetting columns)
+$allowedPageSizes = [30, 60, 90, 120];
 $initialPerPage = isset($_GET['per_page']) && in_array((int)$_GET['per_page'], $allowedPageSizes, true)
     ? (int)$_GET['per_page']
-    : 25;
+    : 30;
 $totalApprovedCount = (int)$pdo->query("
     SELECT COUNT(*)
     FROM businesses b
@@ -620,9 +620,10 @@ $pageCanonicalPath = $requestedBiz
           </select>
           <label for="per-page-select" style="display:none;">Listings per page</label>
           <select id="per-page-select" data-testid="per-page-select" class="select-control" aria-label="Listings per page" style="width:auto;padding:0.32rem 0.6rem;font-size:0.8rem;">
-            <option value="25"<?= $initialPerPage === 25 ? ' selected' : '' ?>>25 per page</option>
-            <option value="50"<?= $initialPerPage === 50 ? ' selected' : '' ?>>50 per page</option>
-            <option value="100"<?= $initialPerPage === 100 ? ' selected' : '' ?>>100 per page</option>
+            <option value="30"<?= $initialPerPage === 30 ? ' selected' : '' ?>>30 per page</option>
+            <option value="60"<?= $initialPerPage === 60 ? ' selected' : '' ?>>60 per page</option>
+            <option value="90"<?= $initialPerPage === 90 ? ' selected' : '' ?>>90 per page</option>
+            <option value="120"<?= $initialPerPage === 120 ? ' selected' : '' ?>>120 per page</option>
           </select>
         </div>
       </div>

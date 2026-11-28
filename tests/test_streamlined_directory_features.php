@@ -385,6 +385,15 @@ testAssert(str_contains($formEnhanceSrc, 'resizeImageFile'), 'form-enhancements.
 testAssert(str_contains($formEnhanceSrc, 'business_logo_data_url'), 'form-enhancements.js binds business_logo_data_url for optimized upload (#481)');
 testAssert(!str_contains($formEnhanceSrc, 'Logo file exceeds 8 MB size limit'), 'form-enhancements.js eliminates 8MB logo size limit barrier in favor of auto-downscaling (#481)');
 
+// Check Directory Complete Row Slices 30/60/90/120 (#482)
+$indexSrcCheck = (string)file_get_contents(dirname(__DIR__) . '/public/index.php');
+$dirJsSrcCheck = (string)file_get_contents(dirname(__DIR__) . '/public/assets/js/directory.js');
+$apiBizSrcCheck = (string)file_get_contents(dirname(__DIR__) . '/public/api/businesses.php');
+testAssert(str_contains($indexSrcCheck, '$allowedPageSizes = [30, 60, 90, 120];'), 'index.php defines allowedPageSizes as [30, 60, 90, 120] (#482)');
+testAssert(str_contains($indexSrcCheck, ': 30;'), 'index.php defaults to 30 items per page for complete card rows (#482)');
+testAssert(str_contains($dirJsSrcCheck, 'ALLOWED_PAGE_SIZES = [30, 60, 90, 120]'), 'directory.js defines ALLOWED_PAGE_SIZES as [30, 60, 90, 120] (#482)');
+testAssert(str_contains($apiBizSrcCheck, 'min(120, (int)$_GET[\'per_page\'])) : 30;'), 'api/businesses.php bounds per_page up to 120 defaulting to 30 (#482)');
+
 // 19. Check BB-DPA-01 Founder Attribution Consent Contract & Revocation (#435)
 $privacySrc = (string)file_get_contents(dirname(__DIR__) . '/public/privacy.php');
 testAssert(str_contains($submitSrc, 'Kenya DPA 2019 Voluntary Publication Notice'), 'submit.php has voluntary publication notice (#435)');

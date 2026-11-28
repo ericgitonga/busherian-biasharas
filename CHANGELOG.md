@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.45.1] - 2026-11-28
+
+### Changed
+- **Complete Row Pagination Slices 30/60/90/120 (#482)**:
+  - **Zero-Orphan Card Grid Rows**: Replaced 25/50/100 pagination with a default view of **30** and selectable slices of **60, 90, 120** listings across `public/index.php`, `public/assets/js/directory.js`, and `public/api/businesses.php`.
+  - **Grid Completeness**: Guarantees perfectly complete rows with zero trailing orphan cards across 2-column tablet grids (15/30/45/60 rows), 3-column desktop grids (10/20/30/40 rows), and 4-column widescreen layouts.
+  - **API Upper Bound Alignment**: Expanded `public/api/businesses.php` pagination ceiling from 100 to 120, defaulting to 30.
+
+### Fixed
+- **Frictionless Immediate Sign-Out & Security Warning Note Removal (#483)**:
+  - **Immediate Same-Origin Sign-Out**: Allowed same-origin logout submissions (`Sec-Fetch-Site: same-origin` or matching host referer) to sign out the browser immediately without blocking on stale or rotated session CSRF tokens (`public/owner/logout.php`).
+  - **Warning Note Removal**: Completely removed the confusing *"Your security token expired or could not be verified"* red alert banner. Any unverified cross-site request cleanly displays the standard sign-out confirmation card with zero warning preambles.
+  - **Expired Session Handling**: Automatically redirects expired or already-cleared sessions directly to login with confirmation rather than halting on an error page.
+
 ## [0.45.0] - 2026-11-28
 
 ### Added

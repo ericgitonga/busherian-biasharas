@@ -13,15 +13,16 @@ header('Pragma: no-cache');
 OwnerAuth::startSecureSession();
 
 $pdo = Database::getConnection();
-$logoutError = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrf = trim((string)($_POST['csrf_token'] ?? ''));
-    if (!AntiSpamGate::verifyCsrfToken($csrf)) {
-        http_response_code(403);
-        $logoutError = 'Your security token expired or could not be verified. Please confirm sign-out below.';
-        $currentOwner = OwnerAuth::getCurrentOwner($pdo);
-    } else {
+    $secFetchSite = strtolower(trim((string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '')));
+    $referer = (string)($_SERVER['HTTP_REFERER'] ?? '');
+    $isSameOrigin = ($secFetchSite === 'same-origin')
+        || (!empty($referer) && parse_url($referer, PHP_URL_HOST) === ($_SERVER['HTTP_HOST'] ?? ''));
+
+    // Authenticated same-origin request or valid CSRF token: execute sign-out immediately (#483)
+    if (AntiSpamGate::verifyCsrfToken($csrf) || $isSameOrigin) {
         $currentOwner = OwnerAuth::getCurrentOwner($pdo);
         if ($currentOwner !== null && ($_POST['scope'] ?? '') === 'all') {
             OwnerAuth::revokeAllOwnerSessions($pdo, (int)$currentOwner['id'], true);
@@ -33,12 +34,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: /owner/login.php?logged_out=1');
         exit;
     }
-} else {
-    $currentOwner = OwnerAuth::getCurrentOwner($pdo);
 }
 
+$currentOwner = OwnerAuth::getCurrentOwner($pdo);
 if ($currentOwner === null) {
-    header('Location: /owner/login.php');
+    header('Location: /owner/login.php?logged_out=1');
     exit;
 }
 
@@ -70,12 +70,6 @@ $tokens = AntiSpamGate::generateFormTokens();
   </header>
 
   <main style="max-width:460px;margin:3rem auto;padding:0 1.25rem;">
-    <?php if ($logoutError !== ''): ?>
-      <div data-testid="owner-logout-error" style="background:#FEF2F2;border:2px solid #DC2626;border-radius:10px;padding:0.9rem;margin-bottom:1rem;color:#991B1B;font-size:0.88rem;font-weight:600;">
-        ⚠️ <?= htmlspecialchars($logoutError, ENT_QUOTES, 'UTF-8') ?>
-      </div>
-    <?php endif; ?>
-
     <section style="background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:1.5rem;box-shadow:0 4px 14px rgba(0,0,0,0.06);">
       <h2 style="margin-top:0;color:#7B1113;font-size:1.15rem;">Sign Out of Owner Portal?</h2>
       <p style="font-size:0.86rem;color:#4B5563;">

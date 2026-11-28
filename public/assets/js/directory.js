@@ -330,9 +330,9 @@
     return null;
   }
 
-  const ALLOWED_PAGE_SIZES = [25, 50, 100];
+  const ALLOWED_PAGE_SIZES = [30, 60, 90, 120];
   state.currentPage = Number(state.pagination.page) || 1;
-  state.perPage = ALLOWED_PAGE_SIZES.includes(Number(state.pagination.per_page)) ? Number(state.pagination.per_page) : 25;
+  state.perPage = ALLOWED_PAGE_SIZES.includes(Number(state.pagination.per_page)) ? Number(state.pagination.per_page) : 30;
 
   let activeFetchController = null;
   let latestRequestSeq = 0;
@@ -630,7 +630,7 @@
     }
     perPageSelectEl.addEventListener('change', (e) => {
       const nextSize = Number(e.target.value);
-      state.perPage = ALLOWED_PAGE_SIZES.includes(nextSize) ? nextSize : 25;
+      state.perPage = ALLOWED_PAGE_SIZES.includes(nextSize) ? nextSize : 30;
       state.currentPage = 1;
       fetchBusinesses({ resetPage: true });
     });
@@ -1043,7 +1043,7 @@
       return;
     }
 
-    const perPage = ALLOWED_PAGE_SIZES.includes(Number(state.perPage)) ? Number(state.perPage) : 25;
+    const perPage = ALLOWED_PAGE_SIZES.includes(Number(state.perPage)) ? Number(state.perPage) : 30;
     const pag = state.pagination || {};
     const pagedBusinesses = Array.isArray(state.businesses) ? state.businesses : [];
     const totalItems = typeof pag.total === 'number' ? pag.total : pagedBusinesses.length;

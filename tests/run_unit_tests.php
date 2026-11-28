@@ -878,13 +878,14 @@ assertTrue(
 );
 assertTrue(
     str_contains($publicIndexPaginated, 'id="per-page-select"') &&
-    str_contains($publicIndexPaginated, '<option value="25"') &&
-    str_contains($publicIndexPaginated, '<option value="50"') &&
-    str_contains($publicIndexPaginated, '<option value="100"') &&
+    str_contains($publicIndexPaginated, '<option value="30"') &&
+    str_contains($publicIndexPaginated, '<option value="60"') &&
+    str_contains($publicIndexPaginated, '<option value="90"') &&
+    str_contains($publicIndexPaginated, '<option value="120"') &&
     str_contains($publicIndexPaginated, 'id="directory-pagination"') &&
-    str_contains($directoryJsPaginated, 'ALLOWED_PAGE_SIZES = [25, 50, 100]') &&
+    str_contains($directoryJsPaginated, 'ALLOWED_PAGE_SIZES = [30, 60, 90, 120]') &&
     str_contains($directoryJsPaginated, 'state.perPage = ALLOWED_PAGE_SIZES.includes') && str_contains($directoryJsPaginated, 'per_page'),
-    'public/index.php and directory.js paginate cards to 25/50/100 defaulting to 25 (#144, #389)'
+    'public/index.php and directory.js paginate cards to 30/60/90/120 defaulting to 30 for complete card rows (#144, #389, #482)'
 );
 
 // 34. Verify Tickets #147, #148, #149, #150: Pre-Prod Preview Sandbox (/admin/preprod) isolation, URL rewriter, dummy seeder & self-tests
