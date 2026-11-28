@@ -6336,13 +6336,14 @@ assertTrue(
     '70b (#495): businesses.php restricts explicit contact and location unmasking strictly to single business lookups'
 );
 
-// 70c (#496): recommend.php enforces 18+ publication consent for named endorsements, anonymous support, and verified badging
+// 70c (#496, #503): recommend.php restricts recommendations strictly to authenticated verified alumni members
 $recPhp70 = (string)file_get_contents(dirname(__DIR__) . '/public/api/recommend.php');
 assertTrue(
     str_contains($recPhp70, 'consent_18_publication') &&
     str_contains($recPhp70, 'is_verified_alumnus') &&
-    str_contains($recPhp70, 'Under Kenya DPA 2019, publishing your name and alumni affiliation requires confirming you are 18 years or older'),
-    '70c (#496): recommend.php enforces 18+ publication consent under Kenya DPA s. 33 and badges verified alumni'
+    str_contains($recPhp70, 'requires_auth') &&
+    str_contains($recPhp70, 'Only registered and verified alumni members can recommend businesses.'),
+    '70c (#496, #503): recommend.php restricts recommendations strictly to authenticated verified alumni members'
 );
 assertTrue(
     \BusherianBiasharas\Services\AntiSpamGate::isCamelCaseBotName('EdwardWaw') &&
@@ -6354,6 +6355,24 @@ assertTrue(
 assertTrue(
     function_exists('bbiz_client_ip') && is_string(bbiz_client_ip()) && strlen(bbiz_client_ip()) > 0,
     '70e (#496): bbiz_client_ip() helper exists and resolves client IP'
+);
+
+// 71. Codex Pass-5 Alignment & Verified Recommendations (#501, #502, #503)
+
+// 71a (#502): OwnerAuth::upsertOwner prioritizes stable google_sub first
+$subOwnerA = OwnerAuth::upsertOwner($pdo, 'subtest-a@busherian.co.ke', 'Sub Owner A', null, 'google_sub_fixed_777');
+$subOwnerB = OwnerAuth::upsertOwner($pdo, 'subtest-b-different@busherian.co.ke', 'Sub Owner A Updated', null, 'google_sub_fixed_777');
+assertTrue(
+    (int)$subOwnerA['id'] === (int)$subOwnerB['id'],
+    '71a (#502): OwnerAuth::upsertOwner prioritizes google_sub lookup over email, preventing duplicate or divergent account creation'
+);
+OwnerAuth::deleteOwnerAccountAndData($pdo, (int)$subOwnerA['id'], true, '127.0.0.1');
+
+// 71b (#503): recommend.php requires affirmative consent without age-only substitution
+assertTrue(
+    !str_contains($recPhp70, 'age_attestation_18') &&
+    str_contains($recPhp70, '$consent18Publication = !empty($data[\'consent_18_publication\']);'),
+    '71b (#503): recommend.php strictly requires affirmative publication consent without age-only flag substitution'
 );
 
 // Cleanup 55 fixtures

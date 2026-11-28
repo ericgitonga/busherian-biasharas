@@ -926,38 +926,49 @@ $pageCanonicalPath = $requestedBiz
         <h3 id="modal-recommend-title" style="margin:0;font-size:1.15rem;color:#FDF8F3;font-weight:700;">Recommend this Biashara</h3>
         <button type="button" class="modal-close" id="btn-close-recommend-modal" onclick="if(window.closeRecommendationModal){window.closeRecommendationModal();}" style="color:#C5D0C9;font-size:22px;background:none;border:none;cursor:pointer;line-height:1;">&times;</button>
       </div>
-      <p style="font-size:0.86rem;color:#C5D0C9;margin:0 0 16px 0;line-height:1.5;">
-        Add your name and school so fellow Busherians know who has used and vouches for this business.
-      </p>
-      <form id="form-recommend" onsubmit="event.preventDefault(); if(window.submitRecommendationModal){window.submitRecommendationModal();}">
-        <input type="hidden" id="rec-biz-id" value="">
-        <div style="margin-bottom:14px;">
-          <label for="rec-name" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">Your Name</label>
-          <input type="text" id="rec-name" required placeholder="e.g. Akinyi or Onyango" style="width:100%;padding:9px 12px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:14px;box-sizing:border-box;">
+      <?php if (!$currentOwner): ?>
+        <div id="rec-unauth-container">
+          <p style="font-size:0.88rem;color:#C5D0C9;margin:0 0 16px 0;line-height:1.5;">
+            To ensure trust and authentic community vouching, only registered and verified alumni members can recommend businesses.
+          </p>
+          <a href="/owner/login.php?from=recommend" class="btn" style="display:block;text-align:center;text-decoration:none;width:100%;background:#D97706;color:#FFFFFF;font-weight:700;padding:11px;font-size:14.5px;border:none;border-radius:8px;cursor:pointer;box-sizing:border-box;">
+            Sign In or Register to Recommend &rarr;
+          </a>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
-          <div>
-            <label for="rec-school" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">School</label>
-            <select id="rec-school" style="width:100%;padding:9px 10px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:13.5px;box-sizing:border-box;">
-              <option value="AHS">Alliance High (AHS)</option>
-              <option value="AGHS">Alliance Girls (AGHS)</option>
-            </select>
+      <?php else: ?>
+        <p style="font-size:0.86rem;color:#C5D0C9;margin:0 0 16px 0;line-height:1.5;">
+          Vouch for this business as a verified alumnus. Your name and school will appear on this listing.
+        </p>
+        <form id="form-recommend" onsubmit="event.preventDefault(); if(window.submitRecommendationModal){window.submitRecommendationModal();}">
+          <input type="hidden" id="rec-biz-id" value="">
+          <div style="margin-bottom:14px;">
+            <label for="rec-name" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">Your Name</label>
+            <input type="text" id="rec-name" required value="<?= htmlspecialchars((string)($currentOwner['full_name'] ?: 'Verified Alumnus'), ENT_QUOTES, 'UTF-8') ?>" style="width:100%;padding:9px 12px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:14px;box-sizing:border-box;">
           </div>
-          <div>
-            <label for="rec-year" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">Year Left (Optional)</label>
-            <input type="number" id="rec-year" min="1940" max="2027" placeholder="e.g. 2011" style="width:100%;padding:9px 12px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:14px;box-sizing:border-box;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+            <div>
+              <label for="rec-school" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">School</label>
+              <select id="rec-school" style="width:100%;padding:9px 10px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:13.5px;box-sizing:border-box;">
+                <option value="AHS">Alliance High (AHS)</option>
+                <option value="AGHS">Alliance Girls (AGHS)</option>
+              </select>
+            </div>
+            <div>
+              <label for="rec-year" style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;color:#E5DEC9;">Year Left (Optional)</label>
+              <input type="number" id="rec-year" min="1940" max="2027" placeholder="e.g. 2011" style="width:100%;padding:9px 12px;background:#243028;border:1px solid #3B4B40;border-radius:7px;color:#FFFFFF;font-size:14px;box-sizing:border-box;">
+            </div>
           </div>
-        </div>
-        <div style="margin-bottom:16px;">
-          <label style="display:flex;align-items:flex-start;gap:8px;font-size:0.8rem;color:#C5D0C9;cursor:pointer;line-height:1.4;">
-            <input type="checkbox" id="rec-consent" checked style="margin-top:2px;">
-            <span>I confirm I am 18 years or older and consent to having my name and school published on this recommendation.</span>
-          </label>
-        </div>
-        <button type="submit" class="btn" style="width:100%;background:#22C55E;color:#0B332A;font-weight:700;padding:11px;font-size:14.5px;border:none;border-radius:8px;cursor:pointer;">
-          Vouch &amp; Recommend &rarr;
-        </button>
-      </form>
+          <div style="margin-bottom:16px;">
+            <label style="display:flex;align-items:flex-start;gap:8px;font-size:0.8rem;color:#C5D0C9;cursor:pointer;line-height:1.4;">
+              <input type="checkbox" id="rec-consent" required style="margin-top:2px;">
+              <span>I consent to having my name and alumni affiliation published as a verified recommendation for this business.</span>
+            </label>
+          </div>
+          <button type="submit" class="btn" style="width:100%;background:#22C55E;color:#0B332A;font-weight:700;padding:11px;font-size:14.5px;border:none;border-radius:8px;cursor:pointer;">
+            Vouch &amp; Recommend &rarr;
+          </button>
+        </form>
+      <?php endif; ?>
     </div>
   </div>
 
@@ -1230,6 +1241,8 @@ $pageCanonicalPath = $requestedBiz
     window.INITIAL_PAGINATION = <?= bbiz_json_for_html_script($initialPagination) ?>;
     window.REQUESTED_BIZ_SLUG = <?= json_encode($requestedBizSlug) ?>;
     window.REQUESTED_BIZ = <?= json_encode($requestedBiz) ?>;
+    window.BBIZ_IS_AUTHENTICATED_MEMBER = <?= $currentOwner !== null ? 'true' : 'false' ?>;
+    window.BBIZ_CURRENT_MEMBER_NAME = <?= json_encode(!empty($currentOwner['full_name']) ? (string)$currentOwner['full_name'] : ($currentOwner !== null ? 'Verified Alumnus' : '')) ?>;
   </script>
   <script src="/assets/vendor/leaflet/leaflet.js"></script>
   <script src="/assets/js/consent-metrics.js?v=<?= urlencode($appVersion) ?>"></script>

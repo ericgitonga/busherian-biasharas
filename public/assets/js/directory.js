@@ -2445,37 +2445,7 @@
       return;
     }
 
-    const profile = getRecommenderProfile();
-    if (!profile || !profile.name) {
-      window.openRecommendationModal(bizId);
-      return;
-    }
-
-    btn.disabled = true;
-    try {
-      const resp = await fetch('/api/recommend.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_id: bizId,
-          visitor_token: getVisitorToken(),
-          action: 'toggle',
-          name: profile.name,
-          school: profile.school,
-          year: profile.year
-        })
-      });
-      const data = await resp.json();
-      if (data.status === 'ok') {
-        updateRecommendationsUI(data);
-        showToast('✓ Recommendation added!');
-      }
-    } catch (err) {
-      console.error(err);
-      showToast('Could not add recommendation');
-    } finally {
-      btn.disabled = false;
-    }
+    window.openRecommendationModal(bizId);
   };
 
   window.openRecommendationModal = function(bizId) {
@@ -2487,7 +2457,7 @@
     if (prof) {
       if (prof.name) {
         const nameEl = document.getElementById('rec-name');
-        if (nameEl) nameEl.value = prof.name;
+        if (nameEl && !nameEl.value) nameEl.value = prof.name;
       }
       if (prof.school) {
         const schoolEl = document.getElementById('rec-school');
@@ -2511,14 +2481,18 @@
 
   window.submitRecommendationModal = async function() {
     const bizId = Number(document.getElementById('rec-biz-id').value);
-    const name = document.getElementById('rec-name').value.trim();
-    const school = document.getElementById('rec-school').value;
-    const year = document.getElementById('rec-year').value.trim();
-
-    if (!name) return;
+    const nameEl = document.getElementById('rec-name');
+    const name = nameEl ? nameEl.value.trim() : '';
+    const schoolEl = document.getElementById('rec-school');
+    const school = schoolEl ? schoolEl.value : 'AHS';
+    const yearEl = document.getElementById('rec-year');
+    const year = yearEl ? yearEl.value.trim() : '';
 
     const consentEl = document.getElementById('rec-consent');
-    const consent18 = consentEl ? consentEl.checked : true;
+    if (!consentEl || !consentEl.checked) {
+      showToast('Please check the box to confirm consent to publish your recommendation.');
+      return;
+    }
 
     saveRecommenderProfile({ name, school, year: year ? Number(year) : null });
     window.closeRecommendationModal();
@@ -2537,13 +2511,18 @@
           name: name,
           school: school,
           year: year ? Number(year) : null,
-          consent_18_publication: consent18 ? 1 : 0
+          consent_18_publication: 1
         })
       });
       const data = await resp.json();
       if (data.status === 'ok') {
         updateRecommendationsUI(data);
-        showToast('✓ Recommendation added!');
+        showToast('✓ Verified recommendation added!');
+      } else if (data.requires_auth) {
+        showToast(data.message || 'Please sign in to recommend businesses.');
+        window.openRecommendationModal(bizId);
+      } else {
+        showToast(data.message || 'Could not add recommendation');
       }
     } catch (err) {
       console.error(err);

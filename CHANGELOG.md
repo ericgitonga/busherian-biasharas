@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.47.0] - 2026-11-28
+
+### Added
+- **Verified Member-Only Feedback & Recommendations (#501, #503)**: Restricted directory recommendations and feedback strictly to registered, verified alumni members. Unauthenticated visitors are prompted to sign in or register to vouch for a biashara, and guest/anonymous submission routes are disabled.
+- **Affirmative Kenya DPA 2019 Publication Consent (#503)**: Required explicit affirmative publication consent (`consent_18_publication: 1`) on all recommendation submissions, eliminating automatic consent assumptions or age-only flag substitutions.
+
+### Fixed
+- **Google OAuth Account Lookup Order Consistency (#501, #502)**: Updated `OwnerAuth::upsertOwner()` to prioritize stable `google_sub` lookup first before falling back to normalized email, establishing 100% consistency with `public/owner/google-callback.php` account resolution.
+
 ## [0.46.4] - 2026-11-28
 
 ### Fixed

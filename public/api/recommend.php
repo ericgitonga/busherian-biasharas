@@ -122,7 +122,7 @@ try {
         exit;
     }
 
-    // Determine whether recommender is an authenticated owner/alumnus (#489, #496)
+    // Determine whether recommender is an authenticated owner/alumnus (#489, #496, #503)
     $currentOwner = null;
     try {
         $currentOwner = \BusherianBiasharas\Services\OwnerAuth::getCurrentOwner($pdo);
@@ -131,10 +131,48 @@ try {
     }
     $isAuthenticatedAlum = ($currentOwner !== null && !empty($currentOwner['id']));
 
-    // New recommendation with 18+ adult attestation & publication consent blend (#496)
+    // Restrict recommendations strictly to registered verified alumni members (#503)
+    if (!$isAuthenticatedAlum) {
+        http_response_code(401);
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Only registered and verified alumni members can recommend businesses. Please sign in to vouch for this biashara.',
+            'requires_auth' => true
+        ]);
+        exit;
+    }
+
+    // Require explicit affirmative publication consent under Kenya DPA 2019 (#496, #503)
+    $consent18Publication = !empty($data['consent_18_publication']);
+    if (!$consent18Publication && Database::env('APP_ENV') !== 'testing') {
+        http_response_code(422);
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Under Kenya DPA 2019, publishing your name and alumni affiliation requires affirmative consent to publication.'
+        ]);
+        exit;
+    }
+
     $name = trim(strip_tags((string)($data['name'] ?? '')));
-    $isAnonymous = !empty($data['anonymous']) || ($name === '' && !$isAuthenticatedAlum);
-    $consent18Publication = !empty($data['consent_18_publication']) || !empty($data['age_attestation_18']);
+    if ($name === '') {
+        $name = !empty($currentOwner['full_name']) ? (string)$currentOwner['full_name'] : 'Verified Alumnus';
+    } else {
+        if (mb_strlen($name) < 2 || mb_strlen($name) > 60) {
+            http_response_code(422);
+            echo json_encode(['status' => 'error', 'message' => 'Please provide a valid name (2-60 characters).']);
+            exit;
+        }
+        if (AntiSpamGate::containsSpamUrl($name) || preg_match('/https?:\/\/|www\./i', $name)) {
+            http_response_code(422);
+            echo json_encode(['status' => 'error', 'message' => 'Recommender name cannot contain web addresses or links.']);
+            exit;
+        }
+        if (AntiSpamGate::isCamelCaseBotName($name)) {
+            http_response_code(422);
+            echo json_encode(['status' => 'error', 'message' => 'Please provide a valid personal name.']);
+            exit;
+        }
+    }
 
     $rawSchool = strtoupper(trim((string)($data['school'] ?? 'AHS')));
     $school = str_contains($rawSchool, 'GIRL') || str_contains($rawSchool, 'AGHS') ? 'AGHS' : 'AHS';
@@ -147,50 +185,8 @@ try {
         }
     }
 
-    if ($isAuthenticatedAlum) {
-        // Authenticated alumnus: use verified profile name if omitted (#496)
-        if ($name === '') {
-            $name = !empty($currentOwner['full_name']) ? (string)$currentOwner['full_name'] : 'Verified Alumnus';
-        }
-        $isVerifiedAlumnus = 1;
-        $consent18Publication = 1;
-        $signalWeight = $isAuthenticatedAlum ? 3.0 : 0.5;
-    } else {
-        // Guest endorsement
-        if ($isAnonymous) {
-            $name = 'Community Supporter';
-            $isVerifiedAlumnus = 0;
-            $consent18Publication = 1;
-            $signalWeight = 0.2;
-        } else {
-            // Named guest endorsement requires affirmative 18+ and publication consent under Kenya DPA 2019 s. 33 (#496)
-            if (!$consent18Publication && Database::env('APP_ENV') !== 'testing') {
-                http_response_code(422);
-                echo json_encode([
-                    'status' => 'error',
-                    'message' => 'Under Kenya DPA 2019, publishing your name and alumni affiliation requires confirming you are 18 years or older and consenting to publication. Alternatively, you may recommend as an anonymous supporter.'
-                ]);
-                exit;
-            }
-            if (mb_strlen($name) < 2 || mb_strlen($name) > 60) {
-                http_response_code(422);
-                echo json_encode(['status' => 'error', 'message' => 'Please provide a valid name (2-60 characters).']);
-                exit;
-            }
-            if (AntiSpamGate::containsSpamUrl($name) || preg_match('/https?:\/\/|www\./i', $name)) {
-                http_response_code(422);
-                echo json_encode(['status' => 'error', 'message' => 'Recommender name cannot contain web addresses or links.']);
-                exit;
-            }
-            if (AntiSpamGate::isCamelCaseBotName($name)) {
-                http_response_code(422);
-                echo json_encode(['status' => 'error', 'message' => 'Please provide a valid personal name.']);
-                exit;
-            }
-            $isVerifiedAlumnus = 0;
-            $signalWeight = $isAuthenticatedAlum ? 3.0 : 0.5;
-        }
-    }
+    $isVerifiedAlumnus = 1;
+    $signalWeight = $isAuthenticatedAlum ? 3.0 : 0.5;
 
     try {
         $insStmt = $pdo->prepare("
