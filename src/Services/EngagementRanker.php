@@ -878,4 +878,41 @@ final class EngagementRanker
             . $hint
             . '</div>';
     }
+
+    public static function formatRecommendationsPayload(array $rows, string $visitorToken, int $businessId): array
+    {
+        $count = count($rows);
+        $userRecommended = false;
+        $names = [];
+
+        foreach ($rows as $r) {
+            if ($visitorToken !== '' && (string)($r['visitor_token'] ?? '') === $visitorToken) {
+                $userRecommended = true;
+            }
+
+            $yr = !empty($r['recommender_year']) ? (" '" . substr((string)$r['recommender_year'], -2)) : '';
+            $verBadge = !empty($r['is_verified_alumnus']) ? ' (Verified Alumnus)' : '';
+            $names[] = htmlspecialchars((string)($r['recommender_name'] ?? ''), ENT_QUOTES, 'UTF-8') . ', ' .
+                       htmlspecialchars((string)($r['recommender_school'] ?? ''), ENT_QUOTES, 'UTF-8') . $yr . $verBadge;
+        }
+
+        $summaryHtml = '';
+        if ($count === 0) {
+            $summaryHtml = '<span class="note">No recommendations yet. Be the first.</span>';
+        } elseif ($count === 1) {
+            $summaryHtml = '<strong>1 alumnus recommends this business.</strong> <span class="recs-names">' . $names[0] . '</span>';
+        } elseif ($count === 2) {
+            $summaryHtml = '<strong>2 alumni recommend this business.</strong> <span class="recs-names">' . implode('; ', array_slice($names, 0, 2)) . '</span>';
+        } else {
+            $summaryHtml = '<strong>' . $count . ' alumni recommend this business.</strong> <span class="recs-names">' . implode('; ', array_slice($names, 0, 2)) . '; and others</span>';
+        }
+
+        return [
+            'business_id' => $businessId,
+            'count' => $count,
+            'user_recommended' => $userRecommended,
+            'alumni_names' => array_slice($names, 0, 5),
+            'summary_html' => $summaryHtml,
+        ];
+    }
 }

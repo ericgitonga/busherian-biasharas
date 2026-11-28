@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.48.0] - 2026-11-28
+
+### Added
+- **Self-Attested Alumni Member Profiles (#509, #510)**: Enabled any registered alumnus (even without a listed business) to complete an alumni identity profile with School (AHS / AGHS), House, and Graduation Year, unlocking authentic community vouching across the directory. Added `alumni_school`, `alumni_house`, `alumni_year`, and `alumni_profile_completed_at` to `business_owners` table with automated schema migration `2026-11-v43-alumni-profiles`.
+- **Integrated Vouching Modal with House Selection & Badging (#509, #511)**:
+  - Added dynamic House dropdown in `#modal-recommend` and the owner portal, populated based on selected school (`Houses::AHS_HOUSES` / `Houses::AGHS_HOUSES`).
+  - **Strict Privacy Invariant (Kenya DPA 2019)**: House is confidential, stored solely in `business_owners` for identity grounding, and is never stored in `business_recommendations` or displayed publicly on directory listings.
+  - Endorsements from verified alumni members display the proud **`(Verified Alumnus)`** badge (e.g. `John Kamau, AHS '14 (Verified Alumnus)`).
+- **Owner Dashboard Alumni Profile Management (#510)**: Added an Alumni Membership & Vouching Profile card in `public/owner/index.php` showing active verification status and allowing members to update their confidential School and House anytime.
+
 ## [0.47.1] - 2026-11-28
 
 ### Fixed
