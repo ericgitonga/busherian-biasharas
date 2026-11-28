@@ -167,29 +167,47 @@ final class OwnerAuth
             throw new \InvalidArgumentException('A valid owner email address is required.');
         }
 
-        $stmt = $pdo->prepare("SELECT * FROM business_owners WHERE LOWER(email) = :em LIMIT 1");
-        $stmt->execute([':em' => $normEmail]);
-        $existing = $stmt->fetch();
-        if (!$existing && !empty($googleSub)) {
+        // Prioritize stable google_sub first when provided, matching google-callback.php order (#455 M-08, #494, #502)
+        $existing = null;
+        $cleanSub = trim((string)($googleSub ?? ''));
+        if ($cleanSub !== '') {
             $stmtSub = $pdo->prepare("SELECT * FROM business_owners WHERE google_sub = :sub LIMIT 1");
-            $stmtSub->execute([':sub' => trim((string)$googleSub)]);
+            $stmtSub->execute([':sub' => $cleanSub]);
             $existing = $stmtSub->fetch() ?: null;
+        }
+        if (!$existing) {
+            $stmt = $pdo->prepare("SELECT * FROM business_owners WHERE LOWER(email) = :em LIMIT 1");
+            $stmt->execute([':em' => $normEmail]);
+            $existing = $stmt->fetch() ?: null;
         }
 
         if ($existing) {
             $ownerId = (int)$existing['id'];
             $newName = trim((string)($fullName ?? '')) ?: ($existing['full_name'] ?? null);
             $newPhone = trim((string)($phone ?? '')) ?: ($existing['phone'] ?? null);
-            $newSub = trim((string)($googleSub ?? '')) ?: ($existing['google_sub'] ?? null);
+            $newSub = $cleanSub !== '' ? $cleanSub : ($existing['google_sub'] ?? null);
+
+            // If matched by google_sub and Google email differs from existing email in DB,
+            // update email only if no conflict with another account exists (#502)
+            $emailToUpdate = $existing['email'];
+            if (strtolower((string)$existing['email']) !== $normEmail) {
+                $conflictStmt = $pdo->prepare("SELECT id FROM business_owners WHERE LOWER(email) = :em AND id != :id LIMIT 1");
+                $conflictStmt->execute([':em' => $normEmail, ':id' => $ownerId]);
+                if (!$conflictStmt->fetch()) {
+                    $emailToUpdate = $normEmail;
+                }
+            }
 
             $pdo->prepare("
                 UPDATE business_owners
-                SET full_name = :nm,
+                SET email = :em,
+                    full_name = :nm,
                     phone = :ph,
                     google_sub = :sub,
                     last_login_at = CURRENT_TIMESTAMP
                 WHERE id = :id
             ")->execute([
+                ':em' => $emailToUpdate,
                 ':nm' => $newName,
                 ':ph' => $newPhone,
                 ':sub' => $newSub,
@@ -203,7 +221,7 @@ final class OwnerAuth
                 ':em' => $normEmail,
                 ':nm' => trim((string)($fullName ?? '')) ?: null,
                 ':ph' => trim((string)($phone ?? '')) ?: null,
-                ':sub' => trim((string)($googleSub ?? '')) ?: null,
+                ':sub' => $cleanSub !== '' ? $cleanSub : null,
             ]);
             $ownerId = (int)$pdo->lastInsertId();
         }
