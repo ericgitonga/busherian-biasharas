@@ -61,7 +61,7 @@ try {
     }
 
     $page    = isset($_GET['page']) ? min(250, max(1, (int)$_GET['page'])) : 1;
-    $perPage = isset($_GET['per_page']) ? max(1, min(100, (int)$_GET['per_page'])) : 25;
+    $perPage = isset($_GET['per_page']) ? max(1, min(120, (int)$_GET['per_page'])) : 30;
 
     // STRICT PRIVACY GUARANTEE: Explicit column whitelist from `businesses` and `categories` ONLY.
     // `business_vetting_queue` is NEVER joined or queried in public APIs.

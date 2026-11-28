@@ -239,42 +239,42 @@ def test_playwright_directory_filters_pagination_and_modal():
         cards = page.get_by_test_id("biz-card")
         cards.first.wait_for(state="visible", timeout=8000)
 
-        # Default per-page is 25 (#389)
-        expected_page1 = min(25, total_count)
+        # Default per-page is 30 (#389, #482)
+        expected_page1 = min(30, total_count)
         assert cards.count() == expected_page1, f"Expected {expected_page1} cards on page 1, got {cards.count()}"
 
-        if total_count > 25:
+        if total_count > 30:
             # Navigate to Page 2 and verify remaining slice
             page.locator("#directory-pagination button[data-goto-page='2']").first.click()
-            expected_page2 = min(25, total_count - 25)
+            expected_page2 = min(30, total_count - 30)
             page.wait_for_function(
                 f"() => document.querySelectorAll('[data-testid=\"biz-card\"]').length === {expected_page2}",
                 timeout=5000,
             )
             assert cards.count() == expected_page2
 
-        # Switch to 25 per page so up to 25 dynamic cards render on a single view
-        page.get_by_test_id("per-page-select").select_option("25")
-        expected_25 = min(25, total_count)
+        # Switch to 30 per page so up to 30 dynamic cards render on a single view (#482)
+        page.get_by_test_id("per-page-select").select_option("30")
+        expected_30 = min(30, total_count)
         page.wait_for_function(
-            f"() => document.querySelectorAll('[data-testid=\"biz-card\"]').length === {expected_25}",
+            f"() => document.querySelectorAll('[data-testid=\"biz-card\"]').length === {expected_30}",
             timeout=5000,
         )
 
         # Filter by AGHS pill dynamically
         page.get_by_test_id("quick-filter-AGHS").click()
-        expected_aghs_cards = min(25, len(aghs_biz))
+        expected_aghs_cards = min(30, len(aghs_biz))
         page.wait_for_function(
             f"() => document.querySelectorAll('[data-testid=\"biz-card\"]').length === {expected_aghs_cards}",
             timeout=5000,
         )
         rendered_aghs_titles = sorted(t.strip() for t in page.get_by_test_id("biz-card-title").all_inner_texts())
-        expected_aghs_titles = sorted(b["name"] for b in aghs_biz[:25])
+        expected_aghs_titles = sorted(b["name"] for b in aghs_biz[:30])
         assert rendered_aghs_titles == expected_aghs_titles
 
         # Filter by AHS pill dynamically
         page.get_by_test_id("quick-filter-AHS").click()
-        expected_ahs_cards = min(25, len(ahs_biz))
+        expected_ahs_cards = min(30, len(ahs_biz))
         page.wait_for_function(
             f"() => document.querySelectorAll('[data-testid=\"biz-card\"]').length === {expected_ahs_cards}",
             timeout=5000,
@@ -284,7 +284,7 @@ def test_playwright_directory_filters_pagination_and_modal():
         page.get_by_test_id("quick-filter-all").click()
         search_box = page.get_by_test_id("search-input")
         search_box.fill("wakili")
-        expected_wakili_cards = min(25, len(wakili_biz))
+        expected_wakili_cards = min(30, len(wakili_biz))
         page.wait_for_function(
             f"() => document.querySelectorAll('[data-testid=\"biz-card\"]').length === {expected_wakili_cards}",
             timeout=5000,
@@ -294,7 +294,7 @@ def test_playwright_directory_filters_pagination_and_modal():
         # Clear search, click first card -> verify detail modal opens with business title and closes cleanly
         search_box.fill("")
         page.wait_for_function(
-            f"() => document.querySelectorAll('[data-testid=\"biz-card\"]').length === {expected_25}",
+            f"() => document.querySelectorAll('[data-testid=\"biz-card\"]').length === {expected_30}",
             timeout=5000,
         )
         first_card_title = page.get_by_test_id("biz-card-title").first.inner_text().strip()
