@@ -274,6 +274,7 @@ LOGO;
           </p>
           {$existingLogoHtml}
           <input type="file" id="business_logo" name="business_logo" accept="image/png,image/jpeg,image/webp" class="input-control" data-testid="business-logo-input" style="background:#fff;padding:0.45rem;">
+          <input type="hidden" id="business_logo_data_url" name="business_logo_data_url" value="">
           <div id="business-logo-preview" style="margin-top:0.65rem;"></div>
         </div>
 LOGOSEC;

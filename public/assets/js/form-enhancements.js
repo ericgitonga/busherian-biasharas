@@ -827,143 +827,173 @@
   bindSpecialtyQuickFinder();
 
 
-  const fileInput = document.getElementById('business_photos');
-  const hiddenJsonInput = document.getElementById('business_photos_data_json');
-  const previewWrap = document.getElementById('business-photos-preview');
-  const statusEl = document.getElementById('business-photos-status');
-  const badgeEl = document.getElementById('photo-count-badge');
-
-  if (!fileInput || !hiddenJsonInput || !previewWrap) return;
-
-  const MAX_PHOTOS = 10;
-  const MAX_DIM = 1200;
-  let queuedDataUrls = [];
-
-  function countKeptExistingPhotos() {
-    const items = document.querySelectorAll('.existing-photo-item');
-    let kept = 0;
-    items.forEach(item => {
-      const rm = item.querySelector('.remove-photo-checkbox');
-      if (!rm || !rm.checked) kept++;
-    });
-    return kept;
-  }
-
-  function updateSummaryAndHiddenField() {
-    const keptExisting = countKeptExistingPhotos();
-    const allowedNew = Math.max(0, MAX_PHOTOS - keptExisting);
-    if (queuedDataUrls.length > allowedNew) {
-      queuedDataUrls = queuedDataUrls.slice(0, allowedNew);
-    }
-    hiddenJsonInput.value = queuedDataUrls.length > 0 ? JSON.stringify(queuedDataUrls) : '';
-
-    const total = keptExisting + queuedDataUrls.length;
-    if (badgeEl) {
-      badgeEl.textContent = `${total} / ${MAX_PHOTOS} photos selected (3–10 recommended)`;
-    }
-
-    previewWrap.innerHTML = '';
-    queuedDataUrls.forEach((dataUrl, idx) => {
-      const card = document.createElement('div');
-      card.style.cssText = 'border:1px solid #059669;border-radius:10px;padding:0.4rem;background:#fff;width:130px;text-align:center;position:relative;';
-      const img = document.createElement('img');
-      img.src = dataUrl;
-      img.alt = `New Photo ${idx + 1}`;
-      img.style.cssText = 'width:100%;height:82px;object-fit:cover;border-radius:6px;display:block;margin-bottom:0.35rem;';
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = '✕ Remove';
-      btn.style.cssText = 'font-size:0.72rem;color:#991B1B;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:6px;padding:0.15rem 0.45rem;cursor:pointer;font-weight:700;';
-      btn.addEventListener('click', () => {
-        queuedDataUrls.splice(idx, 1);
-        updateSummaryAndHiddenField();
-      });
-      card.appendChild(img);
-      card.appendChild(btn);
-      previewWrap.appendChild(card);
-    });
-  }
-
-  document.querySelectorAll('.remove-photo-checkbox').forEach(chk => {
-    chk.addEventListener('change', updateSummaryAndHiddenField);
-  });
-
-  function resizeFileToDataUrl(file) {
+  // =========================================================================
+  // Client-Side Image Downscaling & Optimization Helper (#481)
+  // Downscales photos/logos via HTML5 Canvas before network transmission,
+  // preventing PHP post_max_size / upload_max_filesize truncation & CSRF drops.
+  // =========================================================================
+  function resizeImageFile(file, maxDimension, mimeType, quality) {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error('Could not read image file'));
-      reader.onload = () => {
-        const img = new Image();
-        img.onerror = () => reject(new Error('Invalid image format'));
-        img.onload = () => {
-          let w = img.naturalWidth || img.width;
-          let h = img.naturalHeight || img.height;
-          if (w > MAX_DIM || h > MAX_DIM) {
-            const ratio = Math.min(MAX_DIM / w, MAX_DIM / h);
-            w = Math.max(1, Math.round(w * ratio));
-            h = Math.max(1, Math.round(h * ratio));
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext('2d');
+      if (!file) {
+        reject(new Error('No file provided'));
+        return;
+      }
+      const targetMime = mimeType || (file.type && file.type.toLowerCase() === 'image/png' ? 'image/png' : 'image/jpeg');
+      const targetQuality = typeof quality === 'number' ? quality : 0.84;
+
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Could not decode image'));
+      };
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let w = img.naturalWidth || img.width;
+        let h = img.naturalHeight || img.height;
+        if (w > maxDimension || h > maxDimension) {
+          const ratio = Math.min(maxDimension / w, maxDimension / h);
+          w = Math.max(1, Math.round(w * ratio));
+          h = Math.max(1, Math.round(h * ratio));
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (targetMime === 'image/jpeg') {
           ctx.fillStyle = '#FFFFFF';
           ctx.fillRect(0, 0, w, h);
-          ctx.drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL('image/jpeg', 0.84));
-        };
-        img.src = reader.result;
+        } else {
+          ctx.clearRect(0, 0, w, h);
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        try {
+          const dataUrl = canvas.toDataURL(targetMime, targetQuality);
+          resolve({ dataUrl, width: w, height: h });
+        } catch (err) {
+          reject(err);
+        }
       };
-      reader.readAsDataURL(file);
+      img.src = url;
     });
   }
 
-  fileInput.addEventListener('change', async () => {
-    const files = Array.from(fileInput.files || []);
-    if (files.length === 0) return;
+  function bindBusinessPhotosUpload() {
+    const fileInput = document.getElementById('business_photos');
+    const hiddenJsonInput = document.getElementById('business_photos_data_json');
+    const previewWrap = document.getElementById('business-photos-preview');
+    const statusEl = document.getElementById('business-photos-status');
+    const badgeEl = document.getElementById('photo-count-badge');
 
-    const keptExisting = countKeptExistingPhotos();
-    const remainingSlots = Math.max(0, MAX_PHOTOS - keptExisting - queuedDataUrls.length);
+    if (!fileInput || !hiddenJsonInput || !previewWrap) return;
 
-    if (remainingSlots <= 0) {
+    const MAX_PHOTOS = 10;
+    const MAX_DIM = 1200;
+    let queuedDataUrls = [];
+
+    function countKeptExistingPhotos() {
+      const items = document.querySelectorAll('.existing-photo-item');
+      let kept = 0;
+      items.forEach(item => {
+        const rm = item.querySelector('.remove-photo-checkbox');
+        if (!rm || !rm.checked) kept++;
+      });
+      return kept;
+    }
+
+    function updateSummaryAndHiddenField() {
+      const keptExisting = countKeptExistingPhotos();
+      const allowedNew = Math.max(0, MAX_PHOTOS - keptExisting);
+      if (queuedDataUrls.length > allowedNew) {
+        queuedDataUrls = queuedDataUrls.slice(0, allowedNew);
+      }
+      hiddenJsonInput.value = queuedDataUrls.length > 0 ? JSON.stringify(queuedDataUrls) : '';
+
+      const total = keptExisting + queuedDataUrls.length;
+      if (badgeEl) {
+        badgeEl.textContent = `${total} / ${MAX_PHOTOS} photos selected (3–10 recommended)`;
+      }
+
+      previewWrap.innerHTML = '';
+      queuedDataUrls.forEach((dataUrl, idx) => {
+        const card = document.createElement('div');
+        card.style.cssText = 'border:1px solid #059669;border-radius:10px;padding:0.4rem;background:#fff;width:130px;text-align:center;position:relative;';
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        img.alt = `New Photo ${idx + 1}`;
+        img.style.cssText = 'width:100%;height:82px;object-fit:cover;border-radius:6px;display:block;margin-bottom:0.35rem;';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = '✕ Remove';
+        btn.style.cssText = 'font-size:0.72rem;color:#991B1B;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:6px;padding:0.15rem 0.45rem;cursor:pointer;font-weight:700;';
+        btn.addEventListener('click', () => {
+          queuedDataUrls.splice(idx, 1);
+          updateSummaryAndHiddenField();
+        });
+        card.appendChild(img);
+        card.appendChild(btn);
+        previewWrap.appendChild(card);
+      });
+    }
+
+    document.querySelectorAll('.remove-photo-checkbox').forEach(chk => {
+      chk.addEventListener('change', updateSummaryAndHiddenField);
+    });
+
+    async function resizeFileToDataUrl(file) {
+      const res = await resizeImageFile(file, MAX_DIM, 'image/jpeg', 0.84);
+      return res.dataUrl;
+    }
+
+    fileInput.addEventListener('change', async () => {
+      const files = Array.from(fileInput.files || []);
+      if (files.length === 0) return;
+
+      const keptExisting = countKeptExistingPhotos();
+      const remainingSlots = Math.max(0, MAX_PHOTOS - keptExisting - queuedDataUrls.length);
+
+      if (remainingSlots <= 0) {
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = '#B45309';
+          statusEl.textContent = `Maximum of ${MAX_PHOTOS} photos reached. Remove a photo first if you wish to replace it.`;
+        }
+        fileInput.value = '';
+        return;
+      }
+
+      const slice = files.slice(0, remainingSlots);
       if (statusEl) {
         statusEl.style.display = 'block';
-        statusEl.style.color = '#B45309';
-        statusEl.textContent = `Maximum of ${MAX_PHOTOS} photos reached. Remove a photo first if you wish to replace it.`;
+        statusEl.style.color = '#065F46';
+        statusEl.textContent = `Optimizing ${slice.length} photo(s) for fast upload...`;
       }
+
+      for (const f of slice) {
+        try {
+          const dataUrl = await resizeFileToDataUrl(f);
+          if (dataUrl && queuedDataUrls.length + keptExisting < MAX_PHOTOS) {
+            queuedDataUrls.push(dataUrl);
+          }
+        } catch (_) {}
+      }
+
       fileInput.value = '';
-      return;
-    }
+      updateSummaryAndHiddenField();
 
-    const slice = files.slice(0, remainingSlots);
-    if (statusEl) {
-      statusEl.style.display = 'block';
-      statusEl.style.color = '#065F46';
-      statusEl.textContent = `Optimizing ${slice.length} photo(s) for fast upload...`;
-    }
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#065F46';
+        statusEl.textContent = files.length > remainingSlots
+          ? `Added ${slice.length} photo(s) (capped at ${MAX_PHOTOS} photos maximum).`
+          : `✓ ${queuedDataUrls.length} new photo(s) optimized and ready to save.`;
+      }
+    });
 
-    for (const f of slice) {
-      try {
-        const dataUrl = await resizeFileToDataUrl(f);
-        if (dataUrl && queuedDataUrls.length + keptExisting < MAX_PHOTOS) {
-          queuedDataUrls.push(dataUrl);
-        }
-      } catch (_) {}
-    }
-
-    fileInput.value = '';
     updateSummaryAndHiddenField();
+  }
 
-    if (statusEl) {
-      statusEl.style.display = 'block';
-      statusEl.style.color = '#065F46';
-      statusEl.textContent = files.length > remainingSlots
-        ? `Added ${slice.length} photo(s) (capped at ${MAX_PHOTOS} photos maximum).`
-        : `✓ ${queuedDataUrls.length} new photo(s) optimized and ready to save.`;
-    }
-  });
-
-  updateSummaryAndHiddenField();
+  bindBusinessPhotosUpload();
 
   // =========================================================================
   // Registration Form Draft Auto-Save & Restoration (#95, #210 M-02)
@@ -989,6 +1019,7 @@
     'website',
     'business_photos[]',
     'business_photos_data_json',
+    'business_logo_data_url',
     'booking_fields_present',
     'house_name',
     'house_custom',
@@ -1348,6 +1379,7 @@
 
   function bindLogoUploadPreview() {
     const logoInput = document.getElementById('business_logo');
+    const logoDataUrlInput = document.getElementById('business_logo_data_url');
     const previewEl = document.getElementById('business-logo-preview');
     const removeCheck = document.getElementById('remove_logo');
     const existingCard = document.getElementById('existing-logo-card');
@@ -1356,43 +1388,74 @@
       removeCheck.addEventListener('change', () => {
         existingCard.style.opacity = removeCheck.checked ? '0.4' : '1.0';
         existingCard.style.filter = removeCheck.checked ? 'grayscale(80%)' : 'none';
+        if (removeCheck.checked && logoDataUrlInput) {
+          logoDataUrlInput.value = '';
+          if (previewEl) previewEl.innerHTML = '';
+        }
       });
     }
 
     if (!logoInput || !previewEl) return;
 
-    logoInput.addEventListener('change', () => {
+    logoInput.addEventListener('change', async () => {
       const file = logoInput.files && logoInput.files[0];
       if (!file) {
-        previewEl.innerHTML = '';
         return;
       }
-      if (!file.type.match(/^image\/(png|jpeg|webp)$/)) {
+      if (!file.type.match(/^image\/(png|jpeg|webp)$/i)) {
         previewEl.innerHTML = '<span style="font-size:0.78rem;color:#DC2626;">Please choose a PNG, WebP, or JPEG image.</span>';
+        logoInput.value = '';
+        if (logoDataUrlInput) logoDataUrlInput.value = '';
         return;
       }
-      if (file.size > 8 * 1024 * 1024) {
-        previewEl.innerHTML = '<span style="font-size:0.78rem;color:#DC2626;">Logo file exceeds 8 MB size limit.</span>';
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const src = e.target.result;
+
+      previewEl.innerHTML = '<span style="font-size:0.78rem;color:#0F766E;">⏳ Optimizing logo for fast upload...</span>';
+
+      try {
+        const isPng = file.type.toLowerCase() === 'image/png';
+        const isWebp = file.type.toLowerCase() === 'image/webp';
+        const targetMime = isPng ? 'image/png' : (isWebp ? 'image/webp' : 'image/jpeg');
+        const res = await resizeImageFile(file, 800, targetMime, 0.88);
+
+        if (logoDataUrlInput) {
+          logoDataUrlInput.value = res.dataUrl;
+        }
+
+        // Clear raw file input so huge multi-MB uploads don't hit server payload limits (#481)
+        logoInput.value = '';
+
         previewEl.innerHTML = `
-          <div style="display:inline-flex;align-items:center;gap:0.75rem;background:#fff;border:1px solid #CBD5E1;border-radius:8px;padding:0.4rem 0.75rem;">
+          <div style="display:inline-flex;align-items:center;gap:0.75rem;background:#fff;border:1px solid #10B981;border-radius:8px;padding:0.4rem 0.75rem;">
             <div style="width:48px;height:36px;display:flex;align-items:center;justify-content:center;background:#F1F5F9;border-radius:4px;overflow:hidden;">
-              <img src="${src}" alt="Logo Preview" style="max-width:44px;max-height:32px;object-fit:contain;">
+              <img src="${res.dataUrl}" alt="Logo Preview" style="max-width:44px;max-height:32px;object-fit:contain;">
             </div>
-            <span style="font-size:0.78rem;color:#0F766E;font-weight:600;">New logo ready to upload</span>
+            <div>
+              <div style="font-size:0.78rem;color:#065F46;font-weight:700;">✓ Logo optimized (${res.width}×${res.height}px)</div>
+              <div style="font-size:0.72rem;color:#64748B;">Ready to save with listing</div>
+            </div>
+            <button type="button" id="remove-optimized-logo-btn" style="margin-left:0.5rem;font-size:0.72rem;color:#991B1B;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:6px;padding:0.15rem 0.45rem;cursor:pointer;font-weight:700;">
+              ✕ Remove
+            </button>
           </div>
         `;
+
+        const rmBtn = document.getElementById('remove-optimized-logo-btn');
+        if (rmBtn) {
+          rmBtn.addEventListener('click', () => {
+            if (logoDataUrlInput) logoDataUrlInput.value = '';
+            previewEl.innerHTML = '';
+          });
+        }
+
         if (removeCheck) removeCheck.checked = false;
         if (existingCard) {
           existingCard.style.opacity = '1.0';
           existingCard.style.filter = 'none';
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (_) {
+        previewEl.innerHTML = '<span style="font-size:0.78rem;color:#DC2626;">Could not process the selected image. Please try a different PNG, WebP, or JPEG file.</span>';
+        if (logoDataUrlInput) logoDataUrlInput.value = '';
+      }
     });
   }
 

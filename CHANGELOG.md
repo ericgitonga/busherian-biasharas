@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.45.0] - 2026-11-28
+
+### Added
+- **Universal Client-Side Image Auto-Downscaling & Frictionless Uploads (#481)**:
+  - **In-Browser HTML5 Canvas Auto-Downscaling**: Introduced `resizeImageFile()` helper in `public/assets/js/form-enhancements.js` using `URL.createObjectURL` and HTML5 Canvas to automatically downscale uploaded business photos (max 1200px edge) and official company logos (max 800px edge) before network transmission.
+  - **Frictionless Logo Upload**: Removed restrictive `file.size > 8 * 1024 * 1024` client-side validation error barrier on logo file selection. High-resolution phone photographs and large company logos are now automatically downscaled to lightweight data URLs and bound to hidden `business_logo_data_url` (`src/bootstrap.php`, `public/assets/js/form-enhancements.js`).
+  - **Payload Size Security & Memory Protection**: Clears raw file input value upon successful client-side resize so multi-megabyte raw files are never transmitted in multipart POST, completely eliminating PHP `post_max_size` and `upload_max_filesize` form discards and session drops.
+  - **Transparency Preservation**: Preserves alpha channel transparency for PNG and WebP logos, rendering crisp previews on cards and profile banners.
+  - **SessionStorage Draft Exclusion**: Excluded `business_logo_data_url` from ephemeral draft serialization to keep client storage lightweight within browser quotas.
+
 ## [0.44.4] - 2026-11-28
 
 ### Fixed
