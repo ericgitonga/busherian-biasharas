@@ -943,9 +943,17 @@ testAssert(str_contains($enhancementsJs, 'pageshow'), 'form-enhancements.js hook
 // Test password visibility toggle on owner and admin login screens (#484)
 $ownerLoginSource = (string)file_get_contents(dirname(__DIR__) . '/public/owner/login.php');
 $adminLoginSource = (string)file_get_contents(dirname(__DIR__) . '/public/admin/login.php');
+$adminIndexSource = (string)file_get_contents(dirname(__DIR__) . '/public/admin/index.php');
 testAssert(str_contains($ownerLoginSource, 'data-testid="toggle-owner-password"'), 'owner/login.php provides password visibility toggle on main login form (#484)');
 testAssert(str_contains($ownerLoginSource, 'data-testid="toggle-new-owner-password"') && str_contains($ownerLoginSource, 'data-testid="toggle-confirm-owner-password"'), 'owner/login.php provides password visibility toggle on OTP reset form (#484)');
 testAssert(str_contains($adminLoginSource, 'data-testid="toggle-admin-token"'), 'admin/login.php provides password visibility toggle on admin login form (#484)');
+
+// Test Admin Registered Users & Owner Directory (#485)
+testAssert(str_contains($adminIndexSource, 'id="registered-users"'), 'admin/index.php defines #registered-users anchor section (#485)');
+testAssert(str_contains($adminIndexSource, 'data-testid="admin-registered-users-section"'), 'admin/index.php renders admin-registered-users-section container (#485)');
+testAssert(str_contains($adminIndexSource, 'name="user_q"') && str_contains($adminIndexSource, 'name="user_auth"'), 'admin/index.php supports user query search and auth filter (#485)');
+testAssert(str_contains($adminIndexSource, 'name="admin_action" value="revoke_owner_sessions"'), 'admin/index.php implements revoke_owner_sessions admin action (#485)');
+testAssert(str_contains($adminIndexSource, 'data-testid="revoke-owner-sessions-btn"'), 'admin/index.php provides revoke-owner-sessions-btn in users table (#485)');
 
 echo "All Streamlined Directory & Profile feature tests PASSED!\n";
 

@@ -96,6 +96,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $flashErr = 'Could not resolve takedown request.';
         }
+    } elseif ($adminAction === 'revoke_owner_sessions') {
+        $ownerId = (int)($_POST['owner_id'] ?? 0);
+        $ownerEmailStmt = $pdo->prepare("SELECT email FROM business_owners WHERE id = :id LIMIT 1");
+        $ownerEmailStmt->execute([':id' => $ownerId]);
+        $targetOwnerEmail = (string)($ownerEmailStmt->fetchColumn() ?: '');
+        if ($ownerId > 0 && $targetOwnerEmail !== '') {
+            $revokedCount = OwnerAuth::revokeAllOwnerSessions($pdo, $ownerId, true);
+            $flashMsg = "Revoked all active sessions for {$targetOwnerEmail} ({$revokedCount} session token(s) invalidated).";
+        } else {
+            $flashErr = 'Owner record not found.';
+        }
     } elseif ($targetId > 0) {
         if ($adminAction === 'delete') {
             $bizNameStmt = $pdo->prepare("SELECT name, business_number, business_id FROM businesses WHERE id = :id");
@@ -258,6 +269,94 @@ try {
 } catch (\Throwable $e) {
     $pendingMediaDeletionsCount = 0;
 }
+
+// Section 3: Registered Owners & User Accounts Directory (#485)
+$userSearch = trim((string)($_GET['user_q'] ?? ''));
+$userAuthFilter = trim((string)($_GET['user_auth'] ?? ''));
+$allowedUserPerPage = [30, 60, 90, 120];
+$usersPerPage = isset($_GET['user_per_page']) && in_array((int)$_GET['user_per_page'], $allowedUserPerPage, true)
+    ? (int)$_GET['user_per_page']
+    : 30;
+
+$userWhere = [];
+$userParams = [];
+
+if ($userSearch !== '') {
+    $userWhere[] = "(LOWER(o.email) LIKE :uq OR LOWER(COALESCE(o.full_name, '')) LIKE :uq OR o.phone LIKE :uq)";
+    $userParams[':uq'] = '%' . strtolower($userSearch) . '%';
+}
+if ($userAuthFilter === 'google') {
+    $userWhere[] = "(o.google_sub IS NOT NULL AND o.google_sub != '')";
+} elseif ($userAuthFilter === 'password') {
+    $userWhere[] = "(o.password_hash IS NOT NULL AND o.password_hash != '')";
+} elseif ($userAuthFilter === 'unlinked') {
+    $userWhere[] = "(NOT EXISTS (SELECT 1 FROM business_owner_links bol WHERE bol.owner_id = o.id))";
+} elseif ($userAuthFilter === 'linked') {
+    $userWhere[] = "(EXISTS (SELECT 1 FROM business_owner_links bol WHERE bol.owner_id = o.id))";
+}
+
+$userWhereSql = $userWhere ? ('WHERE ' . implode(' AND ', $userWhere)) : '';
+
+$countStmt = $pdo->prepare("SELECT COUNT(*) FROM business_owners o $userWhereSql");
+$countStmt->execute($userParams);
+$totalMatchingOwners = (int)$countStmt->fetchColumn();
+
+$userTotalPages = max(1, (int)ceil($totalMatchingOwners / $usersPerPage));
+$userCurrentPage = isset($_GET['user_page']) ? max(1, min($userTotalPages, (int)$_GET['user_page'])) : 1;
+$userOffset = ($userCurrentPage - 1) * $usersPerPage;
+
+$ownersStmt = $pdo->prepare("
+    SELECT o.*
+    FROM business_owners o
+    $userWhereSql
+    ORDER BY o.created_at DESC, o.id DESC
+    LIMIT $usersPerPage OFFSET $userOffset
+");
+$ownersStmt->execute($userParams);
+$pagedOwners = $ownersStmt->fetchAll();
+
+$pagedOwnerIds = array_map(static fn($r) => (int)$r['id'], $pagedOwners);
+$linksByOwnerId = [];
+if (!empty($pagedOwnerIds)) {
+    $inQ = implode(',', array_fill(0, count($pagedOwnerIds), '?'));
+    $linkStmt = $pdo->prepare("
+        SELECT l.owner_id, b.id, b.business_number, b.name, b.status
+        FROM business_owner_links l
+        INNER JOIN businesses b ON b.id = l.business_id
+        WHERE l.owner_id IN ($inQ)
+        ORDER BY b.business_number ASC
+    ");
+    $linkStmt->execute($pagedOwnerIds);
+    foreach ($linkStmt->fetchAll() as $lRow) {
+        $linksByOwnerId[(int)$lRow['owner_id']][] = $lRow;
+    }
+}
+
+$totalOwnersCount = (int)$pdo->query("SELECT COUNT(*) FROM business_owners")->fetchColumn();
+$googleOwnersCount = (int)$pdo->query("SELECT COUNT(*) FROM business_owners WHERE google_sub IS NOT NULL AND google_sub != ''")->fetchColumn();
+$passwordOwnersCount = (int)$pdo->query("SELECT COUNT(*) FROM business_owners WHERE password_hash IS NOT NULL AND password_hash != ''")->fetchColumn();
+$linkedOwnersCount = (int)$pdo->query("SELECT COUNT(DISTINCT owner_id) FROM business_owner_links")->fetchColumn();
+$unlinkedOwnersCount = max(0, $totalOwnersCount - $linkedOwnersCount);
+
+$userShowingFrom = $totalMatchingOwners === 0 ? 0 : ($userOffset + 1);
+$userShowingTo = min($totalMatchingOwners, $userOffset + count($pagedOwners));
+
+$buildUserPageUrl = static function (int $targetPage) use ($userSearch, $userAuthFilter, $usersPerPage, $searchQ, $statusFilter, $perPage, $sortCol, $sortDir): string {
+    $qp = [
+        'user_page' => $targetPage,
+        'user_per_page' => $usersPerPage,
+    ];
+    if ($userSearch !== '') $qp['user_q'] = $userSearch;
+    if ($userAuthFilter !== '') $qp['user_auth'] = $userAuthFilter;
+    if ($searchQ !== '') $qp['q'] = $searchQ;
+    if ($statusFilter !== '') $qp['status'] = $statusFilter;
+    if ($perPage !== 30) $qp['per_page'] = $perPage;
+    if ($sortCol !== 'number' || $sortDir !== 'asc') {
+        $qp['sort'] = $sortCol;
+        $qp['dir'] = $sortDir;
+    }
+    return '/admin/index.php?' . http_build_query($qp) . '#registered-users';
+};
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -319,6 +418,20 @@ try {
         ⚠️ <?= htmlspecialchars($flashErr, ENT_QUOTES, 'UTF-8') ?>
       </div>
     <?php endif; ?>
+
+    <!-- QUICK JUMP NAVIGATION BAR -->
+    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1.25rem;padding:0.6rem 0.85rem;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;font-size:0.83rem;color:#4B5563;">
+      <strong style="color:#114B3E;">Jump to:</strong>
+      <a href="#vetting-queue" style="color:#7B1113;text-decoration:none;font-weight:600;">📋 Vetting Queue (<?= count($pendingRows) ?>)</a>
+      <span style="color:#D1D5DB;">•</span>
+      <a href="#manage-businesses" style="color:#114B3E;text-decoration:none;font-weight:600;">🏢 Business Records (<?= $totalMatchingBusinesses ?>)</a>
+      <span style="color:#D1D5DB;">•</span>
+      <a href="#registered-users" style="color:#1D4ED8;text-decoration:none;font-weight:600;">👥 Registered Users (<?= $totalOwnersCount ?>)</a>
+      <?php if (!empty($takedownQueueRows)): ?>
+        <span style="color:#D1D5DB;">•</span>
+        <a href="#takedown-queue" style="color:#DC2626;text-decoration:none;font-weight:600;">🔒 Takedowns (<?= count($takedownQueueRows) ?>)</a>
+      <?php endif; ?>
+    </div>
 
     <div data-testid="admin-cron-health-banner" style="background:<?= $cronHealth['healthy'] ? '#ECFDF5' : '#FFFBEB' ?>;border:1px solid <?= $cronHealth['healthy'] ? '#A7F3D0' : '#FCD34D' ?>;border-radius:10px;padding:0.75rem 1rem;margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;font-size:0.84rem;">
       <div>
@@ -514,7 +627,7 @@ try {
     </section>
 
     <!-- SECTION 1: PENDING VETTING QUEUE -->
-    <section data-testid="admin-pending-queue" style="margin-bottom:2.25rem;">
+    <section id="vetting-queue" data-testid="admin-pending-queue" style="margin-bottom:2.25rem;">
       <h2 style="color:#7B1113;margin-bottom:0.75rem;">1. Pending Vetting Queue (<?= count($pendingRows) ?>)</h2>
       <?php if (empty($pendingRows)): ?>
         <div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:1.25rem;color:#6B7280;font-size:0.9rem;">
@@ -875,6 +988,238 @@ try {
 
           <?php if ($currentPage < $totalPages): ?>
             <a href="<?= htmlspecialchars($buildAdminPageUrl($currentPage + 1), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;">Next &rarr;</a>
+          <?php else: ?>
+            <span class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;opacity:0.45;pointer-events:none;">Next &rarr;</span>
+          <?php endif; ?>
+        </div>
+      </nav>
+    </section>
+
+    <!-- SECTION 3: REGISTERED USERS & BUSINESS OWNERS DIRECTORY (#485) -->
+    <section id="registered-users" data-testid="admin-registered-users-section" style="margin-top:2.5rem;margin-bottom:2.5rem;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;margin-bottom:0.85rem;">
+        <div>
+          <h2 style="color:#1D4ED8;margin:0;display:flex;align-items:center;gap:0.5rem;">
+            👥 3. Registered Owners &amp; User Accounts (<?= $totalMatchingOwners ?>)
+          </h2>
+          <div style="font-size:0.8rem;color:#6B7280;margin-top:0.25rem;">
+            Showing <strong><?= $userShowingFrom ?>&ndash;<?= $userShowingTo ?></strong> of <strong><?= $totalMatchingOwners ?></strong> registered user <?= $totalMatchingOwners === 1 ? 'account' : 'accounts' ?>
+            &bull; <?= $totalOwnersCount ?> total in database
+          </div>
+        </div>
+
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+          <span style="font-size:0.75rem;background:#EFF6FF;color:#1E40AF;padding:0.25rem 0.65rem;border-radius:999px;font-weight:700;border:1px solid #BFDBFE;">
+            👥 Total: <?= $totalOwnersCount ?>
+          </span>
+          <span style="font-size:0.75rem;background:#ECFDF5;color:#065F46;padding:0.25rem 0.65rem;border-radius:999px;font-weight:700;border:1px solid #A7F3D0;">
+            🏢 Linked: <?= $linkedOwnersCount ?>
+          </span>
+          <span style="font-size:0.75rem;background:#FFFBEB;color:#92400E;padding:0.25rem 0.65rem;border-radius:999px;font-weight:700;border:1px solid #FDE68A;">
+            ⏳ Unlinked: <?= $unlinkedOwnersCount ?>
+          </span>
+          <span style="font-size:0.75rem;background:#F3F4F6;color:#374151;padding:0.25rem 0.65rem;border-radius:999px;font-weight:700;border:1px solid #E5E7EB;">
+            🌐 Google SSO: <?= $googleOwnersCount ?>
+          </span>
+          <span style="font-size:0.75rem;background:#F3F4F6;color:#374151;padding:0.25rem 0.65rem;border-radius:999px;font-weight:700;border:1px solid #E5E7EB;">
+            🔑 Password: <?= $passwordOwnersCount ?>
+          </span>
+        </div>
+      </div>
+
+      <!-- FILTER / SEARCH TOOLBAR -->
+      <form method="GET" action="/admin/index.php#registered-users" style="background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:0.75rem 1rem;display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem;">
+        <?php if ($searchQ !== ''): ?><input type="hidden" name="q" value="<?= htmlspecialchars($searchQ, ENT_QUOTES, 'UTF-8') ?>"><?php endif; ?>
+        <?php if ($statusFilter !== ''): ?><input type="hidden" name="status" value="<?= htmlspecialchars($statusFilter, ENT_QUOTES, 'UTF-8') ?>"><?php endif; ?>
+        <?php if ($perPage !== 30): ?><input type="hidden" name="per_page" value="<?= (int)$perPage ?>"><?php endif; ?>
+        <?php if ($sortCol !== 'number' || $sortDir !== 'asc'): ?>
+          <input type="hidden" name="sort" value="<?= htmlspecialchars($sortCol, ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="dir" value="<?= htmlspecialchars($sortDir, ENT_QUOTES, 'UTF-8') ?>">
+        <?php endif; ?>
+
+        <div style="flex:1;min-width:220px;">
+          <input type="search" name="user_q" value="<?= htmlspecialchars($userSearch, ENT_QUOTES, 'UTF-8') ?>" class="input-control" placeholder="Search by email, name, or phone..." style="width:100%;margin:0;">
+        </div>
+
+        <div>
+          <select name="user_auth" class="select-control" style="width:auto;margin:0;">
+            <option value="">All Accounts</option>
+            <option value="linked" <?= $userAuthFilter === 'linked' ? 'selected' : '' ?>>🏢 Linked to Biashara (<?= $linkedOwnersCount ?>)</option>
+            <option value="unlinked" <?= $userAuthFilter === 'unlinked' ? 'selected' : '' ?>>⏳ Unlinked Accounts (<?= $unlinkedOwnersCount ?>)</option>
+            <option value="google" <?= $userAuthFilter === 'google' ? 'selected' : '' ?>>🌐 Google SSO (<?= $googleOwnersCount ?>)</option>
+            <option value="password" <?= $userAuthFilter === 'password' ? 'selected' : '' ?>>🔑 Password Auth (<?= $passwordOwnersCount ?>)</option>
+          </select>
+        </div>
+
+        <div>
+          <select name="user_per_page" class="select-control" style="width:auto;margin:0;">
+            <?php foreach ($allowedUserPerPage as $ps): ?>
+              <option value="<?= $ps ?>" <?= $usersPerPage === $ps ? 'selected' : '' ?>><?= $ps ?> / page</option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+
+        <button type="submit" class="btn btn-outline" style="padding:0.45rem 0.85rem;font-size:0.82rem;">Filter</button>
+        <?php if ($userSearch !== '' || $userAuthFilter !== '' || $usersPerPage !== 30): ?>
+          <a href="/admin/index.php#registered-users" class="btn btn-outline" style="padding:0.45rem 0.85rem;font-size:0.82rem;color:#6B7280;">Reset</a>
+        <?php endif; ?>
+      </form>
+
+      <!-- USERS TABLE -->
+      <div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;overflow-x:auto;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+        <table style="width:100%;border-collapse:collapse;font-size:0.84rem;text-align:left;">
+          <thead>
+            <tr style="background:#F9FAFB;border-bottom:1px solid #E5E7EB;color:#374151;font-weight:700;">
+              <th style="padding:0.75rem 1rem;width:60px;">ID</th>
+              <th style="padding:0.75rem 1rem;">Owner &amp; Account Details</th>
+              <th style="padding:0.75rem 1rem;width:140px;">Auth Method</th>
+              <th style="padding:0.75rem 1rem;">Linked Biasharas</th>
+              <th style="padding:0.75rem 1rem;width:180px;">Registration &amp; Activity</th>
+              <th style="padding:0.75rem 1rem;text-align:right;width:160px;">Admin Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php if (empty($pagedOwners)): ?>
+              <tr>
+                <td colspan="6" style="padding:2rem;text-align:center;color:#6B7280;">
+                  No registered users match the current filter or search criteria.
+                </td>
+              </tr>
+            <?php else: ?>
+              <?php foreach ($pagedOwners as $owner):
+                  $oid = (int)$owner['id'];
+                  $oEmail = (string)$owner['email'];
+                  $oName = trim((string)($owner['full_name'] ?? ''));
+                  $oPhone = trim((string)($owner['phone'] ?? ''));
+                  $hasGoogle = !empty($owner['google_sub']);
+                  $hasPassword = !empty($owner['password_hash']);
+                  $ownerLinks = $linksByOwnerId[$oid] ?? [];
+                  $ageAttested = !empty($owner['age_attested_at']);
+                  $createdAt = !empty($owner['created_at']) ? substr((string)$owner['created_at'], 0, 16) : 'Unknown';
+                  $lastLogin = !empty($owner['last_login_at']) ? substr((string)$owner['last_login_at'], 0, 16) : 'Never';
+              ?>
+                <tr style="border-bottom:1px solid #F3F4F6;" data-testid="admin-owner-row" data-owner-id="<?= $oid ?>">
+                  <td style="padding:0.75rem 1rem;color:#9CA3AF;font-family:monospace;font-size:0.8rem;">
+                    #<?= $oid ?>
+                  </td>
+                  <td style="padding:0.75rem 1rem;">
+                    <div style="font-weight:700;color:#111827;font-size:0.9rem;">
+                      <a href="mailto:<?= htmlspecialchars($oEmail, ENT_QUOTES, 'UTF-8') ?>" style="color:#111827;text-decoration:none;">
+                        <?= htmlspecialchars($oEmail, ENT_QUOTES, 'UTF-8') ?>
+                      </a>
+                    </div>
+                    <?php if ($oName !== ''): ?>
+                      <div style="color:#4B5563;font-size:0.82rem;margin-top:0.15rem;">
+                        👤 <?= htmlspecialchars($oName, ENT_QUOTES, 'UTF-8') ?>
+                      </div>
+                    <?php endif; ?>
+                    <?php if ($oPhone !== ''): ?>
+                      <div style="color:#059669;font-size:0.8rem;margin-top:0.15rem;">
+                        📞 <?= htmlspecialchars($oPhone, ENT_QUOTES, 'UTF-8') ?>
+                      </div>
+                    <?php endif; ?>
+                  </td>
+                  <td style="padding:0.75rem 1rem;">
+                    <div style="display:flex;flex-direction:column;gap:0.3rem;align-items:flex-start;">
+                      <?php if ($hasGoogle): ?>
+                        <span style="font-size:0.74rem;background:#EFF6FF;color:#1E40AF;padding:0.15rem 0.5rem;border-radius:4px;font-weight:700;border:1px solid #BFDBFE;">
+                          🌐 Google SSO
+                        </span>
+                      <?php endif; ?>
+                      <?php if ($hasPassword): ?>
+                        <span style="font-size:0.74rem;background:#F3F4F6;color:#374151;padding:0.15rem 0.5rem;border-radius:4px;font-weight:700;border:1px solid #E5E7EB;">
+                          🔑 Password
+                        </span>
+                      <?php endif; ?>
+                      <?php if (!$hasGoogle && !$hasPassword): ?>
+                        <span style="font-size:0.74rem;background:#FEF3C7;color:#92400E;padding:0.15rem 0.5rem;border-radius:4px;font-weight:700;">
+                          ✉️ Magic Link Only
+                        </span>
+                      <?php endif; ?>
+                    </div>
+                  </td>
+                  <td style="padding:0.75rem 1rem;">
+                    <?php if (empty($ownerLinks)): ?>
+                      <span style="color:#9CA3AF;font-size:0.8rem;font-style:italic;">No linked listings yet</span>
+                    <?php else: ?>
+                      <div style="display:flex;flex-direction:column;gap:0.35rem;">
+                        <?php foreach ($ownerLinks as $lnk):
+                            $linkBizId = (int)$lnk['id'];
+                            $linkBizNum = (int)$lnk['business_number'];
+                            $linkBizName = (string)$lnk['name'];
+                            $linkBizStatus = (string)$lnk['status'];
+                        ?>
+                          <div style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.82rem;">
+                            <a href="/admin/edit-business.php?id=<?= $linkBizId ?>" style="color:#7B1113;font-weight:700;text-decoration:none;" title="Edit this business in admin console">
+                              #<?= $linkBizNum ?> <?= htmlspecialchars($linkBizName, ENT_QUOTES, 'UTF-8') ?>
+                            </a>
+                            <span style="font-size:0.7rem;padding:0.1rem 0.4rem;border-radius:999px;<?= $linkBizStatus === 'approved' ? 'background:#ECFDF5;color:#065F46;' : 'background:#FFFBEB;color:#92400E;' ?>">
+                              <?= htmlspecialchars($linkBizStatus, ENT_QUOTES, 'UTF-8') ?>
+                            </span>
+                          </div>
+                        <?php endforeach; ?>
+                      </div>
+                    <?php endif; ?>
+                  </td>
+                  <td style="padding:0.75rem 1rem;font-size:0.8rem;color:#4B5563;">
+                    <div>Joined: <strong><?= htmlspecialchars($createdAt, ENT_QUOTES, 'UTF-8') ?></strong></div>
+                    <div style="margin-top:0.2rem;">Last active: <strong><?= htmlspecialchars($lastLogin, ENT_QUOTES, 'UTF-8') ?></strong></div>
+                    <div style="margin-top:0.25rem;">
+                      <?php if ($ageAttested): ?>
+                        <span style="color:#059669;font-size:0.75rem;">✓ 18+ DPA Attested</span>
+                      <?php else: ?>
+                        <span style="color:#9CA3AF;font-size:0.75rem;">⏳ Attestation Pending</span>
+                      <?php endif; ?>
+                    </div>
+                  </td>
+                  <td style="padding:0.75rem 1rem;text-align:right;">
+                    <form method="POST" action="/admin/index.php" style="margin:0;display:inline;" onsubmit="return confirm('Revoke all active login sessions for <?= htmlspecialchars(addslashes($oEmail), ENT_QUOTES, 'UTF-8') ?>?');">
+                      <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($tokens['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                      <input type="hidden" name="admin_action" value="revoke_owner_sessions">
+                      <input type="hidden" name="owner_id" value="<?= $oid ?>">
+                      <button type="submit" data-testid="revoke-owner-sessions-btn" class="btn btn-outline" style="padding:0.35rem 0.65rem;font-size:0.78rem;color:#DC2626;border-color:#FCA5A5;" title="Invalidate all active sessions across all devices for this user">
+                        🔒 Revoke Sessions
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            <?php endif; ?>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- USERS PAGINATION NAV -->
+      <nav id="admin-users-pagination" aria-label="Admin Registered Users Pagination" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;margin-top:0.95rem;background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:0.65rem 1rem;">
+        <div style="font-size:0.82rem;color:#4B5563;">
+          Page <strong><?= $userCurrentPage ?></strong> of <strong><?= $userTotalPages ?></strong>
+          <span style="color:#9CA3AF;">•</span>
+          Showing <strong><?= $userShowingFrom ?>&ndash;<?= $userShowingTo ?></strong> of <strong><?= $totalMatchingOwners ?></strong>
+        </div>
+        <div style="display:flex;gap:0.35rem;align-items:center;flex-wrap:wrap;">
+          <?php if ($userCurrentPage > 1): ?>
+            <a href="<?= htmlspecialchars($buildUserPageUrl($userCurrentPage - 1), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;">&larr; Prev</a>
+          <?php else: ?>
+            <span class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;opacity:0.45;pointer-events:none;">&larr; Prev</span>
+          <?php endif; ?>
+
+          <?php for ($up = 1; $up <= $userTotalPages; $up++):
+              if ($userTotalPages > 7 && $up !== 1 && $up !== $userTotalPages && abs($up - $userCurrentPage) > 2) {
+                  if ($up === 2 || $up === $userTotalPages - 1) {
+                      echo '<span style="padding:0 0.25rem;color:#9CA3AF;">&hellip;</span>';
+                  }
+                  continue;
+              }
+          ?>
+            <?php if ($up === $userCurrentPage): ?>
+              <span aria-current="page" class="btn btn-green" style="padding:0.3rem 0.65rem;font-size:0.8rem;"><?= $up ?></span>
+            <?php else: ?>
+              <a href="<?= htmlspecialchars($buildUserPageUrl($up), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;"><?= $up ?></a>
+            <?php endif; ?>
+          <?php endfor; ?>
+
+          <?php if ($userCurrentPage < $userTotalPages): ?>
+            <a href="<?= htmlspecialchars($buildUserPageUrl($userCurrentPage + 1), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;">Next &rarr;</a>
           <?php else: ?>
             <span class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;opacity:0.45;pointer-events:none;">Next &rarr;</span>
           <?php endif; ?>

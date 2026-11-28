@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.46.0] - 2026-11-28
+
+### Added
+- **Admin Registered Users & Owner Directory (#485)**:
+  - **Dedicated User Management Console**: Added Section 3 (`#registered-users`) to the Admin Console (`public/admin/index.php`), granting administrators direct, complete visibility into all registered user accounts and business owners in the database.
+  - **Unified Summary Metrics**: Top stat chips showcase live counts for Total registered accounts, Linked owners, Unlinked accounts, Google SSO accounts, and Password-authenticated users.
+  - **Filtering & Search**: Supports instant text search by owner email, full name, or phone number, combined with auth status filtering (All, Linked, Unlinked, Google SSO, Password) and symmetric pagination slices of 30, 60, 90, 120 per page.
+  - **Account Details & Linked Listings**: Table renders owner ID, email/name/phone, authentication badges, linked biashara listings (with 1-click edit links and live approval status badges), registration date, last active timestamp, and DPA adult attestation status.
+  - **Administrative Session Revocation**: Added one-click session invalidation action (`revoke_owner_sessions` via `OwnerAuth::revokeAllOwnerSessions`) allowing administrators to immediately sign out compromised or requested user sessions across all devices.
+  - **Quick Jump Navigation**: Added quick jump navigation header bar at the top of the Admin Console for rapid navigation between Vetting Queue, Business Records, Registered Users, and Takedowns.
+
 ## [0.45.2] - 2026-11-28
 
 ### Added
