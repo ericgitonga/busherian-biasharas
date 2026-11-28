@@ -192,24 +192,41 @@ try {
         }
     }
 
-    $insStmt = $pdo->prepare("
-        INSERT INTO business_recommendations (
-            business_id, recommender_name, recommender_school, recommender_year,
-            visitor_token, is_verified_alumnus, consent_18_publication
-        ) VALUES (
-            :bid, :name, :school, :year,
-            :token, :verified, :consent
-        )
-    ");
-    $insStmt->execute([
-        ':bid' => $businessId,
-        ':name' => $name,
-        ':school' => $school,
-        ':year' => $year,
-        ':token' => $visitorToken,
-        ':verified' => $isVerifiedAlumnus,
-        ':consent' => $consent18Publication ? 1 : 0,
-    ]);
+    try {
+        $insStmt = $pdo->prepare("
+            INSERT INTO business_recommendations (
+                business_id, recommender_name, recommender_school, recommender_year,
+                visitor_token, is_verified_alumnus, consent_18_publication
+            ) VALUES (
+                :bid, :name, :school, :year,
+                :token, :verified, :consent
+            )
+        ");
+        $insStmt->execute([
+            ':bid' => $businessId,
+            ':name' => $name,
+            ':school' => $school,
+            ':year' => $year,
+            ':token' => $visitorToken,
+            ':verified' => $isVerifiedAlumnus,
+            ':consent' => $consent18Publication ? 1 : 0,
+        ]);
+    } catch (\PDOException $pdoErr) {
+        $insStmt = $pdo->prepare("
+            INSERT INTO business_recommendations (
+                business_id, recommender_name, recommender_school, recommender_year, visitor_token
+            ) VALUES (
+                :bid, :name, :school, :year, :token
+            )
+        ");
+        $insStmt->execute([
+            ':bid' => $businessId,
+            ':name' => $name,
+            ':school' => $school,
+            ':year' => $year,
+            ':token' => $visitorToken,
+        ]);
+    }
     try {
         $pdo->prepare("
             INSERT INTO click_events (business_id, event_type, signal_group, signal_weight)
@@ -221,15 +238,26 @@ try {
     // Recompute engagement score
     EngagementRanker::recomputeBusinessScore($pdo, $businessId);
 
-    $recStmt = $pdo->prepare("
-        SELECT recommender_name, recommender_school, recommender_year, visitor_token,
-               is_verified_alumnus, consent_18_publication
-        FROM business_recommendations
-        WHERE business_id = :bid
-        ORDER BY id DESC
-    ");
-    $recStmt->execute([':bid' => $businessId]);
-    $rows = $recStmt->fetchAll(PDO::FETCH_ASSOC);
+    try {
+        $recStmt = $pdo->prepare("
+            SELECT recommender_name, recommender_school, recommender_year, visitor_token,
+                   is_verified_alumnus, consent_18_publication
+            FROM business_recommendations
+            WHERE business_id = :bid
+            ORDER BY id DESC
+        ");
+        $recStmt->execute([':bid' => $businessId]);
+        $rows = $recStmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (\PDOException $pdoErr) {
+        $recStmt = $pdo->prepare("
+            SELECT recommender_name, recommender_school, recommender_year, visitor_token
+            FROM business_recommendations
+            WHERE business_id = :bid
+            ORDER BY id DESC
+        ");
+        $recStmt->execute([':bid' => $businessId]);
+        $rows = $recStmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 
     $payload = formatRecommendationsPayload($rows, $visitorToken, $businessId);
     $payload['status'] = 'ok';
