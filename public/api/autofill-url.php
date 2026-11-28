@@ -17,6 +17,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $rawBody = file_get_contents('php://input') ?: '';
+if (strlen($rawBody) > 8192) {
+    http_response_code(413);
+    echo json_encode(['status' => 'error', 'message' => 'Payload too large.']);
+    exit;
+}
 $payload = json_decode($rawBody, true);
 if (!is_array($payload)) {
     $payload = $_POST;
@@ -30,7 +35,7 @@ if (!AntiSpamGate::verifyCsrfToken($csrfToken)) {
 }
 
 $targetUrl = trim((string)($payload['url'] ?? ''));
-if ($targetUrl === '') {
+if ($targetUrl === '' || strlen($targetUrl) > 2048) {
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => 'Please enter a website URL to extract business details from.']);
     exit;

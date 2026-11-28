@@ -106,6 +106,27 @@ $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
 try {
     $pdo = Database::getConnection();
 
+    // 2b. Pre-Cache Global IP Rate Limiter to protect origin server & DB hydration from cached-query floods (#490)
+    $preRate = AntiSpamGate::checkAndRecordRateLimit(
+        $pdo,
+        $clientIp,
+        'concierge_request',
+        120,  // 120 requests / 15m
+        600,  // 600 requests / 24h
+        1000  // 1000 requests / 1h globally
+    );
+    if (!$preRate['allowed']) {
+        http_response_code(429);
+        header('Retry-After: ' . (int)$preRate['retry_after']);
+        echo json_encode([
+            'status' => 'error',
+            'code' => 'RATE_LIMIT_EXCEEDED',
+            'message' => 'Query rate limit exceeded. Please wait ' . (int)$preRate['retry_after'] . ' seconds.',
+            'retry_after' => (int)$preRate['retry_after'],
+        ], JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
     // 3. Intent Cache Check (15-Minute Cache with Decoupled Hydration, H-01, M-01)
     // Run cache check BEFORE rate limiter so repeated queries and preset starter chips do not consume quota (#365)
     $b2bOnly = !empty($payload['b2b_only']);

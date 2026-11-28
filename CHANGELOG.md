@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 adheres to [Semantic Versioning](https://semver.org) (pre-1.0: MINOR = new features/user-facing
 behaviour, PATCH = fixes/docs/housekeeping — see `SKILL.md`).
 
+## [0.46.1] - 2026-11-28
+
+### Security
+- **Adversarial Security Audit Remediations (#486)**:
+  - **[Adversarial HIGH-01] Photo Recovery Utility Retired & Relocated (#487)**:
+    - Retired `public/api/locate-lost-photos.php` from webroot, replacing it with a strict HTTP 404 stub to permanently deactivate the route and eliminate exposure of the committed query token (`bbiz_rescue_photos_9876`).
+    - Relocated administrative photo recovery to `bin/locate-lost-photos.php`, strictly guarded behind `PHP_SAPI === 'cli'`.
+  - **[Adversarial MED-01] Decoupled Admin Header Token Policy from Request Host Headers (#488)**:
+    - Hardened `PreprodSandbox::isPreprod()`, `AdminAuth::isHeaderTokenEnabled()`, and `Database::isPreview()` so that spoofed client `Host: preview.*` headers on production are strictly ignored.
+    - Preserved production enforcement of `ALLOW_ADMIN_HEADER_TOKEN=true` opt-in gate, preventing header token authentication on live instances.
+  - **[Adversarial MED-02] Hardened Alumni Endorsement Verification & Ranking Protection (#489)**:
+    - Enforced strict regex validation (`/^[a-zA-Z0-9_-]{8,64}$/`) on client visitor tokens in `public/api/recommend.php`.
+    - Added `AntiSpamGate::isCamelCaseBotName` check on recommender names to block single-word automated bot endorsements.
+    - Tiered engagement ranking signal weights: authenticated alumni recommendations retain full 3.0 weight, while unverified guest visitor endorsements are damped to 0.5 to prevent manipulation of organic search rankings.
+  - **[Adversarial MED-03] Pre-Cache Rate Limiting for Biashara Concierge (#490)**:
+    - Added pre-cache global client IP rate limiter (`concierge_request`: 120 / 15m, 600 / 24h, 1000 / 1h globally) in `public/api/concierge.php` to protect origin database hydration (`hydrateApprovedBusinesses`) from flood attacks on cached queries.
+    - Maintained inner strict quota (`concierge_query`: 30 / 15m for visitors) on cache misses to protect upstream LLM inference quotas.
+  - **[Adversarial MED-04] Website Enrichment Endpoint CSRF & Payload Bounds (#491)**:
+    - Added 8 KB request body length limit (`strlen($rawBody) > 8192`) and 2048-char URL cap to `public/api/enrich-website.php` and `public/api/autofill-url.php`.
+    - Enforced session-bound CSRF token validation (`AntiSpamGate::verifyCsrfToken`) on `public/api/enrich-website.php`, aligning it with `autofill-url.php` while permitting authenticated admin sessions and CLI test suites.
+
 ## [0.46.0] - 2026-11-28
 
 ### Added

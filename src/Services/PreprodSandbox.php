@@ -43,6 +43,10 @@ final class PreprodSandbox
         if (in_array($env, ['preview', 'preprod', 'staging'], true)) {
             return true;
         }
+        // In production, never allow an untrusted client HTTP_HOST header to downgrade security policies (#488)
+        if ($env === 'production') {
+            return false;
+        }
         $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
         if (str_starts_with($host, 'preview.')) {
             return true;

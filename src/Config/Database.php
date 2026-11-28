@@ -102,6 +102,9 @@ final class Database
         if (in_array($env, ['preview', 'preprod', 'staging'], true)) {
             return true;
         }
+        if ($env === 'production') {
+            return false;
+        }
         $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
         return str_starts_with($host, 'preview.');
     }
